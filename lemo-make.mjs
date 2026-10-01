@@ -71,8 +71,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /**
  * 异步执行并收集输出。不经过 shell（数组传参），免疫引号/空格/中文路径问题。
  * 带退避重试：并发调用 wsl.exe 时实测会出现 EBUSY，是瞬时的。
+ *
+ * onChunk（可选）：每收到一片 stdout/stderr 就回调一次，用于「边收边透传」的长任务。
+ *   ★ 默认 null —— 不传时行为与加这个参数之前**逐字节相同**（只累积、不输出）。
+ *   ★ 透传与累积**同时**做：调用方既能实时看到输出，又能拿到完整 r.stdout 去做正则匹配
+ *     （音频链路靠 `MIX_OK` / `STEP_FAIL` / `STEP_WARN` 判断成败，不能只图实时而丢掉返回值）。
  */
-function run(exe, args, opts = {}, { quiet = false, maxRetry = 5 } = {}) {
+function run(exe, args, opts = {}, { quiet = false, maxRetry = 5, onChunk = null } = {}) {
   return new Promise(resolve => {
     const attempt = (n) => {
       let child;
@@ -82,8 +87,8 @@ function run(exe, args, opts = {}, { quiet = false, maxRetry = 5 } = {}) {
         return resolve({ code: -1, stdout: '', stderr: '', error: e });
       }
       let stdout = '', stderr = '';
-      child.stdout?.on('data', d => { stdout += d; });
-      child.stderr?.on('data', d => { stderr += d; });
+      child.stdout?.on('data', d => { stdout += d; if (onChunk) onChunk('stdout', d); });
+      child.stderr?.on('data', d => { stderr += d; if (onChunk) onChunk('stderr', d); });
       const done = (code, error) => {
         const transient = error && ['EBUSY', 'EAGAIN', 'EMFILE', 'ENFILE'].includes(error.code);
         if (transient && n < maxRetry) {
@@ -113,8 +118,20 @@ function runLive(exe, args, opts = {}) {
  * 在 WSL 里执行一段 shell。
  * 关键：脚本先写到 D:\WSL\<name>.sh，再在 WSL 内 sed 去 CR 后执行。
  * 直接内联多行 bash 通过 wsl.exe 传参会被吃掉变量、错乱引号（本项目反复踩过）。
+ *
+ * ★ stream: true —— 输出边收边透传（仅长任务需要，见下）。
+ *   默认 false：仍是「等 wsl.exe 退出才一次性拿到 stdout」的缓冲语义。
+ *   为什么需要它（实测的 UX 缺陷）：音频链路是唯一一条**长且安静**的 WSL 路径 ——
+ *     实测 ascii-crt --skip-sync 一次真实出片，音频步骤的标题打在第 10.1s，
+ *     而它**第一行**输出直到 362.3s 才出现，中间 352.2 秒屏幕上一个字都没有；
+ *     第 63~85 行（配音/声线/ASR/配乐/混音的全部输出）时间戳全挤在 362.4s。
+ *     渲染那一步之所以不卡，是因为它走 runLive（stdio: inherit，天然流式）。
+ *     ⚠️ 这个缺陷用 --dry-run **永远测不出来**（dry-run 不跑音频）。
+ *   ★ 只改「怎么显示」，**不改退出码语义**：命令构造一个字没动，`su` 仍是最后一条命令，
+ *     它的退出码仍原样成为 wsl.exe 的退出码 —— 0 与非 0 仍可区分（音频链路靠它判成败）。
+ *   ★ 脚本里的 `trap 'rm -f …' EXIT` 清理也照旧（脚本正文未被改动）。
  */
-async function runWsl(script, { name = '_lemo-orch', asUser = CFG.wslUser, args = '' } = {}) {
+async function runWsl(script, { name = '_lemo-orch', asUser = CFG.wslUser, args = '', stream = false } = {}) {
   // ⚠️ 退出码：**最后一条命令绝不能是 `exit $rc`** —— 实测 `$?` / `$rc` 在这一跳会被提前展开
   //    （`$?`→0、`$rc`→空串），`exit $rc` 退化成裸 `exit`，于是本函数**永远返回 0**。
   //    后果：唯一没有兜底的路径「库同步失败」被静默当成功 —— 同步脚本自己 exit 1 并打印
@@ -145,8 +162,12 @@ async function runWsl(script, { name = '_lemo-orch', asUser = CFG.wslUser, args 
     `sed 's/\\r$//' '${inner}' > /tmp/${uniq}.sh && chmod 644 /tmp/${uniq}.sh && ` +
     `chown ${asUser} /tmp/${uniq}.sh && ` +
     `su - ${asUser} -c "bash /tmp/${uniq}.sh ${args}"`;
+  // 透传原始分片（Buffer 直写，不重新解码）—— 多字节字符被切在分片边界上也不会变问号。
+  // 行切分交给下游（控制台 lib/jobs.mjs 的 feed 本来就按行累积），这里不掺和。
+  const tee = (s, d) => { (s === 'stderr' ? process.stderr : process.stdout).write(d); };
   return run('wsl.exe', ['-d', CFG.wslDistro, '-u', 'root', '--', 'bash', '-c', cmd],
-    { env: { ...process.env, WSL_UTF8: '1' } });
+    { env: { ...process.env, WSL_UTF8: '1' } },
+    stream ? { onChunk: tee } : {});
 }
 
 /** 找一个可用的 Windows ffmpeg 目录。 */
@@ -1588,9 +1609,12 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
   if (!o.skipAudio) {
     step('音频链路（WSL：配音 → 声线 → ASR → 配乐 → 混音）');
     audioP = (async () => {
-      const r = await runWsl(audioScript, { name: '_lemo-audio' });
-      if (r.stdout) process.stdout.write(r.stdout);
-      if (r.stderr) process.stderr.write(C.dim(r.stderr));
+      // ★ stream: true —— 音频链路的输出边跑边透传（全流程唯一一条「又长又安静」的 WSL 路径）。
+      //   旧写法是 `await runWsl(...)` 拿到整块 r.stdout 再一次性写出来 ⇒ 配音/声线/ASR/配乐/混音
+      //   的全部输出要等音频跑完（实测 352 秒）才一起冒出来，进度条看着像死了。
+      //   ⚠️ 改成流式后**不能**再在下面把 r.stdout / r.stderr 整体写一遍 —— 那会重复打印一份。
+      //   r.stdout / r.stderr 仍照常返回（下面要用 MIX_OK / STEP_FAIL / STEP_WARN 正则匹配）。
+      const r = await runWsl(audioScript, { name: '_lemo-audio', stream: true });
       const m = /MIX_OK (\d+) (\S+)/.exec(r.stdout);
       if (r.code !== 0 || !m) {
         // 报清楚是哪一步失败的，而不是笼统的「exit N」——

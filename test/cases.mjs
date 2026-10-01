@@ -27,7 +27,13 @@ import { CFG } from '../lib/env.mjs';
 
 // ── 红线常量 ────────────────────────────────────────────────
 /** ★ 编排器的权威 md5。控制台只是包装层，绝不能改它。 */
-export const ORCH_MD5 = '0554085abb34c50e3e1bcfe8f28ab0e1';
+// ⚠️ 本次更新（0554085abb34c50e3e1bcfe8f28ab0e1 → fe6eff223293fe741290e23a9102737c）**不是**控制台
+//    改了编排器，而是编排器自身的一次定向修复：给 runWsl 加 `stream: true` 让音频链路输出实时透传
+//    （旧行为：音频步骤标题打在第 10.1s，第一行输出却等到 362.3s，中间 352.2 秒屏幕全静 —— 看着像死了）。
+//    改动只涉及 run() 的可选 onChunk 钩子、runWsl 的 stream 开关、以及音频那一步的调用点；
+//    命令构造（`su` 仍是最后一条命令 ⇒ 退出码语义）与脚本正文（trap 清理）均未动。
+//    该缺陷用 --dry-run 测不出来（dry-run 不跑音频），故此前一直没被发现。
+export const ORCH_MD5 = 'fe6eff223293fe741290e23a9102737c';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;
