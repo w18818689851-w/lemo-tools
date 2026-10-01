@@ -1,0 +1,20 @@
+# 行尾规则 —— 这个项目对行尾敏感，不要靠 core.autocrlf 自动猜。
+#
+# 背景：
+#   - lemo-make.mjs 里内嵌 shell 模板，会被写到 D:\WSL 再经 wsl.exe 执行。
+#     上游文档也专门记过「Windows 的 video.mjs 是全仓唯一的 CRLF 文件，回灌 WSL 前必须 tr -d '\r'」。
+#   - 所以源码一律强制 LF，避免 git 在 checkout 时静默改写。
+#
+# 只有 cmd.exe 批处理必须 CRLF（cmd 对 LF-only 解析不可靠）。
+
+* text=auto eol=lf
+
+# cmd.exe 批处理：必须 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制（不要当文本处理）
+*.png binary
+*.jpg binary
+*.ico binary
+*.mp4 binary

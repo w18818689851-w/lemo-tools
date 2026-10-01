@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lemo 控制台</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◉</span>
+    <span class="brand-name">lemo 控制台</span>
+    <span class="brand-sub">lemo-opuscar 影片生成</span>
+  </div>
+
+  <div class="envbar" id="envbar" title="点击查看环境明细">
+    <span class="env-dot" id="envDot"></span>
+    <span class="env-text" id="envText">环境检测中…</span>
+    <span class="env-sum" id="envSum"></span>
+  </div>
+
+  <div class="top-actions">
+    <button class="btn ghost" id="btnRefreshEnv" title="重新全量探测环境">重新检测</button>
+    <button class="btn ghost narrow-only" id="btnToggleSide" title="展开/收起风格列表">风格</button>
+  </div>
+</header>
+
+<div class="env-detail" id="envDetail" hidden></div>
+
+<div class="layout">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="side-head">
+      <input type="search" id="search" class="search" placeholder="搜索风格（中文名 / 英文 / slug）" autocomplete="off">
+      <span class="count" id="styleCount">—</span>
+    </div>
+    <div class="side-tools">
+      <button class="btn ghost small" id="btnExpandAll" title="展开所有分组">全部展开</button>
+      <button class="btn ghost small" id="btnCollapseAll" title="收起所有分组">全部收起</button>
+    </div>
+    <div class="style-list" id="styleList"></div>
+  </aside>
+
+  <main class="main">
+
+    <section class="card">
+      <h2 class="card-title">启动任务</h2>
+      <div class="form-grid">
+        <label class="field">
+          <span class="lbl">风格 <b class="req">*</b></span>
+          <input list="styleOptions" id="fSlug" class="input" placeholder="如 ascii-crt" autocomplete="off">
+          <datalist id="styleOptions"></datalist>
+        </label>
+        <label class="field">
+          <span class="lbl">帧率 --fps</span>
+          <input type="number" id="fFps" class="input" value="24" min="1" step="1">
+        </label>
+        <label class="field">
+          <span class="lbl">并行数 --workers</span>
+          <input type="number" id="fWorkers" class="input" value="6" min="1" step="1">
+        </label>
+        <label class="field">
+          <span class="lbl">编码器 --venc</span>
+          <select id="fVenc" class="input">
+            <option value="">默认(nvenc)</option>
+            <option value="nvenc">nvenc（硬件）</option>
+            <option value="libx264">libx264（软件）</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="presets" id="presets">
+        <span class="presets-lbl">常用组合</span>
+        <button type="button" class="preset" data-preset="quick">快速出片</button>
+        <button type="button" class="preset" data-preset="audio">只调音</button>
+        <button type="button" class="preset" data-preset="render">只重渲</button>
+        <button type="button" class="preset" data-preset="dry">试跑</button>
+        <span class="presets-hint">（只改勾选，不会直接启动）</span>
+      </div>
+
+      <div class="checks">
+        <label class="chk"><input type="checkbox" id="fSkipSync"> --skip-sync 跳过库同步</label>
+        <label class="chk"><input type="checkbox" id="fSkipRender"> --skip-render 跳过渲染</label>
+        <label class="chk"><input type="checkbox" id="fAudioOnly"> --audio-only 只跑音频</label>
+        <label class="chk"><input type="checkbox" id="fRenderOnly"> --render-only 只跑渲染</label>
+        <label class="chk"><input type="checkbox" id="fDryRun"> --dry-run 只打印计划</label>
+      </div>
+
+      <details class="adv">
+        <summary>高级选项</summary>
+        <div class="form-grid">
+          <label class="field">
+            <span class="lbl">--q（只透传渲染）</span>
+            <input id="fQ" class="input" placeholder="如 noev=1 或 content=content_alt.json" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl">--grain</span>
+            <input id="fGrain" class="input" placeholder="如 0 / 0.08" autocomplete="off">
+          </label>
+          <label class="field wide">
+            <span class="lbl">--out 输出目录</span>
+            <input id="fOut" class="input" placeholder="留空 = D:\lemo-films\<slug>" autocomplete="off">
+          </label>
+        </div>
+      </details>
+
+      <div class="form-foot">
+        <button class="btn primary" id="btnRun">开始生成</button>
+        <button class="btn ghost small" id="btnCopyCmd" hidden title="复制这条命令到剪贴板">复制</button>
+        <span class="hint" id="cmdPreview"></span>
+      </div>
+
+      <!-- 启动前并发预检提示（只是提示，不是硬拦截；见 server.mjs:apiPrecheck） -->
+      <div class="lock-warn" id="lockWarn" hidden></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">实时日志 <span class="log-job" id="logJob"></span></h2>
+        <div class="card-tools">
+          <label class="chk"><input type="checkbox" id="autoScroll" checked> 自动滚底</label>
+          <button class="btn ghost" id="btnClearLog">清屏</button>
+        </div>
+      </div>
+      <div class="progress" id="progress" hidden>
+        <div class="progress-head">
+          <span class="progress-idx" id="progCount">—</span>
+          <span class="progress-step" id="progStep">—</span>
+          <span class="progress-state" id="progState"></span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progFill"></div></div>
+      </div>
+      <div class="log-wrap" id="logWrap">
+        <pre class="log" id="log" aria-live="polite"></pre>
+        <div class="log-empty" id="logEmpty">← 选一个风格，点「开始生成」</div>
+      </div>
+      <div class="stream-state" id="streamState"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">任务列表</h2>
+        <div class="card-tools"><button class="btn ghost" id="btnRefreshJobs">刷新</button></div>
+      </div>
+      <div class="jobs" id="jobs"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">成片库 <span class="count" id="filmCount"></span></h2>
+        <div class="card-tools">
+          <input type="search" id="filmSearch" class="search compact" placeholder="筛选 slug / 文件名…" autocomplete="off">
+          <select id="filmSort" class="input compact" title="排序方式">
+            <option value="time">时间（新 → 旧）</option>
+            <option value="size">大小（大 → 小）</option>
+            <option value="slug">风格名（A → Z）</option>
+          </select>
+          <button class="btn ghost" id="btnRefreshFilms">刷新</button>
+        </div>
+      </div>
+      <div class="films" id="films"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- 风格详情侧栏：STYLE.md / DEMO.md 由服务端渲染成**已转义**的 HTML -->
+<div class="detail-drawer" id="detailDrawer" hidden>
+  <div class="detail-head">
+    <div class="detail-titles">
+      <span class="detail-name" id="detailName">—</span>
+      <span class="detail-sub" id="detailSub"></span>
+    </div>
+    <button class="btn ghost" id="btnCloseDetail">关闭</button>
+  </div>
+  <div class="detail-body" id="detailBody"></div>
+  <div class="detail-foot">
+    <button class="btn primary" id="btnUseStyle">用这个风格生成</button>
+    <span class="hint" id="detailHint"></span>
+  </div>
+</div>
+
+<div class="player-modal" id="playerModal" hidden>
+  <div class="player-box">
+    <div class="player-head">
+      <span id="playerTitle"></span>
+      <button class="btn ghost" id="btnClosePlayer">关闭</button>
+    </div>
+    <video id="player" controls preload="metadata"></video>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
