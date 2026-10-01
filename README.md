@@ -101,12 +101,36 @@ lemo-make.bat --help
 而且各 demo 的 `build.sh` 里 `events.mjs` 在 `mix.py` **之前**（有依赖），所以这一步必须放在并行段**之前**。
 
 
+## 测试
+
+```bash
+node test/smoke.mjs          # 冒烟测试（约 7–20 秒，不渲染）
+node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒）
+```
+
+零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
+
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `0554085abb34c50e3e1bcfe8f28ab0e1`（控制台只是包装层）
+- **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
+- **8 个 HTTP 接口** —— 含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越
+- **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`
+- **CLI 未受影响** —— `node lemo-make.mjs ascii-crt --skip-sync --dry-run` 仍 exit 0
+
+测试自己用**随机空闲端口**起一个临时服务、跑完自己停，**不碰**你正在用的控制台实例
+（启动时会覆写 `.console-port` / `打开控制台.url`，测试跑前备份、跑后按字节还原）。
+详见 `test/README.md`（含「不覆盖什么」与副作用说明）。
+
 ## 文件
 
 ```
 lemo-make.bat          入口（找 node → 转调 .mjs）
 lemo-make.mjs          主编排器
 README.md              本文件
+test/smoke.mjs         冒烟测试入口（零依赖）
+test/cases.mjs         测试用例
+server.mjs             Web 控制台服务
+lib/                   控制台的服务端模块（env / jobs / store / styles）
+web/                   控制台前端（index.html / app.js / style.css）
 ```
 
 依赖的外部脚本（在 `D:\WSL\`）：
