@@ -346,6 +346,79 @@ export const STATIC_CASES = [
       assert.match(r.stdout, /\[1\]/, `CLI 输出里找不到步骤标记 [1]\n--- stdout ---\n${r.stdout}`);
     },
   },
+  {
+    // ★ 这条补的是 test/README.md「没覆盖什么」里的最后一条：Windows 保留端口的 EACCES 后扫。
+    //   真造一个保留段要改系统配置（netsh 圈端口），测试没法复现 —— 所以把「绑定一次」作为
+    //   参数注入，用假 binder 精确覆盖四条分支。server.mjs 的 start() 就是调这个函数，
+    //   而「服务真的能起来」由本套件其余所有起服务用例覆盖（它们都走 start() → scanPort）。
+    name: '③ 端口后扫决策：只有 EACCES 才继续往后扫（EADDRINUSE / 其它错误直接放弃）',
+    run: async (ctx) => {
+      const { scanPort, MAX_SCAN, MAX_PORT } = await import('../lib/portscan.mjs');
+      // 常量必须与 server.mjs 的实际行为一致（server.mjs 从这里 import，单一来源）
+      assert.strictEqual(MAX_SCAN, 40, `MAX_SCAN=${MAX_SCAN}，与 server.mjs 既有行为（40）不一致`);
+      assert.strictEqual(MAX_PORT, 65535, `MAX_PORT=${MAX_PORT}`);
+
+      const fakeBinder = (map) => {
+        const calls = [];
+        return { calls, fn: async (port) => { calls.push(port); return map(port); } };
+      };
+
+      // ① 一绑就上：不该多试任何一个端口
+      {
+        const b = fakeBinder(() => ({ ok: true }));
+        const r = await scanPort(7788, b.fn);
+        assert.deepStrictEqual(r, { ok: true, port: 7788, want: 7788, moved: false });
+        assert.deepStrictEqual(b.calls, [7788], `不该多试端口，实际试了 ${b.calls.join(',')}`);
+      }
+
+      // ② ★核心：EACCES（端口落在保留段）→ 按顺序向后扫到第一个可绑的端口
+      {
+        const reserved = new Set([7788, 7789, 7790]);
+        const b = fakeBinder((p) => (reserved.has(p) ? { ok: false, code: 'EACCES' } : { ok: true }));
+        const r = await scanPort(7788, b.fn);
+        assert.deepStrictEqual(r, { ok: true, port: 7791, want: 7788, moved: true });
+        assert.deepStrictEqual(b.calls, [7788, 7789, 7790, 7791], '没有按顺序逐个向后扫');
+      }
+
+      // ③ EADDRINUSE → **不换端口**（换端口会静默起第二个实例），直接报 inuse
+      {
+        const b = fakeBinder((p) => (p === 7788 ? { ok: false, code: 'EADDRINUSE' } : { ok: true }));
+        const r = await scanPort(7788, b.fn);
+        assert.deepStrictEqual(r, { ok: false, reason: 'inuse', want: 7788, port: 7788 });
+        assert.deepStrictEqual(b.calls, [7788], 'EADDRINUSE 不该继续向后扫');
+      }
+
+      // ④ 其它绑定错误（如 EADDRNOTAVAIL）→ 同样不换端口
+      {
+        const b = fakeBinder(() => ({ ok: false, code: 'EADDRNOTAVAIL' }));
+        const r = await scanPort(7788, b.fn);
+        assert.deepStrictEqual(r, { ok: false, reason: 'error', want: 7788, port: 7788, code: 'EADDRNOTAVAIL' });
+        assert.deepStrictEqual(b.calls, [7788], '非 EACCES 错误不该继续向后扫');
+      }
+
+      // ⑤ 整段都是保留段 → 扫满 MAX_SCAN 个后放弃（含 want 本身共 MAX_SCAN+1 次尝试）
+      {
+        const b = fakeBinder(() => ({ ok: false, code: 'EACCES' }));
+        const r = await scanPort(7788, b.fn);
+        assert.deepStrictEqual(r, { ok: false, reason: 'exhausted', want: 7788 });
+        assert.strictEqual(b.calls.length, MAX_SCAN + 1,
+          `应尝试 ${MAX_SCAN + 1} 个端口（含 want 本身），实际 ${b.calls.length}`);
+        assert.strictEqual(b.calls[0], 7788);
+        assert.strictEqual(b.calls[b.calls.length - 1], 7788 + MAX_SCAN);
+      }
+
+      // ⑥ 逼近端口上限 → 越过 65535 立即放弃（与 server.mjs 原来的 `if (port > 65535) break` 等价）
+      {
+        const b = fakeBinder(() => ({ ok: false, code: 'EACCES' }));
+        const r = await scanPort(65534, b.fn);
+        assert.deepStrictEqual(r, { ok: false, reason: 'exhausted', want: 65534 });
+        assert.deepStrictEqual(b.calls, [65534, 65535], '越过 65535 之后不该再试');
+      }
+
+      ctx.note('③ 端口后扫：一绑就上 / EACCES 后扫 / EADDRINUSE 不换 / 其它错误不换 / 扫满放弃 / 越过 65535 放弃'
+        + ' —— 六条分支全过（用假 binder，不碰系统保留段）');
+    },
+  },
 ];
 
 // ── 服务端用例（需要控制台在跑）─────────────────────────────
@@ -716,7 +789,10 @@ export const SERVER_CASES = [
         assert.strictEqual(d.pid, child.pid, `回显的 pid 不对：${d.pid}（期望 ${child.pid}）`);
         assert.ok(d.lockAgeSec >= 0 && d.lockAgeSec < 120, `锁龄不合理：${d.lockAgeSec}s`);
         assert.match(String(d.message || ''), /并发|损坏/, `locked=true 时 message 应给出人话解释，实际：${JSON.stringify(d.message)}`);
-        ctx.note(`⑧ 活 pid ${child.pid} 的锁 → locked=true / stale=false（不误判）`);
+        // ★ 这条 message 会被前端**原样 textContent**（app.js 的 lockWarn 与批量确认弹层），
+        //   所以它里面不能有 markdown 的 `**` —— 那会原样显示成两个星号。
+        assert.doesNotMatch(String(d.message || ''), /\*\*/, `message 里有 \`**\` 字面量（前端 textContent 会原样显示）：${JSON.stringify(d.message)}`);
+        ctx.note(`⑧ 活 pid ${child.pid} 的锁 → locked=true / stale=false（不误判）；message 无 \`**\` 字面量`);
       } finally {
         try { child.kill(); } catch { /* ignore */ }
         try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
@@ -1009,6 +1085,81 @@ export const PROCESS_CASES = [
           + `从 ${from} 续传先发 gap(${gap.from}→${gap.to}，丢 ${gap.dropped} 行)，再补 ${incLines.length} 行`);
       } finally {
         if (jobId) { try { jobs.cancelJob(jobId); } catch { /* ignore */ } }
+      }
+    },
+  },
+  {
+    // ★ 这条补的是 test/README.md「没覆盖什么」里的「落盘上限 / 轮转」。
+    //   上一条（⑦ 内存裁剪）验的是 lib/jobs.mjs 的**内存**上限（20000 行），这条验的是
+    //   lib/store.mjs 的**落盘**轮转（单任务 4MB 截断）—— 两者的触发路径完全不同
+    //   （jobs.mjs 的 splice vs store.mjs 的 rotate），别把前者当后者。
+    //   真按真实上限写满一次，断言：轮转真的发生 / 标记行真的写进去了 / 序号仍连续（可续传）。
+    name: '⑦ 落盘轮转：单任务日志超 4MB 被截断，标记行就位且序号仍连续（可续传）',
+    run: async (ctx) => {
+      const store = await import('../lib/store.mjs');
+      const CAPS = store.CAPS;
+
+      const id = `__fp-rot-${process.pid}-${Date.now().toString(36)}`;
+      const file = path.join(CONSOLE_LOGS, `${id}.jsonl`);
+      ARTIFACTS.jobIds.add(id);          // 跑完由 cleanupArtifacts 删掉 logs/<id>.jsonl
+
+      try {
+        const loaded = store.loadIndex();
+        assert.strictEqual(loaded.ready, true, `store 未就绪（${loaded.error || '未知'}）—— 落盘轮转验不了`);
+        store.dropLog(id);               // 清掉可能的同名残留
+
+        // 每条记录 ≈ 2KB：写 2400 条 ≈ 4.8MB，足以在 4MB 处触发**恰好一次**轮转
+        const big = 'y'.repeat(2048);
+        const N = 2400;
+        for (let i = 1; i <= N; i++) {
+          store.appendLog(id, { n: i, stream: 'stdout', line: `${i}:${big}`, t: Date.now() });
+        }
+
+        const size = fs.statSync(file).size;
+        // ① 轮转真的发生：文件不再超过单任务上限
+        assert.ok(size <= CAPS.perJobLogBytes,
+          `轮转后文件仍有 ${size} 字节，超过单任务上限 ${CAPS.perJobLogBytes}`);
+        assert.ok(size < N * (big.length + 64),
+          `文件大小 ${size} 与写入量相当，说明轮转根本没发生`);
+
+        const recs = store.loadLogs(id);
+        assert.ok(recs.length > 0, '轮转后读不回任何日志');
+
+        // ② 标记行真的写进去了：必须是第一条、stream='meta'、且说清丢了多少字节
+        const marker = recs[0];
+        assert.strictEqual(marker.stream, 'meta', `轮转后第一条不是标记行（stream=${marker.stream}）`);
+        assert.match(marker.line, /超过 4MB 上限，已丢弃最旧的 \d+ 字节/, `标记行内容不对：${marker.line}`);
+        assert.ok(marker.n > 1, `标记行 n=${marker.n}，说明最旧的日志一条都没丢 —— 这条用例没验到东西`);
+
+        // 标记行的 n 必须 = 第一条保留行的 n - 1（lib/store.mjs:rotate 的约定）
+        const kept = recs.slice(1);
+        assert.ok(kept.length > 0, '标记行之后一条日志都没有');
+        assert.strictEqual(marker.n, kept[0].n - 1,
+          `标记行 n=${marker.n}，首条保留行 n=${kept[0].n}（应差 1）`);
+
+        // ③ 序号连续、不跳号 —— 续传靠的就是这个
+        for (let i = 1; i < recs.length; i++) {
+          assert.strictEqual(recs[i].n, recs[i - 1].n + 1,
+            `序号不连续：第 ${i - 1} 条 n=${recs[i - 1].n} → 第 ${i} 条 n=${recs[i].n}`);
+        }
+        // 保最新：最后一条就是最后写入的那条
+        assert.strictEqual(recs[recs.length - 1].n, N, `最后一条 n=${recs[recs.length - 1].n}，期望 ${N}`);
+
+        // ④ 续传语义：lib/jobs.mjs:subscribe 的 gap 判据是「保留的首行 n > from + 1」。
+        //    客户端已经收到过标记行（lastEventId = marker.n）之后再续传，必须**不发 gap、不重不漏**。
+        const from = marker.n;
+        const firstN = recs[0].n;
+        assert.ok(!(firstN > from + 1),
+          `从标记行之后续传会被判成有缺口（firstN=${firstN} > from+1=${from + 1}）—— 客户端会多报一次 gap`);
+        assert.deepStrictEqual(recs.filter((r) => r.n > from).map((r) => r.n), kept.map((r) => r.n),
+          '续传补发的行与保留行不一致（重发或漏发）');
+
+        ctx.note(`⑦ 落盘轮转：写 ${N} 条 ≈ ${((N * (big.length + 64)) / 1048576).toFixed(1)}MB → 轮转到 `
+          + `${(size / 1048576).toFixed(2)}MB（单任务上限 ${(CAPS.perJobLogBytes / 1048576).toFixed(0)}MB）；`
+          + `标记行 n=${marker.n}，首条保留行 n=${kept[0].n}，共 ${recs.length} 条、序号连续到 ${recs[recs.length - 1].n}`);
+      } finally {
+        try { store.dropLog(id); } catch { /* ignore */ }
+        try { fs.unlinkSync(file); } catch { /* ignore */ }
       }
     },
   },

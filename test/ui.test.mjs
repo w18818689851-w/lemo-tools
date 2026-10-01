@@ -3,7 +3,7 @@
  * test/ui.test.mjs —— lemo 控制台 **Web UI 层**测试（第四批新增，独立入口）
  *
  * 为什么单独一个入口：`test/README.md` 里如实写着「Web UI 交互：一条都没测」——
- * 现有 40 条全是服务端的（smoke 28 + setup 12），只保证「服务端发给前端的数据是对的」，
+ * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
  * 用法：
@@ -578,7 +578,7 @@ async function main() {
       notes.push('A4 #progEta 初始为空（不瞎猜）；<html data-theme="dark"> 默认深色');
     });
 
-    await runCase('A5 浅色主题的文字对比度全部过 WCAG AA（默认深色不受影响）', async () => {
+    await runCase('A5 两套主题的文字对比度全部过 WCAG AA（深色是默认主题，同样要达标）', async () => {
       const css = fs.readFileSync(path.join(ROOT, 'web', 'style.css'), 'utf8');
       const dark = parseVars(css, ':root {');
       const light = parseVars(css, 'html[data-theme="light"] {');
@@ -597,12 +597,60 @@ async function main() {
       }
       state.contrastRows = rows;
       need(bad.length === 0, `浅色主题下这些文字对比度不达标（WCAG AA）：\n  ${bad.join('\n  ')}`);
-      // 深色是默认主题，只记录不设卡（改动前就在用的那套，本批没有改它的取值）
-      const darkRows = contrastPairs(dark).map(([label, f, b]) => `${label} = ${contrast(f, b).toFixed(2)}`);
-      notes.push(`A5 浅色对比度（共 ${rows.length} 项，全部 ≥ 4.5）最低三项：`
-        + rows.slice().sort((a, b) => parseFloat(a.split('= ')[1]) - parseFloat(b.split('= ')[1])).slice(0, 3).join('；'));
-      notes.push(`A5 深色对比度（对照，未改动）：最低三项 `
-        + darkRows.slice().sort((a, b) => parseFloat(a.split('= ')[1]) - parseFloat(b.split('= ')[1])).slice(0, 3).join('；'));
+
+      // ★ 深色是**默认主题**，所以它同样要达标 —— 第五批修的就是深色 --fg-faint
+      //   （原 #5d6b7c：on --bg 3.48 / on --bg-2 3.21，都是 12px 小字，AA 要求 4.5）。
+      //   两套主题共用同一份 contrastPairs，避免「浅色卡了、深色漏了」。
+      const darkBad = [];
+      const darkRows = [];
+      for (const [label, f, b, min] of contrastPairs(dark)) {
+        const r = contrast(f, b);
+        darkRows.push(`${label} = ${r.toFixed(2)}`);
+        if (r < min) darkBad.push(`${label}：${r.toFixed(2)} < ${min}`);
+      }
+      need(darkBad.length === 0, `深色主题下这些文字对比度不达标（WCAG AA）：\n  ${darkBad.join('\n  ')}`);
+
+      const low3 = (arr) => arr.slice()
+        .sort((a, b) => parseFloat(a.split('= ')[1]) - parseFloat(b.split('= ')[1]))
+        .slice(0, 3).join('；');
+      notes.push(`A5 浅色对比度（共 ${rows.length} 项，全部 ≥ 4.5）最低三项：${low3(rows)}`);
+      notes.push(`A5 深色对比度（共 ${darkRows.length} 项，全部 ≥ 4.5）最低三项：${low3(darkRows)}`);
+    });
+
+    await runCase('A7 演练模式渲染出的文案里没有 `**` 字面量（模板串走 textContent，不认 markdown）', async () => {
+      // ★ 为什么要有它：控制台里有两类**纯文本**模板串是经 textContent 渲染的 ——
+      //   web/app.js 的 #setupIntro / .env-note，以及 lib/setup.mjs 给手动项写的
+      //   manual.note / manual.steps / impact（服务端拼好、前端 el(...) 原样 textContent）。
+      //   markdown 的 `**粗体**` 在它们身上会**原样显示成两个星号**。
+      //   第五批把 app.js 4 处 + setup.mjs 9 处改成「」引号，这条钉住它不再回潮。
+      //   ?simulate=<场景> = 演练模式：这台 12/12 ok 的机器也能看到环境备注与安装引导卡片
+      //   （否则那些元素根本不渲染，用例会变成空转）。三个场景合起来覆盖全部卡片的文案。
+      const stripComments = (h) => h.replace(/<!--[\s\S]*?-->/g, '');   // index.html 的注释里本来就有 `**`，那不是渲染内容
+      const seen = [];
+      for (const sc of ['clean', 'bare', 'partial']) {
+        const dom = stripComments(await dumpDom(edge, `${base}/?simulate=${sc}`));
+
+        // 反空转：这个场景必须真的渲染出了安装卡片
+        const cards = (dom.match(/class="setup-item /g) || []).length;
+        need(cards > 0, `?simulate=${sc} 下渲染出 0 张安装卡片 —— 演练模式没生效，这条用例没验到东西`);
+
+        // 全域扫描：渲染出来的 DOM 里一处 `**` 都不该有
+        const hits = [...dom.matchAll(/\*\*/g)]
+          .map((m) => dom.slice(Math.max(0, m.index - 45), m.index + 45).replace(/\s+/g, ' '));
+        need(hits.length === 0,
+          `?simulate=${sc} 渲染出的 DOM 里有 ${hits.length} 处 \`**\` 字面量（会被 textContent 原样显示）：\n  ${hits.join('\n  ')}`);
+
+        if (sc === 'bare') {
+          // 环境备注（含「演练模式」那句）必须真的渲染出来了
+          const envNotes = [...dom.matchAll(/<div class="env-note"[^>]*>([\s\S]*?)<\/div>/g)]
+            .map((m) => m[1].replace(/<[^>]*>/g, ''));
+          need(envNotes.length > 0, 'DOM 里找不到 .env-note（环境备注没渲染）');
+          need(envNotes.some((t) => t.includes('演练模式')),
+            `.env-note 里没有「演练模式」字样：${envNotes.join(' | ').slice(0, 160)}`);
+        }
+        seen.push(`?simulate=${sc} 渲染出 ${cards} 张卡片`);
+      }
+      notes.push(`A7 演练模式（clean/bare/partial）渲染出的 DOM 里 0 处 \`**\` 字面量；${seen.join('；')}`);
     });
 
     await runCase('A6 回归锚点：前三批的 UI 元素仍在（进度条/预设/空状态/复制/分组/侧栏/排序）', async () => {
@@ -748,21 +796,31 @@ async function main() {
       const bodyTxt = await cdp.evalJs(`document.getElementById('batchBody').textContent`);
       need(/--dry-run/.test(bodyTxt), `弹层没回显 --dry-run 参数：${bodyTxt.slice(0, 200)}`);
 
+      // ★ 先记下「入队前已有的 batchId 集合」，后面只看**新增**的批次。
+      //   为什么必须这样：任务历史是**落盘持久化**的（lib/store.mjs），上一次运行留下的
+      //   批次任务会留在 /api/jobs 里。若直接断言「batchId 的任务数 === 2」，
+      //   本用例**第一次跑会绿、第二次跑必红** —— 那种「时红时绿」的测试比没有测试更糟。
+      const priorBatchIds = new Set(
+        ((await get('/api/jobs')).json.jobs || []).map((j) => j.batchId).filter(Boolean),
+      );
+
       // 被并发锁占用时按钮 id 会变成 btnBatchGoRisk —— 两个都认
       await cdp.evalJs(`(document.getElementById('btnBatchGo')||document.getElementById('btnBatchGoRisk')).click()`);
       await waitFor(cdp.evalJs, `document.getElementById('batchModal').hidden === true`, { timeoutMs: 20000 });
       await waitFor(cdp.evalJs, `document.getElementById('batchCount').textContent === '已选 0 个'`, { timeoutMs: 20000 });
 
-      // 服务端核实：真的进了 2 条、同一个 batchId、序号 1/2
+      // 服务端核实：真的进了 2 条、同一个 batchId、序号 1/2（只看本次新增的批次）
       let batch = [];
       const t0 = Date.now();
       while (Date.now() - t0 < 20000) {
         const r = await get('/api/jobs');
-        batch = (r.json.jobs || []).filter((j) => j.batchId);
+        batch = (r.json.jobs || []).filter((j) => j.batchId && !priorBatchIds.has(j.batchId));
         if (batch.length >= 2) break;
         await sleep(300);
       }
-      need(batch.length === 2, `服务端只看到 ${batch.length} 条带批次标记的任务，期望 2 条`);
+      need(batch.length === 2,
+        `本次新增的批次任务应为 2 条，实际 ${batch.length} 条` +
+        `（入队前已有 ${priorBatchIds.size} 个历史批次，已排除）`);
       const [a, b] = batch.slice().sort((x, y) => x.batchIndex - y.batchIndex);
       need(a.batchId === b.batchId, `两条任务的 batchId 不同：${a.batchId} / ${b.batchId}`);
       need(a.batchIndex === 1 && b.batchIndex === 2, `批次序号是 ${a.batchIndex}/${b.batchIndex}，期望 1/2`);

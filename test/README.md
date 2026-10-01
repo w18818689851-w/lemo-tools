@@ -10,7 +10,7 @@ node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12 条）
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（20 条）
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（21 条）
 ```
 
 `test/setup.test.mjs` 与 `test/ui.test.mjs` 都是**独立入口**，故意不并进 `smoke.mjs`：安装逻辑、UI 层各自一个数字，三边互不干扰。
@@ -21,7 +21,7 @@ node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + C
 
 ---
 
-## 覆盖了什么（28 条，`--full` 时 29 条）
+## 覆盖了什么（30 条，`--full` 时 31 条）
 
 ### ① 编排器未被改坏（红线）
 
@@ -58,6 +58,7 @@ node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + C
 | `POST /api/run`（非法 slug / 非法 opts） | 400（注入防护） |
 | 目录穿越（4 种变形） | 状态码 400/403/404 且响应体不含 server.mjs 源码特征串；**对照**：`/app.js` 必须 200 —— 否则「不是 200」可能只是静态服务整体坏了 |
 | markdown 渲染器转义（**单测**） | 直接给 `lib/styles.mjs` 喂 `<script>` / `<img onerror=>` / `javascript:` 链接 / 表格里的 `<svg onload=>`，断言输出里没有可执行内容 |
+| 端口后扫决策（**单测**） | 直接测 `lib/portscan.mjs` 的 `scanPort()`（server.mjs 的 `start()` 调的就是它），用**假 binder** 覆盖六条分支：一绑就上（不多试）· **EACCES 才向后扫**（7788→7789→7790→7791，`moved=true`）· EADDRINUSE **不换端口** · 其它错误**不换端口** · 整段保留 → 扫满 `MAX_SCAN+1` 个后放弃 · 越过 65535 立即放弃。并断言 `MAX_SCAN === 40` / `MAX_PORT === 65535` |
 
 > 注入检查只扫**真正的标签**（`<tag …>`），不扫转义后的正文 —— 否则正文里写 `&lt;img onerror=x&gt;`（已转义成纯文本、完全无害）会假阳性。
 
@@ -110,11 +111,15 @@ node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + C
 | `?lastEventId=N` 增量补发 | 先全量回放拿到序号序列 → 取中间某个 N → 再带 `lastEventId=N` 连一次 → 收到的行**逐个等于** `n > N` 的那些行（`deepStrictEqual`），且不该出现 `gap`；`hello` 帧的 `resumed===true` / `resumeFrom===N` |
 | `Last-Event-ID` 请求头 | 用请求头（浏览器自动重连走这条）续传结果一致；**头与 query 同时给时以头为准** |
 | 跨重启 `logSeq` 稳定 | 重启测试服务 → 该任务从磁盘恢复（`restored===true`、状态仍是 `done`）→ 再次全量回放，**序号与日志正文与重启前逐字一致** |
-| `gap` 事件 | 造一个真产出 **20050 行**的安装任务（内存上限 `MAX_LOG_LINES=20000`，超出丢最旧）→ 内存里只剩最后 20000 行（首行 `n=55`）→ 从 `lastEventId=1` 续传 → **先发 `gap`**（`from=2 to=54 dropped=53`）再补发剩下的 20000 行 |
+| `gap` 事件（**内存**裁剪） | 造一个真产出 **20050 行**的安装任务（内存上限 `MAX_LOG_LINES=20000`，超出丢最旧）→ 内存里只剩最后 20000 行（首行 `n=55`）→ 从 `lastEventId=1` 续传 → **先发 `gap`**（`from=2 to=54 dropped=53`）再补发剩下的 20000 行 |
+| **落盘**轮转（4MB 单任务截断） | 直接调 `lib/store.mjs`：用真实上限 `CAPS.perJobLogBytes` 真写满一次（2400 条 × ~2KB ≈ 4.8MB）→ 断言 ① 文件**不超过**上限（实测轮转到 2.83MB）② **标记行真的写进去了**（第一条、`stream='meta'`、含「超过 4MB 上限，已丢弃最旧的 N 字节」、且 `n > 1`）③ 标记行的 `n == 首条保留行 n - 1` ④ 轮转后**序号连续不跳号**、末条 `n == 写入条数`（保最新）⑤ 从标记行之后续传**不发 `gap`、不重不漏**（把 `lib/jobs.mjs:subscribe` 的 gap 判据原样套一遍） |
 
 > `gap` 的触发条件（`lib/jobs.mjs:539`）是「保留的第一行序号 > from+1」，也就是**日志被从前面裁掉过**。
 > 它确实可达，只有两条路径：内存超 20000 行、或落盘轮转（4MB 截断会写一条 `n = 首行n-1` 的标记行）。
-> 这里走的是第一条，代价是 ~10 秒（2 万次 `appendFileSync`）—— 这是默认套件里最慢的一条。
+> 上面两条分别走这两条路径：`gap` 那条走**内存**（代价 ~10 秒，2 万次 `appendFileSync`，是默认套件里最慢的一条）；
+> **落盘**轮转那条直接调 `store.appendLog()` 写满 4MB（~0.9 秒，因为它不经过 jobs 队列，也不起任何子进程）。
+> ★ 落盘轮转那条验的是**数据层的不变量**（标记行位置 + 序号连续）—— 这正是 SSE 续传依赖的东西；
+> 真正的「活 SSE 流上续传」由 `gap` 那条覆盖（两者合起来才是完整的）。
 
 ### ⑧ 并发锁的真冲突态
 
@@ -149,9 +154,12 @@ node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + C
 - **`/api/setup/run` 的「真跑一次安装」**：不测 —— 它会真的改环境（apt / clone / pip）。只测了校验分支（幂等跳过、未知动作、手动项拒跑）。
   （所以「安装任务的取消」走的是 `jobs.enqueueSetup()` 直调，不是 HTTP —— 这台机器 12/12 ok，`planActions()` 一个动作都规划不出来，走 HTTP 根本入不了队。）
 - **`POST /api/reveal`**：会弹资源管理器窗口，不测。
-- **落盘上限 / 轮转**：`lib/store.mjs` 的 4MB 单任务轮转、64MB 总量裁剪、120 条上限没测。
-  （`gap` 那条验的是**内存**裁剪（20000 行），不是**落盘**轮转（4MB）；后者的标记行机制只从代码上核对过。）
-- **Windows 保留端口的 `EACCES` 后扫**：`server.mjs` 那段自动向后扫描没测（要制造保留段）。
+- **落盘总量上限**：`lib/store.mjs` 的 **64MB 日志总量裁剪**、**120 条索引上限**（`saveIndex` 的两条
+  裁剪路径）**仍没测** —— 要触发它们得先造出 64MB 日志 / 121 条任务记录，代价与风险都不划算。
+  （**4MB 单任务轮转**已在 ⑦ 补测，见上；`gap` 那条验的是**内存**裁剪（20000 行），两者不是一回事。）
+- **Windows 保留端口的 `EACCES` 后扫**：**决策逻辑已测**（`lib/portscan.mjs` 的纯函数单测，见 ③），
+  但**真实触发**仍没测 —— 要真造一个保留段得改系统配置（`netsh` 圈端口），测试不去动它。
+  也就是说：「决策对不对」有断言，「在真保留段上确实会后扫」只有 `server.mjs` 调它这一条路径可推。
 - **`lib/env.mjs` 的各项判据**：只断言了 `/api/env` 的**结构**（字段在不在、类型对不对），不断言 WSL/ffmpeg/字体的**具体探测结果** —— 那依赖机器状态，断死会变成假失败。
 - **取消「真渲染」任务**：不测 —— 会打断 mux、会动用户成片目录。取消验的是 dry-run（无害长任务）。
 - **`DELETE` 一个不存在的任务 id / 排队中的任务**：没测（只测了「运行中取消」与「已结束再取消 → 400」）。
@@ -207,7 +215,7 @@ node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + C
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（20 条，第四批新增）
+## `test/ui.test.mjs` 覆盖了什么（21 条：第四批 20 条 + 第五批 1 条）
 
 补的就是上面「没覆盖什么」里那条 —— **前端渲染出来对不对**。三种手段从弱到强：
 
@@ -219,8 +227,9 @@ node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + C
 | A2 | 批量入队 UI 存在：`.si-check` 复选框数 == 风格数 · `#sideBatch` / `#batchCount` / `#btnBatchQueue` / `#btnBatchClear` 都在 · 初始「已选 0 个」· 初始 `disabled` |
 | A3 | `#batchModal` / `#batchBody` / `#batchFoot` / `#helpModal` / `#btnHelp` / `#btnHelp2` / `.kbd-hint` 都在，且提示里含 `<kbd>Ctrl</kbd>`+`<kbd>Enter</kbd>` |
 | A4 | `#progEta` 挂载点存在且**初始为空**（无历史不许显示数字）· `<html data-theme="dark">`（默认仍是深色） |
-| A5 | 从 `style.css` 里解析两套调色板，按 WCAG 2.1 算 **18 组**前景/背景对比度：浅色主题全部 ≥ 4.5（深色只记录作对照） |
+| A5 | 从 `style.css` 里解析两套调色板，按 WCAG 2.1 算 **18 组**前景/背景对比度：**浅色与深色都必须全部 ≥ 4.5**（第五批把深色也设成卡点 —— 深色是默认主题；顺带修了深色 `--fg-faint`：3.48/3.21 → 4.91/4.54） |
 | A6 | 前三批的 13 个 UI 锚点（进度条 / 空状态 / 复制 / 分组 / 侧栏 / 排序 / 向导 / 预检位 / 预设…）在渲染后的 DOM 里仍在 |
+| A7 | 用 `?simulate=clean|bare|partial`（演练模式，这台 12/12 ok 的机器也能看到环境备注与安装引导卡片）逐个 `--dump-dom`，**去掉 HTML 注释后全域扫描**，断言渲染出的 DOM 里 **0 处 `` `**` `` 字面量** —— 控制台里有两类纯文本模板串走 `textContent`：`web/app.js` 的 `#setupIntro`/`.env-note`，以及 `lib/setup.mjs` 给手动项写的 `manual.note`/`steps`/`impact`（第五批一共改了 **4 + 9 = 13 处**，全换成「」引号）。并断言每个场景**真的渲染出了 ≥1 张安装卡片**、`.env-note` 里真有「演练模式」字样（否则用例是空转） |
 
 **B. CDP 真交互（9 条）**
 

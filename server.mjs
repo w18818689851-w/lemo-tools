@@ -23,6 +23,7 @@ import { checkEnv, CFG } from './lib/env.mjs';
 import * as jobs from './lib/jobs.mjs';
 import * as store from './lib/store.mjs';
 import { readStyleIndex, renderMarkdown } from './lib/styles.mjs';
+import { scanPort, MAX_SCAN } from './lib/portscan.mjs';
 import {
   planActions, serializeAction, knownActionIds, actionSatisfied, simulateEnv, FIXTURES,
 } from './lib/setup.mjs';
@@ -279,7 +280,7 @@ function apiPrecheck(req, res, url) {
     // 给 UI 直接显示的人话（UI 不重新拼判据 —— 判据只有一处）
     message: lk.locked
       ? `已有另一个 lemo-make 在跑同一个 demo（pid ${lk.pid}，锁创建于 ${lk.lockAgeSec} 秒前）。`
-        + '并发跑会往同一批文件写；mux.sh 没有输出锁，交错写会产出**损坏的成片**（本项目实测过）。'
+        + '并发跑会往同一批文件写；mux.sh 没有输出锁，交错写会产出「损坏的成片」（本项目实测过）。'
       : (lk.stale
         ? `发现陈旧并发锁（pid ${lk.pid ?? '?'} 已不在，锁龄 ${lk.lockAgeSec} 秒）—— 编排器会自动接管，属正常情况，不视为冲突。`
         : ''),
@@ -699,8 +700,10 @@ const server = http.createServer(async (req, res) => {
 //                   并把「实际用的是哪个」**显著打出来**（是「换并告知」，不是静默换）。
 //
 // 实测本机被圈走：7699-7798 / 7899-8698 / 10592-10691 / 50000-50059（默认 7788 正落在第一段）。
-
-const MAX_SCAN = 40;
+//
+// ★ 「向后扫到第几个端口」这套**决策**本身抽在 lib/portscan.mjs（scanPort / MAX_SCAN）里 ——
+//   纯函数、可单测：真造一个保留段要改系统配置，测试没法复现，所以把绑定 IO 作为参数注入，
+//   用假 binder 覆盖 EACCES / EADDRINUSE / 其它错误 / 扫到边界四条分支。这里只负责绑定与报错。
 
 /**
  * 把**实际**监听端口写进两个固定文件（见文件头说明）。
@@ -744,71 +747,71 @@ function tryListen(port) {
 
 async function start() {
   const want = ARGV.port;
-  for (let i = 0; i <= MAX_SCAN; i++) {
-    const port = want + i;
-    if (port > 65535) break;
-    const r = await tryListen(port);
+  // 「绑不上时要不要往后扫」这套决策在 lib/portscan.mjs（纯函数，可单测）。
+  // 这里只做两件事：把绑定函数注入进去、把结果翻译成人话日志与退出码。
+  const res = await scanPort(want, tryListen);
 
-    if (r.ok) {
-      if (port !== want) {
-        console.log('');
-        console.log(`  ⚠️  默认端口 ${want} 落在 Windows 保留端口段内（Hyper-V/WSL 圈走，系统不允许绑定）。`);
-        console.log(`     已自动改用 ${port}。**这些保留段每次重启都会变** —— 想固定请显式指定：`);
-        console.log(`       node server.mjs --port <端口>   或设环境变量 LEMO_CONSOLE_PORT`);
-        console.log(`     排查保留段：netsh interface ipv4 show excludedportrange protocol=tcp`);
-      }
-      ARGV.port = port; // 让后续日志与实际端口一致
-      console.log(`\n  lemo 控制台已启动 → http://${ARGV.host}:${port}`);
-      console.log(`  成片目录 ${CFG.exportDir}`);
-      console.log(`  风格目录 ${path.join(CFG.winLib, 'styles')}`);
-      const st = store.storeStatus();
-      console.log(st.ready
-        ? `  历史落盘 ${st.root}（单任务日志 ≤ ${(st.caps.perJobLogBytes / 1048576).toFixed(0)}MB，总计 ≤ ${(st.caps.totalLogBytes / 1048576).toFixed(0)}MB，最多 ${st.caps.maxPersistJobs} 条）`
-        : `  ⚠️ 历史落盘不可用：${st.disabledReason}（任务照常跑，只是重启后看不到历史）`);
+  if (res.ok) {
+    const port = res.port;
+    if (port !== want) {
+      console.log('');
+      console.log(`  ⚠️  默认端口 ${want} 落在 Windows 保留端口段内（Hyper-V/WSL 圈走，系统不允许绑定）。`);
+      console.log(`     已自动改用 ${port}。**这些保留段每次重启都会变** —— 想固定请显式指定：`);
+      console.log(`       node server.mjs --port <端口>   或设环境变量 LEMO_CONSOLE_PORT`);
+      console.log(`     排查保留段：netsh interface ipv4 show excludedportrange protocol=tcp`);
+    }
+    ARGV.port = port; // 让后续日志与实际端口一致
+    console.log(`\n  lemo 控制台已启动 → http://${ARGV.host}:${port}`);
+    console.log(`  成片目录 ${CFG.exportDir}`);
+    console.log(`  风格目录 ${path.join(CFG.winLib, 'styles')}`);
+    const st = store.storeStatus();
+    console.log(st.ready
+      ? `  历史落盘 ${st.root}（单任务日志 ≤ ${(st.caps.perJobLogBytes / 1048576).toFixed(0)}MB，总计 ≤ ${(st.caps.totalLogBytes / 1048576).toFixed(0)}MB，最多 ${st.caps.maxPersistJobs} 条）`
+      : `  ⚠️ 历史落盘不可用：${st.disabledReason}（任务照常跑，只是重启后看不到历史）`);
 
-      // 固定入口：把**实际**端口落盘，让用户有个不会变的地址（见文件头 PORT_FILE 的说明）
-      const entry = writeEntryFiles(port);
-      if (entry.ok) {
-        console.log(`  固定入口已更新：${PORT_FILE} = ${port} · ${URL_FILE} → ${entry.url}`);
-        console.log(`  （双击「打开控制台.url」即可进入；这两个文件退出时**不删**，下次启动覆盖）`);
-      } else {
-        console.log(`  ⚠️ 固定入口写入不完整（${entry.failed.join('、')}），不影响使用`);
-      }
-      console.log(`  Ctrl+C 停止（正在跑的任务会被一起终止）\n`);
-      if (ARGV.simulateEnv) {
-        console.log(`  ⚠️  演练模式（--simulate-env=${ARGV.simulateEnv}）：/api/env 返回的是**合成**的检测结果，`);
-        console.log(`      用来预览首次运行引导。安装按钮仍在，但请勿在演练模式下真的点它。\n`);
-      }
-
-      // 自动开浏览器 —— 用**实际**监听端口（可能已被自动后扫改过），
-      // 所以这件事必须由服务自己做，不能让启动脚本猜。
-      if (ARGV.open) {
-        const host = ARGV.host === '0.0.0.0' ? '127.0.0.1' : ARGV.host;
-        const url = `http://${host}:${port}`;
-        try {
-          spawn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
-        } catch (e) {
-          console.error(`  （自动打开浏览器失败：${e.message} —— 请手动访问 ${url}）\n`);
-        }
-      }
-      return;
+    // 固定入口：把**实际**端口落盘，让用户有个不会变的地址（见文件头 PORT_FILE 的说明）
+    const entry = writeEntryFiles(port);
+    if (entry.ok) {
+      console.log(`  固定入口已更新：${PORT_FILE} = ${port} · ${URL_FILE} → ${entry.url}`);
+      console.log(`  （双击「打开控制台.url」即可进入；这两个文件退出时**不删**，下次启动覆盖）`);
+    } else {
+      console.log(`  ⚠️ 固定入口写入不完整（${entry.failed.join('、')}），不影响使用`);
+    }
+    console.log(`  Ctrl+C 停止（正在跑的任务会被一起终止）\n`);
+    if (ARGV.simulateEnv) {
+      console.log(`  ⚠️  演练模式（--simulate-env=${ARGV.simulateEnv}）：/api/env 返回的是**合成**的检测结果，`);
+      console.log(`      用来预览首次运行引导。安装按钮仍在，但请勿在演练模式下真的点它。\n`);
     }
 
-    if (r.code === 'EADDRINUSE') {
-      console.error(`\n✗ 端口 ${port} 已被其它进程占用（EADDRINUSE）。`);
-      console.error(`  本服务**不会**自动换端口 —— 换端口会静默起第二个实例，`);
-      console.error(`  而你可能只是想确认它有没有在跑。`);
-      console.error(`  排查：netstat -ano | findstr :${port}   （末列是 PID）`);
-      console.error(`  换端口：node server.mjs --port 17788   （或设环境变量 LEMO_CONSOLE_PORT）\n`);
-      process.exit(3);
+    // 自动开浏览器 —— 用**实际**监听端口（可能已被自动后扫改过），
+    // 所以这件事必须由服务自己做，不能让启动脚本猜。
+    if (ARGV.open) {
+      const host = ARGV.host === '0.0.0.0' ? '127.0.0.1' : ARGV.host;
+      const url = `http://${host}:${port}`;
+      try {
+        spawn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
+      } catch (e) {
+        console.error(`  （自动打开浏览器失败：${e.message} —— 请手动访问 ${url}）\n`);
+      }
     }
-
-    if (r.code !== 'EACCES') {
-      console.error(`\n✗ 无法在 ${ARGV.host}:${port} 上启动服务（${r.code || '未知错误'}）。\n`);
-      process.exit(3);
-    }
-    // EACCES → 落在保留段，继续向后扫
+    return;
   }
+
+  if (res.reason === 'inuse') {
+    console.error(`\n✗ 端口 ${res.port} 已被其它进程占用（EADDRINUSE）。`);
+    console.error(`  本服务**不会**自动换端口 —— 换端口会静默起第二个实例，`);
+    console.error(`  而你可能只是想确认它有没有在跑。`);
+    console.error(`  排查：netstat -ano | findstr :${res.port}   （末列是 PID）`);
+    console.error(`  换端口：node server.mjs --port 17788   （或设环境变量 LEMO_CONSOLE_PORT）\n`);
+    process.exit(3);
+  }
+
+  if (res.reason === 'error') {
+    console.error(`\n✗ 无法在 ${ARGV.host}:${res.port} 上启动服务（${res.code || '未知错误'}）。\n`);
+    process.exit(3);
+  }
+
+  // exhausted：从 want 向后扫满 MAX_SCAN 个（或越过 65535）都绑不上
   console.error(`\n✗ 从 ${want} 向后扫了 ${MAX_SCAN} 个端口都绑不上（都落在 Windows 保留段内）。`);
   console.error(`  请显式指定一个端口：node server.mjs --port <端口>\n`);
   process.exit(3);

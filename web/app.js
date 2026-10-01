@@ -294,8 +294,8 @@ function renderEnv(data) {
 
   const note = el('div', 'env-note',
     `检查时间 ${fmtTime(new Date(data.checkedAt).getTime())}${data.cached ? '（缓存）' : ''}`
-    + (data.simulated ? ` · ⚠️ **演练模式**（合成结果 ${data.simulated}，不是真实检测）` : '')
-    + ` · 环境自检是**咨询性**的：fail 不会阻止你启动任务，只做提示。`);
+    + (data.simulated ? ` · ⚠️ 「演练模式」（合成结果 ${data.simulated}，不是真实检测）` : '')
+    + ` · 环境自检是「咨询性」的：fail 不会阻止你启动任务，只做提示。`);
   box.appendChild(note);
 }
 
@@ -411,9 +411,9 @@ function renderSetup(data) {
   $('setupIntro').textContent =
     `环境检测发现 ${data.summary.fail} 个 fail、${data.summary.warn} 个 warn。`
     + `其中 ${nAuto} 项控制台可以替你装（点「安装」，在后台跑，日志在下面「实时日志」里看）；`
-    + `${nManual} 项**必须你手动做**（装 WSL 发行版要重启、装 Windows ffmpeg 二进制、装显卡驱动这类，`
+    + `${nManual} 项「必须你手动做」（装 WSL 发行版要重启、装 Windows ffmpeg 二进制、装显卡驱动这类，`
     + `控制台代劳只会把事情搞坏）。装完会自动重新检测。`
-    + `（提醒：环境自检是咨询性的，有问题也**不阻止**你启动任务。）`;
+    + `（提醒：环境自检是咨询性的，有问题也「不阻止」你启动任务。）`;
 
   for (const a of actions) list.appendChild(actionCard(a));
 
