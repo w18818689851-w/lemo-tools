@@ -550,6 +550,10 @@ export const SERVER_CASES = [
       assert.strictEqual(r.status, 200, `POST /api/run 状态码 ${r.status}：${r.text.slice(0, 300)}`);
       const job = r.json.job;
       assert.ok(job && typeof job.id === 'string' && job.id, `返回里没有 job.id：${r.text.slice(0, 300)}`);
+      // ★ 必须登记（第六批补）：这个任务会写进 D:\lemo-films\.console\index.json + logs/<id>.jsonl。
+      //   早先漏了这两行，结果是**每跑一次 smoke 就往用户历史里多留 2 条 dry-run 任务**
+      //   （文件头注释本来就写着「有副作用的几件事全部登记在 ARTIFACTS 里」，只是这两处没落实）。
+      ARTIFACTS.jobIds.add(job.id);
       ctx.note(`④ 任务已入队：${job.id}`);
 
       // ── 2) 轮询到结束 ──
@@ -608,6 +612,7 @@ export const SERVER_CASES = [
         const r = await ctx.post('/api/run', { slug: 'ascii-crt', opts: ['--skip-sync', '--dry-run'] });
         assert.strictEqual(r.status, 200, `POST /api/run 状态码 ${r.status}：${r.text.slice(0, 300)}`);
         const id = r.json.job.id;
+        ARTIFACTS.jobIds.add(id);   // ★ 必须登记（第六批补）：同上，否则每次跑 smoke 都留一条
         ctx.note(`⑥ 待取消任务：${id}`);
 
         // 1) 等到 running 并拿到 pid（enqueue 内部同步 startJob，POST 返回时通常已经是 running）
@@ -1160,6 +1165,181 @@ export const PROCESS_CASES = [
       } finally {
         try { store.dropLog(id); } catch { /* ignore */ }
         try { fs.unlinkSync(file); } catch { /* ignore */ }
+      }
+    },
+  },
+  {
+    // ★ 补 test/README.md「没覆盖什么」里的第二条：lib/store.mjs 的 **64MB 日志总量裁剪**。
+    //   ⑦ 验的是单任务 4MB 轮转（rotate），这条验的是 saveIndex 的第 ② 段（总量裁剪）——
+    //   是**两条完全不同的代码路径**，别把前者当后者。
+    //   真按**真实上限**造数据（40 × 2MB = 80MB > 64MB），断言：
+    //   最旧的被裁掉 / 最新的保留 / 索引与实际文件一致 / 没有孤儿日志。
+    //   ⚠️ 会往 D:\lemo-films\.console 写 ~80MB 测试数据并覆写 index.json ——
+    //      跑前备份 index.json，finally 里把测试文件删干净、index.json 原样还原。
+    name: '⑧ 落盘总量裁剪：日志总量超 64MB 时从最旧开始丢（索引与文件一致，无孤儿）',
+    run: async (ctx) => {
+      const store = await import('../lib/store.mjs');
+      const CAPS = store.CAPS;
+      const loaded = store.loadIndex();
+      assert.strictEqual(loaded.ready, true, `store 未就绪（${loaded.error || '未知'}）—— 总量裁剪验不了`);
+
+      const logFile = (id) => path.join(CONSOLE_LOGS, `${id}.jsonl`);
+      const dirBytes = () => fs.readdirSync(CONSOLE_LOGS, { withFileTypes: true })
+        .filter((e) => e.isFile())
+        .reduce((s, e) => { try { return s + fs.statSync(path.join(CONSOLE_LOGS, e.name)).size; } catch { return s; } }, 0);
+
+      const hadIndex = fs.existsSync(CONSOLE_INDEX);
+      const indexBackup = hadIndex ? fs.readFileSync(CONSOLE_INDEX) : null;
+
+      const tag = `__fp-total-${process.pid}-${Date.now().toString(36)}`;
+      const N = 40;
+      const EACH = 2 * 1024 * 1024;
+      const ids = [];
+      const metas = [];
+      for (let i = 1; i <= N; i++) {
+        const id = `${tag}-${String(i).padStart(3, '0')}`;
+        ids.push(id);
+        ARTIFACTS.jobIds.add(id);
+        metas.push({ id, slug: '__test-total__', status: 'ended', n: i });
+      }
+
+      try {
+        const base = dirBytes();
+        for (const id of ids) fs.writeFileSync(logFile(id), 't'.repeat(EACH));
+        const before = dirBytes();
+        assert.ok(before > CAPS.totalLogBytes,
+          `测试数据 ${(before / 1048576).toFixed(1)}MB 没超过总量上限 ${(CAPS.totalLogBytes / 1048576).toFixed(0)}MB —— 这条用例没验到东西`);
+
+        store.saveIndex(metas);
+
+        const written = JSON.parse(fs.readFileSync(CONSOLE_INDEX, 'utf8'));
+        const kept = Array.isArray(written) ? written : written.jobs;
+        assert.ok(Array.isArray(kept), 'saveIndex 写出来的 index.json 里没有 jobs 数组');
+
+        // ① 真的裁了
+        assert.ok(kept.length < N, `索引里仍有 ${kept.length} 条（共写入 ${N} 条），总量裁剪没发生`);
+        // ② 留下的是**最新的一段**（后缀），最旧的被丢
+        const keptIds = kept.map((m) => m.id);
+        assert.deepStrictEqual(keptIds, ids.slice(N - keptIds.length),
+          `保留的不是最新的一段：${keptIds.slice(0, 3).join(',')} … ${keptIds.slice(-3).join(',')}`);
+        const dropped = ids.slice(0, N - keptIds.length);
+        assert.ok(dropped.length >= 1, '一条都没被裁掉');
+
+        // ③ 被裁掉的最旧任务，日志文件**真的删了**（不是只从索引里摘掉）
+        for (const id of dropped) {
+          assert.ok(!fs.existsSync(logFile(id)), `被裁掉的 ${id} 日志文件还在（应由 dropLog 删掉）`);
+        }
+        // ④ 保留下来的，日志文件都还在
+        for (const id of keptIds) {
+          assert.ok(fs.existsSync(logFile(id)), `保留的 ${id} 索引在、文件却不在`);
+        }
+        // ⑤ 索引与实际文件一致：logs 下不该有「本次测试前缀、但索引里没有」的孤儿
+        const orphan = fs.readdirSync(CONSOLE_LOGS)
+          .filter((f) => f.startsWith(tag) && !keptIds.includes(f.replace(/\.jsonl$/, '')));
+        assert.deepStrictEqual(orphan, [], `留下孤儿日志文件：${orphan.join(', ')}`);
+
+        // ⑥ 总量确实压回上限以内（用户既有日志本身没超上限时才成立）
+        const after = dirBytes();
+        if (base <= CAPS.totalLogBytes) {
+          assert.ok(after <= CAPS.totalLogBytes,
+            `裁剪后总量仍有 ${(after / 1048576).toFixed(1)}MB，超过 ${(CAPS.totalLogBytes / 1048576).toFixed(0)}MB`);
+        }
+        assert.strictEqual(after, base + keptIds.length * EACH,
+          `裁剪后总量 ${after} ≠ base(${base}) + 保留(${keptIds.length})×${EACH}`);
+
+        ctx.note(`⑧ 总量裁剪：造 ${N}×2MB=${(before / 1048576).toFixed(1)}MB（用户既有 ${(base / 1048576).toFixed(2)}MB）`
+          + ` → 裁掉最旧 ${dropped.length} 条，保留最新 ${keptIds.length} 条，总量回到 ${(after / 1048576).toFixed(1)}MB`);
+      } finally {
+        for (const id of ids) {
+          try { fs.unlinkSync(logFile(id)); } catch { /* ignore */ }
+          ARTIFACTS.jobIds.delete(id);       // 文件已自己删干净，别让 cleanupArtifacts 再动一次
+        }
+        try {
+          if (indexBackup) fs.writeFileSync(CONSOLE_INDEX, indexBackup);
+          else fs.unlinkSync(CONSOLE_INDEX);
+        } catch { /* ignore */ }
+      }
+    },
+  },
+  {
+    // ★ 补 test/README.md「没覆盖什么」里的第三条：lib/store.mjs 的 **120 条索引上限**。
+    //   saveIndex 的第 ① 段：条数超上限时从**最旧**开始丢（并同步 dropLog 删文件）。
+    //   断言：最旧的被永久删除 / 最近的保留 / **没有留下孤儿日志文件**。
+    name: '⑨ 索引条数上限：超过 120 条时最旧的被永久删除，且不留孤儿日志文件',
+    run: async (ctx) => {
+      const store = await import('../lib/store.mjs');
+      const CAPS = store.CAPS;
+      const loaded = store.loadIndex();
+      assert.strictEqual(loaded.ready, true, `store 未就绪（${loaded.error || '未知'}）—— 条数上限验不了`);
+
+      const logFile = (id) => path.join(CONSOLE_LOGS, `${id}.jsonl`);
+      const dirBytes = () => fs.readdirSync(CONSOLE_LOGS, { withFileTypes: true })
+        .filter((e) => e.isFile())
+        .reduce((s, e) => { try { return s + fs.statSync(path.join(CONSOLE_LOGS, e.name)).size; } catch { return s; } }, 0);
+
+      const hadIndex = fs.existsSync(CONSOLE_INDEX);
+      const indexBackup = hadIndex ? fs.readFileSync(CONSOLE_INDEX) : null;
+
+      const tag = `__fp-cap-${process.pid}-${Date.now().toString(36)}`;
+      const N = CAPS.maxPersistJobs + 10;      // 130 条（超上限 10 条）
+      const EACH = 512;                        // 小日志，避免顺带撞上 64MB 总量裁剪
+      const ids = [];
+      const metas = [];
+      for (let i = 1; i <= N; i++) {
+        const id = `${tag}-${String(i).padStart(3, '0')}`;
+        ids.push(id);
+        ARTIFACTS.jobIds.add(id);
+        metas.push({ id, slug: '__test-cap__', status: 'ended', n: i });
+      }
+
+      try {
+        const base = dirBytes();
+        // 前提：这点数据远不到 64MB，所以本用例走的**只**是条数裁剪那条路径，不会被总量裁剪混淆
+        assert.ok(base + N * EACH < CAPS.totalLogBytes,
+          `测试数据 ${((base + N * EACH) / 1048576).toFixed(2)}MB 撞上了总量上限 ${(CAPS.totalLogBytes / 1048576).toFixed(0)}MB —— 两条裁剪路径会混淆`);
+
+        for (const id of ids) fs.writeFileSync(logFile(id), 'c'.repeat(EACH));
+        store.saveIndex(metas);
+
+        const written = JSON.parse(fs.readFileSync(CONSOLE_INDEX, 'utf8'));
+        const kept = Array.isArray(written) ? written : written.jobs;
+        assert.ok(Array.isArray(kept), 'saveIndex 写出来的 index.json 里没有 jobs 数组');
+
+        // ① 条数被压到上限
+        assert.strictEqual(kept.length, CAPS.maxPersistJobs,
+          `索引里有 ${kept.length} 条，期望上限 ${CAPS.maxPersistJobs} 条`);
+        // ② 保留的是**最新的 120 条**（后缀）
+        const keptIds = kept.map((m) => m.id);
+        assert.deepStrictEqual(keptIds, ids.slice(N - CAPS.maxPersistJobs),
+          `保留的不是最新的 ${CAPS.maxPersistJobs} 条：${keptIds.slice(0, 3).join(',')} … ${keptIds.slice(-3).join(',')}`);
+        const dropped = ids.slice(0, N - CAPS.maxPersistJobs);   // 最旧的 10 条
+
+        // ③ 最旧的被**永久删除**（文件 + 索引条目都没了）
+        for (const id of dropped) {
+          assert.ok(!fs.existsSync(logFile(id)), `最旧的 ${id} 日志文件没被删掉（应是永久删除）`);
+          assert.ok(!keptIds.includes(id), `最旧的 ${id} 仍在索引里`);
+        }
+        // ④ 保留的，文件都还在
+        for (const id of keptIds) {
+          assert.ok(fs.existsSync(logFile(id)), `保留的 ${id} 索引在、文件却不在`);
+        }
+        // ⑤ ★ 没有孤儿：logs 目录里本次测试的文件数必须**正好等于**索引里的条数
+        const mine = fs.readdirSync(CONSOLE_LOGS).filter((f) => f.startsWith(tag));
+        assert.strictEqual(mine.length, CAPS.maxPersistJobs,
+          `logs 下本次测试的文件有 ${mine.length} 个，索引里只有 ${keptIds.length} 条 —— 留下了孤儿日志`);
+        const orphan = mine.filter((f) => !keptIds.includes(f.replace(/\.jsonl$/, '')));
+        assert.deepStrictEqual(orphan, [], `孤儿日志文件：${orphan.join(', ')}`);
+
+        ctx.note(`⑨ 条数上限：写 ${N} 条 → 索引保留最新 ${kept.length} 条，最旧 ${dropped.length} 条连文件一起永久删除，logs 下无孤儿`);
+      } finally {
+        for (const id of ids) {
+          try { fs.unlinkSync(logFile(id)); } catch { /* ignore */ }
+          ARTIFACTS.jobIds.delete(id);
+        }
+        try {
+          if (indexBackup) fs.writeFileSync(CONSOLE_INDEX, indexBackup);
+          else fs.unlinkSync(CONSOLE_INDEX);
+        } catch { /* ignore */ }
       }
     },
   },

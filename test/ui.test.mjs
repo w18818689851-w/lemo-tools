@@ -172,7 +172,7 @@ function freshProfile() {
 }
 
 /** 手段 1：无头 Edge --dump-dom —— 拿到**执行完 JS 之后**的真实 DOM。 */
-function dumpDom(edge, url, { budgetMs = 9000, timeoutMs = 60000 } = {}) {
+function dumpDomOnce(edge, url, { budgetMs = 9000, timeoutMs = 120000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(edge, [
       '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
@@ -200,6 +200,27 @@ function dumpDom(edge, url, { budgetMs = 9000, timeoutMs = 60000 } = {}) {
       else resolve(out);
     });
   });
+}
+
+/**
+ * ★ 为什么包一层「超时重试」：本机**第一次**启动无头 Edge 特别慢，而且跟在 smoke 套件之后更慢。
+ *   实测（第六批）：单独跑 A1 的 dump-dom 约 **15.5s**；紧跟 `test/smoke.mjs` 之后跑，
+ *   同一个调用 **>60s 被超时掐掉**（两次复现）；而同一次跑里的第二次 dump-dom（A7）只要 **3.7s**。
+ *   也就是说超时**不代表页面渲染坏了**，只代表「这台机的第一次浏览器启动慢」。
+ *   本项目的环境纪律里本来就写着「慢不等于失败」，所以这里只对**超时**重试一次，
+ *   且每次重试用新的 profile 目录（`freshProfile()` 在 dumpDomOnce 里）。
+ *   ★ 重试只兜住「启动慢」；页面真坏了仍会被断言抓住（拿不到 `<html>` 时**不重试**，直接抛）。
+ */
+async function dumpDom(edge, url, { attempts = 2, ...opts } = {}) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    try { return await dumpDomOnce(edge, url, opts); }
+    catch (e) {
+      last = e;
+      if (!/超时/.test(String(e && e.message))) throw e;   // 不是超时 → 页面真有问题，不掩盖
+    }
+  }
+  throw last;
 }
 
 // ── 手段 2：CDP —— 手写极小 WebSocket 客户端（node 无内置 ws，零依赖）──
@@ -438,6 +459,12 @@ function contrastPairs(v) {
     ['次要 --fg-dim on --panel', v['fg-dim'], v.panel, 4.5],
     ['弱化 --fg-faint on --bg', v['fg-faint'], v.bg, 4.5],
     ['弱化 --fg-faint on --bg-2', v['fg-faint'], v['bg-2'], 4.5],
+    // ★ hover 态也算「正文」：--bg-3 是 .envbar / .style-group-head / .style-item / .film
+    //   的 hover 底色，里面的 .env-sum / .caret / .gen / .si-sub 就是 --fg-faint，
+    //   用户在 hover 时同样在读这些字 —— 所以 hover 态也必须 ≥ 4.5。
+    //   （第二轮补：深色原值 on --bg-3 只有 4.14、浅色 4.43，都低于 AA，已一并修正。）
+    ['弱化 --fg-faint on --bg-3（hover 底色）', v['fg-faint'], v['bg-3'], 4.5],
+    ['次要 --fg-dim on --bg-3（hover 底色）', v['fg-dim'], v['bg-3'], 4.5],
     ['日志正文 --fg on --log-bg', v.fg, v['log-bg'], 4.5],
     ['stderr --log-stderr on --log-bg', v['log-stderr'], v['log-bg'], 4.5],
     ['markdown 标题 --fg-strong on --panel', v['fg-strong'], v.panel, 4.5],
