@@ -3,8 +3,8 @@
  * test/smoke.mjs —— lemo 控制台冒烟测试（零依赖，只用 node: 内置模块）
  *
  * 用法：
- *   node test/smoke.mjs                跑全部（不含完整回归，约 15–40 秒）
- *   node test/smoke.mjs --full         额外跑一次完整 ascii-crt 回归（约 80 秒）
+ *   node test/smoke.mjs                跑全部（不含完整回归，约 15–40 秒；WSL 冷启动时会到 1–2 分钟）
+ *   node test/smoke.mjs --full         额外跑一次完整 ascii-crt 回归（约 80 秒起）
  *   node test/smoke.mjs --filter demos 只跑名字里含 "demos" 的用例
  *   node test/smoke.mjs --keep-server  跑完不杀测试服务（调试用）
  *
@@ -12,9 +12,11 @@
  *   1. **自己起服务、自己停**：用随机空闲端口，绝不依赖、也绝不占用用户那个 18080 实例。
  *   2. **不用 curl**：本机 curl 走代理，打 localhost 得到的是 502（不是 000）—— 全部走 node:http 直连。
  *   3. **不用 spawnSync**：本环境对任何可执行文件都返回 EBUSY —— 全部异步 spawn。
- *   4. **不启动真实渲染**（除非显式 --full）。
+ *   4. **不启动真实渲染**（除非显式 --full）；取消用例取消的是 dry-run，不是真渲染。
  *   5. 测试服务启动时会覆写 `.console-port` / `打开控制台.url` —— 跑前备份、跑后**逐字节还原**，
  *      保证用户那个 18080 实例的「固定入口」不被改掉。
+ *   6. **测试产物登记 + 收尾清理**：进程用例会往 D:\lemo-films\.console 写任务记录、往 WSL 侧写临时
+ *      文件；`cases.mjs` 的 ARTIFACTS 登记它们，本文件在 finally 里统一摘干净（见 cleanupArtifacts）。
  *
  * 退出码：全绿 0，有失败 1，自身异常 2。
  */
@@ -26,7 +28,10 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
-import { STATIC_CASES, SERVER_CASES, FULL_CASES, ORCH_MD5, md5Of } from './cases.mjs';
+import {
+  STATIC_CASES, SERVER_CASES, PROCESS_CASES, FULL_CASES,
+  ORCH_MD5, md5Of, cleanupArtifacts,
+} from './cases.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -56,34 +61,53 @@ const C = {
 const log = (s = '') => process.stdout.write(`${s}\n`);
 
 // ── HTTP 工具（node:http 直连，绕开代理）────────────────────
-function httpRequest(port, method, p, body, { timeoutMs = 30000, accept = 'application/json' } = {}) {
+//
+// opts.headers  额外请求头（如 Range / Last-Event-ID）
+// opts.maxBytes 收够这么多字节就**主动断开**（Range/成片用例用 —— 成片有 29MB，
+//               整份读下来既慢又没必要；断开是客户端行为，服务端只是提前结束这个连接）
+function httpRequest(port, method, p, body, {
+  timeoutMs = 30000, accept = 'application/json', headers = {}, maxBytes = 0,
+} = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? null : Buffer.from(JSON.stringify(body), 'utf8');
-    const headers = { Accept: accept, Connection: 'close' };
+    const h = { Accept: accept, Connection: 'close', ...headers };
     if (payload) {
-      headers['Content-Type'] = 'application/json; charset=utf-8';
-      headers['Content-Length'] = payload.length;
+      h['Content-Type'] = 'application/json; charset=utf-8';
+      h['Content-Length'] = payload.length;
     }
-    const req = http.request({ host: '127.0.0.1', port, path: p, method, headers, agent: false }, (res) => {
+    let settled = false;
+    const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: h, agent: false }, (res) => {
       const chunks = [];
-      res.on('data', (d) => chunks.push(d));
-      res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8');
+      let n = 0;
+      const finish = (truncated) => {
+        if (settled) return;
+        settled = true;
+        const buf = Buffer.concat(chunks);
+        const text = buf.toString('utf8');
         let json = null;
         try { json = JSON.parse(text); } catch { /* 不是 JSON 就算了 */ }
-        resolve({ status: res.statusCode, headers: res.headers, text, json });
+        resolve({
+          status: res.statusCode, headers: res.headers, buf, text, json,
+          bytes: buf.length, truncated,
+        });
+      };
+      res.on('data', (d) => {
+        chunks.push(d);
+        n += d.length;
+        if (maxBytes && n >= maxBytes) { res.destroy(); finish(true); }
       });
-      res.on('error', reject);
+      res.on('end', () => finish(false));
+      res.on('error', () => finish(true));       // 自己 destroy 之后这里会响一次，按「已收够」处理
     });
     req.setTimeout(timeoutMs, () => req.destroy(new Error(`HTTP 超时（${timeoutMs}ms）：${method} ${p}`)));
-    req.on('error', reject);
+    req.on('error', (e) => { if (settled) return; reject(e); });
     if (payload) req.write(payload);
     req.end();
   });
 }
 
 /** 读一条 SSE 流。stopOn(ev) 返回 true 就收工；超时按已收到的事件返回。 */
-function httpSSE(port, p, { timeoutMs = 20000, stopOn } = {}) {
+function httpSSE(port, p, { timeoutMs = 20000, stopOn, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const events = [];
     let buf = '';
@@ -100,7 +124,10 @@ function httpSSE(port, p, { timeoutMs = 20000, stopOn } = {}) {
     const timer = setTimeout(() => finish(resolve, { events, timedOut: true }), timeoutMs);
 
     const req = http.get(
-      { host: '127.0.0.1', port, path: p, headers: { Accept: 'text/event-stream', Connection: 'close' }, agent: false },
+      {
+        host: '127.0.0.1', port, path: p, agent: false,
+        headers: { Accept: 'text/event-stream', Connection: 'close', ...headers },
+      },
       (res) => {
         if (res.statusCode !== 200) {
           return finish(reject, new Error(`SSE 状态码 ${res.statusCode}：${p}`));
@@ -287,8 +314,21 @@ async function main() {
         port: server.port,
         get: (p, opts) => httpRequest(server.port, 'GET', p, undefined, opts),
         post: (p, body, opts) => httpRequest(server.port, 'POST', p, body, opts),
+        del: (p, opts) => httpRequest(server.port, 'DELETE', p, undefined, opts),
         sse: (p, opts) => httpSSE(server.port, p, opts),
       });
+      // ★ 跨重启用例要真的重启一次服务（`logSeq` 跨重启稳定这条没法用同一个进程验）。
+      //   重启后把 ctx 里的四个 HTTP 工具换成指向新端口的闭包 —— 用例拿到的还是同一个 ctx。
+      ctx.restartServer = async () => {
+        await stopServer(server.child);
+        server = await startServer();
+        ctx.port = server.port;
+        ctx.get = (p, opts) => httpRequest(server.port, 'GET', p, undefined, opts);
+        ctx.post = (p, body, opts) => httpRequest(server.port, 'POST', p, body, opts);
+        ctx.del = (p, opts) => httpRequest(server.port, 'DELETE', p, undefined, opts);
+        ctx.sse = (p, opts) => httpSSE(server.port, p, opts);
+        return server.port;
+      };
       await runCases(SERVER_CASES, ctx, null);
     } else {
       for (const c of SERVER_CASES) {
@@ -297,6 +337,14 @@ async function main() {
         log(`  ${C.bad('FAIL')}  ${c.name} ${C.dim('(服务未起)')}`);
       }
     }
+
+    // ── 进程 / 取消（WSL 侧、进程树）──
+    // ★ 放在服务用例**之后**：这两条会在本进程里 import lib/jobs.mjs 起一个独立队列，
+    //   它会往 D:\lemo-films\.console 写一条任务记录。等服务已经起好、历史也读完了再跑，
+    //   测试服务的内存里就不会带着这两条测试任务 —— 收尾清理时不会被它再写回去。
+    log('');
+    log(C.b('  进程与取消（WSL 侧进程组 / 进程树）'));
+    await runCases(PROCESS_CASES, makeCtx(), null);
 
     // ── 完整回归（可选）──
     if (OPT.full) {
@@ -327,6 +375,22 @@ async function main() {
       }
     }
     if (restored.length) log(C.dim(`  固定入口已还原：${restored.join(' · ')}`));
+
+    // ── 测试产物清理（测试锁 / 测试任务落盘 / WSL 侧临时文件）──
+    // ★ 放在杀完服务之后：先让测试服务的最后一次 persist 落完，再摘掉测试任务，
+    //   否则服务可能把刚摘掉的那条又写回 index.json。
+    try {
+      await new Promise((r) => setTimeout(r, 800));   // 等 persistSoon 的 500ms 去抖走完
+      const rep = await cleanupArtifacts();
+      const parts = [];
+      if (rep.jobs.length) parts.push(`任务 ${rep.jobs.join(', ')}`);
+      if (rep.locks.length) parts.push(`锁 ${rep.locks.join(', ')}`);
+      if (rep.wsl.length) parts.push(`WSL 文件 ${rep.wsl.length} 个`);
+      if (parts.length) log(C.dim(`  测试产物已清理：${parts.join(' · ')}`));
+      if (rep.errors.length) log(C.bad(`  ⚠️ 测试产物清理有失败项：${rep.errors.join('；')}`));
+    } catch (e) {
+      log(C.bad(`  ⚠️ 测试产物清理异常：${e.message}`));
+    }
   }
 
   // ── 汇总 ──
