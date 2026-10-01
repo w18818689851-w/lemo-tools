@@ -8,7 +8,13 @@ node test/smoke.mjs              # 全部用例，不含完整回归（约 7–2
 node test/smoke.mjs --full       # 额外跑一次完整 ascii-crt 回归（约 80 秒）
 node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
+
+node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12 条，约 5 秒）
 ```
+
+`test/setup.test.mjs` 是**独立入口**，故意不并进 `smoke.mjs`：本文件的「19 条」是冻结的验收基线，
+数量本身就是约定；安装逻辑的用例另起一个数字，两边互不干扰。
+它不起服务、不碰 WSL —— 只测 `lib/setup.mjs` 的纯函数（见本文末尾）。
 
 退出码：**全绿 0 / 有用例失败 1 / 测试自身异常 2**。
 最后一行汇总 `N passed, M failed`。
@@ -83,14 +89,36 @@ node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自�
 
 - **真实渲染 / 混流**：默认全部跳过，只有 `--full` 才跑一次 `ascii-crt`。
 - **Web UI 交互**：`web/app.js` / `index.html` / `style.css` 的浏览器行为（点击、表单、播放器、进度条）一条都没测 —— 本套件只保证「服务端发给前端的数据是对的」，不保证前端渲染对。
+  （**首次运行引导**这块单独用无头 Edge dump DOM 验过，但那是一次性探针，没有固化成用例。）
 - **SSE 断线续传语义**：只测了**全量回放**（`Last-Event-ID` 不带）。`?lastEventId=` 的增量补发、`gap` 事件、跨重启 `logSeq` 稳定性**没测**。
 - **任务取消**：`DELETE /api/jobs/:id` 与进程树 kill 没测（会真的杀进程，风险高）。
+  （安装任务的取消单独验过：`lib/setup.mjs` 用 `setsid -w` + 进程组 kill 能连 WSL 侧一起收掉。）
+- **`/api/setup/run` 的「真跑一次安装」**：不测 —— 它会真的改环境（apt / clone / pip）。只测了校验分支（幂等跳过、未知动作、手动项拒跑）。
 - **并发锁冲突路径**：`/api/precheck` 只测了「无锁」这一态；`locked=true` 的真冲突态没构造（要造一个活着的 pid 的锁文件）。
 - **`POST /api/reveal`**：会弹资源管理器窗口，不测。
 - **`GET /api/films/:slug/:file`**：Range 分段（206/416）、拖进度条没测。
 - **落盘上限 / 轮转**：`lib/store.mjs` 的 4MB 单任务轮转、64MB 总量裁剪、120 条上限没测。
 - **Windows 保留端口的 `EACCES` 后扫**：`server.mjs` 那段自动向后扫描没测（要制造保留段）。
 - **`lib/env.mjs` 的各项判据**：只断言了 `/api/env` 的**结构**（字段在不在、类型对不对），不断言 WSL/ffmpeg/字体的**具体探测结果** —— 那依赖机器状态，断死会变成假失败。
+
+---
+
+## `test/setup.test.mjs` 覆盖了什么（12 条）
+
+| 用例 | 断言 |
+|---|---|
+| ① 检测到缺失 → 规划出动作 | 「WSL 装好但里面是空的」场景下，必须规划出 wsl.node / wsl.ffmpeg / wsl.venv / lib.wsl / lib.win，且每个动作都带 `why` |
+| ② 自动 / 手动分界 | 7 项 `kind==='auto'` 且每步都有 `timeoutMs`；5 项 `kind==='manual'`、有指引、**且不带可执行步骤**（免得让人误以为能自动跑）；最坏场景共 12 个动作 |
+| ③ 手动项不含下载命令 | `win.ffmpeg` 的序列化结果里不许出现 curl/wget/Invoke-WebRequest（「不自动下载几百 MB 二进制」） |
+| ④ 全 ok → 0 个动作 | `planActions(fixtureReady())` 必须为空数组；反过来把全项改成 warn，每项都必须被某个动作覆盖 |
+| ⑤ **漂移哨兵** | 从 `lib/env.mjs` 源码里正则抽出所有 `ok()/warn()/fail()` 的 item id，逐个断言 `lib/setup.mjs` 有**专门**动作（不是落到 `fallback.*`）；同时断言 `fixtureReady` 的 id 集合与 env.mjs 完全一致 |
+| ⑥ 幂等判据 | `actionSatisfied()` 在 ready 场景为 true、partial 场景为 false；多项里有一个不 ok 就为 false；不存在的项保守判 false |
+| ⑦ 失败分类 | 网络 / 超时 / 仓库不存在 / 权限 / 磁盘 / 命令缺失 / 其它，7 类各自命中；并验优先级（磁盘 > 网络） |
+| ⑧ 序列化安全 | 5 个演练场景都能规划 + JSON 化；序列化结果里**不许带 `script` 正文**（脚本留在服务端） |
+| ⑨ 超时保护 | `lib.wsl` 的 clone 超时 ≥ 60 分钟、体积预估 > 5 GB；所有 auto 步骤的超时 ≥ 5 分钟 |
+| ⑩ 动作 id 稳定 | 每个场景内 id 不重复、字符集合法（server 会 400）；同一份检测结果规划两次结果必须一致（纯函数） |
+| ⑪ 排序 | `fail` 的动作排在 `warn` 前面（先修致命的） |
+| ⑫ CLI 可用 | `node lib/setup.mjs --simulate --json` exit 0 且结构正确；无参模式能真检测并给结论；未知演练场景必须非 0 |
 
 ---
 
@@ -118,9 +146,10 @@ node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自�
 ## 文件
 
 ```
-test/smoke.mjs    测试入口：参数解析、起停测试服务、HTTP/SSE 工具、用例调度与汇总
-test/cases.mjs    用例本体 + 共享常量（ORCH_MD5 / 期望风格数）+ 纯函数（行尾计数 / 注入扫描 / 异步 spawn）
-test/README.md    本文件
+test/smoke.mjs      冒烟测试入口：参数解析、起停测试服务、HTTP/SSE 工具、用例调度与汇总
+test/cases.mjs      冒烟测试用例 + 共享常量（ORCH_MD5 / 期望风格数）+ 纯函数（行尾计数 / 注入扫描 / 异步 spawn）
+test/setup.test.mjs 首次运行安装的纯逻辑测试（独立入口，不起服务、不碰 WSL）
+test/README.md      本文件
 ```
 
 `smoke.mjs` 构造的 `ctx` 会传给每条用例：`root` / `orchPath` / `state`（用例间传值）/ `note(msg)`（打印备注）/ `sleep(ms)`，

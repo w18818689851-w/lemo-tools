@@ -23,6 +23,9 @@ import { checkEnv, CFG } from './lib/env.mjs';
 import * as jobs from './lib/jobs.mjs';
 import * as store from './lib/store.mjs';
 import { readStyleIndex, renderMarkdown } from './lib/styles.mjs';
+import {
+  planActions, serializeAction, knownActionIds, actionSatisfied, simulateEnv, FIXTURES,
+} from './lib/setup.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = path.join(__dirname, 'web');
@@ -45,6 +48,7 @@ function parseArgv(argv) {
   const o = {
     port: Number(process.env.LEMO_CONSOLE_PORT) || 7788,
     host: process.env.LEMO_CONSOLE_HOST || '127.0.0.1',
+    simulateEnv: process.env.LEMO_CONSOLE_SIMULATE_ENV || null,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port') { o.port = Number(argv[++i]); }
@@ -52,18 +56,28 @@ function parseArgv(argv) {
     // ★ --open：启动成功后自动开浏览器。**必须由服务自己开**，不能由批处理猜 ——
     //   因为端口可能因 Windows 保留段被自动后扫改掉，批处理拿不到实际端口。
     else if (argv[i] === '--open') { o.open = true; }
+    // ★ --simulate-env=<场景>：**演练模式**。让 /api/env 返回一份合成的「干净机器」检测结果，
+    //   好把首次运行引导 / 安装按钮在**这台已就绪的机器上**显示出来（否则永远看不到）。
+    //   场景见 lib/setup.mjs 的 FIXTURES：clean / bare / partial / ready。
+    else if (argv[i].startsWith('--simulate-env=')) { o.simulateEnv = argv[i].slice('--simulate-env='.length); }
     else if (argv[i] === '--help' || argv[i] === '-h') { o.help = true; }
   }
   if (!Number.isInteger(o.port) || o.port < 1 || o.port > 65535) {
     console.error(`✗ 端口非法：${o.port}（需 1–65535）`);
     process.exit(2);
   }
+  if (o.simulateEnv && !FIXTURES[o.simulateEnv]) {
+    console.error(`✗ 未知演练场景 ${o.simulateEnv}；可选：${Object.keys(FIXTURES).join(' / ')}`);
+    process.exit(2);
+  }
   return o;
 }
 const ARGV = parseArgv(process.argv.slice(2));
 if (ARGV.help) {
-  console.log('用法：node server.mjs [--port 7788] [--host 127.0.0.1] [--open]');
+  console.log('用法：node server.mjs [--port 7788] [--host 127.0.0.1] [--open] [--simulate-env=clean|bare|partial|ready]');
   console.log('  --open   启动成功后自动打开浏览器（用**实际**监听端口，含自动后扫后的端口）');
+  console.log('  --simulate-env=<场景>  演练模式：/api/env 返回合成的「干净机器」检测结果，');
+  console.log('                         用来在本机预览首次运行引导（不会真的安装任何东西）');
   process.exit(0);
 }
 
@@ -238,10 +252,48 @@ function apiPrecheck(req, res, url) {
 const ENV_TTL_MS = 30000;
 let envCache = { at: 0, data: null, inflight: null };
 
-async function apiEnv(req, res, force) {
+/**
+ * 把「安装动作」挂到检测结果上 —— **只在服务端做一次**，前端不重新推导。
+ *
+ * ★ 判据只有一处：动作完全由 lib/setup.mjs 的 planActions(envResult) 算出，
+ *   前端拿到的就是 `it.action = {id, kind, title}`，点按钮直接 POST actionId。
+ * ★ 加字段不改判据：env.mjs 的检测逻辑一行没动（只是结果里多挂了点东西）。
+ */
+function withSetup(data) {
+  const actions = planActions(data);
+  const byEnv = new Map();
+  for (const a of actions) for (const id of a.envIds || []) byEnv.set(id, a);
+  const groups = (data.groups || []).map((g) => ({
+    ...g,
+    items: (g.items || []).map((it) => {
+      const a = byEnv.get(it.id);
+      return a ? { ...it, action: { id: a.id, kind: a.kind, title: a.title } } : it;
+    }),
+  }));
+  return {
+    ...data,
+    groups,
+    setup: {
+      autoCount: actions.filter((a) => a.kind === 'auto').length,
+      manualCount: actions.filter((a) => a.kind === 'manual').length,
+      actionIds: actions.map((a) => a.id),
+      scenarios: Object.entries(FIXTURES).map(([k, v]) => ({ key: k, title: v.title })),
+    },
+  };
+}
+
+async function apiEnv(req, res, force, url) {
+  // 演练模式：query 优先（可随时切换），其次启动参数 --simulate-env
+  const sim = url?.searchParams.get('simulate') || ARGV.simulateEnv || null;
+  if (sim) {
+    const d = simulateEnv(sim);
+    if (!d) return sendJson(res, 400, { error: `未知演练场景 ${sim}` });
+    return sendJson(res, 200, { ...withSetup(d), cached: false, cacheAgeMs: 0, simulated: sim });
+  }
+
   const fresh = envCache.data && Date.now() - envCache.at < ENV_TTL_MS;
   if (!force && fresh) {
-    return sendJson(res, 200, { ...envCache.data, cached: true, cacheAgeMs: Date.now() - envCache.at });
+    return sendJson(res, 200, { ...withSetup(envCache.data), cached: true, cacheAgeMs: Date.now() - envCache.at });
   }
   // 并发请求只跑一次全量探测（探测要起 WSL，成本高）
   if (!envCache.inflight) {
@@ -250,7 +302,72 @@ async function apiEnv(req, res, force) {
       .catch((e) => { envCache.inflight = null; throw e; });
   }
   const data = await envCache.inflight;
-  sendJson(res, 200, { ...data, cached: false, cacheAgeMs: 0 });
+  sendJson(res, 200, { ...withSetup(data), cached: false, cacheAgeMs: 0 });
+}
+
+// ── API: GET /api/setup/actions ─────────────────────────────
+//
+// 「首次运行向导」的数据源：当前环境该装什么、哪些能自动装、哪些只能手动。
+// ★ 纯咨询 + 可执行**描述**，不执行任何东西。
+async function apiSetupActions(req, res, url) {
+  const sim = url?.searchParams.get('simulate') || ARGV.simulateEnv || null;
+  const data = sim ? simulateEnv(sim) : await checkEnv();
+  if (!data) return sendJson(res, 400, { error: `未知演练场景 ${sim}` });
+  const actions = planActions(data);
+  sendJson(res, 200, {
+    simulated: sim || null,
+    summary: data.summary,
+    runnable: data.runnable,
+    count: actions.length,
+    autoCount: actions.filter((a) => a.kind === 'auto').length,
+    manualCount: actions.filter((a) => a.kind === 'manual').length,
+    actions: actions.map(serializeAction),
+  });
+}
+
+// ── API: POST /api/setup/run ────────────────────────────────
+//
+// 真正执行一个安装动作（后台任务，日志走 /api/logs/:id 的 SSE）。
+//
+// ★ 幂等：**先重新检测**（不用 30s 缓存 —— 幂等判断必须基于当下），
+//   对应检测项已经全 ok 就直接返回 skipped，不重装、不建任务。
+// ★ 去重：同一个动作已有排队/运行中的任务 → 直接复用那个任务，不重复入队。
+// ★ 不阻塞：安装失败**不影响**启动渲染任务（环境自检本来就是咨询性的）。
+async function apiSetupRun(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+
+  const actionId = body.actionId;
+  if (typeof actionId !== 'string' || !actionId.trim()) return sendJson(res, 400, { error: '缺少 actionId' });
+  if (!/^[A-Za-z0-9._-]+$/.test(actionId)) return sendJson(res, 400, { error: `actionId 含非法字符：${actionId}` });
+
+  const data = await checkEnv();
+  const actions = planActions(data);
+  const act = actions.find((a) => a.id === actionId);
+
+  if (!act) {
+    if (knownActionIds().includes(actionId)) {
+      return sendJson(res, 200, { ok: true, skipped: true, reason: '该检测项已就绪 → 跳过（幂等，不重装）' });
+    }
+    return sendJson(res, 404, { error: `未知动作 ${actionId}` });
+  }
+  if (act.kind !== 'auto') {
+    return sendJson(res, 400, { error: `${act.title} 需要手动完成，控制台不代跑。请看指引。`, manual: serializeAction(act).manual });
+  }
+
+  // 去重：同一个动作已经在跑/在排队，就别再入一次队
+  const q = jobs.queueState();
+  const dup = [q.running, ...q.waiting].find((j) => j && j.kind === 'setup' && j.actionId === actionId);
+  if (dup) return sendJson(res, 200, { ok: true, reused: true, job: dup });
+
+  const job = jobs.enqueueSetup({
+    actionId: act.id,
+    title: act.title,
+    steps: act.steps,
+    estBytes: act.estBytes || 0,
+  });
+  sendJson(res, 200, { ok: true, job: jobs.getSummary(job.id) });
 }
 
 // ── API: GET /api/demos ─────────────────────────────────────
@@ -404,6 +521,7 @@ function apiConsole(req, res) {
     url: `http://${host}:${ARGV.port}`,
     portFile: PORT_FILE,
     urlFile: URL_FILE,
+    simulateEnv: ARGV.simulateEnv || null,   // 非 null = 演练模式（/api/env 返回合成结果）
     store: store.storeStatus(),     // 任务历史/日志落盘位置与上限（见 lib/store.mjs）
   });
 }
@@ -507,7 +625,9 @@ const server = http.createServer(async (req, res) => {
     if (mm && m === 'GET') return apiLogs(req, res, mm[1], url);
 
     if (p === '/api/precheck' && m === 'GET') return apiPrecheck(req, res, url);
-    if (p === '/api/env' && m === 'GET') return await apiEnv(req, res, url.searchParams.get('force') === '1');
+    if (p === '/api/env' && m === 'GET') return await apiEnv(req, res, url.searchParams.get('force') === '1', url);
+    if (p === '/api/setup/actions' && m === 'GET') return await apiSetupActions(req, res, url);
+    if (p === '/api/setup/run' && m === 'POST') return await apiSetupRun(req, res);
     if (p === '/api/demos' && m === 'GET') return apiDemos(req, res);
     if (p === '/api/films' && m === 'GET') return apiFilms(req, res);
     if (p === '/api/console' && m === 'GET') return apiConsole(req, res);
@@ -616,6 +736,10 @@ async function start() {
         console.log(`  ⚠️ 固定入口写入不完整（${entry.failed.join('、')}），不影响使用`);
       }
       console.log(`  Ctrl+C 停止（正在跑的任务会被一起终止）\n`);
+      if (ARGV.simulateEnv) {
+        console.log(`  ⚠️  演练模式（--simulate-env=${ARGV.simulateEnv}）：/api/env 返回的是**合成**的检测结果，`);
+        console.log(`      用来预览首次运行引导。安装按钮仍在，但请勿在演练模式下真的点它。\n`);
+      }
 
       // 自动开浏览器 —— 用**实际**监听端口（可能已被自动后扫改过），
       // 所以这件事必须由服务自己做，不能让启动脚本猜。

@@ -23,6 +23,7 @@
 
   <div class="top-actions">
     <button class="btn ghost" id="btnRefreshEnv" title="重新全量探测环境">重新检测</button>
+    <button class="btn ghost" id="btnSimulate" title="演练模式：假装这是一台全新机器，预览首次运行引导（不会真的安装）">演练</button>
     <button class="btn ghost narrow-only" id="btnToggleSide" title="展开/收起风格列表">风格</button>
   </div>
 </header>
@@ -44,6 +45,23 @@
   </aside>
 
   <main class="main">
+
+    <!-- 首次运行向导：环境有 fail / warn 时出现。
+         ★ 只是**引导**，绝不阻塞 —— 环境有问题照样能点「开始生成」（见 env.mjs 的咨询性定位）。 -->
+    <section class="card setup-card" id="setupCard" hidden>
+      <div class="card-head">
+        <h2 class="card-title">
+          首次运行引导 <span class="setup-count" id="setupCount"></span>
+          <span class="setup-sim" id="setupSim" hidden></span>
+        </h2>
+        <div class="card-tools">
+          <button class="btn primary" id="btnSetupAuto" title="按顺序安装所有「可自动」项（串行，不并发）">一键安装可自动项</button>
+          <button class="btn ghost" id="btnSetupRefresh" title="重新检测环境并重算安装计划">刷新计划</button>
+        </div>
+      </div>
+      <div class="setup-intro" id="setupIntro"></div>
+      <div class="setup-list" id="setupList"></div>
+    </section>
 
     <section class="card">
       <h2 class="card-title">启动任务</h2>

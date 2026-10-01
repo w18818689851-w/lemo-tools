@@ -28,6 +28,42 @@
 
 **只监听 `127.0.0.1`，无鉴权。不要改成 `0.0.0.0`。**
 
+### 首次运行：自动安装向导
+
+环境自检（`lib/env.mjs`）本来就是**咨询性**的：它只告诉你缺什么、给出 `fix` 命令，**不阻断**任何事。
+现在多了一层：`lib/setup.mjs` 把那些 `fix` 提示升级成**结构化的安装动作**，控制台顶部会出现
+「首次运行引导」卡片，每项要么给一个「安装」按钮（后台任务 + 实时日志），要么给一份**明确的手动指引**。
+
+| | 谁能装 | 例子 |
+|---|---|---|
+| **可自动** | 控制台替你跑（后台串行队列，实时日志，可取消） | `git clone` 库 · `apt install ffmpeg/nodejs` · 上游 `setup.sh deps voice music` · 跑 `fetch-all-fonts.sh` · `tools/fetch.sh instruments all` · `lemo-lib-sync.sh push` |
+| **需手动** | 只能你来做，控制台**只给指引、不代跑** | 装 WSL 发行版（要重启）· 装 Windows 侧 ffmpeg 二进制（几百 MB）· 装显卡驱动 · 索取 `lemo-lib-sync.sh` |
+
+分界很硬：**能自动做的才给按钮**。装 WSL 发行版需要重启、装 ffmpeg 二进制是几百 MB 的第三方包 ——
+控制台假装能代劳只会把事情搞坏，所以这些一律只给「这一步需要你手动做」的逐步指引。
+
+其他行为：
+
+- **幂等**：每次执行前**重新检测**，对应项已经 ok 就直接跳过，不重装。
+- **失败可区分**：网络 / 权限 / 磁盘 / 仓库不存在 / 命令缺失 / 超时，各给各的处置建议（不是一句「失败了」）。
+- **超时保护 + 已耗时心跳**：`git clone` 6 GB 时每 10 秒打一行「⏱ 已耗时 Ns」。
+- **取消会杀掉 WSL 侧整组进程**：`taskkill /T` 管不到 WSL2 虚拟机里的进程（实测：只 taskkill 的话，
+  取消一个 `sleep 40` 之后 Linux 侧还在跑）。安装步骤用 `setsid -w` 起，取消时按进程组 TERM→KILL。
+- **不阻塞**：环境有 `fail` 时**照样能启动任务** —— 这条既有行为没变。
+
+**演练模式**（本机环境已就绪，真实检测永远看不到引导，所以必须能演）：
+
+```bash
+node lib/setup.mjs                      # 真检测 + 打印当前该做什么（不执行）
+node lib/setup.mjs --simulate           # 用 5 个合成场景把每个安装分支都走一遍（不执行）
+node lib/setup.mjs --simulate=all       # 只走「12 项全 fail」这个最坏场景
+node lib/setup.mjs --dry-run            # 真检测 + 打印将要执行的命令
+node server.mjs --simulate-env=bare     # 让控制台假装这是一台干净机器（UI 上预览引导）
+```
+
+URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演练场景（顶栏「演练」按钮循环切）。
+演练模式下 `/api/setup/run` **仍走真实检测**，所以演练状态**不可能**触发真实安装。
+
 ## 为什么需要这一层
 
 lemo-opuscar 原本的 `build.sh` 是 POSIX 脚本，只能在 WSL 里跑。但**它的渲染在 WSL 里用不上显卡**：
@@ -104,8 +140,9 @@ lemo-make.bat --help
 ## 测试
 
 ```bash
-node test/smoke.mjs          # 冒烟测试（约 7–20 秒，不渲染）
-node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒）
+node test/smoke.mjs          # 冒烟测试（19 条，约 7–20 秒，不渲染）
+node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒，共 20 条）
+node test/setup.test.mjs     # 首次运行安装的纯逻辑测试（12 条，约 5 秒，不起服务、不用 WSL）
 ```
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
@@ -115,6 +152,12 @@ node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 �
 - **8 个 HTTP 接口** —— 含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`
 - **CLI 未受影响** —— `node lemo-make.mjs ascii-crt --skip-sync --dry-run` 仍 exit 0
+
+`test/setup.test.mjs` 单独一个入口（不并进 smoke），因为「19 条」是冻结的验收基线，数量本身就是约定。
+它专测**本地走不到的那条路**：「检测到缺失 → 生成正确的安装动作」做成纯函数
+（`planActions(envResult)`），再喂合成的「干净机器」检测结果 —— 于是每个安装分支都能被断言覆盖。
+含一条**漂移哨兵**：从 `lib/env.mjs` 源码里抽出所有 item id，逐个断言 `lib/setup.mjs` 有专门的
+安装动作（env.mjs 加了新检查而 setup.mjs 忘了跟 → 立刻红）。
 
 测试自己用**随机空闲端口**起一个临时服务、跑完自己停，**不碰**你正在用的控制台实例
 （启动时会覆写 `.console-port` / `打开控制台.url`，测试跑前备份、跑后按字节还原）。
@@ -127,9 +170,10 @@ lemo-make.bat          入口（找 node → 转调 .mjs）
 lemo-make.mjs          主编排器
 README.md              本文件
 test/smoke.mjs         冒烟测试入口（零依赖）
-test/cases.mjs         测试用例
+test/cases.mjs         冒烟测试用例
+test/setup.test.mjs    首次运行安装的纯逻辑测试
 server.mjs             Web 控制台服务
-lib/                   控制台的服务端模块（env / jobs / store / styles）
+lib/                   控制台的服务端模块（env / setup / jobs / store / styles）
 web/                   控制台前端（index.html / app.js / style.css）
 ```
 
@@ -169,6 +213,15 @@ web/                   控制台前端（index.html / app.js / style.css）
 ### 5. `node_modules` / `.venv` 永远排除
 
 `.venv` 是 Linux 专用（`bin/python3.12` 是 `/usr/bin/` 的绝对软链）。`node_modules` 两侧各一份（各 39 MiB），实测 0 个平台特定二进制但**不建议软链**（跨文件系统软链会拖慢 ESM 解析）。两侧各自 `npm ci`。
+
+### 6. WSL2 里的进程**不是** `wsl.exe` 的 Windows 子进程
+
+`taskkill /PID <wsl.exe> /T /F` 杀不掉虚拟机里那个命令。实测：取消一个跑在 WSL 里的 `sleep 40` 之后，
+**Linux 侧的 sleep 照样活到自然结束**（换成 6 GB 的 `git clone` 就是「点了取消还在后台下载」）。
+
+对策（见 `lib/setup.mjs:killWslGroupCommand`）：WSL 侧脚本用 `setsid -w` 起，自己成为**新进程组的组长**，
+首行把 `$$`（= PGID）写到 `/tmp/<uniq>.pgid`；取消时另起一条 `wsl.exe` 对整组 `TERM → KILL`。
+`pkill -f` 的匹配串要**拆成两半再拼**（`P="abc""def"`），否则那条 kill 命令会匹配到自己。
 
 ## 已知的上游 bug
 

@@ -710,3 +710,83 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
   .detail-drawer { width: 100vw; border-left: none; }
   .search.compact { flex: 1 1 120px; }
 }
+
+/* ── 首次运行引导（安装向导）─────────────────────────────────
+ *
+ * 与环境明细面板是同一套判据（都来自服务端 /api/setup/actions），但这里更显眼：
+ * 环境有 fail 时，用户第一眼就该看到「还差什么、点哪里装」。 */
+
+.setup-card { border-color: rgba(240,89,107,.45); }
+.setup-card .card-title { display: flex; align-items: center; gap: 8px; }
+.setup-count {
+  font-size: 11.5px; font-weight: 600; color: var(--warn);
+  border: 1px solid rgba(224,168,58,.5); background: rgba(224,168,58,.1);
+  border-radius: 999px; padding: 1px 8px;
+}
+.setup-sim {
+  font-size: 11.5px; color: var(--accent);
+  border: 1px solid rgba(76,154,255,.5); background: rgba(76,154,255,.1);
+  border-radius: 999px; padding: 1px 8px;
+}
+.setup-intro { color: var(--fg-dim); font-size: 12.5px; margin-bottom: 10px; line-height: 1.7; }
+
+.setup-list { display: flex; flex-direction: column; gap: 8px; }
+
+.setup-item {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  padding: 9px 11px;
+}
+.setup-item.auto   { border-left-color: var(--accent); }
+.setup-item.manual { border-left-color: var(--fg-faint); }
+.setup-item.urgent { border-left-color: var(--err); }
+.setup-item.flash  { box-shadow: 0 0 0 2px var(--accent-2); }
+
+.setup-item-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.setup-badge {
+  font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 6px;
+  border: 1px solid var(--line-2); color: var(--fg-dim); flex: 0 0 auto;
+}
+.setup-badge.auto   { color: var(--accent); border-color: rgba(76,154,255,.5); background: rgba(76,154,255,.08); }
+.setup-badge.manual { color: var(--warn);   border-color: rgba(224,168,58,.5); background: rgba(224,168,58,.08); }
+.setup-title { font-weight: 600; }
+.setup-why { color: var(--fg-dim); font-size: 12px; }
+.setup-size { margin-left: auto; color: var(--fg-faint); font-size: 11.5px; font-family: var(--mono); }
+
+.setup-impact { color: var(--fg-dim); font-size: 12px; margin-top: 4px; }
+
+.setup-steps { margin: 7px 0 0; display: flex; flex-direction: column; gap: 3px; }
+.setup-step {
+  font-size: 12.5px; color: var(--fg-dim);
+  font-family: var(--mono); word-break: break-word;
+}
+.setup-steps:not(.manual) .setup-step { display: flex; gap: 8px; align-items: baseline; }
+.setup-step-lbl { color: var(--fg); }
+.setup-step-meta { color: var(--fg-faint); font-size: 11.5px; }
+.setup-manual-note { color: var(--warn); font-size: 12.5px; margin-bottom: 4px; font-family: var(--sans); }
+.setup-link { color: var(--accent); }
+
+.setup-foot { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.setup-hint { color: var(--fg-faint); font-size: 11.5px; }
+
+/* 环境明细里每项右侧的「安装 / 指引」按钮 —— 多一列放按钮 */
+.env-item { grid-template-columns: 18px 180px 1fr auto; }
+.env-item .fix { grid-column: 3 / 5; }
+.env-fix-btn { align-self: center; white-space: nowrap; }
+
+/* 任务列表里的安装任务 */
+.job.setup-job { border-left: 3px solid var(--accent); }
+.job .jkind {
+  font-size: 11px; color: var(--accent); border: 1px solid rgba(76,154,255,.5);
+  border-radius: 4px; padding: 0 5px; flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .env-item { grid-template-columns: 18px 1fr auto; }
+  .env-item .lbl { grid-column: 2; }
+  .env-item .det { grid-column: 2; }
+  .env-item .fix { grid-column: 2 / 4; }
+  .env-fix-btn { grid-column: 3; grid-row: 1; }
+}

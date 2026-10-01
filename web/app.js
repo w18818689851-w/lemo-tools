@@ -16,7 +16,9 @@ const state = {
   films: [],
   jobs: [],
   env: null,
+  setup: null,       // 首次运行向导的安装计划（来自 /api/setup/actions）
   logJobId: null,
+  logJobKind: null,  // 'render' | 'setup' —— 安装任务结束后要重跑环境检测
   es: null,          // 当前 EventSource
   lastEventId: 0,    // 当前日志流已收到的最大序号（SSE 断线续传用；服务端在每条 data 前发 `id:`）
   autoScroll: true,
@@ -220,6 +222,20 @@ function renderEnv(data) {
       row.appendChild(el('span', 'mark', MARK[it.status] || '?'));
       row.appendChild(el('span', 'lbl', it.label));
       row.appendChild(el('span', 'det', it.detail || ''));
+      // ★ 安装按钮的**存在与否**由服务端给的 it.action 决定（判据只在 lib/setup.mjs 一处）。
+      //   可自动 → 「安装」按钮；需手动 → 「指引」按钮（跳到上面的引导卡片，不代跑）。
+      if (it.action) {
+        const b = el('button', 'btn ' + (it.action.kind === 'auto' ? 'primary' : 'ghost') + ' small env-fix-btn',
+          it.action.kind === 'auto' ? '安装' : '指引');
+        b.dataset.actionId = it.action.id;
+        b.title = it.action.title;
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (it.action.kind === 'auto') runSetupAction(it.action.id, b);
+          else focusSetupItem(it.action.id);
+        });
+        row.appendChild(b);
+      }
       g.appendChild(row);
       if (it.fix) g.appendChild(el('div', 'fix env-item ' + it.status, '↳ ' + it.fix));
     }
@@ -228,19 +244,197 @@ function renderEnv(data) {
 
   const note = el('div', 'env-note',
     `检查时间 ${fmtTime(new Date(data.checkedAt).getTime())}${data.cached ? '（缓存）' : ''}`
+    + (data.simulated ? ` · ⚠️ **演练模式**（合成结果 ${data.simulated}，不是真实检测）` : '')
     + ` · 环境自检是**咨询性**的：fail 不会阻止你启动任务，只做提示。`);
   box.appendChild(note);
+}
+
+/** 手动项：把上面的引导卡片滚到眼前并高亮那一条（控制台不代跑，只指路）。 */
+function focusSetupItem(actionId) {
+  const card = $('setupCard');
+  card.hidden = false;
+  const hit = [...$('setupList').querySelectorAll('.setup-item')]
+    .find((n) => n.dataset.actionId === actionId);
+  if (hit) {
+    hit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    hit.classList.add('flash');
+    setTimeout(() => hit.classList.remove('flash'), 1600);
+  } else {
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 async function loadEnv(force) {
   $('envText').textContent = '环境检测中…';
   $('envDot').className = 'env-dot';
   try {
-    const d = await api('/api/env' + (force ? '?force=1' : ''));
+    const d = await api('/api/env' + (force ? `?force=1${simQuery('&')}` : simQuery('?')));
     renderEnv(d);
   } catch (e) {
     $('envDot').className = 'env-dot fail';
     $('envText').textContent = '环境检测失败：' + e.message;
+  }
+}
+
+// ── 首次运行向导：把「环境有问题」变成「点一下就装」─────────────────
+//
+// ★ 判据只有一处：该装什么、哪些能自动装，全部来自服务端 /api/setup/actions
+//   （它内部就是 lib/setup.mjs 的 planActions(envResult)）。前端不重新推导、不硬编码动作名 ——
+//   否则 env.mjs / setup.mjs 一改，UI 就开始说假话。
+// ★ 演练模式：URL 带 ?simulate=clean|bare|partial|ready 时服务端返回**合成**的检测结果，
+//   于是这台已经 12/12 ok 的机器也能看到首次运行引导长什么样（只影响显示，不会真的安装）。
+// ★ 不阻塞：本卡片只是引导。环境有 fail 时「开始生成」照样可用 —— 那是 env.mjs 的既定定位。
+
+const SIM = new URLSearchParams(location.search).get('simulate') || '';
+const simQuery = (sep) => (SIM ? `${sep}simulate=${encodeURIComponent(SIM)}` : '');
+
+const ACTION_BADGE = { auto: '可自动', manual: '需手动' };
+
+function actionCard(a) {
+  const card = el('div', 'setup-item ' + a.kind + (a.status === 'fail' ? ' urgent' : ''));
+  card.dataset.actionId = a.id;
+
+  const head = el('div', 'setup-item-head');
+  head.appendChild(el('span', 'setup-badge ' + a.kind, ACTION_BADGE[a.kind] || a.kind));
+  head.appendChild(el('span', 'setup-title', a.title));
+  head.appendChild(el('span', 'setup-why', a.why));
+  if (a.estBytes) head.appendChild(el('span', 'setup-size', `约 ${fmtSize(a.estBytes)}`));
+  card.appendChild(head);
+
+  if (a.impact) card.appendChild(el('div', 'setup-impact', '影响：' + a.impact));
+
+  if (a.kind === 'auto') {
+    const body = el('div', 'setup-steps');
+    for (const s of a.steps) {
+      const li = el('div', 'setup-step');
+      li.appendChild(el('span', 'setup-step-lbl', s.label));
+      li.appendChild(el('span', 'setup-step-meta', `超时 ${Math.round((s.timeoutMs || 0) / 60000)} 分钟`));
+      body.appendChild(li);
+    }
+    card.appendChild(body);
+
+    const foot = el('div', 'setup-foot');
+    const btn = el('button', 'btn primary small', '安装');
+    btn.dataset.actionId = a.id;                       // 给无头测试/脚本用
+    btn.addEventListener('click', () => runSetupAction(a.id, btn));
+    foot.appendChild(btn);
+    if (a.fixHint) foot.appendChild(el('span', 'setup-hint', 'env 提示：' + a.fixHint));
+    card.appendChild(foot);
+  } else {
+    const body = el('div', 'setup-steps manual');
+    body.appendChild(el('div', 'setup-manual-note', a.manual.note));
+    for (const s of a.manual.steps) body.appendChild(el('div', 'setup-step', s));
+    for (const l of a.manual.links || []) {
+      const line = el('div', 'setup-step');
+      // ⚠️ 链接一律用 href 属性赋值 + noopener，绝不 innerHTML
+      const link = el('a', 'setup-link', l.label);
+      link.href = l.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      line.appendChild(link);
+      body.appendChild(line);
+    }
+    card.appendChild(body);
+  }
+  return card;
+}
+
+function renderSetup(data) {
+  state.setup = data;
+  const card = $('setupCard');
+  const list = $('setupList');
+  const actions = (data && data.actions) || [];
+
+  if (!actions.length) {
+    card.hidden = true;
+    return;
+  }
+
+  card.hidden = false;
+  list.textContent = '';
+  $('setupCount').textContent = `${actions.length} 项待处理`;
+  $('setupSim').hidden = !data.simulated;
+  $('setupSim').textContent = data.simulated ? `演练：${data.simulated}` : '';
+
+  const nAuto = actions.filter((a) => a.kind === 'auto').length;
+  const nManual = actions.length - nAuto;
+  $('setupIntro').textContent =
+    `环境检测发现 ${data.summary.fail} 个 fail、${data.summary.warn} 个 warn。`
+    + `其中 ${nAuto} 项控制台可以替你装（点「安装」，在后台跑，日志在下面「实时日志」里看）；`
+    + `${nManual} 项**必须你手动做**（装 WSL 发行版要重启、装 Windows ffmpeg 二进制、装显卡驱动这类，`
+    + `控制台代劳只会把事情搞坏）。装完会自动重新检测。`
+    + `（提醒：环境自检是咨询性的，有问题也**不阻止**你启动任务。）`;
+
+  for (const a of actions) list.appendChild(actionCard(a));
+
+  const autoBtn = $('btnSetupAuto');
+  autoBtn.disabled = nAuto === 0;
+  autoBtn.title = nAuto ? `按顺序安装这 ${nAuto} 项（后台串行执行）` : '没有可自动安装的项';
+}
+
+async function loadSetup() {
+  try {
+    const d = await api('/api/setup/actions' + simQuery('?'));
+    renderSetup(d);
+  } catch (e) {
+    $('setupCard').hidden = true;
+    console.warn('读取安装计划失败（不阻断任何东西）：', e);
+  }
+}
+
+/** 执行一个安装动作：入队后台任务 → 把日志接到「实时日志」面板。 */
+async function runSetupAction(actionId, btn) {
+  if (SIM) { toast(`演练模式（${SIM}）下不会真的安装。去掉 URL 里的 ?simulate= 再试。`, true); return; }
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api('/api/setup/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actionId }),
+    });
+    if (r.skipped) { toast(r.reason || '已就绪，跳过'); await refreshAfterSetup(); return; }
+    if (r.reused) toast('这个动作已经在队列里了，直接看日志');
+    else toast(`已入队安装任务：${r.job.title || actionId}`);
+    await loadJobs();
+    attachLog(r.job.id, []);
+  } catch (e) {
+    toast('安装启动失败：' + e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function refreshAfterSetup() {
+  await loadEnv(true);
+  await loadSetup();
+}
+
+/** 一键安装所有「可自动」项 —— 串行入队（服务端队列本来就是串行的）。 */
+async function installAllAuto() {
+  if (SIM) { toast(`演练模式（${SIM}）下不会真的安装。`, true); return; }
+  const actions = (state.setup && state.setup.actions) || [];
+  const autos = actions.filter((a) => a.kind === 'auto');
+  if (!autos.length) { toast('没有可自动安装的项'); return; }
+  const btn = $('btnSetupAuto');
+  btn.disabled = true;
+  let first = null;
+  try {
+    for (const a of autos) {
+      try {
+        const r = await api('/api/setup/run', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ actionId: a.id }),
+        });
+        if (r.job && !first) first = r.job.id;
+      } catch (e) {
+        toast(`${a.title} 入队失败：${e.message}`, true);
+      }
+    }
+    toast(`已入队 ${autos.length} 个安装任务（串行执行，看「实时日志」）`);
+    await loadJobs();
+    if (first) attachLog(first, []);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -687,6 +881,7 @@ function attachLog(jobId, opts) {
 
   closeStream();
   state.logJobId = jobId;
+  state.logJobKind = j ? (j.kind || 'render') : null;   // 安装任务结束时据此重跑环境检测
   const pre = $('log');
 
   if (!resume) {
@@ -735,6 +930,8 @@ function attachLog(jobId, opts) {
       loadJobs();
       loadFilms();
       loadStylesBadges();
+      // 安装任务结束 → 环境可能变了，重新检测并重算安装计划（幂等：装好的项会自动消失）
+      if (state.logJobKind === 'setup') { state.logJobKind = null; refreshAfterSetup(); }
     }
   };
 
@@ -764,7 +961,8 @@ function renderJobs() {
   }
 
   for (const j of state.jobs) {
-    const row = el('div', 'job' + (j.id === state.logJobId ? ' active' : '') + (j.restored ? ' restored' : ''));
+    const isSetup = j.kind === 'setup';
+    const row = el('div', 'job' + (j.id === state.logJobId ? ' active' : '') + (j.restored ? ' restored' : '') + (isSetup ? ' setup-job' : ''));
 
     row.appendChild(el('span', 'status ' + j.status, STATUS_CN[j.status] || j.status));
     if (j.restored) {
@@ -774,11 +972,17 @@ function renderJobs() {
         : '这条记录来自上一次控制台会话，已从磁盘恢复（D:\\lemo-films\\.console）。';
       row.appendChild(h);
     }
-    row.appendChild(el('span', 'jslug', j.slug));
+    if (isSetup) {
+      row.appendChild(el('span', 'jkind', '安装'));
+      row.appendChild(el('span', 'jslug', j.title || j.actionId || '安装'));
+    } else {
+      row.appendChild(el('span', 'jslug', j.slug));
+    }
     row.appendChild(el('span', 'jid', j.id));
 
     const meta = [];
-    if (j.opts && j.opts.length) meta.push(j.opts.join(' '));
+    if (!isSetup && j.opts && j.opts.length) meta.push(j.opts.join(' '));
+    if (isSetup && j.actionId) meta.push(j.actionId);
     meta.push(fmtTime(j.createdAt));
     if (j.startedAt) meta.push('耗时 ' + fmtDur(j.startedAt, j.endedAt));
     if (j.exitCode !== null && j.exitCode !== undefined) meta.push('退出码 ' + j.exitCode);
@@ -1010,6 +1214,19 @@ function bind() {
   $('btnRefreshJobs').addEventListener('click', loadJobs);
   $('btnRefreshFilms').addEventListener('click', () => { loadFilms(); });
   $('btnRefreshEnv').addEventListener('click', () => loadEnv(true));
+  // 首次运行向导
+  $('btnSetupRefresh').addEventListener('click', () => refreshAfterSetup());
+  $('btnSetupAuto').addEventListener('click', installAllAuto);
+  $('btnSimulate').addEventListener('click', () => {
+    // 演练模式：把 ?simulate= 写进 URL 再刷新 —— 于是「这台已就绪的机器」也能看到首次运行引导。
+    const u = new URL(location.href);
+    const cur = u.searchParams.get('simulate');
+    if (!cur) { u.searchParams.set('simulate', 'bare'); toast('演练模式：假装这是一台干净机器（不会真的安装）'); }
+    else if (cur === 'bare') { u.searchParams.set('simulate', 'partial'); toast('演练场景：库在但资产不全'); }
+    else if (cur === 'partial') { u.searchParams.set('simulate', 'clean'); toast('演练场景：全新机器'); }
+    else { u.searchParams.delete('simulate'); toast('已退出演练模式（回到真实检测）'); }
+    location.href = u.toString();
+  });
   $('btnClearLog').addEventListener('click', () => {
     $('log').textContent = '';
     state.logLineCount = 0;
@@ -1088,11 +1305,14 @@ function bind() {
 async function boot() {
   bind();
   syncPreview();
-  await Promise.all([loadEnv(false), loadStylesBadges(), loadFilms(), loadJobs()]);
+  await Promise.all([loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs()]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）
   setInterval(() => { loadJobs(); }, 3000);
-  // 环境每 60 秒刷一次（服务端缓存 30 秒）
-  setInterval(() => { loadEnv(false); }, 60000);
+  // 环境每 60 秒刷一次（服务端缓存 30 秒）。★ 演练模式下不自动刷，免得把合成结果换成真实结果。
+  if (!SIM) {
+    setInterval(() => { loadEnv(false); }, 60000);
+    setInterval(() => { loadSetup(); }, 60000);
+  }
 }
 
 boot();
