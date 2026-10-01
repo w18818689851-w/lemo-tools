@@ -1426,9 +1426,32 @@ fi
 set -u
 set -o pipefail
 export PATH=/usr/local/bin:$PATH
+# ★ 无缓冲：本脚本的输出要边跑边透传（见下面「输出策略」）。python 的 stdout 一旦不是 tty
+#   （这里是管道）就按 4KB 块缓冲，默认攒满 4KB 或进程退出才吐 —— 输出只有几十行时等于
+#   「退出时才吐」，子步骤之间全是静默。这里统一解掉，覆盖本脚本里所有 python 调用。
+export PYTHONUNBUFFERED=1
 LIB=${CFG.wslLib}
 D=${demoWsl}
 cd "$LIB" || { echo "STEP_FAIL cd 到库目录"; exit 1; }
+
+# ── 输出策略：直接流式，既不截断也不缓冲 ─────────────────────────────────────
+# 本脚本是编排器里唯一一条以 stream:true 跑的 WSL 路径（输出边跑边透传）。要真的边跑边出，
+# 必须**同时**满足两件事 —— 少任何一件都会退化成「子步骤跑完才一起冒出来」：
+#   ① 管道末端不能有 tail -N：tail 必须等到 EOF 才知道「最后 N 行」是哪 N 行，会把整条管道攒住。
+#   ② 上游 Python 必须无缓冲：python 的 stdout 一旦不是 tty（这里是管道）就按 4KB 块缓冲，
+#      默认要攒满 4KB 或进程退出才吐 —— 输出只有几十行时等于「退出时才吐」。
+# ★ 两条都是**实测**出来的（生产者逐行输出、每行间隔 1s，用到达时刻计时）：
+#     经 tail -2                    → 3 行全挤在 EOF 时刻到达（+3.0s/+3.0s/+3.0s）
+#     stdbuf -oL python3 ...        → 仍然全挤在 EOF（+9.1s/+9.1s/+9.1s）—— stdbuf 改的是
+#                                     libc stdio，而 CPython 的 sys.stdout 走自己的
+#                                     BufferedWriter，压根不受它影响 ⇒ stdbuf 这条路是死的
+#     python3 -u / PYTHONUNBUFFERED=1 → 逐行到达（+3.1s/+4.1s/+5.1s），这才是真流式
+# ⇒ 下面每一处都直接输出；Python 无缓冲统一由本脚本顶部的 PYTHONUNBUFFERED=1 负责
+#   （不逐个写 -u：一是少改 8 处，二是脚本内部再 spawn 的 python 子进程也一并生效）。
+# ★ 失败检测不受影响：set -o pipefail 下「管道退出码 = 上游退出码」，去掉 tail 后退出码语义
+#   完全等价，|| { echo "STEP_FAIL ..."; exit 1; } 与 || echo "STEP_WARN ..." 两套语义原样保留。
+# ⚠️ 仍有静默的地方（改不了，如实说明）：有些脚本（如 score.py）中途**一个字都不打印**，
+#   只在最后 dump 一段 JSON —— 那段是纯计算时间，没有输出可流。要看到进度只能改 demo 自己的脚本。
 
 # 属主防御：历史上以 root 跑过命令，留下 root:root 的文件（如 voices/words.json），
 # 会让 asr_check.py / mix.py 写回时 PermissionError 直接失败。lemo 有免密 sudo，先纠正。
@@ -1498,11 +1521,11 @@ if [ -f "$D/lines.json" ]; then
     fi
     mkdir -p "$RAW"
     echo "[配音 1/2] TTS → $(basename $RAW)/"
-    .venv/bin/python core/tts/tts.py "$D/lines.json" "$RAW" 2>&1 | tail -3 || { echo "STEP_FAIL tts"; exit 1; }
+    .venv/bin/python core/tts/tts.py "$D/lines.json" "$RAW" 2>&1 || { echo "STEP_FAIL tts"; exit 1; }
     echo "[配音 2/2] 声线处理 $(basename $VOICEFX)"
     MARK=/tmp/lemo-voicemark-$$
     touch "$MARK"
-    .venv/bin/python "$VOICEFX" 2>&1 | tail -3 || { echo "STEP_FAIL $(basename $VOICEFX)"; exit 1; }
+    .venv/bin/python "$VOICEFX" 2>&1 || { echo "STEP_FAIL $(basename $VOICEFX)"; exit 1; }
     # 声明了副产物的（voice.py 写 voices/lips.json 口型包络）必须确认它真被刷新了 ——
     # lips.json 不被刷新而 dur.json 被 tts.py 覆盖，会让口型与语音错位，且完全看不出来。
     if grep -q 'lips.json' "$VOICEFX" 2>/dev/null; then
@@ -1515,19 +1538,19 @@ if [ -f "$D/lines.json" ]; then
     rm -f "$MARK"
   else
     echo "[配音 1/1] TTS → voices/（该 demo 无 voice_fx.py/voice.py，按它自己 build.sh 的写法直接输出）"
-    .venv/bin/python core/tts/tts.py "$D/lines.json" "$D/voices" 2>&1 | tail -3 || { echo "STEP_FAIL tts(voices)"; exit 1; }
+    .venv/bin/python core/tts/tts.py "$D/lines.json" "$D/voices" 2>&1 || { echo "STEP_FAIL tts(voices)"; exit 1; }
   fi
   if [ -z "$(ls -A "$D/voices"/*.wav 2>/dev/null)" ]; then
     echo "STEP_FAIL voices/ 里没有 wav 产出"; exit 1
   fi
   echo "[配音 校对] ASR（失败不致命，只警告）"
-  .venv/bin/python core/tts/asr_check.py "$D/lines.json" "$D/voices" 2>&1 | tail -3 || echo "STEP_WARN asr_check 未通过（继续）"
+  .venv/bin/python core/tts/asr_check.py "$D/lines.json" "$D/voices" 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"
 else
   if [ -n "$TTSOWN" ]; then
     # 与 core/tts/tts.py 互斥：走到这里说明本 demo 没有 $D/lines.json，core TTS 本就不会跑。
     # gen.py 自己 chdir 到它所在目录、输出到 ../voices（即 $D/voices），所以从库根跑即可。
     echo "[配音] demo 自带 TTS $(basename "$TTSOWN")（不是 core/tts/tts.py；本 demo 无 $D/lines.json）"
-    .venv/bin/python "$TTSOWN" 2>&1 | tail -3 || echo "STEP_WARN $(basename "$TTSOWN") 失败（配音仍缺失）"
+    .venv/bin/python "$TTSOWN" 2>&1 || echo "STEP_WARN $(basename "$TTSOWN") 失败（配音仍缺失）"
     if [ -z "$(ls -A "$D/voices"/*.wav 2>/dev/null)" ]; then
       echo "STEP_WARN $D/voices/ 里仍没有 wav 产出"
     fi
@@ -1550,7 +1573,7 @@ if [ -n "$MUSIC" ]; then
       echo "    （该目录被 .gitignore 排除，需自行补齐后再跑；见本 demo 的 CREDITS / CUES.md）"
     fi
   fi
-  .venv/bin/python "$MUSIC" 2>&1 | tail -3 || { echo "STEP_FAIL $(basename "$MUSIC")"; exit 1; }
+  .venv/bin/python "$MUSIC" 2>&1 || { echo "STEP_FAIL $(basename "$MUSIC")"; exit 1; }
 elif [ -n "$MIX" ]; then
   if [ "$MUSIC_DEDUP" = "1" ]; then
     # living-screencast 的 sound.py 同时兼任配乐与混音（上面已说明只在混音步骤跑一次）
@@ -1570,7 +1593,7 @@ fi
 # 失败只 STEP_WARN 不 fail —— 拟音未必是混音的硬依赖，各 demo 的 mix.py 读法不同。
 if [ -n "$FOLEY" ]; then
   echo "[拟音] $(basename "$FOLEY")"
-  .venv/bin/python "$FOLEY" 2>&1 | tail -3 || echo "STEP_WARN $(basename "$FOLEY") 失败（继续；若混音脚本需要它的产物，下一步会报出来）"
+  .venv/bin/python "$FOLEY" 2>&1 || echo "STEP_WARN $(basename "$FOLEY") 失败（继续；若混音脚本需要它的产物，下一步会报出来）"
 fi
 
 # ── 混音 ────────────────────────────────────────────────────────────────────
@@ -1586,7 +1609,7 @@ fi
 echo "[混音] $(basename "$MIX")"
 MIXMARK=/tmp/lemo-mixmark-$$
 touch "$MIXMARK"
-.venv/bin/python "$MIX" 2>&1 | tail -4 || { echo "STEP_FAIL $(basename "$MIX")"; exit 1; }
+.venv/bin/python "$MIX" 2>&1 || { echo "STEP_FAIL $(basename "$MIX")"; exit 1; }
 
 # mix.wav 的落点因 demo 而异：demo/（默认）、demo/audio/（urban-sketch）、demo/out/（paper-lantern）。
 # 优先取本次运行真的写出来的那个；都没有就看有没有已存在的（脚本只做增量、没重写的情况）。

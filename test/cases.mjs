@@ -27,13 +27,28 @@ import { CFG } from '../lib/env.mjs';
 
 // ── 红线常量 ────────────────────────────────────────────────
 /** ★ 编排器的权威 md5。控制台只是包装层，绝不能改它。 */
-// ⚠️ 本次更新（0554085abb34c50e3e1bcfe8f28ab0e1 → fe6eff223293fe741290e23a9102737c）**不是**控制台
-//    改了编排器，而是编排器自身的一次定向修复：给 runWsl 加 `stream: true` 让音频链路输出实时透传
-//    （旧行为：音频步骤标题打在第 10.1s，第一行输出却等到 362.3s，中间 352.2 秒屏幕全静 —— 看着像死了）。
-//    改动只涉及 run() 的可选 onChunk 钩子、runWsl 的 stream 开关、以及音频那一步的调用点；
-//    命令构造（`su` 仍是最后一条命令 ⇒ 退出码语义）与脚本正文（trap 清理）均未动。
-//    该缺陷用 --dry-run 测不出来（dry-run 不跑音频），故此前一直没被发现。
-export const ORCH_MD5 = 'fe6eff223293fe741290e23a9102737c';
+// ⚠️ 更新史（都不是控制台改了编排器，而是编排器自身的定向修复）：
+//    · 0554085abb34c50e3e1bcfe8f28ab0e1 → fe6eff223293fe741290e23a9102737c：
+//      给 runWsl 加 `stream: true` 让音频链路输出实时透传（旧行为：音频步骤标题打在第 10.1s，
+//      第一行输出却等到 362.3s，中间 352.2 秒屏幕全静 —— 看着像死了）。改动只涉及 run() 的
+//      可选 onChunk 钩子、runWsl 的 stream 开关、以及音频那一步的调用点。
+//    · fe6eff223293fe741290e23a9102737c → f6a52d8c1bd82862458d7d3798c1e1c3：
+//      音频脚本正文「既不截断也不缓冲」两处一起改（缺任何一处都不生效）：
+//        ① 8 处 `| tail -N` 全部去掉 —— tail 必须等 EOF 才知道「最后 N 行」是哪 N 行，会把管道攒住；
+//        ② 脚本顶部加 `export PYTHONUNBUFFERED=1` —— python 的 stdout 不是 tty 时按 4KB 块缓冲，
+//           输出只有几十行时等于「退出时才吐」，这才是子步骤之间长静默的**主因**。
+//      两条都用计时实验实测过：经 tail -2 全挤在 EOF；`stdbuf -oL python3` 也全挤在 EOF（stdbuf
+//      改的是 libc stdio，CPython 的 sys.stdout 走自己的 BufferedWriter，不受影响 ⇒ 这条路是死的）；
+//      `python3 -u` / `PYTHONUNBUFFERED=1` 才是逐行到达。真实出片对比：改前 TTS 那步静默 22.3s、
+//      配乐 20.5s、混音 12.3s；改后 TTS 逐行冒出、混音逐段冒出（配乐那步仍静默，见下）。
+//      失败检测未受影响：`set -o pipefail` 下「管道退出码 = 上游退出码」，去掉 tail 后退出码语义
+//      等价，STEP_FAIL / STEP_WARN 两套语义与脚本业务逻辑（跑什么、什么顺序、什么条件）一个字没动。
+//      ★ 素材步（paper.py）与字幕步（subs.py / srt.py）那三处 tail **刻意保留**：它们所在的
+//        runWsl 没开 stream，输出本来就整块到达，tail 只起「压掉冗长输出」的作用，不造成静默。
+//      ⚠️ 已知残留：score.py 这类脚本中途一个字都不打印、只在最后 dump JSON，那段是纯计算时间，
+//        没有输出可流（要改进度只能改 demo 自己的脚本，超出编排器职责）。
+//    ⚠️ 以上缺陷用 --dry-run 都测不出来（dry-run 不跑音频），必须真实出片才现形。
+export const ORCH_MD5 = 'f6a52d8c1bd82862458d7d3798c1e1c3';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;
