@@ -163,8 +163,46 @@ async function apiRun(req, res) {
     }
   }
 
-  const job = jobs.enqueue(slug, opts);
+  // ── 批次（第四批 ① 批量入队）────────────────────────────────
+  // ★ 服务端**只做形状校验**，不重新推导「哪些该入队」—— 那是 UI 的事（用户在确认弹层里
+  //   可能选择「跳过被锁的」）。这里保证落盘/回显的 batchId 不会带奇怪字符。
+  // ★ 批次不是队列语义：队列仍是**串行**的，一批就是连着入队 N 条。
+  const meta = {};
+  if (body.batchId !== undefined && body.batchId !== null && body.batchId !== '') {
+    if (typeof body.batchId !== 'string' || !/^[A-Za-z0-9._-]{1,40}$/.test(body.batchId)) {
+      return sendJson(res, 400, { error: 'batchId 非法（只允许 A-Za-z0-9._- ，≤40 字符）' });
+    }
+    meta.batchId = body.batchId;
+    const idx = Number(body.batchIndex);
+    const tot = Number(body.batchTotal);
+    if (!Number.isInteger(idx) || idx < 1 || idx > 1000) return sendJson(res, 400, { error: 'batchIndex 非法' });
+    if (!Number.isInteger(tot) || tot < 1 || tot > 1000 || idx > tot) return sendJson(res, 400, { error: 'batchTotal 非法' });
+    meta.batchIndex = idx;
+    meta.batchTotal = tot;
+  }
+
+  const job = jobs.enqueue(slug, opts, meta);
   sendJson(res, 200, { ok: true, job: jobs.getSummary(job.id) });
+}
+
+// ── API: GET /api/eta ───────────────────────────────────────
+//
+// 批量入队的确认弹层要「将按顺序跑 N 个，预计总耗时 ~X 分钟」，所以需要**一次问一批** slug 的
+// 估计值（逐个问会打出 N 个请求，且弹层打开会明显卡）。
+//
+// ★ 判据只有一处：估时逻辑全在 lib/jobs.mjs:etaFor（纯读历史，不写任何东西）。
+//   这个接口只是把它暴露出来，不做任何自己的推算。
+// ★ 无历史 → confidence:'none'，前端据此**不显示**（宁可不说，也不编）。
+function apiEta(req, res, url) {
+  const slugs = url.searchParams.getAll('slug');
+  const opts = url.searchParams.getAll('opt');
+  if (!slugs.length) return sendJson(res, 400, { error: '缺少 slug' });
+  if (slugs.length > 50) return sendJson(res, 400, { error: `一次最多问 50 个 slug（收到 ${slugs.length} 个）` });
+  for (const s of slugs) if (!/^[A-Za-z0-9._-]+$/.test(s)) return sendJson(res, 400, { error: `slug 含非法字符：${s}` });
+  for (const o of opts) if (!/^[A-Za-z0-9._\-=/]+$/.test(o)) return sendJson(res, 400, { error: `选项含非法字符：${o}` });
+
+  const items = slugs.map((slug) => ({ slug, ...jobs.etaFor(slug, opts) }));
+  sendJson(res, 200, { opts, phaseKey: jobs.phaseKey(opts), count: items.length, items });
 }
 
 // ── API: GET /api/logs/:id  (SSE，支持 Last-Event-ID 断线续传) ──
@@ -625,6 +663,7 @@ const server = http.createServer(async (req, res) => {
     if (mm && m === 'GET') return apiLogs(req, res, mm[1], url);
 
     if (p === '/api/precheck' && m === 'GET') return apiPrecheck(req, res, url);
+    if (p === '/api/eta' && m === 'GET') return apiEta(req, res, url);
     if (p === '/api/env' && m === 'GET') return await apiEnv(req, res, url.searchParams.get('force') === '1', url);
     if (p === '/api/setup/actions' && m === 'GET') return await apiSetupActions(req, res, url);
     if (p === '/api/setup/run' && m === 'POST') return await apiSetupRun(req, res);

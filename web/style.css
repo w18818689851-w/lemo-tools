@@ -15,6 +15,21 @@
   --ok:        #35c46b;
   --warn:      #e0a83a;
   --err:       #f0596b;
+  /* 下面这几个原本是散落在各处的硬编码颜色。第四批加浅色主题时**提成变量** ——
+     否则浅色下要满文件找 #0a0d12 / #e8eef7 这类深色假设，漏一个就是「浅色下看不见字」。
+     深色取值与改动前逐字一致，视觉零变化。 */
+  --overlay:    rgba(0,0,0,.78);        /* 弹层遮罩 */
+  --fg-strong:  #e8eef7;                /* markdown 标题 / strong：比 --fg 更亮 */
+  --btn-hover:  #232d3d;                /* .btn:hover 底色 */
+  --log-bg:     #0a0d12;                /* 日志面板 / 代码块底色（比 --bg 更深） */
+  --log-stderr: #f0b8c0;                /* stderr 行 */
+  --hl-frame:   #c792ea;                /* src_frames= 高亮 */
+  --hit-bg:     rgba(224,168,58,.28);   /* 搜索命中底色 */
+  --hit-fg:     #ffd98a;
+  --preset-fg:  #cfe2ff;                /* 选中的预设按钮文字 */
+  --player-bg:  #000;                   /* 视频播放区 */
+  --toast-err:  #ffd7dc;
+  --tint-soft:  rgba(255,255,255,.03);   /* 「已结束」状态标签的极淡底 */
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
 }
@@ -240,7 +255,7 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
 }
 .style-item .nodemo { color: var(--err); font-size: 11px; }
 .style-empty { color: var(--fg-faint); padding: 12px; font-size: 13px; }
-mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px; padding: 0 1px; }
+mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; padding: 0 1px; }
 
 
 .main {
@@ -319,7 +334,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
 .preset.active {
   background: rgba(76,154,255,.16);
   border-color: var(--accent);
-  color: #cfe2ff;
+  color: var(--preset-fg);
   font-weight: 600;
 }
 .preset.active::before { content: '● '; color: var(--accent); font-size: 10px; }
@@ -340,7 +355,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
   transition: background .15s, border-color .15s, opacity .15s;
   white-space: nowrap;
 }
-.btn:hover { background: #232d3d; border-color: var(--accent-2); }
+.btn:hover { background: var(--btn-hover); border-color: var(--accent-2); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.primary { background: var(--accent-2); border-color: var(--accent); color: #fff; font-weight: 600; }
 .btn.primary:hover { background: var(--accent); }
@@ -429,7 +444,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
 /* ── 日志 ─────────────────────────────────────────────── */
 .log-wrap {
   position: relative;
-  background: #0a0d12;
+  background: var(--log-bg);
   border: 1px solid var(--line);
   border-radius: 8px;
   height: 340px;
@@ -455,12 +470,12 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
   pointer-events: none;
 }
 .log-line { display: block; }
-.log-line.stderr { color: #f0b8c0; }
+.log-line.stderr { color: var(--log-stderr); }
 .log-line.meta { color: var(--accent); }
 .hl-err { color: var(--err); font-weight: 700; }
 .hl-warn { color: var(--warn); font-weight: 700; }
 .hl-ok { color: var(--ok); font-weight: 700; }
-.hl-frame { color: #c792ea; font-weight: 700; }
+.hl-frame { color: var(--hl-frame); font-weight: 700; }
 .stream-state { margin-top: 6px; font-size: 12px; color: var(--fg-faint); min-height: 18px; }
 
 /* ── 任务列表 ─────────────────────────────────────────── */
@@ -495,7 +510,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
 .status.failed  { color: var(--err);    border-color: rgba(240,89,107,.5); background: rgba(240,89,107,.1); }
 .status.canceled{ color: var(--warn);   border-color: rgba(224,168,58,.5); background: rgba(224,168,58,.1); }
 /* ended：控制台重启前没跑完的任务（见 lib/jobs.mjs:loadHistory）—— 不可能是「运行中」 */
-.status.ended   { color: var(--fg-dim); border-color: var(--line-2); background: rgba(255,255,255,.03); }
+.status.ended   { color: var(--fg-dim); border-color: var(--line-2); background: var(--tint-soft); }
 
 /* 历史任务徽标：来自上一次控制台会话（数据从磁盘恢复） */
 .job .jhist {
@@ -604,7 +619,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
 .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
   margin: 14px 0 6px;
   line-height: 1.35;
-  color: #e8eef7;
+  color: var(--fg-strong);
 }
 .md h1 { font-size: 16px; }
 .md h2 { font-size: 14.5px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
@@ -631,7 +646,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
   padding: 0 4px;
 }
 .md pre {
-  background: #0a0d12;
+  background: var(--log-bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 9px 11px;
@@ -641,7 +656,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
 .md a { color: var(--accent); text-decoration: none; }
 .md a:hover { text-decoration: underline; }
 .md hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
-.md strong { color: #eaf1fb; }
+.md strong { color: var(--fg-strong); }
 .md-tablewrap { overflow: auto; margin: 8px 0; }
 .md table { border-collapse: collapse; font-size: 12px; width: 100%; }
 .md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
@@ -656,7 +671,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
 .player-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.78);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -666,7 +681,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
 .player-box { background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; max-width: min(1100px, 96vw); width: 100%; }
 .player-head { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 13px; }
 .player-head span { flex: 1 1 auto; word-break: break-all; }
-#player { display: block; width: 100%; max-height: 76vh; background: #000; }
+#player { display: block; width: 100%; max-height: 76vh; background: var(--player-bg); }
 
 /* ── Toast ────────────────────────────────────────────── */
 .toast {
@@ -682,7 +697,7 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
   box-shadow: 0 8px 28px rgba(0,0,0,.5);
   max-width: 90vw;
 }
-.toast.err { border-color: var(--err); color: #ffd7dc; }
+.toast.err { border-color: var(--err); color: var(--toast-err); }
 
 /* ── 响应式 ───────────────────────────────────────────── */
 .narrow-only { display: none; }
@@ -789,4 +804,191 @@ mark.hit { background: rgba(224,168,58,.28); color: #ffd98a; border-radius: 2px;
   .env-item .det { grid-column: 2; }
   .env-item .fix { grid-column: 2 / 4; }
   .env-fix-btn { grid-column: 3; grid-row: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   第四批新增：批量入队 / 预计剩余时间 / 快捷键 / 主题切换
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 批量入队（①）─────────────────────────────────────────── */
+.side-batch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+  flex-wrap: wrap;
+}
+.batch-count { font-size: 12px; color: var(--fg-faint); white-space: nowrap; flex: 0 0 auto; }
+.batch-count.has { color: var(--accent); font-weight: 600; }
+.side-batch .btn { flex: 0 0 auto; }
+.side-batch #btnBatchQueue { flex: 1 1 auto; }
+
+/* 风格条目左侧的多选框：只服务批量入队，不抢「点条目 = 选中风格」的行为 */
+.style-item .si-check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* 任务列表里的批次标记：一眼看出这几条是同一批「批量入队」的 */
+.jbatch {
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(76,154,255,.45);
+  background: rgba(76,154,255,.12);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ── 预计剩余时间（②）─────────────────────────────────────── */
+.progress-eta { font-size: 11.5px; color: var(--fg-dim); white-space: nowrap; flex: 0 0 auto; }
+.progress-eta.low, .progress-eta.coarse { color: var(--warn); }
+
+/* ── 快捷键提示（③）：常驻在表单下方，不是藏起来的功能 ────── */
+.kbd-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+/* ── 弹层（批量确认 / 快捷键面板）────────────────────────── */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 55;
+  padding: 20px;
+}
+.modal-box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: min(760px, 96vw);
+  max-height: 88vh;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,.55);
+}
+.modal-box.narrow { max-width: min(540px, 96vw); }
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-title { flex: 1 1 auto; font-weight: 600; }
+.modal-body { padding: 12px 14px; overflow: auto; font-size: 13px; }
+.modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.modal-loading { color: var(--fg-faint); }
+.modal-lead { margin-bottom: 10px; color: var(--fg-dim); }
+
+.batch-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.batch-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+.batch-row .bi {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.batch-row .bslug { flex: 0 0 auto; font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
+.batch-row .beta { font-size: 11.5px; color: var(--fg-dim); }
+.batch-row .beta.low, .batch-row .beta.coarse { color: var(--warn); }
+.batch-row .beta.none { color: var(--fg-faint); }
+.batch-sum { margin: 8px 0; }
+.bsum-strong { font-weight: 600; color: var(--accent); }
+.batch-note { margin-top: 4px; font-size: 11.5px; color: var(--fg-faint); }
+
+.batch-lock {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(224,168,58,.5);
+  background: rgba(224,168,58,.1);
+  border-radius: 8px;
+}
+.bl-title { font-weight: 600; color: var(--warn); margin-bottom: 4px; }
+.bl-row { font-size: 12.5px; }
+.bl-sub { margin-top: 2px; font-size: 11.5px; color: var(--fg-dim); word-break: break-all; }
+
+.kbd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.kbd-row:last-of-type { border-bottom: none; }
+.kbd-keys { flex: 0 0 auto; min-width: 140px; }
+.kbd-desc { font-size: 12.5px; color: var(--fg-dim); }
+.kbd-note { margin-top: 10px; font-size: 11.5px; color: var(--fg-faint); }
+
+/* ══════════════════════════════════════════════════════════════
+   浅色主题（④）—— **默认仍是深色**（上面 :root 那套）。
+   只有 <html data-theme="light"> 时才覆盖变量。
+   ★ 只覆盖颜色，不动任何布局/尺寸 —— 免得两套主题的间距漂移。
+   ★ 浅色下正文必须可读：fg 接近纯黑、fg-dim/fg-faint 逐级加深，不用「灰到看不见」的取值。
+   ══════════════════════════════════════════════════════════════ */
+html[data-theme="light"] {
+  --bg:         #f4f6fa;
+  --bg-2:       #eaeef5;
+  --bg-3:       #dfe6f0;
+  --panel:      #ffffff;
+  --line:       #d3dae6;
+  --line-2:     #b9c3d4;
+  --fg:         #1b2330;
+  --fg-dim:     #48546a;
+  --fg-faint:   #5c697e;      /* 浅色下「弱化」文字也必须过 WCAG AA（深色主题那个灰在这个底色上只有 3.5:1） */
+  --accent:     #1f6feb;
+  --accent-2:   #1858c4;
+  --ok:         #167c43;
+  --warn:       #8f6100;
+  --err:        #bb2436;
+  --overlay:    rgba(24,30,42,.42);
+  --fg-strong:  #0d1520;
+  --btn-hover:  #d3dbe8;
+  --log-bg:     #f8fafd;
+  --log-stderr: #8d2233;
+  --hl-frame:   #6f34b8;
+  --hit-bg:     rgba(143,97,0,.20);
+  --hit-fg:     #5f4000;
+  --preset-fg:  #0f3a7d;
+  --player-bg:  #10151d;      /* 视频区保持深底：浅底会让画面看不清 */
+  --toast-err:  #78101f;
+  --tint-soft:  rgba(0,0,0,.045);
 }

@@ -28,6 +28,8 @@ const state = {
   filmQuery: '',
   collapsed: new Set(),   // 收起的分组 key
   detailSlug: null,
+  checked: new Set(),     // 勾选的 slug（第四批 ① 批量入队）
+  batchBusy: false,       // 正在批量入队（防重复点击）
 };
 
 // ── 小工具 ──────────────────────────────────────────────────
@@ -49,6 +51,15 @@ function fmtDur(a, b) {
   const s = ((b || Date.now()) - a) / 1000;
   if (s < 60) return `${s.toFixed(1)}s`;
   return `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}s`;
+}
+/** 毫秒 → 人话时长（给「预计还需」用；粗到分钟即可，不做假精度）。 */
+function fmtMs(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+  const s = ms / 1000;
+  if (s < 90) return `${Math.round(s)} 秒`;
+  const m = s / 60;
+  if (m < 60) return `${m < 10 ? m.toFixed(1) : Math.round(m)} 分钟`;
+  return `${(m / 60).toFixed(1)} 小时`;
 }
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -107,6 +118,8 @@ function resetProgress(opts) {
   prog.curN = 0; prog.maxN = 0;
   prog.total = expectedSteps(opts);
   $('progress').hidden = true;
+  const eta = $('progEta');
+  if (eta) { eta.hidden = true; eta.textContent = ''; eta.title = ''; }
   $('progFill').className = 'progress-fill';
   $('progFill').style.width = '0';
   $('progCount').className = 'progress-idx';
@@ -140,6 +153,8 @@ function noteStep(n, title) {
 /** 任务结束时定态。没有收到过任何步骤标记（如启动就失败）则隐藏进度条。 */
 function finishProgress(status) {
   const box = $('progress');
+  const eta = $('progEta');
+  if (eta) { eta.hidden = true; eta.textContent = ''; eta.title = ''; }   // 跑完了就别再报「预计还需」
   if (!prog.curN) { box.hidden = true; return; }
   box.hidden = false;
 
@@ -182,6 +197,41 @@ function detectStep(text) {
   const t = String(text).replace(ANSI_RE, '').trim();
   const m = STEP_RE.exec(t);
   if (m) noteStep(Number(m[1]), m[2].trim());
+}
+
+// ── 预计剩余时间（第四批 ②）─────────────────────────────────
+//
+// ★ 数据全部来自**历史任务的真实起止时间**，服务端算好后挂在 job.eta 上（见 lib/jobs.mjs:etaFor）。
+//   前端**不自己推算**，也不做任何插值/平滑 —— 判据只有服务端一处。
+// ★ 没有历史 → eta.confidence === 'none' → **什么都不显示**（首次跑一个新风格时不瞎猜）。
+// ★ 同一个 slug 不同参数耗时可差好几倍 → 服务端按参数分组；这里把「样本来源」如实标出来：
+//   ok = 同参数 ≥2 次；low = 同参数仅 1 次；coarse = 只有其它参数的历史（明说「仅供参考」）。
+function updateEta() {
+  const box = $('progEta');
+  if (!box) return;
+  const j = state.jobs.find((x) => x.id === state.logJobId);
+  const e = j && j.eta;
+  if (!e || e.confidence === 'none' || !Number.isFinite(e.medianMs)) {
+    box.hidden = true;
+    box.textContent = '';
+    box.title = '';
+    return;
+  }
+
+  const elapsed = j.startedAt ? Date.now() - j.startedAt : 0;
+  const rem = e.medianMs - elapsed;
+  let label = rem > 0 ? `预计还需 ~${fmtMs(rem)}` : `已超过历史中位（${fmtMs(e.medianMs)}）`;
+  if (e.confidence === 'low') label += '（仅 1 次历史）';
+  else if (e.confidence === 'coarse') label += '（其它参数的历史，仅供参考）';
+
+  box.hidden = false;
+  box.className = 'progress-eta ' + e.confidence;
+  box.textContent = label;
+  box.title = `历史样本 ${e.n} 次：中位 ${fmtMs(e.medianMs)}，区间 ${fmtMs(e.minMs)}–${fmtMs(e.maxMs)}\n`
+    + `本次已跑 ${elapsed > 0 ? fmtMs(elapsed) : '0 秒（还没开始跑）'}　·　分组键「${e.key}」\n`
+    + (e.confidence === 'coarse'
+      ? '没有同参数的历史样本，这是「其它参数」（如只调音 / 只重渲）的记录，仅供参考。'
+      : '同 slug + 同参数分组的历史耗时。');
 }
 
 // ── 环境状态条 ──────────────────────────────────────────────
@@ -460,11 +510,26 @@ function matches(s, q) {
     || (s.desc || '').toLowerCase().includes(q);
 }
 
-/** 一个风格条目。点击 = 选中（沿用第一批的行为）；「详情」按钮 = 开侧栏。 */
+/** 一个风格条目。点击 = 选中（沿用第一批的行为）；「详情」按钮 = 开侧栏；
+ *  左侧复选框 = 勾选（只服务批量入队，**不改表单里的当前风格**）。 */
 function styleItemNode(s, q) {
   const item = el('div', 'style-item');
   item.dataset.slug = s.slug;
   item.title = [styleLabel(s), s.nameEn, s.slug].filter(Boolean).join(' · ') + (s.desc ? `\n${s.desc}` : '');
+
+  const cb = el('input', 'si-check');
+  cb.type = 'checkbox';
+  cb.checked = state.checked.has(s.slug);
+  cb.dataset.slug = s.slug;
+  cb.title = `勾选 ${s.slug}（用于批量入队）`;
+  cb.setAttribute('aria-label', `勾选 ${s.slug} 用于批量入队`);
+  cb.addEventListener('click', (e) => e.stopPropagation());   // 别顺带把表单风格也改了
+  cb.addEventListener('change', () => {
+    if (cb.checked) state.checked.add(s.slug);
+    else state.checked.delete(s.slug);
+    updateBatchBar();
+  });
+  item.appendChild(cb);
 
   const main = el('div', 'si-main');
   main.appendChild(el('div', 'si-name', styleLabel(s)));
@@ -516,7 +581,13 @@ function markActiveStyle() {
   }
 }
 
+/** 渲染风格列表（任何一条路径走完都要同步「已选 N 个」—— 所以包一层）。 */
 function renderStyles(filter) {
+  renderStylesInner(filter);
+  updateBatchBar();
+}
+
+function renderStylesInner(filter) {
   const q = (filter || '').trim().toLowerCase();
   const list = $('styleList');
   list.textContent = '';
@@ -578,6 +649,212 @@ function renderStyles(filter) {
   if (!groupsShown) list.appendChild(el('div', 'style-empty', '没有匹配的风格'));
   $('styleCount').textContent = `${shown.length}/${state.styles.length} · ${groupsShown} 组`;
   markActiveStyle();
+}
+
+// ── 批量入队（第四批 ①）─────────────────────────────────────
+//
+// 问题：一次只能提交一个任务。「把这 5 个风格都跑一遍」只能手动点 5 次并等着。
+//
+// ★ 队列本来就是**串行**的（GPU 只有一块，lib/jobs.mjs 的全局串行队列），所以「批量」不需要
+//   任何新的队列语义 —— 就是连着调 N 次 POST /api/run。服务端只多存一个批次标记。
+// ★ 入队前给确认：列出将按顺序跑哪几个、预计总耗时（来自 /api/eta，历史真实耗时；没历史就
+//   如实说「不估时」）。
+// ★ 被并发锁占用的风格**不是硬拦截**：判据来自服务端 /api/precheck（与编排器逐字对齐），
+//   由用户在弹层里选「跳过这几个」还是「仍然全部排队」。
+// ★ 绝不删锁（那是编排器的接管逻辑）。
+
+function updateBatchBar() {
+  const n = state.checked.size;
+  $('batchCount').textContent = `已选 ${n} 个`;
+  $('batchCount').classList.toggle('has', n > 0);
+  $('btnBatchQueue').disabled = n === 0 || state.batchBusy;
+  $('btnBatchClear').disabled = n === 0 || state.batchBusy;
+}
+
+/** 勾选的 slug，**按列表里的显示顺序**（= state.styles 的顺序）—— 入队顺序可预期。 */
+function checkedSlugs() {
+  return state.styles.filter((s) => state.checked.has(s.slug)).map((s) => s.slug);
+}
+
+function newBatchId() {
+  return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+/**
+ * 一条估计值 → 给用户看的话 + tooltip。
+ * ★ 宁可粗糙也不编造：'none' 就直说「无历史，不估时」；'coarse' 明确标注是**其它参数**的历史。
+ */
+function etaInfo(e) {
+  if (!e || e.confidence === 'none' || !Number.isFinite(e.medianMs)) {
+    return { text: '无历史，不估时', cls: 'none', title: '这个风格还没有「跑完且成功」的记录 —— 控制台不猜耗时。' };
+  }
+  const span = `区间 ${fmtMs(e.minMs)}–${fmtMs(e.maxMs)}`;
+  const base = `预计 ~${fmtMs(e.medianMs)}`;
+  const title =
+    `历史样本 ${e.n} 次（同 slug + 同参数分组）：中位 ${fmtMs(e.medianMs)}，${span}\n`
+    + `分组键「${e.key}」（按 --dry-run / --audio-only / --render-only / --skip-render / --skip-sync 分组；`
+    + '未按 fps / workers / venc 分组，同一组内这些差异体现不到估计里）';
+  if (e.confidence === 'ok') return { text: base, cls: 'ok', title };
+  if (e.confidence === 'low') return { text: `${base}（仅 1 次历史）`, cls: 'low', title };
+  return {
+    text: `${base}（其它参数的历史，仅供参考）`,
+    cls: 'coarse',
+    title: `没有「同参数」的历史样本；下面是该风格「其它参数」的 ${e.n} 次记录：`
+      + `中位 ${fmtMs(e.medianMs)}，${span}\n不同参数（如只调音 vs 全跑）耗时可差好几倍 —— 这只是粗估。`,
+  };
+}
+
+async function openBatchConfirm() {
+  const slugs = checkedSlugs();
+  if (!slugs.length) { toast('先在左侧勾选要批量跑的风格', true); return; }
+  const { opts } = buildOpts();
+
+  const modal = $('batchModal');
+  const body = $('batchBody');
+  const foot = $('batchFoot');
+  body.textContent = '';
+  foot.textContent = '';
+  modal.hidden = false;
+  body.appendChild(el('div', 'modal-loading', `正在读取 ${slugs.length} 个风格的历史耗时与并发预检…`));
+
+  // 估时与预检并行。★ 任一失败都**不阻断**批量入队 —— 少一条提示，不该变成新的故障点。
+  const qs = slugs.map((s) => 'slug=' + encodeURIComponent(s)).join('&')
+    + opts.map((o) => '&opt=' + encodeURIComponent(o)).join('');
+  const [etaRes, lockRes] = await Promise.all([
+    api('/api/eta?' + qs).catch((e) => { console.warn('取历史耗时失败（不阻断）：', e); return null; }),
+    Promise.all(slugs.map((s) => api('/api/precheck?slug=' + encodeURIComponent(s)).catch(() => null))),
+  ]);
+
+  const etaBySlug = new Map(((etaRes && etaRes.items) || []).map((x) => [x.slug, x]));
+  const locked = [];
+  for (let i = 0; i < slugs.length; i++) {
+    const pre = lockRes[i];
+    if (pre && pre.locked) locked.push({ slug: slugs[i], pre });
+  }
+  renderBatchModal({ slugs, opts, etaBySlug, locked, etaRes });
+}
+
+function closeBatchModal() {
+  $('batchModal').hidden = true;
+  $('batchBody').textContent = '';
+  $('batchFoot').textContent = '';
+}
+
+function renderBatchModal({ slugs, opts, etaBySlug, locked, etaRes }) {
+  const body = $('batchBody');
+  const foot = $('batchFoot');
+  body.textContent = '';
+  foot.textContent = '';
+
+  body.appendChild(el('div', 'modal-lead',
+    `将按顺序跑 ${slugs.length} 个（控制台队列是「串行」的：一次只跑一个，跑完自动接下一个）：`));
+
+  let totalMs = 0;
+  let unknown = 0;
+  const list = el('div', 'batch-list');
+  slugs.forEach((slug, i) => {
+    const row = el('div', 'batch-row');
+    row.appendChild(el('span', 'bi', String(i + 1)));
+    row.appendChild(el('span', 'bslug', slug));
+    const info = etaInfo(etaBySlug.get(slug));
+    const e = etaBySlug.get(slug);
+    if (e && Number.isFinite(e.medianMs)) totalMs += e.medianMs; else unknown++;
+    const tag = el('span', 'beta ' + info.cls, info.text);
+    tag.title = info.title;
+    row.appendChild(tag);
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+
+  const sum = el('div', 'batch-sum');
+  const totalTxt = totalMs > 0
+    ? `预计总耗时 ~${fmtMs(totalMs)}${unknown ? `（另有 ${unknown} 个无历史，未计入）` : ''}`
+    : '预计总耗时：无历史数据，不估时';
+  sum.appendChild(el('span', 'bsum-strong', totalTxt));
+  sum.title = '总耗时 = 各风格历史中位数之和（串行队列）。历史缺失的不计入，因此可能偏小。';
+  body.appendChild(sum);
+
+  body.appendChild(el('div', 'batch-note',
+    `参数：${opts.length ? opts.join(' ') : '（默认，全跑）'}　·　每个任务都会带上批次标记，任务列表里能看出它们属于同一批。`));
+
+  // ── 并发锁（可选分支）──
+  if (locked.length) {
+    const w = el('div', 'batch-lock');
+    w.appendChild(el('div', 'bl-title', `⚠️ 有 ${locked.length} 个风格当前被占用`));
+    for (const { slug, pre } of locked) {
+      w.appendChild(el('div', 'bl-row',
+        `${slug} —— ${pre.message || '已有 lemo-make 在跑同一个 demo'}`));
+      w.appendChild(el('div', 'bl-sub',
+        `锁文件 ${pre.lockPath}　·　pid ${pre.pid ?? '?'}（存活：${pre.alive ? '是' : '否'}）　·　锁龄 ${pre.lockAgeSec} 秒`));
+    }
+    w.appendChild(el('div', 'bl-sub',
+      '并发跑不会让控制台崩，但两边往同一批文件写，mux 交错写会产出「损坏的成片」。建议跳过，等它们跑完再单独补。'));
+    body.appendChild(w);
+  }
+
+  // ── 底部按钮 ──
+  const cancel = el('button', 'btn ghost', '取消');
+  cancel.addEventListener('click', closeBatchModal);
+  foot.appendChild(cancel);
+
+  if (locked.length) {
+    const skip = el('button', 'btn primary', `跳过被占用的 ${locked.length} 个，其余入队`);
+    skip.id = 'btnBatchGo';
+    skip.addEventListener('click', () => {
+      const set = new Set(locked.map((x) => x.slug));
+      const keep = slugs.filter((s) => !set.has(s));
+      if (!keep.length) { toast('跳过后没有可入队的风格了', true); return; }
+      runBatch(keep, opts);
+    });
+    foot.appendChild(skip);
+  }
+
+  const go = el('button', locked.length ? 'btn danger' : 'btn primary',
+    locked.length ? `仍然全部排队（${slugs.length} 个，有风险）` : `确认入队（${slugs.length} 个）`);
+  go.id = locked.length ? 'btnBatchGoRisk' : 'btnBatchGo';
+  go.addEventListener('click', () => runBatch(slugs, opts));
+  foot.appendChild(go);
+
+  if (etaRes && etaRes.phaseKey) {
+    body.appendChild(el('div', 'batch-note',
+      `估时分组键「${etaRes.phaseKey}」—— 只有同 slug 且同分组键的历史样本才会被采用。`));
+  }
+}
+
+/** 真正入队：逐个 POST /api/run（串行队列，天然按顺序跑）。 */
+async function runBatch(slugs, opts) {
+  if (state.batchBusy) return;
+  state.batchBusy = true;
+  updateBatchBar();
+  const total = slugs.length;
+  const batchId = newBatchId();
+  let first = null;
+  const fails = [];
+  try {
+    for (let i = 0; i < total; i++) {
+      try {
+        const r = await api('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug: slugs[i], opts, batchId, batchIndex: i + 1, batchTotal: total }),
+        });
+        if (!first && r && r.job) first = r.job.id;
+      } catch (e) {
+        fails.push(`${slugs[i]}（${e.message}）`);
+      }
+    }
+  } finally {
+    state.batchBusy = false;
+  }
+
+  closeBatchModal();
+  state.checked.clear();
+  renderStyles($('search').value);
+  await loadJobs();
+  if (first) attachLog(first, opts);
+
+  if (fails.length) toast(`已入队 ${total - fails.length}/${total}；失败：${fails.join('、')}`, true);
+  else toast(`已入队 ${total} 个（同一批次 ${batchId}，按顺序执行）`);
 }
 
 // ── 风格详情侧栏（STYLE.md / DEMO.md）───────────────────────
@@ -942,6 +1219,8 @@ function attachLog(jobId, opts) {
       $('streamState').textContent = `连接中断，重连中…（已收到 ${state.lastEventId} 行，续传不会重放）`;
     }
   };
+
+  updateEta();     // 挂上任务后立刻按历史给一个「预计还需」（无历史则不显示）
 }
 
 // ── 任务列表 ────────────────────────────────────────────────
@@ -965,6 +1244,15 @@ function renderJobs() {
     const row = el('div', 'job' + (j.id === state.logJobId ? ' active' : '') + (j.restored ? ' restored' : '') + (isSetup ? ' setup-job' : ''));
 
     row.appendChild(el('span', 'status ' + j.status, STATUS_CN[j.status] || j.status));
+    // 批次标记（第四批 ①）：一眼看出这几条是同一批「批量入队」的
+    if (j.batchId) {
+      const hasIdx = Number.isInteger(j.batchIndex) && Number.isInteger(j.batchTotal);
+      const b = el('span', 'jbatch', hasIdx ? `批 ${j.batchIndex}/${j.batchTotal}` : '批');
+      b.dataset.batchId = j.batchId;
+      b.title = `属于同一批「批量入队」（批次 ${j.batchId}${hasIdx ? `，第 ${j.batchIndex}/${j.batchTotal} 个` : ''}）`
+        + '—— 队列是串行的，它们会按顺序一个个跑。';
+      row.appendChild(b);
+    }
     if (j.restored) {
       const h = el('span', 'jhist', '历史');
       h.title = j.interrupted
@@ -1026,6 +1314,7 @@ async function loadJobs() {
     const d = await api('/api/jobs');
     state.jobs = d.jobs || [];
     renderJobs();
+    updateEta();     // 任务列表每 3 秒刷一次 → 「预计还需」跟着走，不用另开定时器
   } catch (e) {
     $('jobs').textContent = '';
     $('jobs').appendChild(el('div', 'empty', '读取任务失败：' + e.message));
@@ -1207,6 +1496,59 @@ async function loadStylesBadges() {
   } catch (e) { /* 静默：徽标不是关键路径 */ }
 }
 
+// ── 主题切换（第四批 ④）─────────────────────────────────────
+//
+// ★ **默认仍是深色**（开发工具的正确默认，也是前几批一直在用的）。
+//   浅色只是「在亮环境里看得清」的可选项，不改任何默认行为。
+// ★ 只改 <html data-theme>，颜色全部由 style.css 的 CSS 变量接管 —— JS 不碰任何具体颜色，
+//   免得同一套配色写在两处、日后漂移。
+// ★ 持久化失败（隐私模式 / localStorage 被禁）**不影响使用**：当次仍能切，只是记不住。
+const THEME_KEY = 'lemo-console-theme';
+
+function applyTheme(t) {
+  const light = t === 'light';
+  document.documentElement.dataset.theme = light ? 'light' : 'dark';
+  const btn = $('btnTheme');
+  if (btn) {
+    btn.textContent = light ? '深色' : '浅色';
+    btn.title = light ? '切回深色主题（默认）' : '切换到浅色主题（默认是深色；选择记在本机）';
+  }
+}
+
+function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem(THEME_KEY); } catch { /* 读不到就用默认 */ }
+  applyTheme(saved === 'light' ? 'light' : 'dark');     // ★ 默认深色
+}
+
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* 记不住就算了 */ }
+  toast(next === 'light' ? '已切到浅色主题' : '已切回深色主题（默认）');
+}
+
+// ── 快捷键面板（可发现入口，不是藏起来的功能）────────────────
+function openHelp() { $('helpModal').hidden = false; }
+function closeHelp() { $('helpModal').hidden = true; }
+
+/** 焦点是不是在「能打字」的地方 —— 决定 `/` 该不该抢焦点。 */
+function isTyping(node) {
+  // ★ 真实键盘事件的目标就是**当前聚焦元素**；但脚本 dispatch 到 document 时 e.target 是 document
+  //   （无头测试就是这么按键的）。这两种情况都该按「当前聚焦在哪」来判，所以补一个回退。
+  const el = (node && node !== document) ? node : document.activeElement;
+  if (!el) return false;
+  const tag = (el.tagName || '').toUpperCase();
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
+}
+
+function focusSearch() {
+  $('sidebar').classList.add('open');    // 窄屏下侧栏可能是收起的
+  const s = $('search');
+  s.focus();
+  s.select?.();
+}
+
 // ── 事件绑定 ────────────────────────────────────────────────
 function bind() {
   // ⚠️ 必须包一层：直接传 startRun 会把 MouseEvent 当成 force 参数（真值）→ 预检被跳过
@@ -1289,22 +1631,68 @@ function bind() {
     $(id).addEventListener('input', syncPreview);
   }
 
-  $('fSlug').addEventListener('keydown', (e) => { if (e.key === 'Enter') startRun(false); });
+  $('fSlug').addEventListener('keydown', (e) => {
+    // ★ Ctrl+Enter 交给全局处理器（否则这里先跑一次、全局再跑一次 = 入队两条）
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) startRun(false);
+  });
 
   $('btnToggleSide').addEventListener('click', () => $('sidebar').classList.toggle('open'));
   $('btnClosePlayer').addEventListener('click', closePlayer);
   $('playerModal').addEventListener('click', (e) => { if (e.target === $('playerModal')) closePlayer(); });
+
+  // 批量入队（第四批 ①）
+  $('btnBatchQueue').addEventListener('click', openBatchConfirm);
+  $('btnBatchClear').addEventListener('click', () => {
+    state.checked.clear();
+    renderStyles($('search').value);
+  });
+  $('btnCloseBatch').addEventListener('click', closeBatchModal);
+  $('batchModal').addEventListener('click', (e) => { if (e.target === $('batchModal')) closeBatchModal(); });
+
+  // 主题 + 快捷键面板（第四批 ③④）
+  $('btnTheme').addEventListener('click', toggleTheme);
+  $('btnHelp').addEventListener('click', openHelp);
+  $('btnHelp2').addEventListener('click', openHelp);
+  $('btnCloseHelp').addEventListener('click', closeHelp);
+  $('helpModal').addEventListener('click', (e) => { if (e.target === $('helpModal')) closeHelp(); });
+
+  // ── 键盘快捷键（第四批 ③）──
+  // ★ 可发现：顶栏有「?」按钮、表单下方有一行提示，不是藏起来的功能。
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (!$('detailDrawer').hidden) { closeDetail(); return; }
-    closePlayer();
+    // ① Ctrl/Cmd+K → 聚焦风格搜索（任何位置都生效）
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && String(e.key).toLowerCase() === 'k') {
+      e.preventDefault();
+      focusSearch();
+      return;
+    }
+    // ② Ctrl/Cmd+Enter → 启动当前表单的任务
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') {
+      e.preventDefault();
+      startRun(false);
+      return;
+    }
+    // ③ Esc → 关掉最上面那一层
+    if (e.key === 'Escape') {
+      if (!$('helpModal').hidden) { closeHelp(); return; }
+      if (!$('batchModal').hidden) { closeBatchModal(); return; }
+      if (!$('detailDrawer').hidden) { closeDetail(); return; }
+      closePlayer();
+      return;
+    }
+    // ④ `/` → 聚焦搜索（只在没在打字时；否则应该老老实实输入一个斜杠）
+    if (e.key === '/' && !isTyping(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      focusSearch();
+    }
   });
 }
 
 // ── 启动 ────────────────────────────────────────────────────
 async function boot() {
+  initTheme();          // ★ 默认深色；只有本机明确选过浅色才切（先于渲染，避免闪一下）
   bind();
   syncPreview();
+  updateBatchBar();
   await Promise.all([loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs()]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）
   setInterval(() => { loadJobs(); }, 3000);

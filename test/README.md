@@ -10,10 +10,11 @@ node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12 条）
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（20 条）
 ```
 
-`test/setup.test.mjs` 是**独立入口**，故意不并进 `smoke.mjs`：安装逻辑的用例单独一个数字，两边互不干扰。
-它不起服务、不碰 WSL —— 只测 `lib/setup.mjs` 的纯函数（见本文末尾）。
+`test/setup.test.mjs` 与 `test/ui.test.mjs` 都是**独立入口**，故意不并进 `smoke.mjs`：安装逻辑、UI 层各自一个数字，三边互不干扰。
+`setup.test.mjs` 不起服务、不碰 WSL（只测 `lib/setup.mjs` 的纯函数）；`ui.test.mjs` 自己起一个临时服务 + 无头 Edge。
 
 退出码：**全绿 0 / 有用例失败 1 / 测试自身异常 2**。
 最后一行汇总 `N passed, M failed`。
@@ -143,8 +144,8 @@ node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12
 ## 没覆盖什么（如实写）
 
 - **真实渲染 / 混流**：默认全部跳过，只有 `--full` 才跑一次 `ascii-crt`。
-- **Web UI 交互**：`web/app.js` / `index.html` / `style.css` 的浏览器行为（点击、表单、播放器、进度条）一条都没测 —— 本套件只保证「服务端发给前端的数据是对的」，不保证前端渲染对。
-  （**首次运行引导**这块单独用无头 Edge dump DOM 验过，但那是一次性探针，没有固化成用例。）
+- **Web UI 交互**：`web/app.js` / `index.html` / `style.css` 的浏览器行为（点击、表单、播放器、进度条）**本套件**不测 —— 它只保证「服务端发给前端的数据是对的」，不保证前端渲染对。
+  → **这一块由 `test/ui.test.mjs` 覆盖**（第四批新增，独立入口）：无头 Edge `--dump-dom` 拿渲染后的 DOM、再用 CDP 真的去点击/按键。见本文末尾。
 - **`/api/setup/run` 的「真跑一次安装」**：不测 —— 它会真的改环境（apt / clone / pip）。只测了校验分支（幂等跳过、未知动作、手动项拒跑）。
   （所以「安装任务的取消」走的是 `jobs.enqueueSetup()` 直调，不是 HTTP —— 这台机器 12/12 ok，`planActions()` 一个动作都规划不出来，走 HTTP 根本入不了队。）
 - **`POST /api/reveal`**：会弹资源管理器窗口，不测。
@@ -206,6 +207,53 @@ node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12
 
 ---
 
+## `test/ui.test.mjs` 覆盖了什么（20 条，第四批新增）
+
+补的就是上面「没覆盖什么」里那条 —— **前端渲染出来对不对**。三种手段从弱到强：
+
+**A. 无头 Edge `--dump-dom`（渲染后的真实 DOM，6 条）**
+
+| 用例 | 断言 |
+|---|---|
+| A1 | `--dump-dom` 拿到的 DOM 里 `.style-item` 数量 == `/api/demos` 的 `styles.length`（证明 JS 真的跑完了，不是空壳） |
+| A2 | 批量入队 UI 存在：`.si-check` 复选框数 == 风格数 · `#sideBatch` / `#batchCount` / `#btnBatchQueue` / `#btnBatchClear` 都在 · 初始「已选 0 个」· 初始 `disabled` |
+| A3 | `#batchModal` / `#batchBody` / `#batchFoot` / `#helpModal` / `#btnHelp` / `#btnHelp2` / `.kbd-hint` 都在，且提示里含 `<kbd>Ctrl</kbd>`+`<kbd>Enter</kbd>` |
+| A4 | `#progEta` 挂载点存在且**初始为空**（无历史不许显示数字）· `<html data-theme="dark">`（默认仍是深色） |
+| A5 | 从 `style.css` 里解析两套调色板，按 WCAG 2.1 算 **18 组**前景/背景对比度：浅色主题全部 ≥ 4.5（深色只记录作对照） |
+| A6 | 前三批的 13 个 UI 锚点（进度条 / 空状态 / 复制 / 分组 / 侧栏 / 排序 / 向导 / 预检位 / 预设…）在渲染后的 DOM 里仍在 |
+
+**B. CDP 真交互（9 条）**
+
+用手写的极小 WebSocket 客户端（node 没有内置 ws，也**不装 puppeteer**）连无头 Edge 的调试端口，真的去点击 / 按键：
+
+| 用例 | 动作 → 断言 |
+|---|---|
+| B0 | 打开控制台 → 页面渲染出 43 个风格条目 |
+| B1 | 点 2 个复选框 → `#batchCount` == 「已选 2 个」、`#btnBatchQueue` 解禁、加了 `.has`；**勾到哪两个从 DOM 读**（列表按 9 大类分组，DOM 顺序 ≠ `state.styles` 顺序） |
+| B2 | 点「批量入队」→ 弹层出现，正文含「将按顺序跑 2 个」+ 两个 slug + 「预计总耗时」，`.batch-row` 顺序与勾选顺序一致，底部有取消/入队 |
+| B3 | `Esc` → 弹层关闭（不是只能点关闭按钮） |
+| B4 | `Ctrl+K` → 焦点到 `#search`；**在输入框里按 `/` 不抢焦点**；非输入态按 `/` 会聚焦搜索框 |
+| B5 | 点「?」→ 快捷键面板打开且含 Ctrl/Enter/K/Esc；`Esc` 关闭 |
+| B6 | 点主题按钮 → `data-theme=light` + `localStorage` 写入；再点回 `dark` |
+| B7 | 勾 2 个 + 勾上「试跑」→ 确认 → **真的入队 2 条**：`/api/jobs` 里两条 `batchId` 相同、`batchIndex` 1/2、`batchTotal` 2；任务列表 DOM 里出现「批 N/2」标记 |
+| B8 | 焦点在表单里按 `Ctrl+Enter` → `/api/jobs` 真的多出一条任务（`batchId=null`） |
+
+**C. 服务端语义（HTTP，5 条）**
+
+| 用例 | 断言 |
+|---|---|
+| C1 | `POST /api/run` 的批次参数校验：非法 `batchId` / `batchIndex>batchTotal` / `batchIndex=0` 都 400；**不带 `batchId` 的老用法仍 200 且 `batchId=null`**（不破坏前几批） |
+| C2 | 批量任务跑到终态（`done`/`exit=0`），且 `/api/jobs` 的 summary 里有 `batchId`/`batchIndex`/`batchTotal`/`eta` 字段 |
+| C3 | **ETA 真的从历史学习**：先批量问一遍所有 slug 挑样本最少的那个 → 跑一次 dry-run → 同参数再问，样本数 **+1** 且 `medianMs` 为正；**换一组参数问 → `confidence=none`**（不把不同阶段的耗时混着报） |
+| C4 | 「预计还需」真的渲染到进度条上：连入队 5 条（后 4 条排队，窗口够宽）→ **走真实 UI 路径**（刷新列表 → 点那一行 = attachLog）→ `#progEta` 显示「预计还需 ~…」、`.ok/.low` 类在、tooltip 里有「历史样本 N 次」 |
+| C5 | `GET /api/eta` 的参数校验：缺 slug / 非法 slug / 非法选项都 400；正常输入 200 |
+
+> ★ 判据不写死：风格数从 `/api/demos` 现取（不硬编码 43）；C3 不假设「某个 slug 从没跑过」（用户的历史就在 `index.json` 里，测试服务启动时会读回来）—— 而是先问一遍挑样本最少的。
+> ★ B7/C3/C4/B8 一律用 `--dry-run --skip-sync`（不渲染、不混流），跑完把测试任务从 `index.json` 摘掉、日志文件删掉；无头 Edge 的 profile 目录建在 `D:\WSL\b4-ui-*`，跑完按**确切路径**递归删除（不用通配符）。
+> ★ `--dump-dom` 与 CDP 都要用**独立**的 `--user-data-dir`，否则第二次起浏览器会抢同一个 profile 锁。
+
+---
+
 ## 文件
 
 ```
@@ -213,6 +261,7 @@ test/smoke.mjs      冒烟测试入口：参数解析、起停测试服务（含
 test/cases.mjs      冒烟测试用例 + 共享常量（ORCH_MD5 / 期望风格数）+ 纯函数（行尾计数 / 注入扫描 / 异步 spawn）
                     + 测试产物登记与清理（ARTIFACTS / cleanupArtifacts）+ WSL 辅助（wsl / freshDeadPid）
 test/setup.test.mjs 首次运行安装的纯逻辑测试（独立入口，不起服务、不碰 WSL）
+test/ui.test.mjs    Web UI 层测试（独立入口）：无头 Edge --dump-dom + CDP 真点击 + 颜色对比度 + 批量/ETA 的服务端语义
 test/README.md      本文件
 ```
 
