@@ -1,0 +1,148 @@
+{
+  "slug": "art-deco",
+  "name_zh": "装饰艺术（Art Deco）",
+  "essence": "一部「金色细线在暖黑漆面上自己画出来」的 1930 年代海报电影：画面由金色关键线（gline）+ 硬边喷绘体积（airbrush）构成，一切围绕一条垂直中轴组织，太阳纹是背景、阶梯拱是画框、仪表盘是进度条、灯泡招牌是一次揭示；运动是机械且对称的——东西从中轴向两侧展开、门沿接缝裂开、灯按点数一盏盏亮起。它不是金箔幻灯片（东西会动、有体积）、不是新艺术（没有鞭形曲线和花）、不是平面矢量海报（体积是喷绘并带描边的）、也不是 60 年代间谍片头（没有平涂色块上的人物剪影）。",
+  "materials_and_rendering": [
+    "底色是暖黑漆面（`#0d0b09`，最深 `#060504`），绝不中性灰；夜空可向地平线漂成深祖母绿（`#0a0e16` → `#10231f`）。",
+    "金色是一段「带式金属渐变」：`#6f5220`（暗）→ `#c9a24b`（基）→ `#f3d98b`（亮）→ `#fff4d2`（高光）；动画 `sheen` 偏移 0→1 即一次光扫。",
+    "签名描边 `gline`：一条比主线宽约 1.6px 的暗色刻线 + 金色渐变主线 + 顶上一条极细高光；可选辉光与平行双线（`double`）。任何东西都不加黑色卡通轮廓。",
+    "体积 = 硬边 + 喷绘 `airbrush`：形内沿一个固定光向（默认左上，`dir=-2.3`）从暗到亮的线性渐变，受光侧一条细金边（`rim`）。",
+    "母题（太阳纹、阶梯拱/金字形、鱼鳞、人字纹、扇形、四角闪光、速度线、钟面、仪表盘）是**结构件**——背景、画框、转场——不是贴纸。",
+    "透视是真的：真一点透视（mode-7 地板）与针孔相机下的两点透视，所以推拉/俯仰/横移会改变透视，而不是缩放平面。",
+    "人物也是 deco 的：约 7 头身、锥形流线身体、棱面漆板（Lempicka 式）、杏形或弧形眼、一笔鼻，喷绘 + 金边；每个主角给一到两个在 1/4 画幅高度就能读出的剪影标记。",
+    "灯泡招牌由字形骨架生成：任意文本 → Zhang–Suen 细化成 1px 骨架 → 交叉数判链 → 等距布点成灯泡；每颗可独立点亮（可追光、可逐字点火）。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 6–13 个英文词（约 30–75 字符）。demo 的 7 行里最短是命令式短句（\"Out of order?!\" 14 字符），最长是一条完整播报（\"Good evening, America! Live from the Starlight Hotel, it's five minutes to midnight.\" 76 字符）。硬规则：每行口播 ≤ 4.5s（`voices/dur.json` 实测）；字幕卡宽上限 1500px（Josefin Sans SemiBold 40px），最多两行。",
+    "person_and_tense": "第三人称 + 现在时为主，播音员腔（period announcer）。可用第二人称对观众直呼（\"Good evening, America!\"）。人声分两类：广播员（`bm_fable`，speed 0.96–1.02）与主角（`am_puck`，speed 0.86、pitch +4）。",
+    "typical_openers": [
+      "时代播音式问候开场（\"Good evening, America!\" / \"Live from …\"）",
+      "以时间/倒计时做钩子（\"… it's five minutes to midnight.\"）",
+      "宣布式短句点题（\"The band is ready, folks.\"）",
+      "主角的一句短反应/疑问（\"Out... of order?\" / \"Special delivery!\"）",
+      "结尾用一句祝辞收束（\"Happy New Year, from the Starlight Hotel.\"）"
+    ],
+    "forbidden": [
+      "第一人称内心独白与抒情（该风格靠仪表盘/灯泡/时钟承载情节，不靠心理描写）",
+      "现代网络口播腔、感叹号堆叠、营销话术（\"amazing\"、\"unbelievable\"）",
+      "抽象概念名词当主语（只说能被画成金色图形的东西）",
+      "一句里塞进两个以上并列信息点（每句只承担一层，让数字自己说话）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一次「有截止时刻的盛事」）：开场金点爆成射线与阶梯拱 → 标题条在管弦重击上绽开 → 建立（极低角度 Cassandre 仰拍，交代目标/难度/暗着的招牌）→ 障碍（\"OUT OF ORDER\" 牌）→ 静默中的特写 → 签名段落一（剖面上升 + 圆形图章式落地）→ 静默 → 高潮（按点数亮的灯泡招牌）→ 签名段落二（Busby Berkeley 俯拍万花筒）→ 尺度揭示（拉远到整座塔与烟花）→ 电梯门合上落版 → 片尾卡。",
+    "beat_durations": "时间挂在 116 BPM 网格上（1 拍 = 0.5172s，1 小节 = 2.069s）；楼梯段 16 拍从 116 加速到 138 BPM；厨房/屋顶段走 138（1 拍 = 0.4348s）。关键锚点：STRIKE1 = 35.86s（第一声钟=接信），12 声钟每声间隔 1 拍，TUTTI = STRIKE1+12 拍（主题曲首次完整奏出）；ballroom = TUTTI + 1/2/3 小节，FINAL = PULL0 + 2 小节；DING = FINAL + 1 拍，电梯门 DOORS0/DOORS1 = FINAL + 2/3 拍，CARD0 = DOORS1，DUR = CARD0 + 4.4s。字幕停留 = max(1.8s, 语音时长 + 0.6s)；字幕提前 0.05s 上、滞后 0.25s 下。门扇展开 eio 缓动、约 0.35–0.5s。",
+    "total_length_range": "主 demo 58.4s（style.json dur=58.4，frame_sec=17.52）。STYLE.md 用例区间：产品发布 30–60s、展览/世界博览会式 45–60s、邮轮式 40–60s。demo 原始简报给的是 40–60s。",
+    "silence_policy": "静默是「最重的一声之前的清场」：钟敲 XII 后只留风声与飘落的信（下一个声音就是全片最重要的一声——第一记钟）；第 12 记钟后留一拍屏息再进 tutti。STYLE.md 明确：在任何最重要的声音之前，降到只剩一个小的画内声（钟摆滴答、风），然后用那个声音单独切回来。"
+  },
+  "tone": "一位 1930 年代的电台播音员在直播一场有倒计时的盛事：华丽、有礼、带一点时代的郑重感；不喊口号、不设悬念钩子，让仪表盘、时钟、楼层数字和逐字点亮的招牌替情节说话。主角一侧则是短促、带喘气的行动反应。",
+  "shot_logic": {
+    "camera_is": "一台被机械对称驱动的舞台摄影机：中轴是神圣的，门沿接缝裂开，俯拍把人变成图案，推近仪表盘让数字成为情节——它表达的是一种「有刻度、有节拍、正在倒计时」的世界。",
+    "vocabulary": [
+      { "move": "对称裂开（两片门扇铰在外缘，沿接缝向两侧甩开；或旋转门擦除）", "expresses": "跨过一道门槛", "serves": "新地点；新章节；门面之后的揭示" },
+      { "move": "门扇在实时画面上合拢", "expresses": "对某个时刻关门", "serves": "离开；已做的决定；一个时代的结束" },
+      { "move": "极低角度 Cassandre 仰拍", "expresses": "尺度与抱负", "serves": "远在上方的目标；塔、火箭、纪念碑" },
+      { "move": "建筑剖面（拉远到整栋楼的切面）", "expresses": "在一个结构里的进程", "serves": "攀爬、下降、分阶段流程；公司的楼层" },
+      { "move": "Busby Berkeley 俯拍，镜像并旋转", "expresses": "人变成图案", "serves": "一个团队、一次发布、一场庆典、一套零件系统" },
+      { "move": "推向仪表盘/圆章/时钟", "expresses": "数字就是情节", "serves": "截止时刻；计数；里程碑" },
+      { "move": "按形状匹配剪辑（圆→圆、射线→射线）", "expresses": "两个地方，一个韵脚", "serves": "部门/城市/年代之间跳转" },
+      { "move": "沿招牌或灯箱低角度斜掠", "expresses": "光逐字行进", "serves": "名字被揭示；发布；分数被数出来" },
+      { "move": "从细节拉远到天际线", "expresses": "这一刻在世界中的位置", "serves": "余波；全城影响；尺度" }
+    ],
+    "transitions": [
+      "对称裂开（split）：出画帧变成两片铰在外缘的门扇，从接缝甩开",
+      "旋转门擦除（revolve）：玻璃翼扫过画面（门厅入口）",
+      "门扇合拢（close）：电梯门在实时画面上滑合，落成片尾卡",
+      "形状匹配剪辑（圆→圆、射线→射线）"
+    ],
+    "forbidden": [
+      "通用的溶解/淡入淡出转场（必须用裂开、旋转、拱门开启或形状匹配）",
+      "无来由的运镜（每次运动都要表达「跨越/尺度/数字」）",
+      "让中轴漂移（构图可以旋转或开合，但绝不离开中线）",
+      "人物在 1/4 画幅高度以上时面部仍读成装饰里的道具（情绪峰值必须给到 ≥1/3 画幅高度）"
+    ]
+  },
+  "idioms": [
+    "计数的光（counted light）：灯泡招牌每拍/每事件亮一个字，让观众能数——倒计时、名字点亮、票数累计。",
+    "门槛之门：每一次场景转换都是一道沿接缝裂开的门。",
+    "机械万花筒：人或物变成镜像旋转的图案，最后锁成一个符号（扇形 → 钟面）。",
+    "仪表盘承载情节：楼层指示器、时钟、量表自己动，替代旁白。",
+    "建筑剖面：拉远到整栋楼成为切面，主角变成一个带速度线的彩色小点。",
+    "光扫 / 描线：光在重击上扫过金色物件；金线按滑音的速度自己刻出来。",
+    "唯一色（the one colour）：整个金色世界里只有一个元素保留自己的颜色（`drawShape` 的 `color` 门）。",
+    "标题即建筑：阶梯金标题条压在拱或太阳纹上，可带徽章与翼饰；先以金色画出，再扫一次光。"
+  ],
+  "atmosphere": "一间有刻度、有钟表、正在倒计时的华丽场所（饭店大堂、屋顶招牌、舞厅）：金、暖黑、象牙白；光从左上斜进来，尘埃与灯泡在光里。整体是「隆重、精确、机械、被仪式驱动」的气质，而不是阴郁或戏剧化的。",
+  "sound_palette": {
+    "instruments": [
+      "交响爵士（1920–30 年代，不是 60 年代大乐队）：步态钢琴或音乐会钢琴、单簧管（颤音、用变速重采样做长滑音）、弦乐（震音、上行冲刺、拨弦）、加弱音器小号、长号与萨克斯组、行走拨弦贝斯、鼓刷或鼓棒、管钟、竖琴滑音、班卓琴、木琴跑句、钢片琴",
+      "节奏型可选：狐步、查尔斯顿、探戈、慢速火炬歌谣、新闻片式号角",
+      "音色示例：demo 用了钢琴主奏 + 单簧管 + 弱音小号 + 弦乐震音 + 拨弦贝斯 + 管钟（B♭）+ 竖琴/钢琴滑音 + 长号与萨克斯"
+    ],
+    "foley": "按材料分层：黄铜咔哒、青铜牌当啷 + 铁链、铁楼梯踏步、大理石鞋跟、银托盘、木门 + 弹簧吱呀、纸的扑动、刀闸「chunk」+ 灯丝嗡鸣、继电器滴答、电梯叮、香槟塞。每次点亮的字母 = 一次刀闸 chunk + 灯丝嗡鸣。",
+    "mix_rules": "音乐在人声下 duck ≈ −9 dB（在「属于质感一部分的时期播音员」下只压 −6 dB）；铺底 −6 dB；整体 −14 LUFS、轻胶片颗粒（grain 3）。距离自动化是核心：乐队在 30 楼，街上低通到 2.5kHz、门厅 1.2kHz、爬楼时逐步打开、屋顶全频且干。播音员走五个声学空间（街角喇叭→桌上收音机→楼梯间 PA→厨房收音机→现场麦），让观众听见主角在靠近声源。J/L-cut 承载建筑：下一个房间的声音在门开之前一小节就进来。"
+  },
+  "variation_space": "可自由决定：结构、人物（或无人）、场景、开场、结尾、镜头路径、节奏、强调色、以及「什么被计数」。远离 demo 的方向：结构——世界博览会的五个展馆（每扇门后主题的一个侧面）、一艘远洋邮轮（从轮机舱到舞厅三层，每层一声汽笛）、颁奖之夜（提名者作太阳纹板，获奖者在光里揭晓）；开场——机房（金色齿轮与活塞推向第一拍）、刻在版上的地图（一条金路线横穿大陆，人还没出现）、电报（纸带打出前提）；结尾——熄灯（字母倒序熄灭只剩一颗灯泡）、黎明（漆黑暖成淡天）、海报（最后一镜压平成一张带日期的印刷海报）。强调色与「计数对象」都可换。",
+  "taboos": [
+    "金箔幻灯片式的静态堆叠（东西必须会动、有体积）",
+    "新艺术（Art Nouveau）的鞭形曲线与花卉",
+    "平面矢量海报（体积必须是喷绘并带金边）",
+    "60 年代间谍片头（平涂色块上的人物剪影）",
+    "通用溶解/淡入淡出转场",
+    "让中轴漂移",
+    "照抄任何真实海报版式、真实建筑、角色、字体设计或旋律"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一句台词、数字与颜色。要素：剧本节拍表（每个节拍标注「门槛/截止时刻/计数揭示/被解锁之物」）；台词（`lines.json`，每条 {id, text, voice, speed, pitch?, sub?, asr?}，单行 ≤4.5s，人声分 radio/boy 两类）；时间网格（`timeline.js` 的 BPM/B/小节与命名同步点 T）；调色板（暖黑/金四阶/象牙白 + 一个强调色 + 可选宝石色）；招牌文本（任意文本 → `buildSign` 生成灯泡招牌）；数字道具（楼层号、时钟时间、年份徽章）。",
+    "new_subject_contract": "新画面元素用引擎画：任意路径走 `D.drawShape(g, pts, {color, halo, trail, glints, part})`（喷绘金填充或单色填充 + 金关键线 + 可选太阳纹光晕/速度线尾/闪光）；母题用 `sunburst / archFrame / fan / fishScale / chevrons / sparkle / speedLines`；招牌用 `B.buildSign(text)` → `B.drawSign(g, sign, x, y, scale, {lit})`；镜头用 `cam.js` 的 `makeCam` + `cardTransform`。",
+    "timeline_contract": "`timeline.js` 是唯一真值：导出 `BPM/B/BAR/K_BPM`、段表 `SEC`、命名同步点 `T`、台词起点 `LINES`；`tools/dump_timeline.mjs` 把它导出成 `timeline.json` 供 Python 的配乐/混音/校点脚本读取。`film.js` 导出 `renderFilm(g,t,Q)`、`DUR`、`SHOTS`（[t0,t1,fn,name]）、`TR`（转场表）、`subs()`、`events()`；页面契约 `window.READY / window.render(t) / window.DUR / window.EV`。",
+    "event_vocabulary": "事件由 `film.js`/`timeline.js` 的命名同步点驱动：`shot{name}`（镜头切换，供声音分层）、`vo{id}`（人声，mix.py 从 voices/<id>.wav 读）；动作声按材料（黄铜按钮、青铜牌、铁踏步、银托盘、木门、纸、刀闸、继电器、电梯叮、烟花哨）由 mix.py 按 `T` 里的命名时刻生成；`cuecheck.py` 用 53 个画面同步点对 `music/score.json` 做校点（最大偏差 0.5ms）。"
+  },
+  "evidence": [
+    "styles/art-deco/STYLE.md:3-4 —— 一句话本质与「参考只借语法」",
+    "styles/art-deco/STYLE.md:6-10 —— 本质三条 + 「不是什么」（非金箔/非新艺术/非平面矢量/非 60s 间谍片）",
+    "styles/art-deco/STYLE.md:12-20 —— 材料与渲染（暖黑地面/金色带式渐变/gline/airbrush/母题/真透视/deco 人物）",
+    "styles/art-deco/STYLE.md:22-28 —— 颜色逻辑（三常量 + 一个强调色 + 单色例外 + 六位 hex）",
+    "styles/art-deco/STYLE.md:30-35 —— 字体与字幕（Limelight/Poiret One/Josefin/Italiana；字幕卡从中心展开；停留 ≥ max(1.8s, speech+0.6s)）",
+    "styles/art-deco/STYLE.md:37-45 —— 运动质量（人物 12fps、镜头/光/灯泡 24fps、中心展开、灯泡点火过冲、机械缓动、中轴不动）",
+    "styles/art-deco/STYLE.md:47-63 —— 镜头语法表 + 构图（中轴神圣）+ 转场（裂开/旋转/拱门/形状匹配）",
+    "styles/art-deco/STYLE.md:65-73 —— 声音（交响爵士/技巧选项/按材料拟音/静默作为工具/J-L cut/混音 −14 LUFS）",
+    "styles/art-deco/STYLE.md:75-85 —— 母题清单（计数的光/门槛之门/机械万花筒/仪表盘/建筑剖面/光扫/唯一色）",
+    "styles/art-deco/STYLE.md:87-94 —— 媒介陷阱（字形骨架曲线/鱼鳞读成砖/门扇压在空白内景/纯黑上金点触发 blackdetect）",
+    "styles/art-deco/STYLE.md:100-106 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/art-deco/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/art-deco/DEMO.md:12-14 —— demo 故事结构与 58.4s",
+    "styles/art-deco/DEMO.md:30-43 —— 逐拍镜头表（开场/转场语法/建立/障碍/签名1/静默/高潮/签名2/尺度揭示/结尾）",
+    "styles/art-deco/DEMO.md:47-55 —— 配乐结构（score first、距离自动化、播音员五空间、拟音、静默、J/L-cut、−14 LUFS grain 3）",
+    "styles/art-deco/DEMO.md:59-64 —— 调色板与道具（暖黑/金四阶/burgundy/emerald/ivory；Pip 7 头身）",
+    "styles/art-deco/DEMO.md:101-118 —— 引擎参考（deco.js/type.js/bulbs.js/cam.js 函数表 + 单色示例）",
+    "styles/art-deco/demo/timeline.js:3 —— BPM 116、K_BPM 138",
+    "styles/art-deco/demo/timeline.js:6-16 —— 楼梯 16 拍加速、STRIKE1=35.86、12 声钟、DUR=CARD0+4.4",
+    "styles/art-deco/demo/timeline.js:20-32 —— 段落表 SEC（title/street/lobby/stairwell/kitchen/roof/twelve bells/ballroom/end）",
+    "styles/art-deco/demo/timeline.js:35-43 —— 命名同步点 T（gold/titleHit/archOpen/snare/strike/tutti/doors/card…）",
+    "styles/art-deco/demo/timeline.js:46-54 —— 台词起点 LINES（L1..L5 与 B1/B2）",
+    "styles/art-deco/demo/film.js:16-37 —— SHOTS 镜头表",
+    "styles/art-deco/demo/film.js:41-47 —— TR 转场表（split/revolve/close）",
+    "styles/art-deco/demo/film.js:52-71 —— splitOpen 门扇甩开（eio 缓动、接缝辉光、金色门边）",
+    "styles/art-deco/demo/film.js:72-89 —— revolve 旋转门玻璃翼扫过",
+    "styles/art-deco/demo/film.js:118-129 —— subs 停留 = max(1.8, dur+0.6)、字幕卡参数（cy 990 / size 40）",
+    "styles/art-deco/demo/engine/deco.js:16-31 —— 调色板 C（ink/black/night/gold0-2/goldHi/ivory/emerald/burg/plum/skin/bulb）",
+    "styles/art-deco/demo/engine/deco.js:46-58 —— goldGrad 带式金属渐变 + sheen 光扫",
+    "styles/art-deco/demo/engine/deco.js:101-123 —— gline 签名描边（暗刻线+金主线+高光+可选双线）",
+    "styles/art-deco/demo/engine/deco.js:133-152 —— airbrush 硬边喷绘 + rim 金边",
+    "styles/art-deco/demo/engine/deco.js:156-191 —— sunburst（lines/wedges/both，taper）",
+    "styles/art-deco/demo/engine/deco.js:212-227 —— archFrame 阶梯拱 + 弧月太阳纹",
+    "styles/art-deco/demo/engine/deco.js:230-241 —— fan 扇形母题（可 open 0..1）",
+    "styles/art-deco/demo/engine/deco.js:324-339 —— drawShape（任意路径的 deco 画法 + `color` 单色门）",
+    "styles/art-deco/demo/engine/type.js:36-90 —— titleBar 从中心展开（点→线→条→字上升→翼饰）",
+    "styles/art-deco/demo/engine/type.js:135-161 —— dial 半圆楼层指示器（value 0..1）",
+    "styles/art-deco/demo/engine/type.js:164-194 —— clockFace（罗马数字 + 时分秒针）",
+    "styles/art-deco/demo/engine/type.js:199-224 —— subtitleCard 从中心展开 + 扬声器图标",
+    "styles/art-deco/demo/engine/bulbs.js:82-112 —— buildSign 字形骨架 → 等距灯泡",
+    "styles/art-deco/demo/engine/bulbs.js:180-188 —— litSequence 点火过冲 + 追光",
+    "styles/art-deco/demo/lines.json:1-49 —— 7 行旁白实测文案与音色/语速",
+    "styles/art-deco/demo/mix.py:9 —— 从 timeline.json 读 B/DUR/K_BPM",
+    "styles/art-deco/demo/mix.py:29-48 —— 乐队距离自动化（街上低通 2.4kHz → 屋顶全频）",
+    "styles/art-deco/style.json:16-17 —— frame_sec 17.52 / dur 58.4"
+  ]
+}

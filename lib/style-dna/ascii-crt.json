@@ -1,0 +1,142 @@
+{
+  "slug": "ascii-crt",
+  "name_zh": "ASCII / CRT 终端（ASCII / CRT Terminal）",
+  "essence": "一块单色终端屏幕：P3 琥珀（或 P1 绿）磷光在暗玻璃上发光，边缘弯曲，带扫描线。画面里的一切——标题、风景、人脸、房间、字幕——都是由**真实字符排在字符网格上**、按墨量密度挑选出来的。全片只有一个镜头，就是屏幕本身；它只靠改变网格的字号来运动（字大=推进，字小=拉远）。它不是「加个 ASCII 滤镜」的图片、不是黑客电影的绿雨、不是像素游戏（无精灵、无自由像素）、也不是科幻 HUD（无矢量线、无悬浮面板）。",
+  "materials_and_rendering": [
+    "字体：一种等宽位图风字体（VT323, OFL）；格子 0.4em 宽 × 0.8em 高（1:2）。用 160px 预渲染的字形图集（描边 2.2px 表示电子束扩散），靠 `drawImage` 缩放，让推拉连续而锐利。",
+    "网格：每镜的列数不同（标题 ~20 列，终端 80 列，画面 200+ 列）；推进可以一直推到「一个格子里装着自己的子网格」。",
+    "密度表：每个字形的实测墨量 × dim/normal/bold（0.42/0.7/1.0）→ 约 20 级，去掉几乎重复的级别；每格叠加 4×4 有序抖动 + hash 抖动；低于阈值（亮度 <0.05）的格子留白。**负空间才让 ASCII 画读得出来。**",
+    "画面管线：先把灰度画进一张与网格严格对齐的离屏「底片」（每格采样若干次；通道存琥珀、第二色、一个标志位），按格取平均，再选字。内部做局部对比（`m + 0.9·(m − mean)`）保住轮廓。",
+    "可辨识主体靠剪影而非噪声（真实的海岸线多边形、由几块面构成的脸）；暗=稀疏的暗字，亮=密集的粗字，暗面只用稀疏的 `.`；选一个剪影清楚的角度。",
+    "网格上的深度：远=更暗更稀，近=更亮更密；面与面之间用一条细亮边分开。",
+    "CRT 后期（WebGL2）：磷光色（亮度沿磷光曲线映射：暗处深橙→琥珀→过曝近白）、多级 bloom + 一圈淡光晕、细扫描线（亮处暗缝变窄）、轻微桶形畸变、圆角遮罩、暖近黑的未激发玻璃、淡淡反光、~1% 闪烁、细噪声。**没有 RGB 荫罩：单色显像管没有。**",
+    "余辉：消失的文字按 τ ≈ 0.12s 解析式衰减（每帧确定性）；移动的字形带一段极淡的拖尾采样。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 4–11 个英文词（约 20–60 字符），且**行数极少**（demo 全片只有 5 行）。硬规则：每条口播 ≤ 4.5s（实测语速 0.8）；LOG 字幕条一行 ≤ 80 列（VT323 45px，格宽 18px），停留 = max(1.4s, 说完 + 0.6s)。屏幕上「故事展示的文本」是画面不是字幕，在 `.srt` 里记为 `[SCREEN] …`。",
+    "person_and_tense": "第一人称、现在时（一台机器/一个操作者在写日志）。语气是机器般的冷静与克制；可以是陈述（\"Log resumed. Forty years since the last entry.\"），也可以是自问（\"I have no camera. Only words.\"）。",
+    "typical_openers": [
+      "日志式开场（\"Log resumed.\" / 时间戳 + 状态）",
+      "以状态/事实起句再落到意图（\"A message from Earth. I should show them I am here.\"）",
+      "以否定式坦白约束（\"I have no camera. Only words.\"）",
+      "用数字做钩子（\"Forty years of logs.\"）",
+      "结尾用一条新条目收束（\"New entry. Signal received.\"）"
+    ],
+    "forbidden": [
+      "第一人称抒情与感叹（机器只报告状态，不抒情）",
+      "网络口播腔、营销话术、感叹号堆叠",
+      "长句与从句嵌套（打字节奏就是剪辑节奏，句子必须能被逐字敲出来）",
+      "抽象概念当主语（只说能被网格画出来的东西：信号、日志、时间）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序：CRT 从点→线→整幅开机（空屏上一个巨大光标闪 3 次）→ 标题作为「机器打开的文件」在 20 列打字 → 拉远到 80 列变成启动日志第 1 行 → 静态 80 列终端（唯一的运动是文字与光标）→ 打扰（握手噪声冲刷屏幕）→ 屏息（光标闪）→ 挫折（`NOT FOUND` ×3）→ 决定（推近，回信被巨大地打出）→ **近静默 1–1.5s** → 高潮（回信的字母掉落、按墨量密度重排成地球升起的字符画，第二色在重拍上出现）→ 尺度揭示（推进到单个字形，字形内部是 40 年的日志子网格）→ 等待 → 一句小回复 → 回声（退出屏幕、关机收成一点）→ 片尾卡。",
+    "beat_durations": "时间挂在 100 BPM 网格上（1 拍 = 0.6s，1 小节 = 2.4s）。关键锚点（秒）：on0=0.35 开机、title=3.0 打字、zoom0/zoom1=7.2/8.4（标题拉远到 80 列）、carrier=16.2 握手、msg=17.6 消息、push0/push1=29.6/30.2 推镜、reply=30.2 回信、fall0=33.6 字母掉落、bloom=37.2 变色重拍、fr0..fr5=40.2→47.6 分形推进、tx0/tx1=48.0/49.8 发送、out0/out1=52.6/54.8 退出屏幕、card=55.2 片尾卡、off0/off1=58.6/59.2 关机、dur=59.8。打字速度：启动行 12ms/字、命令 38ms、标题与回信 120–150ms（=100 BPM 的十六分音符）；人的打字用手工计时、有停顿与爆发。落地闪 = 1.9× 亮度、0.12s 衰减。",
+    "total_length_range": "主 demo 59.8s（style.json dur=59.8，frame_sec=50.23）。简报区间 30–60s；STYLE.md 用例区间与之相符。分形推进的推进段：先从 8px 格推到 300px 格并**停 1s**，再推到 450px（子文本约 28px 可读）。",
+    "silence_policy": "静默是主要乐器。握手、消息、光标闪烁都只在房间底噪上播放；画面成形前有 1.5s 的静默。STYLE.md 明确：在变换前留一小段近静默；任何需要「数字归零」的时刻（含混响尾巴）都要真的归零。"
+  },
+  "tone": "一台被留在月球、孤独运行了 40 年的机器（或一个远程操作者）在写日志：冷、耐心、机器般平静；靠打字、光标闪烁和滚动制造悬念，用一次「暖的意外」（唯一的第二色）做情感峰值。它不喊、不慌，只是逐字把状态写下来。",
+  "shot_logic": {
+    "camera_is": "就是屏幕本身——唯一能动的「镜头」是网格字号，外加 CRT 的开/关机状态与一个可能的「屏幕之外」的镜头。它表达的是一台机器的时间与注意力。",
+    "vocabulary": [
+      { "move": "静态 80 列终端", "expresses": "等待、流程、机器时间", "serves": "倒计时；队列；被阅读的日志" },
+      { "move": "推进（格子变大）", "expresses": "注意力、亲密", "serves": "一句对白；一个名字；被敲下的决定" },
+      { "move": "拉远（格子变小）", "expresses": "语境、尺度", "serves": "标题变成列表第 1 行；成千条目中的一条" },
+      { "move": "推进到单个字形内部", "expresses": "隐藏的深度；一个符号由什么构成", "serves": "由消息构成的一个字母；由人构成的一个像素" },
+      { "move": "滚动（缓冲移动）", "expresses": "累积、时间流逝", "serves": "多年的记录；变更日志；信息流" },
+      { "move": "清屏 / 硬重绘", "expresses": "一次切；一个新状态", "serves": "重启；新章节；崩溃" },
+      { "move": "文本变成图像（网格缩小、字形坠落）", "expresses": "字变成世界", "serves": "一封信变成一张脸；数据变成地图" },
+      { "move": "开机 / 关机、消磁", "expresses": "生、死、睡眠、电击", "serves": "机器苏醒；结局；一次抽搐" },
+      { "move": "从玻璃上退出到一个画出来的房间", "expresses": "屏幕是世界里的一个物件", "serves": "谁在读；机器在哪" }
+    ],
+    "transitions": [
+      "清屏 / 硬重绘（cut = 新状态）",
+      "滚动（缓冲移动）",
+      "开机（点→线→全幅）/ 关机（全幅→线→点）",
+      "消磁（画面抖一下）"
+    ],
+    "forbidden": [
+      "两块屏幕之间的交叉溶解（转场必须发生在屏幕内：清屏、重绘、滚动、断电）",
+      "让字符离开网格（打字、滚动、计数器都按格跳；只有声明的「变换时刻」例外）",
+      "把画面当成「图片 + ASCII 滤镜」（字符必须作为字符画在网格上）",
+      "彩色装饰（单色磷光 + 最多一个第二色）"
+    ]
+  },
+  "idioms": [
+    "画面由词构成：一句话散开，它的字母按墨量密度排序后变成一幅只含这些字母的图像。",
+    "字号即镜头：推进到一个字占满屏幕，那个字本身又由更小的文字组成（一封信由 40 年的日志构成）。",
+    "打字节奏即剪辑节奏：机器打字均匀而快，人的打字不匀、有停顿与爆发；一个闪烁的光标就是最重要的表演。",
+    "CRT 物理：开机点→线→整幅、关机收成一点；余辉、bloom、弯曲玻璃。",
+    "一次颜色变化：一个柔和的第二色只出现一次，在重拍上开启，且不轻易收回。",
+    "日志文件：时间戳、错误码、进度条讲故事。",
+    "LOG 条作为字幕：底部保留区，反白 `LOG` 标签 + 提示符，按语音逐词打出，在缩放网格之外（像状态行）。"
+  ],
+  "atmosphere": "一间深夜的机房 / 一座远程中继站：房间底噪（风扇、低鸣、极轻的行输出啸叫）、磷光的暖、玻璃的冷；只有屏幕亮着。整体是「冷、耐心、机器般平静，但有一次暖的意外」的气质。",
+  "sound_palette": {
+    "instruments": [
+      "原创模拟合成器配乐，用代码（numpy/numba）渲染：PolyBLEP 锯齿与方波振荡器、带移动截止的共振 4 极点梯形低通、滤波包络、方波音序器、慢磁带 wow（±几音分）、pad 长混响、重击门限混响；可选 sub-bass 无人机、采样保持噪声、失谐齐奏主音。",
+      "**绝不 chiptune。** demo：D 小调、100 BPM；音源为锯齿/方波 + 梯形低通 + ADSR + 磁带 wow + 长混响/门限混响。"
+    ],
+    "foley": "全部合成：继电器咔哒、消磁嗡（60Hz 及谐波快速衰减 + 一声闷咚）、屈曲弹簧键（塑料咔 + 3.4kHz 弹簧叮 + 键帽回弹低嗒；空格更闷、回车更重）、对面字符的电传滴答、调制解调器与电话线音（应答音 2100Hz 带两次相位翻转、双音、1200/2400 FSK、限带噪声）、方波错误音与 BEL、粒子落地的成簇细小高频滴答、点阵打印机或磁带机（可选）、房间底噪（风扇 + 低鸣 + **极轻**的行输出啸叫，约 −50 dBFS）。",
+    "mix_rules": "音乐在人声下 duck 约 −8 dB；母版 −14 LUFS，mux 不加颗粒（噪声活在画面里）。机器说话时处理人声（轻环形调制 16%@52Hz、6ms 梳状、140–7000Hz 带通、软饱和），并用 whisper 复检每一行仍可读。静默是主要乐器：打字与闪烁光标下只留房间底噪；变换前留一段近静默。"
+  },
+  "variation_space": "可自由决定：谁在打字、屏幕是干什么用的、网格列数、开场、结尾、镜头（网格）路径、节奏、以及第二色是否出现。远离 demo 的方向：结构——一段聊天记录（两个用户隔一夜互相打字，时间戳当场景标题）、一本系统手册（章节标题、ASCII 图表、有一页开始出错）、一台机器从开机到关机的一天（一串计划任务，每个任务画出它在做的事）；开场——从滚动中途开始（缓冲已经在飞，它停在某一行）、一张打印纸（点阵纸向上喂入，然后屏幕接管）、先来一个错误（崩溃转储，然后倒回原因）；结尾——缓冲填满（故事的文本向上滚走只剩提示符）、屏幕保护（最后一行之后，一个缓慢漂移的图案接管空闲屏幕）、光标停止闪烁（不断电，只留一个最终状态）。",
+  "taboos": [
+    "用「图片 + ASCII 滤镜」造假（字符必须作为字符画在网格上）",
+    "黑客电影的绿雨",
+    "像素游戏（无精灵、无自由像素）",
+    "科幻 HUD（无矢量线、无悬浮面板）",
+    "彩色装饰（单色磷光 + 最多一个第二色）",
+    "两块屏幕之间的交叉溶解",
+    "chiptune 配乐",
+    "让字符离开网格（除声明的变换时刻）"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一句话、每一个网格与每一次变换。要素：台词 `lines.json`（每条 {id, t, text, voice, speed, asr?}，demo 用 `am_echo` speed 0.8，4–6 条短句）；逐词时间戳 `voices/words.json`（字幕逐词打出用）；语音时长 `voices/dur.json`；时间线 `main.js` 的 `T`（开机/标题/握手/消息/回信/掉落/变色/分形/发送/退出/关机）；网格列数与格子尺寸；密度表字符集（如 `' .:-=+*#%@'` 或回信的字母集）；第二色与其开启时刻；屏幕画面（底片函数）。",
+    "new_subject_contract": "新画面元素是一个「底片函数」：先把灰度画进一张与网格严格对齐的离屏画布（R=琥珀亮度，G=第二色亮度，B=标志位如夜面），再交给 `term.js` 的 `cellsFromImage` 按格取平均、`makeRamp`+`pick` 选字。可辨识主体必须靠剪影（多边形/几块面），暗面只用稀疏 `.`。参考实现：`art.js` 的 `paintEarthrise` / `makeCraters` / `horizonY`。",
+    "timeline_contract": "`main.js` 是全片时间线：导出 `window.DUR`、`window.EV`（拟音/旁白事件，events.mjs 导出给 mix.py）、`window.SUBS`（SRT）、`window.render(t)`（画第 t 秒）、`window.READY`。`tools/subs.mjs` 导出 `window.SUBS`。关键：懒构建的数据（粒子计划与它们的落地声事件）必须在 `window.EV` 导出**之前**建好（`main.js:598` 先 `buildFall()`）。",
+    "event_vocabulary": "事件由 `main.js` 的 `ev(t, type, o)` 产生：`vo{id}`（人声）、`key/space/enter/keyLight{ch}`（打字，mix.py 用弹簧键）、`remote{ch}`（对面来的电传滴答）、`relay`、`degauss`、`bootline`、`ratchet{k}`、`clunk`、`modem{d}`/`modemUp{d}`、`err`/`err2`、`bel`、`zoomIn{d,soft?}`/`zoomOut{d}`、`poweroff`、`land{n}`（粒子落地，n 个一簇）。mix.py 按 type 分派到对应的合成拟音。"
+  },
+  "evidence": [
+    "styles/ascii-crt/STYLE.md:3-4 —— 一句话本质与「参考只借语法、不抄界面文字/字体/logo」",
+    "styles/ascii-crt/STYLE.md:6-12 —— 本质与「不是什么」（非 ASCII 滤镜/非绿雨/非像素游戏/非科幻 HUD）",
+    "styles/ascii-crt/STYLE.md:14-26 —— 材料与渲染（VT323、网格、密度表、底片管线、剪影、深度、CRT post、余辉）",
+    "styles/ascii-crt/STYLE.md:28-33 —— 颜色逻辑（一种磷光 + 最多一个第二色）",
+    "styles/ascii-crt/STYLE.md:35-39 —— 字体与字幕（LOG 条逐词打字、[SCREEN]、标题当文件名/命令/表头）",
+    "styles/ascii-crt/STYLE.md:41-47 —— 运动质量（只有网格缩放/CRT 物理/粒子连续动；打字速度即表演；推进到字形内部）",
+    "styles/ascii-crt/STYLE.md:49-65 —— 镜头语法表（唯一镜头是网格缩放）+ 构图/转场",
+    "styles/ascii-crt/STYLE.md:67-74 —— 声音（模拟合成器、Never chiptune、静默、合成拟音、混音 −14 LUFS 无颗粒）",
+    "styles/ascii-crt/STYLE.md:76-85 —— 母题清单（画面由词构成/字号即镜头/打字节奏/CRT 物理/一次变色/日志文件）",
+    "styles/ascii-crt/STYLE.md:87-97 —— 媒介陷阱（反白 destination-out/底片未对齐/格子中心/每个暗像素都变字/粒子堆成亮条/描边字形闭口）",
+    "styles/ascii-crt/STYLE.md:103-109 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/ascii-crt/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/ascii-crt/DEMO.md:12-24 —— 故事与母题使用（回信字母变成地球升起；一个 M 由 40 年 NO SIGNAL 构成；第二色在重拍出现）",
+    "styles/ascii-crt/DEMO.md:28-36 —— 逐拍镜头（开机/标题拉远/屏息/推近回信/高潮掉落/分形/退出屏幕）",
+    "styles/ascii-crt/DEMO.md:40-52 —— 字母掉落七步 + 分形推进（停 1s 再推）+ 打字速度",
+    "styles/ascii-crt/DEMO.md:56-71 —— 配乐（D 小调 100 BPM、硬切归零 5s、唯一大和弦落在回信）、静默、合成拟音、配音处理",
+    "styles/ascii-crt/DEMO.md:75-82 —— 调色板与道具（VT323 图集 160px、网格列数、ramp 值、地球/月面/CRT post/余辉/LOG 条）",
+    "styles/ascii-crt/demo/term.js:4-13 —— W/H、FONT VT323、图集 160px、格 0.4em×0.8em",
+    "styles/ascii-crt/demo/term.js:52-79 —— glyph/text/inverse/cursor（反白用黑字形挖字）",
+    "styles/ascii-crt/demo/term.js:82-101 —— makeRamp 密度表 + BAYER 4×4 抖动 + pick",
+    "styles/ascii-crt/demo/term.js:104-113 —— cellsFromImage 图像→格子",
+    "styles/ascii-crt/demo/crt.js:24-28 —— phos 磷光映射（暗偏橙、过曝偏白）+ phosE 第二色",
+    "styles/ascii-crt/demo/crt.js:90-92 —— 参数（curv .045 / scan .3 / glow .55 / halo .22 / amber/earth/glass）",
+    "styles/ascii-crt/demo/main.js:30-34 —— 余辉 TAU=.12、光标 flash、blinkN",
+    "styles/ascii-crt/demo/main.js:36-44 —— 时间线 T（on/title/zoom/clock/carrier/msg/push/reply/fall/bloom/fr/tx/out/card/off/dur）",
+    "styles/ascii-crt/demo/main.js:51-52 —— V80 与 STRIP 布局",
+    "styles/ascii-crt/demo/main.js:71-96 —— voEnd（HOLD=1.4）与 strip LOG 条",
+    "styles/ascii-crt/demo/main.js:283-317 —— buildFall（按墨量密度找源字母、三类落地、按 1/48s 分箱生成落地声）",
+    "styles/ascii-crt/demo/main.js:318-329 —— partPos（地球先落进地平线再升起）",
+    "styles/ascii-crt/demo/main.js:361-430 —— 分形推进（字形内部满亮、外部 3–6%、邻居 20%）",
+    "styles/ascii-crt/demo/main.js:566-571 —— SUBS 含 [SCREEN] 条目",
+    "styles/ascii-crt/demo/art.js:61-77 —— earthShade（单位圆内着色 + 暗面）",
+    "styles/ascii-crt/demo/art.js:94-97 —— horizonY（缓弧 + 山脊）",
+    "styles/ascii-crt/demo/art.js:164-181 —— makeCraters（近大远小 + 前景大坑）",
+    "styles/ascii-crt/demo/mix.py:26-35 —— key 弹簧屈曲键（塑料咔 + 弹簧叮 + 键帽回弹）",
+    "styles/ascii-crt/demo/mix.py:63-81 —— modem 原创握手（2100Hz 应答音 + FSK + 限带）",
+    "styles/ascii-crt/demo/mix.py:119-130 —— 风扇 + 120Hz + 15.7kHz 行输出啸叫底噪",
+    "styles/ascii-crt/demo/music/score.py:3 —— D 小调、100 BPM、PolyBLEP + 梯形低通 + 磁带 wow",
+    "styles/ascii-crt/demo/lines.json:1-38 —— 5 行旁白实测文案与 am_echo 0.8",
+    "styles/ascii-crt/style.json:16-17 —— frame_sec 50.23 / dur 59.8"
+  ]
+}

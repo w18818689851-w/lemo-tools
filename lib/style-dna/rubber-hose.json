@@ -1,0 +1,171 @@
+{
+  "slug": "rubber-hose",
+  "name_zh": "1930 年代橡皮管卡通",
+  "essence": "早期有声时代的手绘黑白动画：角色有**橡皮管四肢**（等宽软管、没有肘、没有膝）、**白色四指手套**、**饼状眼**（黑色椭圆瞳孔挖掉一个楔形）、巨大的圆鞋，身体像气球一样挤压拉伸。背景是柔和的灰色水彩画；角色是平涂的白、灰与墨。**一切**（家具、机器、植物、墙壁）都跟着音乐呼吸。画面像一卷磨损的 35mm 拷贝投在 4:3 片门里：闪烁、划痕、灰尘、片门抖动、晕影。",
+  "materials_and_rendering": [
+    "画面：1920×1080 输出，**4:3 片门**（1440×1080 居中，两侧黑边），片门四角圆角 r≈28px，片门边缘有一圈柔和内阴影（demo/film.js:4,22,58）。",
+    "角色：平涂填充 + 一条硬边**明暗带**（浅灰，压在背光一侧）+ 墨色描边。描边在**屏幕空间恒定**（先把点变换到屏幕坐标再描边，1080p 下约 6px），带轻微 **line boil**（±1.2px，12fps 在 3 张画之间循环）（demo/toon.js:1-4,29-33,120-137）。",
+    "解剖件：面条肢体是等宽软管（约身高的 1/20），一个平滑弯，两端圆头；手套 = 掌 + 3 根胖手指 + 拇指 + 外翻袖口（带折线）+ 手背 3 道缝线，**只描并集的轮廓**（先把所有部件厚描一遍，再整体填充）；饼眼 = 白色椭圆 + 大黑瞳（约 63%×74%）挖掉朝右上的楔形，眨眼用身体色的眼睑 + 一道睑线；嘴有微笑（带脸颊小勾）、张嘴笑、'O'、波浪（害怕）、噘嘴、吐舌；鞋 = 大黑椭圆 + 白色脚尖高光（demo/chars.js:59-77,92-124,126-150,154）。",
+    "物件角色：脸长在身上，**一个次要特征承载情绪**（蒸汽、火苗、灯罩倾斜、弹簧）。盒状物件是真实的、略微俯视的投影 3D 形状，脸映射在正面（demo/cast.js:11-32,35-56；STYLE.md:21）。",
+    "背景：一次性画进缓存画布（1.25–1.5× 分辨率，推镜保持清晰）：平涂底 + 柔和斑块（±5%）+ 内缘变暗 + 一道细深灰轮廓 + 纸纹。背景**永不 boil**。年代母题：花纹墙纸、镶板家具、棋盘格地板、砖、木板墙（demo/bg.js；STYLE.md:22）。",
+    "胶片损伤（合成 pass，不属于场景）：低频片门抖动（±1.2px）加偶发小跳；闪烁 ±4%；0–3 条漂移竖划痕；每帧 3–8 粒灰尘；偶尔一根毛发；强晕影；每个剪接处一次小跳；轻微模糊（blur 0.55px + contrast 1.14）（demo/film.js:17-59）。",
+    "颗粒在 ffmpeg 的 mux 阶段加（grain **3**），不在页面里（STYLE.md:23）。"
+  ],
+  "sentence_patterns": {
+    "length": "字幕是**一张年代字卡**：单句约 **24–56 字符（约 5–12 个英文词）**，一行到两行，绝不折成三行；中文 12–26 字。断句规则：按自然语气断，可用逗号、省略号与感叹号（广播腔允许感叹）；一张卡可以跨两条短语音，短语音**必须合并**成一张卡以免字幕闪。停留 ≥ max(1.8s, 语音 + 0.6s)，**硬上硬下、无淡入淡出**（demo/story.js:15-22；STYLE.md:34,94）。",
+    "person_and_tense": "第三人称、现在时、广播解说腔。像一位电台播音员在解说一场比赛：'And they're off!'、'Look out, folks... the drain!'。允许第二人称（'folks'）与感叹号，允许省略号制造悬念；不用第一人称抒情，不用现代网络用语。",
+    "typical_openers": [
+      "报时/呼告起句：'Seven a.m., folks! And boy, is this coffee bitter!'",
+      "出发宣告：'And they're off!'",
+      "惊叹推进：'Up the china cabinet... what a climber!'",
+      "警告式：'Look out, folks... the drain!'",
+      "收束/晚安：'Good night, folks!'"
+    ],
+    "forbidden": [
+      "抽象内心独白（这是广播解说，不是意识流）",
+      "现代口语、网络梗、emoji",
+      "一句塞两个以上并列信息点（会撑破字卡）",
+      "照抄任何真实卡通角色的名字、剪影或台词"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "一场「追逐 + 变形」的默片式闹剧：片名卡 → 醒来 → 尝到苦味（近景反应）→ 看见糖罐 → 起跑追逐 → 厨房里的物件接力（烤面包机、盘子木琴、勺子滑梯）→ 水槽危机（旋涡、伸胳膊、静音、收回）→ 放下 → 离开（方糖犹豫、跳）→ 甜（近景）→ 拉远全场起舞 → iris 收拢被拉上 → 片尾卡。每个转折点都有一个音乐 cue 对应（demo/story.js:25-40,67-78）。",
+    "beat_durations": "144 BPM，4/4：**1 拍 = 5/12 s = 10 帧**，1 小节 = 5/3 s。节奏网格要选一个「1 拍正好是偶数帧（24fps 下 8/10/12/16/20 帧）」的速度，这样每个拍点都落在两格画上。**角色拍两格（on twos，12fps）；相机拍一格（24fps）**——步进相机读起来会抖。呼吸：每个空闲物件用 cos(2π·拍数) 挤压拉伸，**每拍一个极端**（拍点拉长、反拍压扁），按两格取样，幅度约 5–7%，所有道具同相（demo/story.js:1-10；STYLE.md:39-41）。",
+    "total_length_range": "demo 30 小节 = **50.0s**；短片通常 **30–90s**，由小节数决定。片名卡在 bar 3.4 像窗帘一样卷上去（demo/story.js:5,26,44-45）。",
+    "silence_policy": "**乐队一停，一切冻结**（连背景呼吸也停），混响尾巴一起切掉。停在一句凝视、一个笑点之前；bar 18 的第 1–2 拍全静，18.3 一声弹簧「啵嘤」+ 一个柔和钢琴和弦把世界带回来。静音里**唯一允许的声音**是放映机底噪（hiss/crackle/24Hz 片门咔哒）（demo/story.js:73；demo/mix.py:177-184；STYLE.md:45）。"
+  },
+  "tone": "热闹、淘气、爵士味十足。整个世界像一群乐手，每个物件都等着轮到自己的独奏；喜剧是身体喜剧，不靠台词。底色是年代拷贝的磨损质感：黑更黑、白更白、有一点晕影和抖。",
+  "shot_logic": {
+    "camera_is": "一台**剧场相机**：多数时候锁定，只为跟一个奔跑者或落一个笑点而动。开场与结尾由题材决定。",
+    "vocabulary": [
+      "舞台全景、锁定、平视：布景就是舞台，台上人人表演（demo/scenes.js；STYLE.md:53）",
+      "硬切到面部近景：反应就是笑点（demo/story.js:28 bitterCU）",
+      "跟随奔跑者横移（缓起缓停）：追逐、动量（demo/story.js:30 chase）",
+      "中景跟拍（角色占屏高 1/4–1/3）：每一步都是一个音符（demo/story.js:32 cupboard）",
+      "随坠落/上升俯仰：重力即节奏",
+      "略高机位、一个不切的长镜：危险与解法同框（demo/story.js:33 sink）",
+      "桌面横移（平面角色贴着转动的模型布景）：世界是真实的地方",
+      "从近景拉远成拥挤的中全景：一种情绪扩散给所有人（demo/story.js:37 dance）",
+      "iris 收/放（可被角色抓住）（demo/story.js:38 iris）"
+    ],
+    "transitions": [
+      "iris 开合",
+      "按拍硬切",
+      "字卡像窗帘一样卷起/放下"
+    ],
+    "forbidden": [
+      "溶解/叠化（风格只允许 iris 与硬切）",
+      "为笑点或音乐段落用远景（脸必须读得清；远景会把角色变小、Mickey-mousing 读不出）",
+      "现代动画式的关节弯曲或渲染明暗",
+      "彩色（严格灰阶，连胶片损伤都不许有色彩）"
+    ]
+  },
+  "idioms": [
+    "万物随拍呼吸：布景就是角色；高潮时**整个世界**可以同步起舞，连墙都跳。",
+    "Mickey-mousing：每一步都是一个音符；一个道具就是一件乐器（楼梯当钢琴、打字机当鼓组、栅栏柱当木琴）。",
+    "橡皮管拉伸：四肢在一个不切的长镜里伸到任意长度。",
+    "变形：任何东西在运动中变成另一样东西（尾巴变问号、软管变萨克斯）。",
+    "弹跳球跟唱：歌词印在字卡上，一个球按拍从一个词跳到下一个词。",
+    "片子是实物：字卡像窗帘卷起；iris 被抓住拉上；字幕卡会被撞；片门线会滑。",
+    "墨水瓶：画师的笔画出主角，主角再和笔吵架。",
+    "预备—停顿—动作：每个大动作前先下蹲（压扁到 ~0.8），停住（让乐队也停），再啪地弹出；撞击得到一个带指数回弹的压扁。",
+    "停顿也是表演：一串停顿、每个眼神落在八分音符上配一声木鱼，读起来就是在思考。"
+  ],
+  "atmosphere": "一间 1930 年代风格的厨房，被当成一座剧场：瓷砖、花纹墙纸、棋盘格地板；一切都在嗡嗡地呼吸。像一卷磨损但充满活力的 35mm 拷贝——有灰尘、有划痕、有晕影，但热闹、干净、节奏极准。",
+  "sound_palette": {
+    "instruments": [
+      "1930 年代热舞乐队 / ragtime：跨步钢琴、单簧管、小号（开号 + plunger 弱音「哇哇」）、长号（滑音）、大号 oom-pah、2 & 4 拍班卓、刷子军鼓与滚奏、木琴、木鱼、滑哨、镲、卡祖笛、搓衣板、剧场管风琴。**不要弦乐垫、不要现代合成器**",
+      "一段短小的原创切分主题可以在不同编排里重现（demo/music/score.py:1-6）"
+    ],
+    "foley": "按材料合成：瓷器/玻璃 = 高而硬的非谐分音 + 极短瞬态；木 = 木鱼；金属 = 铃与铛；弹簧 = 「啵嘤」；水 = 滤波噪声 + 上升 blip 与气泡；橡胶 = 锯齿波「吱呀」过带通。拟音 + 配乐之后过一遍**光学声轨**：带限约 110Hz–6.2kHz、轻微抖晃（wow ~0.6Hz、flutter ~7Hz）、柔和饱和（demo/mix.py:22-64,167-168）。",
+    "mix_rules": "旁白走**电台链**：HP ~260Hz / LP ~4.6kHz、tanh 饱和、短房间、压缩；音乐在人声下闪避约 8dB（`mus * (1 - 0.62*duck)`）。音乐 + 拟音之后垫一层 hiss、crackle 与 24Hz 放映机片门咔哒——这是**静音里唯一允许的声音**。响度 −14 LUFS（两遍 loudnorm）（demo/mix.py:163-164,177-184；STYLE.md:70-72）。"
+  },
+  "variation_space": "你要决定：地点（或好几个）、卡司、结构、开场、结尾、镜头路径、速度与乐队编制。全部远离本 demo。可换的结构：**一首跟唱**（主歌副歌，弹跳球带着信息，布景把每句歌词演出来）；**一场才艺秀**（物件轮流上台，最小的那个赢）；**一次接力**（一样东西在一座城里手手相传，每次交接都是旋律上的一件新乐器）。可换的开场：**从墨水瓶里出来**（一支笔画出主角，主角跳上布景）；**幕布升起**（乐队调音，一根指挥棒开启全片）；**一只眼睛上的 iris**（它眨一下，iris 放大，显出这是谁的眼睛）。可换的结尾：**把字卡拉过来**（角色在搞笑途中把「The End」拖到自己面前）；**胶片断了**（画面烧起来，一只戴手套的手把它接好，鞠最后一躬）；**乐队收摊**（乐器一件件离开，只剩一个音）。速度、乐队编制、灰阶温度（暖纸灰 / 冷银盐灰 / 微棕）都可换。唯一不能换的是三件事：**橡皮管四肢 + 饼眼 + 四指手套的解剖套件、万物随拍呼吸、4:3 片门里的磨损胶片质感**；换掉任何一件，它就不再是这个风格。",
+  "taboos": [
+    "把画面做成平的灰（背景要压到中灰，纯白与墨只留给角色，最后加对比提升）",
+    "用远景讲笑点（会把角色变小、Mickey-mousing 读不出；要用中景，人群用拥挤的中全景）",
+    "把「悲伤」的眉毛画成「生气」（眉毛要按内端/外端定义，内端 = 靠近鼻子，不按左右）",
+    "把肢体画在身体剪影之后（把手柄、尾巴藏起来；要向外踢、向外伸）",
+    "画好的角色在某些机位与背景道具穿帮（要检查每个镜头的最后一帧）",
+    "一排烟雾读成思考气泡（要散开、放大）",
+    "短语音让字幕闪（要把连续几句合并成一张卡）",
+    "任何色彩、任何关节、任何渲染明暗",
+    "使用既有卡通角色的名字、剪影、设计、旋律或 logo；尤其是「人头杯 + 吸管」那类设计——若主角是个物件，**整个物件就是身体**"
+  ],
+  "asset_contract": {
+    "content_fields": "`story.js` 为唯一真值：`BPM/BEAT/BAR`、`bar(b,beat)`、`NBARS/DUR`、`ANIM_FPS`、`q(t)`（拍两格）、`breath(t)`、`VO{}`（旁白起点）、`SUBS[]`（`[t0,t1,文本,'b'|'t']`，一张卡可覆盖多条语音）、`SHOTS[]`（`[起,止,名]`）、`K[]`（关键时刻）、`CUES[]`（配乐 cue）（demo/story.js:1-78）。",
+    "new_subject_contract": "新增一个物件角色 = 用 toon.js 的矩阵栈（push/translate/rotate/scale）+ 形状原语（ell/arc/spline/rr/rect/quad/noodle/ribbon）画，脸用 chars.js 的 `pieEye/mouth/brow`，脚用 `shoe`，手用 `glove`，肢体用 `hose`，并在 draw 开头调用 `breathe(b)` 让它随拍呼吸（demo/cast.js:1-8,11-32；demo/chars.js:59-154）。新增一个角色 = 在 chars.js 里用 `P` 灰阶（白/纸/浅/中/深…/墨）组装。新增一个镜头 = 在 `SHOTS` 加一行 + 在 scenes.js 加一个 `shotXxx(t)` 并在 main.js 的 `FN` 表里登记（demo/main.js:35）。",
+    "timeline_contract": "`story.js` 是唯一时间真相：画面（scenes.js）、字幕（SUBS）、拟音（events.js）、配乐 cue（music/score.py）全从它导出；时间一律用 `bar(b, beat)` 计算，1 起算。页面契约：`window.render(t)` / `window.DUR` / `window.SUBS` / `window.EV` / `window.READY`（demo/main.js:52-59）。剪接处片门跳一下：`cutAt` 命中该帧时 `jump = 3`（demo/main.js:49）。",
+    "event_vocabulary": "事件词表（events.js → mix.py 消费）：瓷器/陶瓷（porcelain/ceramic_low）、木鱼（woodblock）、方糖脆响（sugar_crunch）、滑哨（slide_whistle）、弹簧（boing）、闹钟铃（bell_ring）、水花与气泡（water_splash/bubble_bed）、橡胶吱呀（rubber_creak）、瓷器碎裂（china_crash）、掠过（whoosh）、拉链（zip_up）、拍击（smack）、棘轮（ratchet）、plip/twirl/creak/zipBack、vo{id}、projector（demo/mix.py:71-131）。"
+  },
+  "evidence": [
+    "styles/rubber-hose/demo/toon.js:1",
+    "styles/rubber-hose/demo/toon.js:7",
+    "styles/rubber-hose/demo/toon.js:12",
+    "styles/rubber-hose/demo/toon.js:22",
+    "styles/rubber-hose/demo/toon.js:23",
+    "styles/rubber-hose/demo/toon.js:29",
+    "styles/rubber-hose/demo/toon.js:30",
+    "styles/rubber-hose/demo/toon.js:36",
+    "styles/rubber-hose/demo/toon.js:42",
+    "styles/rubber-hose/demo/toon.js:65",
+    "styles/rubber-hose/demo/toon.js:83",
+    "styles/rubber-hose/demo/toon.js:98",
+    "styles/rubber-hose/demo/toon.js:120",
+    "styles/rubber-hose/demo/toon.js:134",
+    "styles/rubber-hose/demo/toon.js:154",
+    "styles/rubber-hose/demo/toon.js:158",
+    "styles/rubber-hose/demo/chars.js:8",
+    "styles/rubber-hose/demo/chars.js:59",
+    "styles/rubber-hose/demo/chars.js:76",
+    "styles/rubber-hose/demo/chars.js:83",
+    "styles/rubber-hose/demo/chars.js:92",
+    "styles/rubber-hose/demo/chars.js:126",
+    "styles/rubber-hose/demo/chars.js:147",
+    "styles/rubber-hose/demo/chars.js:154",
+    "styles/rubber-hose/demo/chars.js:157",
+    "styles/rubber-hose/demo/cast.js:1",
+    "styles/rubber-hose/demo/cast.js:8",
+    "styles/rubber-hose/demo/cast.js:11",
+    "styles/rubber-hose/demo/cast.js:35",
+    "styles/rubber-hose/demo/cast.js:92",
+    "styles/rubber-hose/demo/cast.js:123",
+    "styles/rubber-hose/demo/cast.js:135",
+    "styles/rubber-hose/demo/film.js:4",
+    "styles/rubber-hose/demo/film.js:13",
+    "styles/rubber-hose/demo/film.js:18",
+    "styles/rubber-hose/demo/film.js:23",
+    "styles/rubber-hose/demo/film.js:28",
+    "styles/rubber-hose/demo/film.js:31",
+    "styles/rubber-hose/demo/film.js:39",
+    "styles/rubber-hose/demo/film.js:46",
+    "styles/rubber-hose/demo/film.js:53",
+    "styles/rubber-hose/demo/film.js:58",
+    "styles/rubber-hose/demo/story.js:1",
+    "styles/rubber-hose/demo/story.js:3",
+    "styles/rubber-hose/demo/story.js:5",
+    "styles/rubber-hose/demo/story.js:6",
+    "styles/rubber-hose/demo/story.js:7",
+    "styles/rubber-hose/demo/story.js:10",
+    "styles/rubber-hose/demo/story.js:13",
+    "styles/rubber-hose/demo/story.js:15",
+    "styles/rubber-hose/demo/story.js:25",
+    "styles/rubber-hose/demo/story.js:44",
+    "styles/rubber-hose/demo/story.js:67",
+    "styles/rubber-hose/demo/main.js:23",
+    "styles/rubber-hose/demo/main.js:35",
+    "styles/rubber-hose/demo/main.js:49",
+    "styles/rubber-hose/demo/main.js:52",
+    "styles/rubber-hose/demo/ui.js:5",
+    "styles/rubber-hose/demo/ui.js:30",
+    "styles/rubber-hose/demo/mix.py:22",
+    "styles/rubber-hose/demo/mix.py:36",
+    "styles/rubber-hose/demo/mix.py:54",
+    "styles/rubber-hose/demo/mix.py:163",
+    "styles/rubber-hose/demo/mix.py:167",
+    "styles/rubber-hose/demo/mix.py:177",
+    "styles/rubber-hose/demo/mix.py:181",
+    "styles/rubber-hose/demo/music/score.py:1",
+    "styles/rubber-hose/demo/music/score.py:19"
+  ]
+}

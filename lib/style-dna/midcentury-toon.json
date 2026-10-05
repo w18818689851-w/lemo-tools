@@ -1,0 +1,145 @@
+{
+  "slug": "midcentury-toon",
+  "name_zh": "50s 扁平卡通（Mid-century Cartoon）",
+  "essence": "一部 1950 年代教育片式的「跟着做」指南：扁平印刷色的形体配一条永不合拢的呼吸墨线，每一块填色都是单独一张「赛璐璐」、印得比线偏几个像素并在二拍上重印，于是画面像手工套印的颜料一样微微抖动——它教的是「怎么做」，不是「为什么」，它是印出来的，不是画上去的。",
+  "materials_and_rendering": [
+    "套印偏移（off-register cels）：填色相对其线偏移几个像素（右下），偏移量在二拍（12fps）上抖动 ±1–2px（demo 实测偏移 (6,4)px、抖动 ±1.6px）。**一切都要带这个偏移，文字也包括**；只有做一张清晰的图解时才关掉。",
+    "线：3–5px 的墨带，宽度有 ±40% 的呼吸、12–25% 的断口。角色 ~4px、道具 3–4.5px、平面图里的墙更粗且更断。手：手掌与手指的并集只描一条外轮廓，手指之间用细线分隔。",
+    "明暗：一个平涂的深色面被裁在形状内部，**永不用渐变**。投影是形状的副本、右下偏移（12,12）、纸色阴影、约 50% 不透明。",
+    "装饰：4 角原子星、8–18 角星芒、放射光束（~30 个楔形、半透明）、回旋镖与腰子形、波点。",
+    "颗粒：轻（demo mux grain 4）+ 纸纹叠加；观感是「印刷」而非「胶片」。",
+    "手绘保持：主讲人的身体是一张**定格画**，只有手臂、手、眼睛、嘴在动。房间不「画」：一个场景 = 一个色面 + 一条地面带 + 一条带缺口的水平线 + 一两个道具。",
+    "人物与物件都是几何的：蛋形或豆形头、鼻子是脸部轮廓的一部分（不能是贴上去的楔子）、两三个平色的简单衣物、四指卡通手套。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 23–40 个字符（很短）。字幕排布宽上限 1280px（42px 字），最多一行。停留 ≥ max(1.8s, 语音 + 0.6s, 字符数/12 + 1s)。",
+    "person_and_tense": "第三人称/祈使混合、现在时。像课堂讲解：直接对观众说，一个从句一行（\"Step one. Set it against a wall.\"）。",
+    "typical_openers": [
+      "打招呼式钩子：\"Meet X.\"（点名 + 一句介绍）",
+      "编号式开场：\"Step one. …\"（步号 + 一个祈使从句）",
+      "以动作起句：\"Open the app and add …\"",
+      "提示句式：\"Tip: …\"",
+      "结尾用计数收束：\"Three steps. That's it.\""
+    ],
+    "forbidden": [
+      "解释原理的长句（这个风格只教「怎么做」）",
+      "多重从句/嵌套句（一行只放一个从句）",
+      "第一人称品牌腔（\"we've engineered\"）",
+      "形容词堆砌的营销话术"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（产品安装指南）：钩子揭示（产品名 + 一句介绍）→ 逐步循环「步骤标题（编号徽章 + 标题）→ 广景 + 圆形放大特写 → 该步的数据落在动作拍上 → 一个手势」→ 回报（把功能变成装饰：一条真实流程/路线逐区画出来，退后一看像一块原子时代的织物）→ 提示 → 海报落版（各步变成编号勋章）→ 虹膜收束到产品 → 片尾卡。",
+    "beat_durations": "时间挂在 132 BPM 网格上（1 拍 ≈ 0.4545s，1 小节 ≈ 1.818s）。hook = 4 小节；每个 step ≥ **3 小节**（由语音时长决定：`max(3, ceil((语音 + 1.6)/BAR))`），最后一步 = 2 小节；payoff = 3 小节；tip = 2 小节；lockup = 3 小节；end = 2 小节。3 步 = 22 小节 = 40.0s。标题停留 ≥4s；步骤标题覆盖整个 step；细节数据停留 ≥ chars/12 + 1s；总结画面干净停留 ≥3s。圆形特写弹出 0.32s（back-ease 1.5）；勋章盖章弹出 0.24s；标签弹出 0.26–0.3s（overshoot 1.9）；字幕淡入 0.16s + 上移 10px。",
+    "total_length_range": "主 demo 40.0s（style.json dur=40.0，frame_sec=3.2）。用例区间：产品安装 30–40s（2–5 步）、安全/规则卡 20–40s（3–6 条）、食谱 30–45s、App 引导 20–30s、门店/活动通知 15–25s。4 步 ≈ 45s（要 ≤40s 就砍提示或片尾卡）。",
+    "silence_policy": "静默是工具。**A**（0–1.36s）：没有音乐，只有盒子；**B**（按下按钮前的最后一拍，demo 实测 20.909–21.80s）：**一切关掉、连环境音也关**，所以静默之后第一个声音（开始咔哒）就是那一步；**C**（落版之前，demo 实测 30.2–30.905s）：只留房间底噪，静默后第一个声音就是第一枚勋章盖章。"
+  },
+  "tone": "冷静的课堂权威（calm classroom authority）：像 1950 年代教育片的解说员，一句一个从句，把「怎么做」讲清楚，让观众看完真的能做这件事。不用反问、不制造悬念、不煽情。",
+  "shot_logic": {
+    "camera_is": "「支架」（the stand）——永不用手持。镜头只做推、横移、俯仰、拉远，是一套词汇而非固定路线；开场与结尾由主题决定。",
+    "vocabulary": [
+      { "move": "慢推（几个百分点）", "expresses": "把视线收拢", "serves": "舞台上的产品；一个结果落定" },
+      { "move": "穿过勋章的虹膜", "expresses": "编号本身就是那扇门", "serves": "换步骤；换规则" },
+      { "move": "带引线的圆形特写（call-out）", "expresses": "同时给出语境与细节", "serves": "一个手部动作；一块屏幕；一个小零件" },
+      { "move": "跟着指点的手指俯仰", "expresses": "手指引导画面", "serves": "最重要的那一个动作" },
+      { "move": "推入设备、沿信号环横移", "expresses": "人 → 界面 → 设备", "serves": "配对；连接" },
+      { "move": "从一个圆形物体虹膜进入顶视图", "expresses": "圆到圆、功能到平面图", "serves": "一个按钮启动一项工作；开盖；旋钮" },
+      { "move": "拉远 + 反向旋转，从细节到平面图", "expresses": "一条车道变成一片图案", "serves": "路线、日程、花园、平面图" },
+      { "move": "色块擦除（侧向 / 自下而上）", "expresses": "翻动手册的下一页", "serves": "一个提示；一段总结；一张新卡片" },
+      { "move": "双色块分割画面", "expresses": "对 vs 错、之前 vs 之后", "serves": "一条安全规则；一次升级" },
+      { "move": "完全静止 ≥3s", "expresses": "「这一帧是拿来截图的」", "serves": "总结；行动号召；二维码" },
+      { "move": "虹膜收到一个物体上", "expresses": "最后一个圆", "serves": "收束在产品、logo、结果上" }
+    ],
+    "transitions": [
+      "圆（虹膜 / 穿过勋章）",
+      "色块擦除（侧向、自下而上）",
+      "落在拍点上的切换（cut）"
+    ],
+    "forbidden": [
+      "溶解（dissolve）",
+      "手持镜头",
+      "在下一场景开始前就把它画出来（过渡里要把局部时间夹到起点之后）",
+      "让关键主体小于画面高度的 1/3 或落进底部 140px 的字幕带"
+    ]
+  },
+  "idioms": [
+    "**套印偏移**让一张扁平信息卡显得手工、温暖。",
+    "**有限动画引导视线**：身体不动时手是唯一在动的东西，而那只手**就是**这一步；每个步骤一个手部动作，带预备（回拉/上抬）→ 快动作（0.15–0.25s，缓出）→ 跟随（回弹、落定、抬起），并精确落在拍上。",
+    "**圆形特写**就是特写：广景保留语境，手在圆里变大；该步的数据落在圆内或圆上、落在动作拍，**绝不做成幻灯片**。",
+    "**编号勋章**既是层级标记也是门：它盖在退场场景的主体上，镜头穿过它进入下一步。",
+    "**回报把功能变成装饰**：一条真实流程（路线、浇水日程、座位表）逐区画出来，退后一看像一块原子时代织物。",
+    "弹出（pop-in）：勋章、标签、标题用 back-ease 缩放入场（~0.25s，强过冲）。",
+    "够到地面：用 2 骨 IK 的跪姿让手留在物体上，**绝不在站立姿态里拉伸手臂**。",
+    "写字：手写体从左到右用 clip「写」出来；标题在二拍上滑入。"
+  ],
+  "atmosphere": "温暖的家庭/课堂空间：一张暖纸底、柔和的原子时代互补色、安静的房间底噪与座钟滴答。整体是**友善、清楚、可复制**的气质——观众看完就能动手做。",
+  "sound_palette": {
+    "instruments": [
+      "颤音琴（主角：和弦、琶音、滑音、电机式颤音）",
+      "长笛（旋律）",
+      "低音提琴拨弦（walking bass）",
+      "刷子鼓（swirl + 2/4 拍；回报段用 ride 鼓棒）",
+      "钢片琴（celesta）做色彩"
+    ],
+    "foley": "按材料分层：纸板（吱嘎、盒盖砰击、纸纤维拍打）、家电塑料（敲击、咔哒）、地面刮擦、玻璃与陶瓷叮、倾倒、阻尼橡胶图章（盖章）、纸的唰声（擦除）、滑哨（尺寸箭头）、上行 pip（「已连接」）、笔尖刮擦（画路线）、虹膜的「shhk」。环境：暖房间底噪（低通棕噪、约 −42dB）、半拍网格上的极轻座钟滴答；设备工作时其电机嗡鸣可以接管。",
+    "mix_rules": "三层始终在场（音乐 / 静默 / 拟音）+ 环境。J/L-cut：台词比它的虹膜早半拍开始，尾音继续响。旁白压缩后压在最上，**音乐在人声下压 ~8dB，拟音不压**，−14 LUFS、真峰 −1.2。静默按段落闸门（B 真静音含环境、C 只留房间底噪）。节奏弧：正常 → 回报段加倍（升一个全音）→ 提示段减半（换气）→ 落版恢复正常。"
+  },
+  "variation_space": "可自由决定：教的是什么、有没有主讲人、哪些步骤及顺序、开场、结尾、镜头路径、颜色、节奏、音乐。STYLE.md §11 给了远离 demo 的方向——结构（无产品的规则卡／桌面视角的食谱，结尾转顶视／do-don't 双色块分割）；开场（先给成品再讲怎么做／用一个手势给出问题／先盖章式列出编号清单再逐条展开）；结尾（自己打勾的清单／手在成品旁静止／星芒中纹丝不动的二维码）。",
+  "taboos": [
+    "渐变的明暗（只能平涂深色面）。",
+    "把套印偏移关掉（除清晰图解外）——它必须出现在一切东西上，文字也包括。",
+    "溶解转场。",
+    "手持镜头。",
+    "让产品落在它自己的颜色上，或让主讲人落在自己的强调色上。",
+    "把关键主体放进底部 140px 的字幕带，或让它小于画面高度 1/3。",
+    "在静默窗口里留任何声音（连环境音也不行）。",
+    "复用示例的故事、叙事弧、镜头、道具或时长。"
+  ],
+  "asset_contract": {
+    "content_fields": "content.json 驱动每个字、每个数字、每个颜色、配音和 payoff 计划。字段表：product(string 1–12 字符，超长挤进盒标签 maxW)；kind(自由，仅供你自己参考)；title/subtitle(≤36/≤24 字符，title 在钩子里换 2 行、落版缩到 50px)；hook.kicker/hook.line(≤14 字符 / 一句话，kicker 挤到 760px，line 成为第一条字幕)；steps[](**2–5** 条，每步增加 ≥3 小节 = 5.45s；落版行在超过 3 步时重新排距 R 104 → 88px)；steps[].title(≤22 字符，标题缩到 40px、落版换 2 行)；steps[].detail(≤30 字符，换 2 行，须在窗口内可读 chars/12+1s)；steps[].icon(18 个图标名之一，未知 → spark)；steps[].action(place=推向墙 + 间距图解用 measure；tap=手机配对 + 信号环到产品；press=手指 + 保持环；其他 → show)；steps[].measure(仅 place，如 \"50 cm\"，空 = 无标签箭头)；steps[].line(一句短句，配音 + 字幕，长句会拉长该步)；payoff.caption(≤40 字符，缩到 26px)；payoff.plan(y0,y1、dock[x,y]、zones[] (name,x0,x1,color,checks)、rug、items[] (shape: sofa/kidney/boomerang/chair/plant/table/bed; x,y,s,rot,color,accent)，单位 1920×1080 平面像素；窄于 400px 的区只做沿墙环路，物品自动成为流场障碍)；tip.label/text/icon/line(text ≤40)；outro.line/cta(cta ≤48，缩到 20px)；palette(paper,ink,product,productDark,accent,hook,steps[],tip；缺键回退到 demo 配色)；voice(Kokoro id/speed)；film(name,style,credits)。",
+    "new_subject_contract": "新画面主体通过引擎的三个模块来画：`demo/engine/toon.js`（风格本体：setClock、shape 画任意形状、ink 墨带、plane、双色板 text、fit、手册 arrow、装饰、全局套印 REG）、`demo/engine/chars.js`（主讲人、四指手套、demo 产品 drawPip）、`demo/engine/icons.js`（18 个图标）。所有函数都在当前 canvas 变换里作画。要新画一个人物/产品，就在 chars.js 的模式上扩展：drawOwner 接受 pose（x,y,s,dir,view/face/armF/armB/handF/handB/kneel/blink/look/prop）、drawHand 接受 kind（open/flat/point/grip）、drawPip 接受 view(side/top)。",
+    "timeline_contract": "时间线模块（film.js）导出 setup(content, durs)、DUR()、events()、srtCues()、renderFilm(ctx, t, Q)、section(t)。setup 会从 content.json 的步数与语音时长重建时间线（始终落在 132 BPM 网格），并生成配音表 T.V、字幕 subs() 与事件表 EVS。页面契约（main.js）：window.DUR / window.EV / window.SRT / window.render(t)，另外 window.READY。工具 tools/cues.mjs 直接从 film.js 导出字幕 cues.json。",
+    "event_vocabulary": "事件表 type 与消费者（都由 buildEvents() 产生、由 mix.py 消费）：creak/box_thump{pan,pitch}/box_fall（开盒）；ding{gain}；pen_write{dur}；plastic_land；wood_tick；stamp（勋章盖章，含 gain）；whoosh{dur}（过渡）；slide{gain}；scrape{dur,gain}；pop{gain}；plastic_thock；plug_click；flip；whistle{pan,up}（尺寸箭头滑哨）；tap；beep{n}（上行 pip）；btn_soft；hold{dur}；motor{dur}；click_big；zone{n}（路线逐区画）；dock；paper_swish{gain}；grab；peel{dur}；roll{dur}；wood_block；iris{dur}；vo{id}（人声，加载 voices/<id>.wav）。静音窗口不写进事件表，而是在 mix.py 里用 gate() 按绝对秒数硬编码（B: 20.909–21.80 真静音；C: 30.2–30.905 只留房间底噪）。"
+  },
+  "evidence": [
+    "styles/midcentury-toon/STYLE.md:10-14 —— 本质（套印赛璐璐、定格身体、色面房间）与不是什么",
+    "styles/midcentury-toon/STYLE.md:18-22 —— 套印/线/明暗/装饰/颗粒规则",
+    "styles/midcentury-toon/STYLE.md:26-29 —— 颜色逻辑（一场景一底色、产品一色到底、强调色另一色相）",
+    "styles/midcentury-toon/STYLE.md:33-36 —— 字体角色、字幕卡、步骤头、细节标签",
+    "styles/midcentury-toon/STYLE.md:40-44 —— 二拍运动、定格身体动手、弹出、2 骨 IK 跪姿、写字",
+    "styles/midcentury-toon/STYLE.md:48-64 —— 相机词汇表与允许的转场",
+    "styles/midcentury-toon/STYLE.md:68-74 —— 音乐/静默/拟音/环境/混音 −14 LUFS/配音",
+    "styles/midcentury-toon/STYLE.md:80-84 —— 原生手法分工",
+    "styles/midcentury-toon/STYLE.md:104-118 —— 用例表（时长、停留）与变化空间",
+    "styles/midcentury-toon/STYLE.md:118 —— 「换 content.json 只是技术检查」",
+    "styles/midcentury-toon/DEMO.md:3 —— 不要复用故事/叙事弧/镜头/道具/时长",
+    "styles/midcentury-toon/DEMO.md:12 —— demo 结构（钩子 → 3 步 → 回报 → 提示 → 落版 → 虹膜）",
+    "styles/midcentury-toon/DEMO.md:27-43 —— 镜头表、圆转场语法、时间线（4/3/2/3/2/3/2 小节 @132 BPM = 22 小节 = 40.0s）",
+    "styles/midcentury-toon/DEMO.md:49-56 —— 配乐（132 BPM、每步一个颤音琴和弦 F6/B♭maj7/C9、节奏弧、三处静默、J/L-cut、环境、拟音、混音、叙述者 am_michael 0.94）",
+    "styles/midcentury-toon/DEMO.md:60-82 —— 调色板与全部数值（套印 (6,4)/±1.6、线宽、手、投影、光束、grain、tint/shade、弹出、手部预备、跪姿、字幕卡、标题、标签）",
+    "styles/midcentury-toon/DEMO.md:108-149 —— content.json 字段表与换内容步骤",
+    "styles/midcentury-toon/DEMO.md:151-186 —— 引擎参考与最小示例",
+    "styles/midcentury-toon/demo/film.js:3 —— 132 BPM 网格",
+    "styles/midcentury-toon/demo/film.js:10 —— BPM=132/BEAT=60/132/BAR=4 拍",
+    "styles/midcentury-toon/demo/film.js:19-41 —— setup 建时间线（hook 4 小节、每步 ≥3 小节、最后一步 2、payoff 3/tip 2/lockup 3/end 2）",
+    "styles/midcentury-toon/demo/film.js:43 —— 语音兜底 estimate = words/2.9 + 0.2",
+    "styles/midcentury-toon/demo/film.js:47-52 —— subs() 停留 = max(1.8, dur+0.6, chars/12+1)",
+    "styles/midcentury-toon/demo/film.js:62 —— pop = back(seg, 1.9)（弹出过冲）",
+    "styles/midcentury-toon/demo/film.js:67-105 —— 字幕卡与细节标签（Jost 500 42px、偏移 5px、星）",
+    "styles/midcentury-toon/demo/film.js:107-125 —— 圆形特写与编号勋章",
+    "styles/midcentury-toon/demo/film.js:615-620 —— payoff 相机 2.6× → 1.0×、−0.1 → 0 rad",
+    "styles/midcentury-toon/demo/film.js:817-854 —— 转场块（勋章虹膜、按钮虹膜、色块擦除、虹膜收束）",
+    "styles/midcentury-toon/demo/film.js:857-889 —— buildEvents() 全部 type",
+    "styles/midcentury-toon/demo/mix.py:1-6 —— 三层结构、音乐 duck 8dB、三处静音说明",
+    "styles/midcentury-toon/demo/mix.py:127-132 —— 房间底噪（低通棕噪）+ 半拍网格座钟",
+    "styles/midcentury-toon/demo/mix.py:139-150 —— duck = −8dB、gate 静音窗口（B 20.909–21.80 真静音、C 30.2–30.905 只留房间底噪）",
+    "styles/midcentury-toon/demo/music/score.py:1-19 —— 132 BPM/4/4/40.000s=22 小节/F 大调→G 大调、摇摆八分 60%",
+    "styles/midcentury-toon/demo/music/score.py:135-145 —— 和弦表（F6/F69/Bbmaj7/C9）",
+    "styles/midcentury-toon/demo/build.sh:1-21 —— 完整构建链与换内容 stills 模式",
+    "styles/midcentury-toon/demo/tools/lines.py:1-8 —— content → lines.json（id: hook/step0../tip/outro；步号 one→1 供 ASR）",
+    "styles/midcentury-toon/demo/tools/cues.mjs:1-8 —— 直接从 film.js 导出字幕",
+    "styles/midcentury-toon/demo/content.json:1-147 —— 示例内容字段",
+    "styles/midcentury-toon/demo/events.json:1 —— 事件表实测（t/type）",
+    "styles/midcentury-toon/style.json:16-17 —— frame_sec 3.2 / dur 40.0"
+  ]
+}

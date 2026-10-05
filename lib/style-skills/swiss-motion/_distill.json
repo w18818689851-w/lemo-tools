@@ -1,0 +1,92 @@
+{
+  "slug": "swiss-motion",
+  "nameZh": "瑞士动态排版",
+  "distilledAt": "2026-10-03T06:00:00.000Z",
+  "matchScore": 98,
+  "scoreBreakdown": {
+    "palette": 20,
+    "composition": 20,
+    "typography": 19,
+    "rhythm": 20,
+    "audio": 19
+  },
+  "defects": [
+    "派生通路的字幕字号/位置不是从 STYLE.md 抽的：STYLE.md §4 只给字幕形态未给 px，通路取的是类别默认 caption-row（36px / 下边距 173px / 左边距 86px），属『套默认』而非『抽取』",
+    "派生通路 overlay.progressBar=true 在 STYLE.md 里找不到对应依据——本风格的进度由网格线生长、小节计数器 bar 04.3 与播放头承载，不是一个进度条",
+    "派生通路 subtitle.fontFamily 是 SimSun（面向中文文案），与 demo 实际使用的 Archivo 可变字体不同；本风格『全片一种新怪诞』的骨架在中文通路里被换成宋体",
+    "成片真峰值 -1.3 dBFS（ebur128）/ -1.334716（astats），相对交付上限 -1.2 dBTP 只余 0.13 dB 余量，偏薄；本次未触发告警（阈值按 astats 6 位小数判定）",
+    "配乐 score.py 输出 dur 44.5s 而画面 44.0s：音频比画面长 0.5s，由 -shortest 裁掉（帧数一致）。属设计如此，但换主题时若音频短于画面会触发 mux 补静音分支"
+  ],
+  "assetGaps": [
+    "字幕是逐词 clip 揭示，依赖 tools/words.py 产出的 whisper 词级时间戳；缺这一环只能退化成整行揭示，风格的一半（每个词落在自己的时间上）就没了",
+    "字体必须随 demo 复制：样本用 Archivo 可变字体 400-800 五个字重，缺字重会导致 19px Medium / 76px Bold / 120px Bold 的字重层级塌陷",
+    "拟音全部程序合成（铅字 clack、钢尺划线、裁纸刀、纸铺、数字咚、条块吸附、58Hz 毡垫闷响），没有现成采样库，比真采样略薄",
+    "海报墙的『其他作品』是同一套程序生成的参数化变体，没有独立的作品库"
+  ],
+  "limits": [
+    "只支持 16:9；只能 Canvas2D；无任何质感能力（无渐变/阴影/粒子/颗粒，mux grain 0）——这是风格硬要求不是缺陷（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "只能一个信号色：任何多色品牌或多彩数据的题材都会被压成单色",
+    "禁止淡入：所有入场必须是划像或 clip 揭示，工程上不能用透明度动画做入场",
+    "视觉起点必须落在整帧上（24fps 下 0.25s 的整数倍），落在帧之间的起点会闪烁",
+    "抽象概念不能当主语：内容必须能被排到网格上",
+    "禁止照抄任何历史海报构图（不搬 Müller-Brockmann 的同心圆/扇形版式）、禁止用 Helvetica 或 Akzidenz 字体文件、禁止在海报上写真实机构名",
+    "最高可达分 97/100：受限于 9:16 架构缺陷与派生通路参数偏差，再往上需改架构而非改文档"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f03.jpg",
+    "f06.jpg",
+    "f08.jpg",
+    "f10.jpg",
+    "f14.jpg",
+    "f17.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/swiss-motion/STYLE.md",
+    "styles/swiss-motion/DEMO.md",
+    "styles/swiss-motion/style.json",
+    "styles/swiss-motion/demo/build.sh",
+    "core/render/mux.sh",
+    "lib/style-dna/swiss-motion.md",
+    "lib/dub-styles.json#swiss-motion",
+    "_distill/logs/swiss-motion.log",
+    "_distill/frames/swiss-motion/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/swiss-motion/swiss-motion.mp4",
+    "durSec": 44,
+    "bytes": 4991543,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1056
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "出片走的是编排器 --skip-sync --no-preflight（日志第 1 行），WSL/Windows 双份库未做同步校验",
+      "本风格无需 per-demo 补丁：build.sh 第 9 步直接调 core/render/mux.sh（已含 GPU 编码与补静音两处修正），日志第 8 行『混流 core/render/mux.sh grain 0』",
+      "音频 44.5s 长于画面 1056/24 = 44.0s，由 -shortest 裁掉音频尾巴；mux.sh 的『音频短于画面时补静音』分支本次未触发",
+      "本次出片非本智能体执行（GPU 独占，纪律禁止起渲染），以上数据全部转录自 _distill/logs/swiss-motion.log"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.27,
+      "integratedLufs": -14.22,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 4.4,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.334716
+    }
+  },
+  "resolvedDefects": [
+    "composition −1（原缺陷）：9:16（产品默认）不可用：本风格无 aspects 声明、按 1920x1080 绝对像素构图，硬渲成 1080x1920 会丢右侧 43.75%。本风格核心构图是左右跨页（左页=因/规则+巨大数字，右页=果/作品海报 706x1008），9:16 下右页整块被切，观众只看到一半的片子；作品一侧的字幕也会一起消失（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 97→98（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

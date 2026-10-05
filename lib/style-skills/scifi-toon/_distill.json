@@ -1,0 +1,104 @@
+{
+  "slug": "scifi-toon",
+  "nameZh": "科幻情景喜剧卡通",
+  "distilledAt": "2026-10-03T14:10:00+08:00",
+  "matchScore": 92,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 20,
+    "typography": 17,
+    "rhythm": 19,
+    "audio": 18
+  },
+  "defects": [
+    "★ 真事故（已修，本次为修复后成功运行）：demo/mix.py 的 nz(d) 原写作 int(d * SR)（截断），而 core/audio/sfx.py 的 t_(d) 用 int(round(d * SR))（四舍五入）；d*SR 的小数部分 ≥ .5 时两者差 1 个样本，portal_hum() 直接抛 ValueError: operands could not be broadcast together with shapes (158400,) (158399,)，整条音频链挂掉、本风格一直出不了片（编排器注释登记为「demo 自身 bug」）。2026-10-03 已把 nz 改成 rng.standard_normal(len(t_(d)))（mix.py:20，注释「与 t_() 同长度（按构造保证）」；sfx.py:9 亦带「与 noise() 同样取整」注释）。",
+    ".srt 未在本次重新生成：混流阶段告警「本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成」（logs/scifi-toon.log:29-30,140）；成片字幕轨与本次画面/对白是否逐字对齐未经验证。",
+    "ASR 校对 2 处 mismatch，触发 STEP_WARN asr_check 未通过（继续）：v6a 的 `Nope.` 被听成 `No, but...`；v8 的 `Are you decaf` 被听成 `or you decaf`（logs/scifi-toon.log:113,120,123-124）。两处均未用 asr 字段兜底，是本风格「短句 / 重拼词过不了 whisper」的典型问题。",
+    "dub-styles.json#scifi-toon 无法承载本风格的核心装置：本风格骨架是「一个世界一套配色，只靠颜色读出跳跃」，而 dub 条目只有一个浅色渐变底 #f4f1ea → #e8f0e0（texture paper），没有多世界配色；另有 3 处与 STYLE.md §4 不一致——subtitle.fontFamily=DengXian（应为 Baloo 2 ExtraBold）、没有说话人气泡、overlay.chapterCards=false（本风格有片名卡）。",
+    "混流走脚本默认 grain：build.sh:14 的 mux 命令末位未给 grain 参数（对比 hd-2d 明确写 grain 0），日志登记「混流 core/render/mux.sh grain (脚本默认)」（logs/scifi-toon.log:8）。本风格是平涂硬边，默认颗粒可能在平色面上留细噪，与「无渐变、平涂」有轻微冲突（本次未逐帧量化）。",
+    "typography 扣 3 分与 audio 扣 2 分分别对应上面「.srt 未重生成 + dub 字体/气泡不一致」与「2 处 ASR mismatch」；composition 扣 2 分对应 9:16 缺陷与无 aspects 声明（原生只支持 16:9）；palette 扣 1 分对应 dub 通路无法承载多世界配色。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "【palette −1】细纹理 `textureRaw: toon` 声明了但渲染未实现：`lib/dub-styles.json#scifi-toon.bgRecipe.textureRaw` 是 `toon`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），不读 `textureRaw` ⇒ `toon` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `toon` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "每个世界都要为新主题重画：worlds.js 的每个 xxxWorld() + 其 3–5 色配色 + 生物，是人力最重的一块；卡司的 chars.js 骨架（vask / gary）也要为新角色重写。",
+    "字体只有 demo 那一套 OFL 子集：Baloo 2 ExtraBold（字幕）、VT323（世界标签）、Bungee（片名），无第二套字面与粗/斜变体。",
+    "配乐只有 demo 那一套 cue：music/score.py 的动机与各世界类型 cue（大号 / 摇摆爵士 / bossa / 特雷门）为该题材而写，换主题要重写动机，且必须保持「一个世界一条 cue、第一拍是剪辑点」的结构约束。"
+  ],
+  "limits": [
+    "audio 最高可达 20/100：音频链本次已真正跑通（mix peak 0.876 rms -19.9 dB、MUX_OK、mux 实测 I -14.0 LUFS / LRA 5.4 LU / 真峰值 -1.59 dBTP（loudnorm input_tp，4× 过采样；此前记的「Peak -1.6 dBFS」是 ebur128 1 位小数读数、astats 采样峰值 -1.590988 是下界）），扣 2 分仅因 2 处 ASR mismatch 未兜底；补 asr 字段或重拼 decaf 即可拿满。",
+    "typography 最高可达 20/100：只要让 demo/srt.mjs 的输出被真正采用（并在校验里加「srt 是否本次生成」的检查），并把 dub 条目字体改成圆润重体 + 补说话人气泡口径，即可拿回。",
+    "composition 最高可达 20/100：16:9 下构图与声明一致；扣 2 分只因 9:16 缺陷与无 aspects 声明，补原生竖向构图方案即可。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "平涂 + 粗描边 + 12fps 步进，做不了写实质感；细腻表情只能靠参数化眼/嘴/眉与「表演细节」（眼皮抽动、瞳孔滑动、汗珠）。",
+    "体裁天生拆台，做不了严肃纪实或庄重抒情；对白必须短、必须能被抢话，做不了长段独白或书面解说。",
+    "生物必须非语言（只用音效），否则片子就不再是两位主角的对白。",
+    "单集 40–120s，由「跳跃次数 × 每跳一套世界」决定；世界太少讲不出跳跃，太多则每个世界的建立成本过高。",
+    "本次未实渲 9:16 复核，9:16 结论为按既有 1:1 左上角塞入口径推导。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f05.jpg",
+    "f07.jpg",
+    "f10.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f20.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/scifi-toon/STYLE.md",
+    "styles/scifi-toon/DEMO.md",
+    "styles/scifi-toon/style.json",
+    "styles/scifi-toon/demo/build.sh",
+    "lib/style-dna/scifi-toon.md",
+    "lib/style-dna/scifi-toon.json",
+    "lib/dub-styles.json#scifi-toon",
+    "logs/scifi-toon.log",
+    "styles/scifi-toon/demo/toon.js",
+    "styles/scifi-toon/demo/chars.js",
+    "styles/scifi-toon/demo/worlds.js",
+    "styles/scifi-toon/demo/story.js",
+    "styles/scifi-toon/demo/main.js",
+    "styles/scifi-toon/demo/mix.py",
+    "styles/scifi-toon/demo/voice.py",
+    "styles/scifi-toon/demo/asr.py",
+    "styles/scifi-toon/demo/levels.py",
+    "styles/scifi-toon/demo/music/score.py",
+    "core/audio/sfx.py"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/scifi-toon/scifi-toon.mp4",
+    "durSec": 57.5,
+    "bytes": 41397480,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1380
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14,
+      "lra": 5.4,
+      "truePeakDbtp": -1.59,
+      "samplePeakDbfs": -1.590988,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.59 dBTP，在 −1.2 dBTP 交付线内（余量 0.39 dB）、未削波。此前 §6 写的「Peak −1.6 dBFS」是 ebur128 的 1 位小数读数（口径不对），本次改为 input_tp 口径；astats 采样峰值 −1.590988 是下界。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
+    },
+    "warnings": [
+      ".srt 未本次重新生成：沿用仓库里已提交的旧文件（logs/scifi-toon.log:29-30,140）",
+      "ASR 2 处 mismatch（v6a 的 Nope.、v8 的 Are you decaf），STEP_WARN asr_check 未通过（继续）（logs/scifi-toon.log:113,120,123-124）",
+      "mux 使用脚本默认 grain（build.sh:14 末位未给 grain 参数，logs/scifi-toon.log:8）",
+      "本次流水线带 --skip-sync --no-preflight（logs/scifi-toon.log:1,21）"
+    ]
+  },
+  "resolvedDefects": [
+    "composition −2（原缺陷）：9:16（产品默认）下右侧约 43.75% 丢失、下方整片黑：蒙太奇段「搭档在左、生物在右」会丢掉右侧生物，中景双人的右位角色被切、双人反差骨架散架，居中片名卡右半被切（左侧说话人气泡与左上角世界标签可保住）。按口径推导，本次未实渲复核。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 91→93（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "slug": "backrooms",
+  "nameZh": "后室 / 新怪谈",
+  "distilledAt": "2026-10-03T00:00:00.000Z",
+  "matchScore": 95,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 20,
+    "typography": 17,
+    "rhythm": 19,
+    "audio": 20
+  },
+  "defects": [
+    "palette -1：lib/dub-styles.json#backrooms 的底色是 plain-dark 兜底值 #0C1016（该条自标 bgSameAsDefault: true），而风格的主色是芥末黄 #d5bd66 系（DEMO.md:74）。该条 notes 自评「差异强度：最弱……若要求一眼看出不同，这条应标为暂不支持或另配底色」。（★ 2026-10-03 拆分：本条原为 ，其中「bgRecipe.texture 写成 scanlines、与 STYLE.md:25「无扫描线、无 RGB 荫罩」硬规则冲突」那一半**已修**（现 texture=none），已移入 resolvedDefects；底色兜底这一半**仍成立**，故扣分由 −2 降为 −1。）",
+    "typography -3：① 本次 .srt 未重新生成——编排器告警「该 demo 没有本编排器支持的字幕生成器，字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件」（log:29-30、log:104），字幕可能与本次成片不同步；② 风格要求 CEA-608 等宽 IBM Plex Mono 600，但 dub-styles.json#backrooms 的 fontFamily 是 SimHei（非等宽），破坏闭路字幕观感；③ 9:16 下 OSD 右上电量与右下时间码会被切掉，而 OSD 是本风格的叙事装置。",
+    "rhythm -1：本次出片走了 --skip-sync（log:1），「同步两份库」步骤被跳过。"
+  ],
+  "assetGaps": [
+    "无外部素材缺口：全片程序化，不依赖实拍/图库/3D 模型库/配乐素材（DEMO.md:70-78）。",
+    "真正的缺口是「那个东西」的剪影设计：必须用有机曲线画在朝向相机的广告牌上，目标「你看得出它在挥手，你数不清手指」（DEMO.md:44）。若缺此设计，可让它完全不出现（STYLE.md:113 明确「那个存在（或没有）」）。"
+  ],
+  "limits": [
+    "只支持 16:9（1920x1080），无 aspects 声明；且内含 4:3 pillarbox，9:16 下损失比其它 16:9 风格更重。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "全亮场景会读成「医院走廊」，必须把墙打散成带缺口的隔断、远处落进黑暗（STYLE.md:95）。",
+    "无遮挡光照：灯会穿墙，一个死灯区需要 ±5m 内所有灯都死、且背后走廊也暗（STYLE.md:96、DEMO.md:112）。",
+    "背景在走廊尽头会显示成亮矩形，必须 = 雾 × 0.15（STYLE.md:97）。",
+    "均匀雾会把剪影抬成灰色，雾必须跟着当地光照走（STYLE.md:98）。",
+    "逐行抖动会斜切文字（需 ≤0.25px）；俯拍竖立纸张会把字切成假斜体，必须放低镜头让镜片与纸面平行（STYLE.md:99）。",
+    "原始几何体搭的人物读成玩具、腿像管子，必须用有机剪影、只露鞋尖（STYLE.md:100、DEMO.md:117）。",
+    "纯红在低 emissive 下永不 bloom（红亮度低），必须开到 ×9（STYLE.md:101、DEMO.md:118）。",
+    "用滤波前的峰值归一化会炸总线（曾把 PA 总线炸高 16dB），必须用处理后的信号归一化（STYLE.md:102、DEMO.md:119）。",
+    "PA 重混响毁可懂度（曾把 night shift 变成 my church），每句处理后与整混都要 whisper 复检（STYLE.md:103、DEMO.md:120）。",
+    "广告牌会在 GTAO 里盖出暗矩形，必须排除出 AO 预通道（mesh.isPoints = true）（STYLE.md:104、DEMO.md:44）。",
+    "时间压缩必须让关键帧写在原始时间并经同一个分段线性 warp W() 映射，别处的硬编码时间也要一起 warp（STYLE.md:105、DEMO.md:121）。",
+    "磁带噪声按 30fps 生成而输出 24fps；VHS 噪声让文件变大（DEMO.md:77,122）。",
+    "命名红线：片内绝不能出现 Backrooms 一词、wiki 的 Level 编号、社区实体名、任何现有组织或 logo（STYLE.md:4、DEMO.md:14）。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f05.jpg",
+    "f09.jpg",
+    "f13.jpg",
+    "f17.jpg",
+    "f21.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/backrooms/STYLE.md",
+    "styles/backrooms/DEMO.md",
+    "styles/backrooms/style.json",
+    "styles/backrooms/demo/build.sh",
+    "styles/backrooms/demo/tools/mux.sh",
+    "styles/backrooms/demo/vhs.js",
+    "styles/backrooms/demo/main.js",
+    "lib/style-dna/backrooms.md",
+    "lib/dub-styles.json#backrooms",
+    "scripts/patch-style-mux.mjs",
+    "lemo-make.mjs (LEMO_VENC 导出)",
+    "_distill/logs/backrooms.log",
+    "_distill/frames/backrooms/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/backrooms/backrooms.mp4",
+    "durSec": 59.71,
+    "bytes": 30403182,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1433
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "本次出片命令带 --skip-sync（log:1）",
+      "编排器告警：该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件（log:29-30、log:104）",
+      "mux.sh note: audio (59.700000 s) shorter than video (59.706706 s); padding to 59.748373 s (one frame past, so -shortest cannot clip)（log:110）——补静音补丁生效",
+      "混流实测 MUX_OK 30386381 src_frames=1433 out_frames=1433，I -14.1 LUFS / LRA 8.3 LU；mux 未打印 Peak 行（log:107-109），事后 `loudnorm` `input_tp` 复测成片真峰值 -0.92 dBTP（超 -1.2 dBTP 交付线 0.28 dB）（★ 原记·2026-10-03；成片已于 2026-10-03 用 scripts/fix-truepeak.mjs 重混、2026-10-05 重渲后实测真峰值 -1.44 dBTP 达标）",
+      "WebGL 编译告警：THREE.WebGLProgram Program Info Log (86,12-86): warning X3595: gradient instruction used in a loop with varying iteration（log:38-39）"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.44,
+      "integratedLufs": -14.24,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 8.1,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.44
+    }
+  },
+  "muxPatch": {
+    "reason": "自带 demo/tools/mux.sh 硬写 libx264（CPU 编码，违反「渲染/合成一律本地 GPU」硬规则），且缺少「音频比画面短时补静音」→ -shortest 切掉末帧、编排器判 MUX_FAIL 帧数不符 1433/1432，片子根本出不来。",
+    "script": "D:/lemo-tools/scripts/patch-style-mux.mjs",
+    "appliedAt": "2026-10-03",
+    "patchedFile": "D:/lemo-opuscar/styles/backrooms/demo/tools/mux.sh",
+    "revert": "node scripts/patch-style-mux.mjs --only backrooms --revert",
+    "verifiedAfter": "MUX_OK 30386381 src_frames=1433 out_frames=1433；nvenc cq=28（CRF 24 + 4，-preset p5 -profile high -rc vbr）；mux 打印补静音 note",
+    "verifiedBefore": "MUX_FAIL 帧数不符 1433/1432（渲染 1433 / 成片 1432）"
+  },
+  "resolvedDefects": [
+    "palette −1（原 palette −2 的一半）：bgRecipe.texture 曾写成 scanlines，与 STYLE.md:25「无扫描线、无 RGB 荫罩」的硬规则直接冲突（其 textureRaw 写的是 vhs-grain，两者自相矛盾）。（★ 2026-10-03 校正：该缺陷已修 —— 当前 lib/dub-styles.json#backrooms 的 bgRecipe.texture = none。）",
+    "audio -1：事后用 `loudnorm` `input_tp`（4× 过采样）实测成片真峰值 -0.92 dBTP，超 -1.2 dBTP 交付线 0.28 dB（未达标，但真峰值为负、未削波）——mux 的 ebur128 输出只打印了 I 与 LRA（log:107-108）、没有 Peak 行，出片时未验证，此为事后复测；根因与全库同类问题一致（AAC 256k 编码余量不足，属项目级既有缺陷）。另 LRA 8.3 LU 偏大（log:108）；mix.wav 峰值 0.950、rms -19.8 dB（log:89）。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 -0.92 dBTP → **-1.44 dBTP**（★ 2026-10-05 重渲后实测），已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。",
+    "composition −3（原缺陷）：composition -3：本风格本身是 4:3 pillarbox 在 16:9（左右各 240px 黑边，已用条带亮度实测确认），再被产品默认 9:16 硬渲时 4:3 画面再丢约 42%，且右侧 43.75% 整体丢失。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→20，matchScore 92→95（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

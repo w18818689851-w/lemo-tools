@@ -1,0 +1,149 @@
+{
+  "slug": "hologram-hud",
+  "name_zh": "科幻全息界面（Sci-fi Hologram HUD）",
+  "essence": "一个物体被「扫描」成悬在圆形投影台上的发光线框，目标框依次锁定它的部件，每锁一个就在局部炸开、拉出引线、把一个数字从乱码滚成真值——它不是渲染出的实物、不是打字机式 keynote、不是工程制图、也不是产品渲染图，主体永远是线框，一切读起来都像「被扫描出来的数据」。",
+  "materials_and_rendering": [
+    "舞台：被色相染过的近黑（`hsl(hue+12,70%,2.4%)`），主体后方一团径向提亮（`hsl(hue+6,65%,7%)`），一层会淡出的点阵网格（48px，视差 0.2），强暗角（0.5）。",
+    "投影台（真透视）：同心圆环 r = 0.7 / 1.05（亮）/ 1.12（虚线）/ 1.45 / 2.1，120 个刻度（每 10 个加长），24 条放射线，以 0.12 rad/s 自转，任何转台运动时随之旋转。",
+    "线框：`lighter` 叠加的 ~1.3px 描边，7 个 alpha 层级由**深度雾**决定（近亮、远 ~25%），外加两趟低分辨率辉光（¼ 分辨率模糊 3px ×0.85、⅛ 分辨率模糊 4px ×0.7）。",
+    "热边（色相的近白 `hsla(hue,70%,92%)`）只给「此刻重要」的东西：扫描前沿、打开时被标 `hot` 的内部件、光波、被 ping 的零件。",
+    "真 CAD 拓扑：管件 = 环 + 纵向线。**每个零件必须物理相连**——漂浮的碎片会第一时间被发现。",
+    "实体全息：面用屏幕空间 **Fresnel**（`0.3 + 0.7·(1−facing)^1.6`）× 滚动 **interlace**（2px 满 + 2px 38%，每帧滚 1px）填充；点亮时线宽 ×1.5 缓落到 ×1.12；一道光波爬升（±7cm）。光柱：**一条 path、非零环绕**（分开画会出现暗楔或双亮缝），26 条射线、70 个尘点。",
+    "HUD 家具：四角括号（46px，距边 44px）、视差标尺（每 24px 一刻，每 5 个加长）、左上「产品 // SPEC SCAN」、右上实时状态行、底部遥测。",
+    "**文字从不压在网格线上**：每个文字块都有自己的深色底板（半透明近黑 `rgba(1,8,12,.72)`、1px 边、10px 角标），相机仍要保证主体不撞文字。",
+    "模型以米为单位、**y 向上**，x = 产品前方、z = 朝向观察者；载入时归一化（包围盒对角线，默认 2.3117），所以相机对任何物体都成立。",
+    "规模约束：总顶点约 5k、边约 6k，保证渲染快。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 47–72 字符（8–13 个英文词）。硬约束：intro ≤5s 口播、第一条 callout ≤4.8s、其余 ≤3.5s。字幕底板宽 1180px（38px 字）。",
+    "person_and_tense": "第三人称、现在时，陈述句；对听众说「你」（\"hear you across the room\"）。语气平静自信，像产品讲解而非广告。",
+    "typical_openers": [
+      "指认式开场：\"This is X.\"（点名 + 一句定位）",
+      "以部件为主语、先说它在哪：\"The battery hides inside the down tube.\"",
+      "以量词+单位开门见山：\"A two hundred and fifty watt hub motor.\"",
+      "先说结论再说修饰（\"… Silent, and sealed.\"）",
+      "结尾用一个人体尺度/行动词收束：\"Ready when you are.\""
+    ],
+    "forbidden": [
+      "形容词堆砌的营销腔（\"revolutionary\"、\"game-changing\"）",
+      "第一人称（\"we believe\"）",
+      "疑问句钩子（该风格靠数字滚动制造悬念，不靠问句）",
+      "一句里塞两个以上规格（每个部件一次只说一个数）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序：扫描成形 → 标题（产品名滚入 + 型号/类目 + tagline）→ 探测到 N 个系统（预备目标框闪一下）→ 逐部件循环「锁定 → 相机运动 → 局部炸开 → 引线 → 数字滚到真值 → 停靠进侧栏」→ 重组 → 点亮成实体全息（360° 转台）→ 参数卡落版（重量/价格/行动号召）→ 扫描擦除 → 片尾卡。",
+    "beat_durations": "时间挂在 120 BPM 网格上（1 拍 = 0.5s，1 小节 = 2s）。intro = 4 小节 = 8s；第一条 callout = **3 小节 = 6s**，其余每条 = **2 小节 = 4s**（自动重排，2–5 条）；regroup = 1 小节 = 2s；high（点亮）= 2 小节 = 4s；lock（落版）= 3 小节 = 6s；end = 5s。数值停留 ≥2.5s 后停靠进左侧栏，全片每个参数在屏 10–25s。标题停留 ≥5s。滚动数字 0.5s（第一条 1s）；目标框 ~0.22s 吸附（cubic ease-out）；引线 ~0.5s；炸开 1 拍（第一条 2 拍）、合拢 0.5s；芯片停靠 = 卡片淡出 0.35s + 芯片 x 140→110 滑入；侧栏步距 `min(112, 410/(n−1))` px（5 枚刚好放得下）。字幕提前 0.1s 上、下一句前 0.12s 下，停留 ≥ max(1.8s, 语音 + 0.6s)。",
+    "total_length_range": "主 demo 39.0s（=34s 场景 + 5s 片尾卡；style.json dur=39.0，frame_sec=25.5）。用例区间：规格讲解 30–40s（2–5 部件）、循环屏 20–30s、拆解 40–60s、升级 20–30s、装配顺序 20–40s。换内容测试（无人机）43s / 4 部件。",
+    "silence_policy": "两种静音。**near**（第一次锁定前半个拍点，只剩房间嗡鸣，锁定撞击是静音后第一个声音）；**true**（点亮前一整拍，严格归零，连界面提示音都没有）。静音必须与 cue 表核对，任何 UI blip 落进静音窗口都会破坏它。"
+  },
+  "tone": "冷静、自信、精确的产品讲解员（不是推销员）：陈述事实、给出数字和单位，让滚动到真值的数字自己制造「确认感」。说话者站在展台或发布会现场，把一台机器逐件讲清楚。",
+  "shot_logic": {
+    "camera_is": "一台环绕相机（yaw/pitch/dist/窄 fov）加一个屏幕目标位——所以主体能坐在文字旁边。它不抒情，只是「把注意力搬到该看的地方」；**目标框就是相机**（whip 跟着框走）。",
+    "vocabulary": [
+      { "move": "高 3/4 缓慢环绕并下降（crane down）", "expresses": "审视；扫描面读成椭圆", "serves": "扫描入场；勘测" },
+      { "move": "顶视平面图", "expresses": "布局、顺序", "serves": "零件清单；装配顺序" },
+      { "move": "平视侧影、锁定", "expresses": "物体在实际使用中的样子", "serves": "高度；前后对比" },
+      { "move": "推近再漂移（3/4）", "expresses": "这个部件重要；内部朝镜头走来", "serves": "关键规格；一处缺陷" },
+      { "move": "跟随目标框的甩镜（whip）", "expresses": "注意力跳到下一个部件", "serves": "一串零件" },
+      { "move": "绕部件自身轴环绕", "expresses": "轴向结构只在旋转中可读", "serves": "转子、堆叠、铰链、镜片" },
+      { "move": "沿长部件横移（lateral dolly）", "expresses": "长度、一条路径", "serves": "横梁；线缆走向" },
+      { "move": "拉远 + 放大镜（画中画）", "expresses": "同时给出「在哪」（广）与「是什么」（镜）", "serves": "小零件；传感器" },
+      { "move": "升降到平视或退回", "expresses": "状态改变：物体站起或归位", "serves": "一次转化；尺度感" },
+      { "move": "360° 转台", "expresses": "每一面", "serves": "整个物体；对称性" },
+      { "move": "近乎静止的缓慢 dolly", "expresses": "阅读时间但不给死帧", "serves": "规格表；清单" }
+    ],
+    "transitions": [
+      "扫描面（扫入 / 擦除）",
+      "放大镜虹膜（loupe iris）",
+      "最多一次、三帧的 glitch（用在最大的变化上）"
+    ],
+    "forbidden": [
+      "场景内的剪切（cut）或淡入淡出（fade）",
+      "把甩镜写在下一个段落里（会在下一段开头播成硬切）——必须在前一段就开始",
+      "让零件飞进文字区（宁可缩短炸开向量）"
+    ]
+  },
+  "idioms": [
+    "扫描生长 = 「这是真实数据」；目标锁定 = 「现在看这里」；局部炸开 = 「为什么这个数字是真的」；数字滚动 = 兑现节拍；芯片累积 = 阅读时间；放大镜 = 两个尺度同框；实体全息 + 光柱 = 「整体就绪」（最多一次）。",
+    "**相机跟着框走**：cubic ease，**在下一个锁定之前**就起步；真运动模糊只在甩镜内（5 个子帧、180° 快门、1/48s），HUD 保持锐利。",
+    "**一切都在 24fps 的「ones」上**：只有字形乱码逐帧跳动。",
+    "目标框：超大、旋转 45°、很淡；~0.2s 内 cubic ease-out 吸附到位，重拍上闪白 3 帧。",
+    "炸开沿各自装配轴：外壳**沿自己的轴**滑动，内容物留在原地并发光；开用一两拍、合很快。",
+    "滚动数字：字符从右往左锁定，在重拍上转成强调色并闪一帧。",
+    "落版时把读过的参数停靠进左侧栏，直到片尾；芯片引线接到零件上的圆环。"
+  ],
+  "atmosphere": "展台 / 发布会 / 科幻指挥室：近黑的场、一道冷色的光、悬浮的线框、偶尔的界面提示音。整体是**精密、可控、被测量**的气质——不是戏剧性，而是「一切都在被读取」。",
+  "sound_palette": {
+    "instruments": [
+      "锯齿/方波琶音 + ping-pong delay（1–4kHz 挖空给人声）",
+      "方波脉冲（D1 四分音符）",
+      "八分音符贝斯、合成 hat 与 clap、失谐锯齿 pad",
+      "808 式滑音 sub（drop 用）"
+    ],
+    "foley": "按材料分层：光 = **调内**正弦与 FM blip；机械 = 伺服滑动（servo slides）、气动噗（pneumatic puffs）、液压嘶（hydraulic hiss）、金属叮（metal tinks，用 J-cut 提前）；一次锁定 = 低频撞 + 金属 clack + 两声高频锁定音（D6+12 / A5+12）；数字滚动 = 按帧率咔哒（24fps 计数器）；探测 blip = D–F–A；琥珀确认 = D6 + A6 + E7。环境 = 投影嗡鸣（40/80/120Hz）+ 房间底。",
+    "mix_rules": "音乐优先、挂在网格上（一小节 = 一个信息拍），锁定都落在重拍上并与配乐核对。人声期间**音乐压 −16.5dB、拟音也压 −15dB**，用 **0.5s max-filter 保持**（字与字之间不回弹，避免抽吸感）；只有锁定/确认撞击的**前 0.2s** 逃过闪避。整体 −14 LUFS。密度跟着信息走：阅读段用半速、一拍真数字静音、最大变化用 drop（808 滑音 + 宽锯齿和弦）、每个部件加/减一层、用更长音值减速、转调、长保持下垫一个持续音。"
+  },
+  "variation_space": "可自由决定：物体、模型、锁定哪些部件及顺序、开场、结尾、相机路径、颜色（一对冷色相 + 一个暖强调）、节奏、音乐。STYLE.md §11 给了远离 demo 的方向——结构（不点名产品的循环屏／每镜深一层的拆解／两版共享投影台、每个数字从旧滚到新）；开场（先给一个部件特写，其余从它扫出／2D 侧影挤出成线框／顶视平面、投影台当表盘）；结尾（单个数值居中、线框在四周变暗／knolling 飞成带标签的顶视布局／关机、HUD 面板逐块熄灭只留投影台发光）。",
+  "taboos": [
+    "把主体渲染成实物——它必须始终是线框（最多一次性获得半透明面，且线仍在最上）。",
+    "色调滥用：强调色只能花在「锁定的真值」上，别处永远不用。",
+    "场景内的剪切或淡入淡出。",
+    "让文字压在网格线上（每块文字必须有深色底板）。",
+    "零件漂浮、不与相邻件物理相连。",
+    "在静音窗口里放 UI 提示音。",
+    "用同一个色相走完全片却没有暖强调（或反之）。",
+    "复用示例的故事、叙事弧、镜头、道具或时长。"
+  ],
+  "asset_contract": {
+    "content_fields": "content.json 驱动每个字、数字、颜色与模型；代码里没有任何文案。字段表：product(string 1–10 字符，超长 176px 字会溢出 410px 栏，需在 titleBlock 降字号)；model_code/category(合计 ≤30，单行 mono 22px)；tagline(≤60，420px 自动换行并缩到 20px)；model(模型 JSON 路径，任意尺寸都会被归一化；callouts[].part 里的名字必须存在)；hue/accent(0–360，整片重新配色)；voice({id,speed})；intro_vo/outro_vo/callouts[].vo(intro ≤5s 口播、第一条 ≤4.8s、其余 ≤3.5s，超长字幕被夹到下一句、口播会与下一次锁定重叠)；*_vo_asr(可选，告诉 whisper 该听到什么，如数字)；callouts[](**2–5** 条：part、label ≤24 字符、value ≤6 字符、unit ≤4、detail ≤40 可选、vo；第一条 3 小节、其余各 2 小节；超过 5 条放不进侧栏)；footer.weight/price({label,value,unit}，value ≤7 字符，自动缩到 40px)；footer.cta(≤34 字符，自动缩到 14px)；film_title/credits[](片尾卡)。",
+    "new_subject_contract": "要新写一个画面主体，写一个模型生成器（用 models/mkmodel.mjs 的图元：tube/ring/disc/box/saddle/fender/wheel/cells/stator/rotor/caliper…），或把 CAD 导出转成模型格式。模型 JSON = { name, parts[] }，每个 part 是「一个可被 callout 瞄准的东西」：{ id（被 content.json callouts[].part 引用）、anchor[热点坐标，必须在零件表面]、center（可选，特写/放大镜看哪里，默认 anchor）、tagDir（可选，落版编号芯片在环左 −1 / 右 1）、pieces[] }；每个 piece 是「炸开时独立移动的刚性子装配」：{ id、v(顶点扁平数组)、e(边索引对)、q(可选四边形，4 索引，供实体全息面与 Fresnel)、explode(炸开=1 时沿装配轴的偏移)、axis(可选自转轴 {c,d})、internal(可选，打开前隐藏)、hot(可选，打开时近白发光)、box:false(可选，不计入目标框，用于长软管/线缆) }。规则：每个 piece 必须物理接触邻件；管件 = 环 + 纵向线；总顶点约 5k / 边约 6k；承载关键数字的部件要有一个 `hot` 内部件和一个沿自身轴滑动的外壳。",
+    "timeline_contract": "时间线模块（film.js）导出 makeFilm(C, model, dur) → { render, TL, events, subs, timeline }。render(ctx, t, opt) 逐帧绘制（opt.nosub / opt.noblur）；TL 是段落表；events() 返回声音事件数组；subs() 返回字幕条；timeline() 返回配乐网格（{bpm, bar, dur, intro, calls, regroup, high, lock, end, vo}）。页面契约（main.js）：window.DUR / window.TL / window.EV / window.SUBS / window.TIMELINE / window.render。工具 tools/export.mjs 用无头浏览器把这些导出成 events.json / timeline.json / out/srt.json。",
+    "event_vocabulary": "事件表 type 与消费者：scan / scan_tick / scan_done（扫描声与刻度）→ mix.py；roll（滚动咔哒）；confirm_small / confirm（确认音）；type_line（打字）；detect（探测 blip）；lock（锁定撞击）；lock_small（放大镜内小锁）；push（伺服推镜）；orbit（环绕呼啸）；explode{part}（按材料：battery=伺服+电芯亮起 shimmer、motor=气动+三声叮、其他=液压嘶+叮）；leader（引线 zip）；reassemble（合拢）；dock（停靠 blip）；whip（甩镜呼啸）；jcut{part}（提前的电机 whine / 液压嘶）；loupe_open / loupe_close（虹膜）；powerdown（关机）；ignite（点亮）；glitch；wave（光波 shimmer）；spin（转台呼啸）；ping（落版 ping）；cta（行动号召确认）；erase（擦除）；card_tick（片尾卡 tick）；silence{d,kind:'near'|'true'}（静音窗口，mix.py 据此归零）；vo{id,d}（人声，加载 voices/<id>.wav）。配乐脚本 score.py 另读 timeline.json 排段落。"
+  },
+  "evidence": [
+    "styles/hologram-hud/STYLE.md:8-14 —— 本质与不是什么（三深度层、线框必须成立）",
+    "styles/hologram-hud/STYLE.md:18-25 —— 舞台/投影台/线框/热边/CAD 拓扑/实体全息/HUD/文字底板规则",
+    "styles/hologram-hud/STYLE.md:29-32 —— 颜色逻辑（一冷一暖、强调色只给真值、白=热）",
+    "styles/hologram-hud/STYLE.md:36-39 —— 字体/等宽数字/字幕/标题",
+    "styles/hologram-hud/STYLE.md:43-49 —— 24fps ones / 目标锁定 / 炸开 / 引线 / 滚动 / 芯片 / 相机跟框 / 无剪切",
+    "styles/hologram-hud/STYLE.md:53-69 —— 相机词汇表与取景规则",
+    "styles/hologram-hud/STYLE.md:73-77 —— 音乐优先/合成音色/密度跟信息/foley/闪避 −14 LUFS",
+    "styles/hologram-hud/STYLE.md:81-89 —— 原生手法清单",
+    "styles/hologram-hud/STYLE.md:109-123 —— 用例表（时长、停留）与变化空间",
+    "styles/hologram-hud/STYLE.md:123 —— 「换 content.json 只是技术检查」",
+    "styles/hologram-hud/DEMO.md:3 —— 不要复用故事/叙事弧/镜头/道具/时长",
+    "styles/hologram-hud/DEMO.md:10-14 —— 结构与 3 段锁定、数值停留与停靠时长",
+    "styles/hologram-hud/DEMO.md:19-31 —— 逐拍镜头表与取景数字（fov 0.6 等）",
+    "styles/hologram-hud/DEMO.md:33 —— 运动数值（目标框 1.9×/0.22s、炸开方式、滚动 0.5s、芯片停靠、甩镜 5 子帧）",
+    "styles/hologram-hud/DEMO.md:37-43 —— 配乐弧线、120 BPM、D 小调 Dorian、和弦、静音、J/L-cut、叙述者 af_heart",
+    "styles/hologram-hud/DEMO.md:47-54 —— 舞台/投影台/线框/实体/配色/字体/HUD/字幕的全部数值",
+    "styles/hologram-hud/DEMO.md:90-109 —— content.json 字段表",
+    "styles/hologram-hud/DEMO.md:129-178 —— 引擎参考、模型数据格式与规则",
+    "styles/hologram-hud/demo/film.js:5 —— W/H/BEAT=0.5/BAR=2",
+    "styles/hologram-hud/demo/film.js:15-36 —— buildTimeline（intro 4 小节、首条 3 小节、其余 2 小节、regroup 1 / high 2 / lock 3 / end 5s）",
+    "styles/hologram-hud/demo/film.js:34 —— 语音兜底时长 = words/2.6",
+    "styles/hologram-hud/demo/film.js:39-47 —— callBeats 内部节拍",
+    "styles/hologram-hud/demo/film.js:50-95 —— 相机键位与甩镜跨段（−0.45s 起）",
+    "styles/hologram-hud/demo/film.js:110 —— railStep = min(112, 410/(n−1))",
+    "styles/hologram-hud/demo/film.js:112-126 —— 甩镜运动模糊（5 子帧 / 1/48s 快门）",
+    "styles/hologram-hud/demo/film.js:134-160 —— 扫描/擦除/点亮/光波状态",
+    "styles/hologram-hud/demo/film.js:260-267 —— 字幕时机（−0.1s 上、max(1.8, d+0.6)）",
+    "styles/hologram-hud/demo/film.js:269-276 —— 状态行文本序列",
+    "styles/hologram-hud/demo/film.js:279-314 —— 放大镜画中画（×4.3、R=225）",
+    "styles/hologram-hud/demo/film.js:394-433 —— events() 全部 type",
+    "styles/hologram-hud/demo/film.js:434-437 —— subs() 与 timeline() 契约",
+    "styles/hologram-hud/demo/mix.py:38-59 —— 锁定撞击与确认音构成（D6/A6/E7、1210/2717/4430Hz）",
+    "styles/hologram-hud/demo/mix.py:133-136 —— 投影嗡鸣 40/80/120Hz",
+    "styles/hologram-hud/demo/mix.py:215-232 —— duck −16.5dB（音乐）/ −15dB（拟音）、0.5s 保持、锁定确认前 0.2s 逃逸、真静音严格归零",
+    "styles/hologram-hud/demo/music/score.py:3 —— 120 BPM/4/4/D 小调 Dorian/1/16 网格",
+    "styles/hologram-hud/demo/music/score.py:79-95 —— 和弦 Dm9→Bbmaj7→Fmaj9→G6 与段落映射",
+    "styles/hologram-hud/demo/music/score.py:237-276 —— 808 sub 与 drop",
+    "styles/hologram-hud/demo/build.sh:1-38 —— 完整构建链与换内容命令（CONTENT=… NAME=…）",
+    "styles/hologram-hud/demo/tools/make_lines.mjs:1-9 —— content → lines.json（id: intro/c0../outro）",
+    "styles/hologram-hud/demo/tools/export.mjs:1-18 —— 导出 events.json / timeline.json / out/srt.json",
+    "styles/hologram-hud/demo/content.json:1-63 —— 示例内容字段",
+    "styles/hologram-hud/demo/timeline.json:1-79 —— 实测段落与语音时长",
+    "styles/hologram-hud/style.json:16-17 —— frame_sec 25.5 / dur 39.0"
+  ]
+}

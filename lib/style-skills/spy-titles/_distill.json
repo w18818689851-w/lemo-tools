@@ -1,0 +1,90 @@
+{
+  "slug": "spy-titles",
+  "nameZh": "60s 间谍片头",
+  "distilledAt": "2026-10-03T05:30:00.000Z",
+  "matchScore": 94,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 20,
+    "typography": 19,
+    "rhythm": 18,
+    "audio": 18
+  },
+  "defects": [
+    "lib/dub-styles.json#spy-titles 的 accent #AF301C 与 STYLE.md/DEMO.md 声明的纸上信号红 #d23a22 不完全一致（该条目 notes 自述为 WCAG 派生的近似值）",
+    "派生通路的 subtitle.fontFamily 是 Microsoft YaHei，与 demo 实际使用的 League Spartan 600 不同（通路面向中文文案，属设计差异但会造成观感偏移）",
+    "派生通路 overlay.chapterCards=true，与 demo 实际不符——demo 的 credits 直接画进布景，没有独立章节卡层，打开会多出一层与风格无关的叠加",
+    "成片响度 I: -13.9 LUFS，相对 -14 LUFS 目标偏高 0.1 LU（在容差内，仅记录）。★ 真峰值本次补记：成片真峰值 = loudnorm 的 input_tp（4× 过采样）−2.23 dBTP，在 −1.2 dBTP 交付线内（余量 1.03 dB）、未削波；astats 采样峰值 −2.397608 是下界。",
+    "形状匹配剪辑的『间隔从 2 小节压到 2 拍』这一加速在 24 张等间隔抽帧上无法逐拍验证，只能靠 story.js 与出片日志 HIT 表交叉确认"
+  ],
+  "assetGaps": [
+    "demo/fonts/ 与 demo/vendor/（opentype.js 等）必须随风格一起复制，否则 glyph.js 取不到字形轮廓、逐字母重剪逻辑失效",
+    "剪影 rig 只有 agent / courier 两套（侧面 / 正面 / 背面 + 跑走循环 8 张画），缺少第三人，『两个特工一个画幅』类变体需要新写 rig",
+    "没有预生成的配乐 stem 库：music/score.py 是纯程序合成，换主题必须改动机代码",
+    "没有真实纸 / 金属 / 磁带采样库，拟音全部靠程序合成，质感比真采样薄"
+  ],
+  "limits": [
+    "只支持 16:9；只能走 Canvas2D 渲染路径（本片 1058 帧 ≈ 19s），无 WebGL / 3D，做不了透视与景深（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "『铜管强奏 = 剪辑点』要求音乐与时间线同源；替换外部 BGM 会让剪辑点与音乐错位，风格核心因果断裂",
+    "叙事单元是『一拍一个动作』，撑不起抒情 / 写实 / 内心独白 / 长复合句；超过 60s 的复杂论证不适用",
+    "字幕只写虚构职务，不能出现真实人名",
+    "最高可达分 93/100：受限于 9:16 架构缺陷与派生通路参数偏差，再往上需改架构而非改文档"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f04.jpg",
+    "f06.jpg",
+    "f08.jpg",
+    "f12.jpg",
+    "f14.jpg",
+    "f16.jpg",
+    "f19.jpg",
+    "f22.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/spy-titles/STYLE.md",
+    "styles/spy-titles/DEMO.md",
+    "styles/spy-titles/style.json",
+    "styles/spy-titles/demo/build.sh",
+    "styles/spy-titles/demo/tools/mux.sh",
+    "lib/style-dna/spy-titles.md",
+    "lib/dub-styles.json#spy-titles",
+    "_distill/logs/spy-titles.log",
+    "_distill/frames/spy-titles/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/spy-titles/spy-titles.mp4",
+    "durSec": 44.08,
+    "bytes": 20066216,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1058
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -13.9,
+      "lra": 4.6,
+      "truePeakDbtp": -2.23,
+      "samplePeakDbfs": -2.397608,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−2.23 dBTP，在 −1.2 dBTP 交付线内（余量 1.03 dB）、未削波。混流走自带副本 styles/spy-titles/demo/tools/mux.sh（TP=-1.2），但本片素材本身峰值低，成片远未触线。astats 采样峰值 −2.397608 是下界。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
+    },
+    "warnings": [
+      "出片走的是编排器 --skip-sync --no-preflight（日志第 1 行），WSL/Windows 双份库未做同步校验",
+      "音频 45.49s 长于画面 44.083s，由 -shortest 裁掉音频尾巴；mux.sh 新增的『音频短于画面时补静音』分支本次未触发",
+      "本次出片非本智能体执行（GPU 独占，纪律禁止起渲染），以上数据全部转录自 _distill/logs/spy-titles.log"
+    ]
+  },
+  "resolvedDefects": [
+    "composition −1（原缺陷）：9:16（产品默认）不可用：本风格无 aspects 声明、按 1920x1080 绝对像素构图，硬渲成 1080x1920 会丢右侧 43.75%、下方整片黑，横向追逐段落基本作废（架构级缺陷，非调参可修）（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 93→94（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

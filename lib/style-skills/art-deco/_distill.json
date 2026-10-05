@@ -1,0 +1,91 @@
+{
+  "slug": "art-deco",
+  "nameZh": "装饰艺术",
+  "distilledAt": "2026-10-03T00:00:00.000Z",
+  "matchScore": 96,
+  "scoreBreakdown": {
+    "palette": 20,
+    "composition": 20,
+    "typography": 20,
+    "rhythm": 18,
+    "audio": 18
+  },
+  "defects": [
+    "rhythm -2：本次出片走了 --skip-sync（log:1），且 tools/dump_timeline.mjs 在 Windows 侧失败（退出码 1，log:27），编排链路不完整。",
+    "audio -2：配乐/混音依赖 timeline.json，而该文件在 Windows 侧的生成步骤报错（log:27）；本次 WSL 侧实际仍跑通（log:82-85），但链路脆弱。"
+  ],
+  "assetGaps": [
+    "本风格全程序化绘制，无外部实拍/图库素材缺口。",
+    "唯一缺口是「新主题所需的原创交响爵士配乐」：若无法产出原创谱，只能退化为通用爵士 bed，会削弱「音乐就是情节」这一核心特质（DEMO.md:14,47-49）。"
+  ],
+  "limits": [
+    "只支持 16:9（1920x1080），无 aspects 声明；9:16 需另做专用构图，不能靠自动适配。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "灯泡招牌依赖字形骨架（Zhang-Suun 细化 + 交叉数判链），曲线字形 G/S/R 会出现阶梯像素，需在 ~14px 内焊合链端（STYLE.md:89）。",
+    "纯黑底上的金点会触发 blackdetect，必须抬亮背景太阳纹楔形与辉光（DEMO.md:93）。",
+    "鱼鳞母题易被读成砖墙，必须逐行下移半圆叠压再加内弧（STYLE.md:91）。",
+    "三位 hex 会破坏调色（曾把祖母绿扇子渲成蓝紫，DEMO.md:95），必须展开成六位。",
+    "人物与镜头帧率分离：人物走二拍 12fps、镜头走一拍 24fps，镜头走二拍会读成卡顿（STYLE.md:39）。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f04.jpg",
+    "f06.jpg",
+    "f08.jpg",
+    "f10.jpg",
+    "f12.jpg",
+    "f14.jpg",
+    "f16.jpg",
+    "f18.jpg",
+    "f20.jpg",
+    "f22.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/art-deco/STYLE.md",
+    "styles/art-deco/DEMO.md",
+    "styles/art-deco/style.json",
+    "styles/art-deco/demo/build.sh",
+    "lib/style-dna/art-deco.md",
+    "lib/style-dna/art-deco.json",
+    "lib/dub-styles.json#art-deco",
+    "_distill/logs/art-deco.log",
+    "_distill/frames/art-deco/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/art-deco/art-deco.mp4",
+    "durSec": 58.38,
+    "bytes": 43828408,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1401
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "本次出片命令带 --skip-sync（log:1）",
+      "tools/dump_timeline.mjs 在 Windows 侧失败（退出码 1），日志明示「依赖 timeline.json 的配乐/混音可能失败」（log:27）；本次 WSL 侧配乐/混音实际跑通（log:82-85）",
+      "混流 mux.sh 提示音频（58.363s）比视频（58.375s）短，已补静音到 58.416667s，使 -shortest 不会切掉末帧（log:100）",
+      "混流实测 MUX_OK src_frames=1401 out_frames=1401，响度 -14.0 LUFS / LRA 3.6 LU（log:95-99）",
+      "峰值口径订正：成片真峰值 = loudnorm 的 input_tp（4× 过采样）= -1.17 dBTP，与 -1.2 dBTP 交付线擦线、超 0.03 dB（测量/编码噪声量级，未触发 mux 告警）。日志 log:98 的 astats「Peak level dB: -1.388914」是采样峰值、不是真峰值；log:97 的 ebur128「Peak: -1.2 dBFS」才接近真峰值。（★ 原记·2026-10-03；成片已于 2026-10-03 用 scripts/fix-truepeak.mjs 重混、2026-10-05 重渲后实测真峰值 -1.54 dBTP 达标）"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.54,
+      "integratedLufs": -14.14,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 3.5,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.786368
+    }
+  },
+  "resolvedDefects": [
+    "composition −2（原缺陷）：composition -2：无 aspects 声明，产品默认 9:16（1080x1920）下画面被 1:1 塞在左上角，右侧约 43.75% 内容丢失、下方整片黑，中轴对称这一核心特质被破坏（AGENT-BRIEF 9:16 口径 + style.json 无 aspects）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 93→96（分数于 2026-10-05 回补）。原记录保留作历史。",
+    "typography −1（原缺陷）：typography -1：字幕卡宽上限 1500px 且居中（film.js:118-129），在 9:16 下会溢出画幅右侧被切。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。typography 19→20，matchScore 93→96（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

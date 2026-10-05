@@ -1,0 +1,166 @@
+{
+  "slug": "microgame",
+  "name_zh": "微游戏快闪（Microgame Frenzy）",
+  "essence": "一部快节奏的派对游戏片：一个喊出来的命令词 + 2.5–4 秒 + 一个动作 + 一个结果（成功，或者一次滑稽的失败）。每一个 microgame 用完全不同的美术媒介来画（蜡笔、水墨、终端、丝网印、像素、蓝图、瑞士排版、黏土、剪纸、木刻……），每一次画风切换的冲击既是笑点也是节拍。一条固定的「家」画风把全片串起来：一个主持人舞台、一块生命计数板、一个关卡号，片子在不同游戏之间回到它。全片持续加速：每过几关，速度、游戏长度、停留、命令词停留、角色帧率一起往上跳。主角靠两三个剪影标记在每种媒介里活下来。它不是 Game Show Flat（单一画风、一轮轮条形图、call-and-response），不是风格样片合集（每个游戏都有赌注、生命把它们连起来），不是蒙太奇（每个游戏都有一条一秒内能被抓住的规则）。",
+  "materials_and_rendering": [
+    "家舞台（唯一的固定画风）：扁平卡通、粗近黑描边约 7px（#1a1030）、平涂、以及一个硬边阴影——用暗色填出形状、裁剪到它、再往左上挪 9px 重填亮色，剩下右下一个月牙（toon.js:17-30）。固定道具：一个 frame-within-the-frame（游戏在里面播的大电视/街机/手机/窗）、生命板、关卡牌、一个触发道具（按钮/拉杆/铃）。demo 的电视屏幕 768×432，正好是画面 1/2.5（stage.js:8-9）。",
+    "每种媒介是一幅简化重绘，约 100–200 行代码，围绕一个 channel trick 让它在瞥一眼时就能读懂：绘图媒介把压力/湿度存进一个 channel（蜡笔 alpha = 压力；水墨湿/干两个 ink channel）；印刷媒介存版密度（riso 每版一个 channel、加色叠印、半调、套印错位）；屏幕媒介是低分辨率缓冲放大（像素：索引缓冲、自动 1px 描边、抖动；终端：手写 glyph 艺术、磷光 shader）；技术媒介是线系统（蓝图：线宽与尺寸标注；瑞士：严格 12 栏网格、一个 sans、一个信号色）。",
+    "主角翻译规则：主角在每种媒介里从头重画，但同三个剪影标记永远保留——圆头盔、带橙球的天线（情绪表）、胸口的「05」。动起来之前先给主角做一张覆盖所有媒介的模型表。",
+    "混媒帧：alpha 覆盖媒介叠在底上，纸媒介用 multiply，屏媒介扁平并裁剪到它的面板；WebGL2 材质 shader 把 channel 缓冲变成每种画风。",
+    "颜色逻辑：家舞台独占一套饱和派对色板——旋转放射背景之后一个深底、两三个响亮的强调色，外加一个固定的成功色与失败色（只用于印章和生命板）。每种媒介从自己的传统里带自己的色板（蜡色、单墨加朱红、琥珀磷光、三张 riso 版、受限像素色、蓝底白线、黑白红）。绝不用家舞台色板去染一种媒介。有一个强调色跟着主角跨媒介走（水墨里一颗朱红点、终端里一个反色 glyph、瑞士里一个信号红圆），它是切换之后眼睛找到主角的方式。",
+    "demo 家舞台色值：舞台紫 #2a0f5c / #3d168f 旋转放射、品红 #ff2e88、金 #ffc928 / #e08a00、青 #1fd1d1、成功绿 #3bdc5a、失败红 #ff3b3b（toon.js:2-9）。"
+  ],
+  "sentence_patterns": {
+    "length": "命令词就是字幕：一个重体展示字（Titan One），白字 + 粗墨描边 + 彩色投影 + 背后爆点，斜几度；约 3 帧内砸入（1.9 → 0.92 → 1.0，过冲后落定），停留，然后在第一个动作前缩成一个角落标签，所以结果永远不会被盖住。demo 命令词 2–14 字符（PUMP! / DON'T SNEEZE! / ZIP! / SALUTE! / LAND IT!）。其他台词用圆角卡片 + Lilita One ~50px，停留 ≥ max(1.8s, 语音时长 + 0.6s)，且不得出现在大横幅之下。命令词只出现在 .srt 里，绝不烧两遍。",
+    "person_and_tense": "命令式（祈使句）为主，主持人用第二人称吆喝（\"Welcome to Five-Second Camp!\"、\"Too easy?\"、\"One life left, cadet.\"）；主角话极少，只有反应（\"Oh no.\" 加 \"ah… ah…\" 和喷嚏，按音效处理）。现在时，现场感。",
+    "typical_openers": [
+      "单个动词命令（PUMP! / ZIP! / DODGE. / SALUTE!）——一个动词就是整场戏的剧本、字幕与重拍",
+      "主持人欢迎 / 调侃（\"Welcome to …\" / \"Too easy?\"）",
+      "点名式提醒（\"One life left, cadet.\"）",
+      "宣布下一关（\"Boss stage!\"）"
+    ],
+    "forbidden": [
+      "长句、从句、书面语——每一句都要能在一次呼吸里喊完",
+      "抒情、抽象名词、说教（这个风格只有动作与结果）",
+      "一句话塞两个信息点",
+      "把命令词烧两遍（它只在 .srt 里）",
+      "让主持人的话与铜管 stab 撞在一起（命令词必须喊在 stab 之后一点点）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "冷开场（第 1 帧已经在游戏里，命令词正在砸下，规则一秒内自解释）→ 拉出电视回到舞台（尺度揭示：这只是节目里的一个屏幕）→ 一串 microgame（每个都是命令→动作→结果）→ 每几关一次 SPEED UP（舞台裂成三台老虎机滚轮）→ 只剩一条命（顶光、主持人静止）→ BOSS 关（用之前所有媒介的碎片拼成、更长、决定故事）→ 回到舞台（主角第一次站上去敬礼）→ 推进电视出片尾卡。",
+    "beat_durations": "速度阶梯 120 → 140 → 160 BPM（timeline.js:15-35）。第 1 轮游戏 8 拍（120 BPM，4.0s），第 2 轮 6 拍（140 BPM，2.57s）；Boss 32 拍（160 BPM）。舞台停留 1 小节（8 拍）→ 4 拍 → 2 拍。命令词停留 0.75s → 0.64s。角色步进 8fps → 12fps → 24fps（Boss）。相机运动、转场、引线火花永远 on ones。全片 59.8s。",
+    "total_length_range": "主 demo 59.8s（style.json dur=59.8、frame_sec=23.92）。STYLE.md 明确：这个格式适合 45–60s，更长就失去 frenzy（STYLE.md:6）。",
+    "silence_policy": "至少一次在大 hit 之前留真实静默：demo 里第一次喷嚏前 1 拍、只剩一条命的舞台（只剩心跳）、Boss 特写（心跳 + 与第一粒尘埃同一根 guqin 音）。最响的时刻紧跟最长的静默之后。"
+  },
+  "tone": "一个嗓门很大的主持人 + 一个笨手笨脚的见习生：欢乐、喧闹、节奏感强。每一次失败是被表演出来的（动作过冲、摔、弹、滚出画面），不是被叙述的；紧张全靠生命板自己积累（3 → 2 → 1 闪烁）。",
+  "shot_logic": {
+    "camera_is": "一台会冲进电视屏幕的演播室摄像机——镜头在「家舞台」与「游戏屏幕」之间来回，靠推入/缩回电视框做统一转场。它不制造情绪，只负责把观众从一个屏幕扔进另一个屏幕。",
+    "vocabulary": [
+      { "move": "从游戏内部开始（命令已经在砸）", "expresses": "规则自己解释自己", "serves": "把观众直接扔进去" },
+      { "move": "从游戏屏幕拉回", "expresses": "尺度：这只是节目里的一个屏幕", "serves": "第一次回到舞台" },
+      { "move": "锁死正面家机位", "expresses": "不变的常量，只有记分板在变", "serves": "舞台节拍；主持人的反应" },
+      { "move": "老虎机滚轮（舞台裂成旋转的往期帧条，每拍停一条）", "expresses": "加速、总结", "serves": "一次 SPEED UP；换轮" },
+      { "move": "触发道具的极端插入", "expresses": "开始，被感受到", "serves": "一个游戏在重拍上开始" },
+      { "move": "灯光切到单一顶光、机位不变", "expresses": "赌注；最后一次机会", "serves": "最后一条命；一个决定" },
+      { "move": "瓷砖翻面（往期游戏的末帧翻成新帧的碎片）", "expresses": "过去变成现在的材料", "serves": "Boss / 终局；回顾" },
+      { "move": "推入一个细节并停留", "expresses": "观众比主角先注意到", "serves": "一个线索；一次静默" },
+      { "move": "一拍内 snap 回全景", "expresses": "释放", "serves": "解法绽放；一次拯救" },
+      { "move": "分屏、两个媒介并排", "expresses": "对比、对抗", "serves": "两个玩家；前后；两种做法" }
+    ],
+    "transitions": [
+      "推入屏幕开始一个游戏（约 0.25s）",
+      "整个画面缩回电视返回舞台（约 0.33s），并把 ✓ / ✗ 印章拍在屏幕上"
+    ],
+    "forbidden": [
+      "淡入淡出（fade）",
+      "空帧（blank frame）",
+      "溶解/叠化等 UI 式转场",
+      "把命令词烧两遍"
+    ]
+  },
+  "idioms": [
+    "每关换画风：每个任务用最适合它的媒介来画；切换的冲击就是笑点。",
+    "命令词：一个动词同时是剧本、字幕和重拍。",
+    "生命做 UI：计数板不靠旁白就带来情绪；3 → 2 → 1（闪烁）自己制造紧张。",
+    "SPEED UP：五件事一起跳（BPM、游戏长度、舞台停留、命令词停留、角色帧率）。",
+    "失败变成解法：前面一次失败的材料在最后一关作为答案回来。",
+    "Boss 混合规则：终局由之前每一种媒介的碎片拼成，所以高潮字面上由片子自己的过去构成。",
+    "即时回放：用慢动作把一个笑点解释清楚（冻结、半速、推入、黑边、用该媒介自己的字体写说明）。"
+  ],
+  "atmosphere": "一个喧闹的游戏节目演播厅：饱和的派对色板、旋转的放射背景、追逐灯泡的招牌、中央一台大电视、一个带大红按钮的讲台。紧张来自生命板，欢乐来自每一次失败的物理表演。",
+  "sound_palette": {
+    "instruments": [
+      "一个恒定的 groove 贯穿全片：带 ghost note 的鼓组、slap 或 synth bass、铜管 stab、keys",
+      "每种媒介加自己的音色：蜡笔 toy piano、水墨 shakuhachi/guqin、终端 square beeps、印刷 vibes、像素 pulse arpeggio、制图 typewriter、瑞士 claves、黏土 kalimba、木刻 koto"
+    ],
+    "foley": "按媒介分层：蜡笔橡皮吱 + 空气；水墨湿 splat + 滴；ASCII 电传打字 + 继电器；riso 纸闷响 + crunch；像素 bit-crushed 噪；蓝图棘轮齿 + 印章闷响；瑞士空心 bonk + 小橡皮 boing。家舞台：弹簧皇冠 click、碎玻璃（失一条命）、翻牌、滚轮 whirr、稀疏掌声。",
+    "mix_rules": "主持人把每个命令词喊在 stab 之后一点点（约 0.1s），免得铜管盖住词；人声下音乐 duck ~11 dB、foley ~6 dB；整体 −14 LUFS。加速选项：每次 SPEED UP 前一段上行铜管；每轮升一个调；改用减半音符而不是改速度；最后一条命把 groove 降成心跳。"
+  },
+  "variation_space": "你决定：任务是什么、每个由哪种媒介来画、家舞台与它的 frame-within-the-frame、主持人和主角、轮数、失败落在哪里、终局、开场和结尾。但**命令 → 动作 → 结果的单元、每关换媒介、以及加速**这三样不能动。远离 demo 的结构方向：其一「两个玩家轮流」——每个游戏由两个对手之一来玩，生命板变成一根拔河绳；其二「一天一小时」——每个游戏是一个小时，加速就是早高峰和晚高峰，终局是午夜；其三「接力」——每个游戏的结果是交给下一个游戏的物件，链条本身就是故事。开场可以是：家舞台在睡觉（灯灭，主持人在第一拍醒来）；一个我们倒带回去的 game-over 画面；或者只有生命板，一个计数器在滴答下降而我们还不知道它在数什么。结尾可以是：一张高分表，主角在每个媒介里逐字母输入自己的名字；把片尾做成又一个 microgame（CATCH THE NAMES!）；或者家舞台被收进 frame-within-the-frame、屏幕关掉。三种开场与三种结尾都要保住同一条：每一关都得有赌注（生命把它们连起来），不能退化成风格样片合集。",
+  "taboos": [
+    "亮度斜坡的 ASCII 人物——会糊成一团；必须手写 glyph 艺术、用结构 glyph（/ \\ | _ -）承载剪影、用反色 @ 做强调。",
+    "水墨形状读成烟——除非剪影被设计过（短而圆的墨斑阶段，然后是有缝与亮边的清晰结构）。",
+    "高速下的失败读不出来——要让动作过冲并撞到东西，或者给它一次即时回放。",
+    "alpha 覆盖媒介从缝隙里透出背景——必须实的地方给满压底（或渲染成不透明并裁剪）。",
+    "用全局 context 的绘图 helper 在离屏缓冲里会画到错误的画布（电视屏幕、滚轮、瓷砖）——前后都要 setCtx。",
+    "命令标签堆积——次要命令应该飞出去，而不是变成标签。",
+    "100% 白闪会读成空帧——封顶约 60%。",
+    "单字命令的元音尾巴（\"Pump!\" 变 \"Pompey\"）——生成一个两词短语再按 ASR 时间戳切掉第一个词之后的部分，并逐个验证。",
+    "复用示例的故事、叙事弧、镜头、道具或时长（DEMO.md:3）。"
+  ],
+  "asset_contract": {
+    "content_fields": "新内容需要驱动：台词表 lines.json（{id, t, who, cmd?, fx?, text, voice, speed, trim?}）、时长表 dur.json、速度网格 timeline.js（每段 {id, beats, bpm, kind, style?, cmd?, ok?, dark?}）、每个媒介的场景模块、家舞台/角色/HUD 参数、以及一张 cue 表。demo 里由 timeline.js（timeline.js:1-41）、lines.json（lines.json:1-194）、film.js 提供。",
+    "new_subject_contract": "一个新的媒介模块必须导出 `sceneX(g, lt)`（lt = 段内本地时间），并在内部把主角用该媒介从头重画、但保留三个剪影标记（圆头盔、天线球、「05」）。离屏绘制时必须先 `setCtx(ctx)`。参考 demo 里的 `g_<medium>.js`（如 g_crayon.js / g_ink.js / g_ascii.js / g_riso.js / g_pixel.js / g_blue.js / g_swiss.js / g_boss.js）。",
+    "timeline_contract": "timeline.js 是全片唯一真值（速度网格 + 段落表），必须导出 SEGS、DUR、S（id→段）、find(t)、bt(id, k)。页面契约由 main.js 暴露 window.render(t) / window.DUR / window.EV / window.SUBS / window.SRT / window.READY（main.js:12、main.js:48-49）。",
+    "event_vocabulary": "事件 type 与消费者：voice / fuse_on / cmd_slam / tv_in / tv_out / crown / crack / lights_off / stamp_ok / stamp_bad / insert_whoosh / button / bulb / reels_spin / reel_stop / zoom_whoosh / tile_flip（结构事件），加上每个游戏的拟音——pump / sneeze / ink_splat / drip / blink / typing / ratchet / buckle / beep2 / float_whoosh / grab / chomp / jump / meteor / graze / pencil / zip / red_stamp / swing / bonk / bounce / replay_in / replay_out / roll / cloud_whoosh / lever / chute_pop / err / zoom_in / dust / sneeze_big / ink_boom / canopy_open / wind / splash / clear / confetti / applause / hop / salute / tick_hand / rocket_pop（film.js:42-85）。"
+  },
+  "evidence": [
+    "styles/microgame/STYLE.md:3 —— 一句话定义（一个命令词、几秒、一个动作）",
+    "styles/microgame/STYLE.md:6 —— 格式适合 45–60s，更长失去 frenzy",
+    "styles/microgame/STYLE.md:10-16 —— 本质五条（命令词/每关换媒介/固定家画风/持续加速/主角剪影）+ 不是什么",
+    "styles/microgame/STYLE.md:20-27 —— 家舞台粗描边硬阴影、每媒介 channel trick、主角翻译、混媒帧",
+    "styles/microgame/STYLE.md:31-34 —— 颜色逻辑（家舞台派对色板 + 每媒介自带色板 + 跨媒介强调色）",
+    "styles/microgame/STYLE.md:38-41 —— 命令词=字幕的排印规则与停留",
+    "styles/microgame/STYLE.md:45-51 —— 帧率阶梯、五件事一起加速、引线计时器、统一转场、失败被表演",
+    "styles/microgame/STYLE.md:57-70 —— 镜头词汇表与 framing",
+    "styles/microgame/STYLE.md:74-79 —— 音乐优先/每媒介音色/foley/加速选项/真实静默/人声 duck",
+    "styles/microgame/STYLE.md:85-91 —— 七个 native move",
+    "styles/microgame/STYLE.md:95-102 —— 媒介陷阱（ASCII 糊、水墨烟、高速失败读不出、alpha 缝隙、全局 context、命令标签、白闪、单字元音尾）",
+    "styles/microgame/STYLE.md:110-116 —— 变化空间（两玩家/一天一小时/接力 + 开场/结尾）",
+    "styles/microgame/DEMO.md:3 —— 不要复用它的故事/叙事弧/镜头/道具/时长",
+    "styles/microgame/DEMO.md:5 —— demo 名与 59.8s",
+    "styles/microgame/DEMO.md:10-12 —— 故事结构与「每关换媒介」为何有效",
+    "styles/microgame/DEMO.md:16-22 —— 五个 native move 在 demo 里的用法",
+    "styles/microgame/DEMO.md:24-26 —— demo 故事形状（冷开场/两次失败/静默/材料变解法/回声）",
+    "styles/microgame/DEMO.md:30-41 —— 逐段镜头表（冷开场/拉回/老虎机/按钮插入/顶光/Boss 瓷砖/片尾）",
+    "styles/microgame/DEMO.md:45-50 —— 速度阶梯 120→140→160、命令词砸入、引线计时器、统一转场、失败表演、即时回放",
+    "styles/microgame/DEMO.md:54-59 —— 配乐（funk/pop、每风格一件色彩乐器、静默、foley、人声 duck、单字命令切词）",
+    "styles/microgame/DEMO.md:63-83 —— 家舞台色值与道具、角色、八种媒介的做法、Boss 拼贴、水墨降落伞三段",
+    "styles/microgame/DEMO.md:87-91 —— 命令词即字幕、其他台词卡片、片尾卡",
+    "styles/microgame/DEMO.md:96-107 —— 模块图与构建步骤",
+    "styles/microgame/DEMO.md:111-121 —— 实测坑（ASCII 糊、水墨烟、瑞士失败、蜡笔 alpha、全局 context、GLSL flat、UNPACK_FLIP_Y、命令标签、白闪、whisper 误听）",
+    "styles/microgame/demo/timeline.js:4-13 —— add()：加速小节与固定小节两种算法",
+    "styles/microgame/demo/timeline.js:15-22 —— 第 1 轮 120 BPM（G1 8 拍 → S1 8 拍 → G2 8 拍 → S2 4 拍 …）",
+    "styles/microgame/demo/timeline.js:23 —— SPEED 段 4 拍 [120,140]",
+    "styles/microgame/demo/timeline.js:25-30 —— 第 2 轮 140 BPM（G5 6 拍 / S5 2 拍 / G7 含 2 拍即时回放 / S7 dark）",
+    "styles/microgame/demo/timeline.js:31-35 —— BOSSIN 4 拍 [140,160] → BOSS 32 拍 → RESULT 10 拍 → END 7 拍",
+    "styles/microgame/demo/timeline.js:36-41 —— 导出 SEGS/DUR/S/find/bt（唯一真值）",
+    "styles/microgame/demo/toon.js:2-9 —— P 家舞台调色板",
+    "styles/microgame/demo/toon.js:12-14 —— K / setCtx / lw（屏幕线宽→局部线宽）",
+    "styles/microgame/demo/toon.js:17-30 —— part() 硬边阴影（裁剪 + 左上挪 sh + 重填）",
+    "styles/microgame/demo/toon.js:32-39 —— tube() 描边管子（先粗墨线再细填色）",
+    "styles/microgame/demo/toon.js:67-76 —— outlined() 带描边粗体字（命令词/UI）",
+    "styles/microgame/demo/film.js:20 —— SCENE 映射（G1..G7 + BOSS 各一个 sceneX）",
+    "styles/microgame/demo/film.js:23 —— renderGameTo()：离屏渲染游戏帧（含 setCtx 保护）",
+    "styles/microgame/demo/film.js:26-28 —— still()/firstFrame()/lastFrame() 静态帧缓存",
+    "styles/microgame/demo/film.js:33-41 —— subs() 与 srtCues()（命令词只进 srt）",
+    "styles/microgame/demo/film.js:42-85 —— events() 全部事件 type（结构 + 每游戏拟音）",
+    "styles/microgame/demo/film.js:88-90 —— R2()/tvOutDur()/tvInDur() 转场时长随速度变",
+    "styles/microgame/demo/film.js:91-93 —— PREV/NEXT/BADGE 段落邻接与关卡号",
+    "styles/microgame/demo/film.js:94-106 —— tickState() 主持人逐段姿态（拍表冠/面掌/欢呼/严肃/敬礼）",
+    "styles/microgame/demo/film.js:108-141 —— stageSeg() 舞台段：电视推入/缩回、印章、生命、生命裂开、闪烁",
+    "styles/microgame/demo/film.js:142-157 —— buttonInsert() 大红按钮特写插入",
+    "styles/microgame/demo/film.js:159-167 —— REEL_ITEMS/speedTile（老虎机帧与三色瓷砖）",
+    "styles/microgame/demo/film.js:168-205 —— speedSeg() 老虎机：加速后减速、动态模糊、滚轮框、白闪",
+    "styles/microgame/demo/film.js:207-225 —— bossinSeg() 8 瓷砖翻面成 Boss 帧",
+    "styles/microgame/demo/film.js:227-241 —— endCard() 片尾卡（放射背景、标题逐字、主角敬礼）",
+    "styles/microgame/demo/film.js:244-268 —— renderFilm() 主渲染：段落分发 + 命令词 + 引线计时器 + 字幕",
+    "styles/microgame/demo/stage.js:8-9 —— TV 尺寸与 TVZ（放大 2.5 倍满屏）",
+    "styles/microgame/demo/stage.js:11-14 —— tvCam() 推入电视的相机",
+    "styles/microgame/demo/stage.js:15-24 —— sunburst() 旋转放射背景",
+    "styles/microgame/demo/stage.js:25-52 —— marquee() 追逐灯泡招牌 + 标题逐字点亮",
+    "styles/microgame/demo/stage.js:53-64 —— tvSet() 金色电视机身",
+    "styles/microgame/demo/stage.js:65-73 —— tvScreen() 屏幕内容与玻璃反光",
+    "styles/microgame/demo/stage.js:74-84 —— podium() 讲台与大红按钮（press 0..1）",
+    "styles/microgame/demo/stage.js:85-94 —— floor() 地板与台面",
+    "styles/microgame/demo/stage.js:95-110 —— spots() 追光与「只剩一束顶光」",
+    "styles/microgame/demo/stage.js:112-127 —— drawStage() 家舞台装配（含生命板/关卡牌/彩纸）",
+    "styles/microgame/demo/stage.js:128-138 —— confetti() 彩纸",
+    "styles/microgame/demo/main.js:3-12 —— 页面初始化、字体、setLines、window.EV/SUBS/SRT",
+    "styles/microgame/demo/main.js:13-42 —— window.render(t)（含 ?scene= / ?test= 调试入口）",
+    "styles/microgame/demo/main.js:48-49 —— window.DUR / window.READY",
+    "styles/microgame/demo/lines.json:1-194 —— 21 条台词（命令词 cmd:true、音效 fx:true、trim 切词）",
+    "styles/microgame/style.json:16-17 —— frame_sec 23.92 / dur 59.8"
+  ]
+}

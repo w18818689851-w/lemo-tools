@@ -1,0 +1,111 @@
+{
+  "slug": "pictogram-motion",
+  "nameZh": "象形运动图形",
+  "distilledAt": "2026-10-03T08:12:00.000Z",
+  "matchScore": 96,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 20,
+    "typography": 19,
+    "rhythm": 19,
+    "audio": 20
+  },
+  "defects": [
+    "【palette −1】成片颗粒强度与声明不符（声明 4，实际 2）。声明侧：DEMO.md:96 明写「**Grain**: added only at mux time（`noise=c0s=4:c0f=t+u`）」，demo/mux.sh:12 同样写死 `noise=c0s=4`，STYLE.md §1 的 mood 也说「light grain」。实际侧：日志第 8 行打「grain（脚本默认）」。按编排器取值链 `--grain > demo 的 build.sh > 档案 > mux.sh 默认 2`（lemo-make.mjs:1181）：本风格没传 --grain、没有 demo/build.sh、lib/style-dna/pictogram-motion.json 的 sound_palette.mix_rules 里没有显式 grain（dnaGrainFromMixRules 只认显式 `grain N`/`颗粒 N`，lemo-make.mjs:990-997）→ 三级全空 → core/render/mux.sh:23 的 GR=\"${5:-2}\" 取 2（mux.sh:115 加 noise=c0s=2:allf=t）。即成片颗粒 2 < 声明 4，比声明更轻。★ 本条是**参数偏离**、不是可见的画面损坏：该量级差异在成片里肉眼不可辨（libx264 会把这一档噪声在平坦区吃掉，同批 watercolor/paper-lantern 的复核也证实抽帧看不出颗粒），故按与 watercolor（声明 0 / 实际 2，palette −1）、paper-lantern（声明 0 / 实际 2，palette −1）**同一口径**扣 1",
+    "【typography −1】派生通路（lib/dub-styles.json#pictogram-motion）的字幕不是从 STYLE.md §4 抽的：STYLE.md §4 只给字幕形态（等宽单行叠在章节色实色带上）未给 px，通路取的是类目默认 caption-row（fontFamily SimHei / fontSizeFactor 0.03148 / marginVFactor 0.14537），属『套默认』而非『抽取』；本风格实际用 DM Mono 等宽元信息，中文通路里被换成黑体 SimHei，且『叠实色带』的形态在派生通路里无对应字段",
+    "【typography −0，附带】.srt 未重新生成：日志第 30 行告警『该 demo 没有本编排器支持的字幕生成器 → 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件』；成片旁挂的 pictogram-motion.srt 是仓库旧文件（内容与样片一致但非本次产出）。卡片内的字是烧在画面里的文字层，不受此影响，故不额外扣分，仅记录",
+    "【rhythm −1】帧率从风格原生 60 fps 降到 24 fps：demo 声明 60 fps（约 9696 帧），成片为 24 fps / 3926 帧（视频段 3878 帧 + 48 帧尾垫）【原记·2026-10-03；2026-10-04 重渲后成片为 24 fps / 3878 帧、无尾垫，见 generatedVideo】。拍点时长完全不变（视频段 161.58s ≈ EDL 161.6s，卡 1.6s / 快切 0.8s / 章节 3.2s 与 .srt 逐条吻合），但时间采样更粗，转场与甩镜窗内的 5 帧子帧运动模糊观感被稀释。注意视频段未重渲——demo/out/video_gpu.mp4 仍是修复前那份 3878 帧 / 24 fps 的无声段",
+    "【composition/mux −0，附带】demo 自带的 demo/mux.sh（含 noise=c0s=4:c0f=t+u 轻颗粒 + tpad 2s 尾垫）未被编排器采用：日志第 9 行与第 109 行告警其接口不是 V A O [fps] [grain]，编排器回退 core/render/mux.sh。首次出片因此无 2s 尾垫（src_frames=out_frames=3878）；音频修复后的重混流曾补上尾垫（当时成片 163.58s = 161.58 + 2s）【原记·2026-10-03；2026-10-04 重渲后当前成片 161.58 s、无尾垫】，说明回退脚本的 tpad 分支在『有音轨』时才走到。noise=c0s=4 轻颗粒是否与 demo 声明等同仍未确认",
+    "【palette −1】细纹理 `textureRaw: flat` 声明了但渲染未实现：`lib/dub-styles.json#pictogram-motion.bgRecipe.textureRaw` 是 `flat`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `flat` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `flat` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "demo/ref/ 存放真实赛事官方参考图，只作参考、永不入画、不可分发（DEMO.md『Rights note』）；任何新片必须自创会徽 mark、口号与色名，因此本风格的可复用素材里不含任何官方图像",
+    "配乐是全程序合成（numpy + scipy，无采样库）：缺 .venv / numpy / scipy 环境则 music.py 整条链跑不通，无法产出画面锁定配乐",
+    "四款字体必须随 demo 复制（Inter Tight 900 / Noto Sans JP 900 / Noto Sans SC 900 / DM Mono 500），缺字重会让 330px（B 版标题）/ 170px（默认标题）/ 92px（第二语言）/ 22px（元信息）的字号层级塌陷",
+    "每个条目的动作依赖 poses/*.js 里的骨骼姿势定义（样片 70 个姿势，分 ath/aqua/ball/combat/power/nature/asia 七文件）；缺姿势时只能用 G.P 道具把动作物化，无法凭空生成新动词",
+    "没有 build.sh：一键复现链路缺失，只能按 DEMO.md『Build notes』5 步手跑"
+  ],
+  "limits": [
+    "只支持 16:9：无 aspects 声明、按 1920×1080 绝对像素构图，9:16 与 4:3 都要另做版式而非硬渲（这是架构限制不是文档问题）（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "只能 Canvas2D 平涂：无 3D、无透视、无景深、无阴影/渐变/粒子；全片唯一渐变是日盘上缓慢扫过的 9% 白光带",
+    "象形小人一律无脸、无五官、不表情、不卖萌；数字只能是标签与编号，不能做图表或数据可视化",
+    "必须有一个『一拍内读得懂的动作』：纯抽象条目撑不起来",
+    "图案画布必须 LRU 限量（≤10 张），并行渲染器下无上限缓存会爆内存",
+    "禁止临摹任何真实赛事的象形图/会徽/口号/纹样/色名；禁止溶解/叠化（唯一例外片尾最后 1.3s 全黑淡出）、3D 相机运动、手持抖动、景深、未对齐网格的随机裁切",
+    "音频链修复前的首次出片整条音轨缺失（--skip-audio，实测 I −70.0 LUFS / Peak −inf / volumedetect −91 dB）；已在蒸馏期内由音频链修复任务补齐（重新生成 music.wav / mix.wav 并重混流），本条保留以记录历史。★ 2026-10-05 已修「走不了编排器音频链」：本 demo 无 mix.py/sound.py/audio/mix.py，编排器混音步恒 STEP_FAIL（lemo-make.mjs:2066-2068 / 2290-2297），只能 --skip-audio；现于风格侧新增 demo/mix.py 薄壳（无命令行参数、路径按 __file__ 解析），按本 demo 自己的顺序跑 export_timeline.cjs → music/music.py → 交付口径真峰值收口，产出 demo/mix.wav。实测 node lemo-make.mjs pictogram-motion --ratio 9:16 --skip-sync --out … 走到 MIX_OK 47116902 / MUX_OK 38681336（src_frames=out_frames=3878），成片 1080×1920 / 24 fps / 161.583 s，I −14.09 LUFS、真峰值 −2.90 dBTP（两条交付线双双达标）。红线 lemo-make.mjs 未动",
+    "最高可达分与原因：palette 因成片颗粒 2 与声明 4 不符扣 1（−1）、audio 只余真峰超限（−2）、rhythm 因 24 fps 而非原生 60 fps（−1）、composition 因 9:16 架构缺陷（−2）；若把颗粒按声明给到 4、真峰压回 ≤ −1 dBTP、按 60 fps 渲染、且产品只用 16:9，本风格最高可达 ≈99/100。本次实得 93"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f03.jpg",
+    "f04.jpg",
+    "f08.jpg",
+    "f09.jpg",
+    "f10.jpg",
+    "f13.jpg",
+    "f15.jpg",
+    "f16.jpg",
+    "f20.jpg",
+    "f22.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/pictogram-motion/STYLE.md",
+    "styles/pictogram-motion/DEMO.md",
+    "styles/pictogram-motion/style.json",
+    "styles/pictogram-motion/demo/mux.sh",
+    "styles/pictogram-motion/demo/music/report.txt",
+    "lib/style-dna/pictogram-motion.md",
+    "lib/style-dna/pictogram-motion.json",
+    "lib/dub-styles.json#pictogram-motion",
+    "_distill/logs/pictogram-motion.log",
+    "_distill/frames/pictogram-motion/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/pictogram-motion/pictogram-motion.mp4",
+    "durSec": 161.58,
+    "bytes": 61248100,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 3878
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "出片与配乐均非本智能体执行（GPU / Index-TTS 独占，纪律禁止起渲染），以上数据全部转录自 _distill/logs/pictogram-motion.log、demo/music/report.txt、ffprobe / ebur128 / volumedetect 与逐帧观察",
+      "首次出片走编排器 --skip-sync --no-preflight --ratio 16:9 --skip-audio（日志第 1 行），WSL/Windows 双份库未做同步校验，且整条音轨缺失（I −70.0 LUFS / Peak −inf / volumedetect −91 dB）",
+      "音频链已由音频链修复任务补齐：music/music.wav、music_bed.wav、sfx.wav、report.txt 与 demo/mix.wav（163.6s / 48kHz / 24-bit 立体声）于 15:48 重新生成，成片于 16:06 重混流；report.txt 记录 79/79 镜头 onset 全部通过（偏移 ≤0.2ms，阈值 ±15ms）、11 处 pre-hit gap",
+      "成片音频实测：ebur128 I = −14.0 LUFS（与声明目标 −14 LUFS 一致）、LRA 5.9 LU、TPK +0.3 dBFS（左 −0.5 / 右 +0.3）；volumedetect mean −16.1 dB / max −0.0 dB —— 真峰超声明上限 ≤ −1 dBTP 约 1.3 dB 且触及满刻度（★ 原记·2026-10-03；成片已于 2026-10-03 用 scripts/fix-truepeak.mjs 重混，实测真峰值 -1.63 dBTP 达标）",
+      "★【原记·2026-10-03 加 2s 尾垫版；2026-10-04 重渲后当前成片为 3878 帧 / 161.58 s、无尾垫，见 generatedVideo】帧率：成片 24 fps（首轮渲染 --fps 24），风格原生为 60 fps；视频段未重渲（demo/out/video_gpu.mp4 仍为 3878 帧 / 24 fps / 161.58s），重混流只加 2s 克隆尾垫并换音轨 → 成片 3926 帧 / 163.58s / 1920×1080 / 2.98 Mbps",
+      "告警 1（日志第 30 行）：本 demo 没有本编排器支持的字幕生成器，.srt 不重新生成，沿用仓库已提交的旧文件",
+      "告警 2（日志第 9 / 109 行）：demo 自带 mux.sh 的接口不是 V A O [fps] [grain]，编排器回退 core/render/mux.sh；noise=c0s=4 轻颗粒是否等同 demo 声明未确认",
+      "耗时（转录）：首轮渲染 37s、混流 90.3s；配乐渲染 72s（report.txt『Render time 72 s』）；重混流后成片 58.0 MB。环境 Windows Node v22.22.2 + ffmpeg 9.0.2 + WSL Ubuntu-24.04",
+      "逐帧分析所用抽帧取自修复前的无声成片；因视频段未重渲，画面结论对修复后的成片同样成立",
+      "本次未改动任何源码：lemo-make.mjs 未动、D:/lemo-opuscar 下源码未动，只写 lib/style-skills/pictogram-motion/ 自己的两份交付物；分数轨迹 = 76（首版，成片静音）→ 94（音频链修复后回填，audio 0→18）→ 93（采纳跨文档复核判据后自曝颗粒偏离，palette 20→19）",
+      "★【原记·2026-10-03 加尾垫版；当前成片 161.58 s、无尾垫】成片收尾实测（由 fix-pictogram-audio 独立复测，本人转录）：尾垫 = 片尾淡黑后的全黑定格 48 帧 = 2.000 s（亮度 YAVG 160.5s 213.8 → 161.0s 70.3 → 161.5s 16.0 → 之后恒 16.0003 至片尾；末三帧 SSIM 1.000000 / PSNR inf，逐像素相同）；cropdetect 三处均 crop=1920:1080:0:0（无黑边）；2 s 尾巴保住了音乐余响（161.583–162.083s RMS −24.82、162.083–162.583 −31.96、163.083–163.583 −59.06 dB，平滑衰减到静音；若无尾垫会在 161.58s 处 −22 dB 硬切）",
+      "抽帧目录的处置（由 fix-pictogram-audio 执行，本人确认保留）：canonical 目录 _distill/frames/pictogram-motion/ 保持为修复前无声成片的那套帧——因视频段未重渲，逐帧内容与成片一致，且本人文档的逐帧叙述与之逐条吻合（f04 SPRINT / f08 BUTTERFLY / f09 03 BALL GAMES / f13 JUDO / f15 MMA / f16 ARCHERY / f23 IMAGINE ONE ASIA / f24 片尾卡 等）。新片抽帧另存 _distill/frames/pictogram-motion_163/（其采样因 24fps 下 t=k·dur/24 整体后移 1.2–1.9s，f15/f16 落在不同章节，故不作为 canonical）"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.63,
+      "integratedLufs": -14.5,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "peakNote": "★ 2026-10-04 已修：成片经 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 -0.21 → -1.63 dBTP（alimiter 上限 -2.5dB）。原值 -0.21 记录为修复前状态。",
+      "lra": 4.6,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.643991
+    }
+  },
+  "resolvedDefects": [
+    "【audio −2】成片真峰超出声明上限：STYLE.md §7 声明真峰值 ≤ −1 dBTP，母带 music.wav 也做到了（report.txt：TP −1.12 dBTP，内部 4× 表 −1.30 dBTP，限制器天花板 −1.3 dBTP），但成片 ebur128 实测 TPK +0.3 dBFS（左 −0.5 / 右 +0.3）、volumedetect 采样峰值 −0.0 dBFS —— 超上限约 1.3 dB 且触及满刻度，最响的几下鼓点有削波风险。集成响度 I = −14.0 LUFS 与声明目标完全一致，故问题在混流阶段 loudnorm 抬峰，不在配乐本身\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 TPK +0.3 dBFS → **−1.65 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +2（见第 10 节）。",
+    "composition −2（原缺陷）：【composition −2】9:16（产品默认）不可用：本风格无 aspects 声明、按 1920×1080 绝对像素构图，硬渲成 1080×1920 时画面 1:1 塞在左上角、右侧约 43.75%（≈840px，即整个『右舞台』——日盘、小人、图案）全部丢失、下方整片黑。相对同类 16:9 风格扣得更多，因为本风格核心构图是『左文字栏 + 右舞台』并置（文字栏 x130 / 日盘中心 x1290），且右上角『01 / 43』章节 HUD、跨全宽的 N 刻度进度条、底部跑道带与贴在跑道上的规格 ghost 字（100M / 3000MSC / 800G）都会一起被切；抽帧 f04–f22 每条都只剩左半张（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 95→97（分数于 2026-10-05 回补）。原记录保留作历史。",
+    "【编排器音频链（原「走不了编排器音频链」）· 无扣分，故无分数回补】本 demo 的音频里没有 mix.wav 概念：配乐由 music/music.py 直出 music/music.wav，成片由自带 mux.sh 直混；而编排器混音步只在 $D/mix.py / $D/sound.py / $D/audio/mix.py 里找脚本（lemo-make.mjs:2066-2068），三个都没有 ⇒ 恒 STEP_FAIL（lemo-make.mjs:2290-2297），本风格只能 --skip-audio 复用旧混音（那条路会静默复用陈旧产物）。★ 2026-10-05 已修：不改红线 lemo-make.mjs，只在风格侧新增 demo/mix.py 薄壳（无命令行参数；路径一律按 __file__ 解析，因编排器是以 .venv/bin/python \"$MIX\"、cwd=库根 调用；双副本 md5 一致），按本 demo 自己的构建顺序跑 ① node music/export_timeline.cjs（edl.js → music/timeline.json；★ 编排器不会自动跑这一步）→ ② .venv/bin/python music/music.py（→ music/music.wav 母带）→ ③ 4× 过采样真峰值收口（ffmpeg alimiter，天花板 −6.5 dBFS）→ demo/mix.wav。第 ③ 步的依据是实测：母带 PLR 12.99 dB，core/render/mux.sh 的 loudnorm 出口把电平钉在 −14 LUFS，编码器入口真峰值≈母带 TP，而 AAC 256k 对打击乐素材的过冲实测 1.6~2.3 dB，远超 mux.sh 预留的 0.5 dB 余量（成片 +0.28 dBTP；把 TP 目标逐档下压 8 档最好只到 −0.72 dBTP）；逐档扫描 PLR 后取 −6.5 dBFS（PLR 9.22）—— 成片真峰值 −2.90 dBTP、响度恒在 −14.09 LUFS，即 mux.sh 登记为「两条交付线无法同时满足」的那个 case 靠降波峰因子解开。实测（2026-10-05）：node lemo-make.mjs pictogram-motion --ratio 9:16 --skip-sync --out D:/lemo-films/_mixfix/pictogram-motion → MIX_OK 47116902 / MUX_OK 38681336（src_frames=out_frames=3878），成片 1080×1920 / 24 fps / 3878 帧 / 161.583 s / AAC 48 kHz 立体声，loudnorm 实测 I −14.09 LUFS、真峰值 −2.90 dBTP ⇒ 两条交付线（−14±1 LU、≤ −1.2 dBTP）双双达标。红线 lemo-make.mjs 未动（md5 314d7fc8a341b6d77189e368552291f3）。本条原先未计入 defects（音频分未因它扣分），故 matchScore 仍为 97。"
+  ]
+}

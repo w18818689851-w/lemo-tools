@@ -1,0 +1,100 @@
+{
+  "slug": "dataviz",
+  "nameZh": "数据叙事",
+  "distilledAt": "2026-10-03T13:50:00Z",
+  "matchScore": 92,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 20,
+    "typography": 18,
+    "rhythm": 19,
+    "audio": 16
+  },
+  "audioScoreBasis": "audio 15/20（本轮由 16 扣为 15）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.12 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.08 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**按 2026-10-03 统一口径减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲），非本风格音频链所致，属项目级既有缺陷。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半。另 −4 为既有：闪避值 −11 dB / ~−8 dB 两处矛盾未抹平（style-dna/dataviz.json#sound_palette.mix_rules 与 style-dna/dataviz.md:156 对 :281），第 4 句旁白 SNR 实测 8.5 dB 低于声明的 8.6–16 dB 下限（logs/dataviz.log:92）。音频链本次真实跑过（TTS 5 行 + ASR 5/5 OK + score.py + mix.py，logs:40-96）。",
+  "defects": [
+    "闪避值两处矛盾未抹平：style-dna/dataviz.json#sound_palette.mix_rules 主值写 ~−11 dB、括号内注明 mix.py 文档串写 ~−8 dB；style-dna/dataviz.md:156 写 −11 dB，:281 证据行写 mix.py ~−8 dB（audio −4 之一）。",
+    "第 4 句旁白 SNR 实测 8.5 dB，略低于声明的 8.6–16 dB 下限（logs/dataviz.log:92，audio 相关）。",
+    "dub-styles.json#dataviz 为派生条目：字幕字体由 demo 的 Newsreader 换成 SimHei（Consolas 无中文字形），中文内容下与图注衬线气质有偏差（typography −2）。",
+    "accent #d97757 仅用于引擎演示的非数据标记，主数据全靠色带；通路派生色值来自 lib/dub-visual.json 而非 STYLE.md 明文（palette −1）。"
+  ],
+  "assetGaps": [
+    "强依赖一份真实、开放授权、可追溯的数据集（demo 用 NASA GISTEMP v4 的 JJA 列）；无数据集无法成片，绝不能编数据。",
+    "demo 自带 OFL 三件套（Newsreader / Caveat / IBM Plex Mono），但无含 CJK 的衬线/手写字体，中文题材需自备近似字体。"
+  ],
+  "limits": [
+    "一次只讲一个想法（不是仪表盘）；颜色只编码值，不支持多品类并列用色。",
+    "节奏受 90 BPM 网格与「细分拍子加速」约束，不适合自由节拍长镜头。",
+    "尺度切换只能切到更长的真实记录，绝不外推。",
+    "9:16 竖屏需重排（横向时间轴改纵向或整体缩小居中），不能直接套 16:9 参数。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f03.jpg",
+    "f04.jpg",
+    "f05.jpg",
+    "f06.jpg",
+    "f07.jpg",
+    "f09.jpg",
+    "f10.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f15.jpg",
+    "f16.jpg",
+    "f17.jpg",
+    "f18.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f22.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/dataviz/STYLE.md",
+    "styles/dataviz/DEMO.md",
+    "styles/dataviz/style.json",
+    "styles/dataviz/demo/build.sh",
+    "lib/style-dna/dataviz.md",
+    "lib/style-dna/dataviz.json",
+    "lib/dub-styles.json#dataviz",
+    "_distill/logs/dataviz.log",
+    "_distill/frames/dataviz/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/dataviz/dataviz.mp4",
+    "durSec": 50,
+    "bytes": 23534100,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1200
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14.39,
+      "lra": 6.2,
+      "truePeakDbtp": -2.23,
+      "samplePeakDbfs": -2.401433,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.12 dBTP，超 −1.2 dBTP 交付线 0.08 dB、未削波（真峰值为负）。astats 采样峰值 −1.372202 是下界、ebur128 的 Peak −1.1 只有 1 位小数，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。 ★ 2026-10-05 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-2.23 dBTP**、astats 采样峰值 **-2.401433 dBFS**。原记（真峰值 -1.12 dBTP / astats -1.372202）属修复前或重渲前版本，已按实测更正。"
+    },
+    "warnings": [
+      "成片日志中文为 GBK 乱码，参数已按可辨识字段提取（1920x1080 / nvenc / fps 24 / workers 6 / grain 0）。",
+      "ASR 校对 mismatches 0（lang=en, model=base.en）。",
+      "混流实测 -14.1 LUFS / Peak -1.1 dBFS，目标 -14 LUFS。",
+      "静默检查通过：31.00–32.00s 与 42.67–43.33s 均 peak -240.0 dBFS。",
+      "闪避值存在 −11 dB 与 ~−8 dB 两处矛盾，已在 SKILL.md 第 6/11 节如实并列，未替其选值。"
+    ]
+  },
+  "resolvedDefects": [
+    "【audio −1，本次新补记（按 2026-10-03 统一口径由 −2 减半）】成片真峰值 −1.12 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.08 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲；`mix.wav` 峰值偏热，`logs/dataviz.log:88` 记 `mix peak -1.0 dBFS`，编码过冲把真峰值顶过线），**非本风格音频链所致，属项目级既有缺陷**。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半，audio 16→15。此前 §6 只写了 ebur128/astats 的 Peak −1.1 dBFS（1 位小数读数、采样峰值下界），未记真峰值。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −1.12 dBTP → **−2.23 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。",
+    "composition −1（原缺陷）：无 aspects 声明，绘图框 1500×520 为硬尺寸；产品默认 9:16 硬渲会裁掉横轴右端年份刻度与右侧红端数据（composition −1）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 91→92（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

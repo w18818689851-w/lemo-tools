@@ -1,0 +1,147 @@
+{
+  "slug": "papercut-red",
+  "name_zh": "红色窗花剪纸（Red Paper-cut）",
+  "essence": "一部「剪出来的」纸片动画：每一个可见之物都是一张被剪刀剪过、平铺在另一张纸上的纸；没有绘画、没有渐变阴影、没有描边线，细节、体积和表情全部来自「剪掉了什么」。红纸是主角材料，底纸也是纸（白天浅色纸、夜晚深色染纸），人物是关节剪纸（头、躯干、上下肢用铆钉钉住），以 12fps 硬步进表演。它不是皮影（没有背光幕布、没有半透明驴皮、没有签子），不是平面矢量插画（没有描边、没有渐变），不是纯剪影片（每个形状内部都是镂空的）。",
+  "materials_and_rendering": [
+    "纸即世界：每个「片」内部先叠一层中性灰纹理（soft-light：染料斑驳、纤维、斑点，±7% 约 130px），再用 destination-in 用原 alpha 还原，所以镂空依旧是镂空。",
+    "刀口：每条轮廓都是带低频抖动的折线（手剪感，edge wobble ≈0.35 单位），左上一条 1px 亮边、右下一条 1px 暗边（纸的切面）。建筑与机械用直线段 + 抖动，绝不圆滑（平滑会把房子变成面包）。",
+    "纸的厚度：每个片在下一层上投一道紧而软的影（偏移 2.6/3.6px、模糊 5px×zoom，rgba(52,6,10,.38)）；叠起的折纸露出 2–6 条错开的深色边。",
+    "红块 + 阴刻线：每个纸片都刻一条内刻线（轮廓内侧 3.5 单位处一条 1.5 单位宽的缝）——经典双线轮廓，同时把红压红的部件分开（手臂压在衣袍上）。",
+    "民间剪纹词汇（demo/motifs.js）：锯齿纹 sawRow/sawEdge（毛、草、瓦、流苏）、月牙纹 crescent/crescentRows（鳞、绗缝）、旋涡纹 swirl/doubleSwirl（关节涡）、云纹 cloudCut、团花 rosette、梅花孔 plum、铜钱孔 coin、锥形刻线 cutTaper。",
+    "不留孤岛：一个封闭环剪下来会掉心，所以眼睛是上下两道月牙（留桥）加一个瞳孔孔；脸永远不变形，表情靠可换的脸片（笑/惊/怕/坚定/睡）。",
+    "团花（tuanhua）只设计一个 45° 楔形，再镜像 8 次（D4）；其他折法给 2×/4×/6×。阳刻（剪空留红线网）与阴刻（红面剪孔）交替成环；折痕留一道浅线，那是真手艺。",
+    "光：正面受光时纸就是纸；夜里 = 画面 × 光照图 + 暖光池，再加自发光背光片（光 × 纸透射用 multiply，孔处全亮），两级辉光（10px/40px，强度≈0.55）与可选体积光。辉光压得够低，中心纹样仍可读。",
+    "投影纹样：把片的孔蒙版压扁投到地面上用 lighter 叠加；落在人物身上时用其图层 alpha 遮罩，叠在一块实心暖斑上，这样剪出来的五官仍读成孔。",
+    "背光透射：transmitOf 生成透射贴图——纸处 = 透射色 #e0401c 带厚薄斑驳，镂空处透明；用 multiply 画在光场上，纸 = 光×透射、孔 = 原光。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 32–74 个字符（约 6–13 个英文词）。demo 五行里最短是惊呼句（\"Crackle, bang! And away ran Nian.\" 32 字符），最长是「三怕」清单句（\"But Nian fears three things: the color red, bright light, and loud noise.\" 74 字符）。字幕是一条纸横批：Fraunces SemiBold 44px、奶油字 #fff1d6、距底 70px、居中；字幕条宽按文字实测 + 150px，最多两行。硬规则：每张字卡停留 ≥ max(1.8s, 语音时长 + 0.7s)，永不重叠。",
+    "person_and_tense": "第三人称、过去时为主（一位奶奶在除夕夜讲故事）。可用祈使/总结式收尾（\"That is why, every New Year, we still paste red paper on our windows.\"）。语气温暖、口语、有民俗的郑重感。",
+    "typical_openers": [
+      "以时间/节令起句（\"Every New Year's Eve, …\"）",
+      "以一句具体动作的短句做钩子（\"One by one, the village put out its lights.\"）",
+      "以转折连词起句点题（\"But Nian fears three things: …\"）",
+      "以拟声词 + 短动作收束（\"Crackle, bang! And away ran Nian.\"）",
+      "结尾用一句「所以至今我们……」把故事接到当下（\"That is why, every New Year, we still …\"）"
+    ],
+    "forbidden": [
+      "第一人称抒情或内心独白（该风格靠剪纸动作与光承载情节，不靠心理描写）",
+      "现代网络口播腔、感叹号堆叠、营销话术（\"amazing\"、\"unbelievable\"）",
+      "抽象概念名词当主语（只谈能被剪出来、能被光照出来的实物、部件、位置）",
+      "一句里塞进两个以上并列信息点（每句只承担一层，让动作自己说话）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一次「用剪纸的手艺解决问题」的民俗叙事）：冷开场（剪刀咬红纸 → 纸飞走露出宣纸） → 片名剪字 + 锯齿轮横幅 + 印章 → 平静的世界（夜村、窗花） → 威胁（远山立起变成年兽的背；灯一盏盏灭） → 无声的抉择（年兽的眼睛挤进窗格；女孩从怕到定） → 折—剪—展（在强拍上） → 图案变成光并修复世界（背光团花投影、八盏灯笼飞向八扇窗、纸屑变爆竹） → 黎明（夜纸揭起露出昼纸、金箔太阳） → 尺度揭示（整片其实是木窗上的一张团花） → 片尾卡。",
+    "beat_durations": "时间挂在 120 BPM、2/4 网格上（1 拍 = 0.5s，1 小节 = 1.0s）。关键锚点（story.js）：snips .25/1.0/1.75；title 3.0；village 7.0；rise 12.0；room 17.0；folds 24.0/25.0/26.0（每折 ≈0.55s，一次木鱼）；cut0 26.5 → cut1 29.4（每 0.25s 一刀 = 一个八分音符，揭示圆半径 r≈62）；unfolds 30.0/30.25/30.5（间隔 0.25s）；bloom 31.0（tutti + 大锣）；lanterns 32.0–33.75（每八分音符一扇，由近及远）；dawn 38.0；reveal 42.5；end 46.0；DUR 49.0。字幕提前 0.05s 上、滞后 0.25s 下（subs.py 规则：t1 = min(下一句 −0.15, 起点 + max(1.8, dur+0.7))）。",
+    "total_length_range": "主 demo 49.0s（style.json dur=49.0，frame_sec=35.28）。DEMO.md 记原定 40–55s；STYLE.md 未给固定区间，变化空间允许按主题伸缩。",
+    "silence_policy": "静默是真实存在的一段：17.0–19.5（年兽眼睛段）整段没有音乐，只留风声、雪声与沉重的呼吸；29.5–30.0（剪完、展开前）所有声音停住，留一拍的屏息，然后 31.0 才爆出大锣与 tutti。静默是「奖赏之前的清场」，不是空拍。"
+  },
+  "tone": "一位温暖的奶奶在除夕夜讲故事：语速偏慢（Kokoro af_sarah，speed 0.9），口语、亲切、带一点年节的郑重；不喊口号、不设悬念钩子，把一件「用一张红纸解决了问题」的旧事讲给孩子听。",
+  "shot_logic": {
+    "camera_is": "一枚压在图版上的放大镜式的「看」：镜头不制造情绪，它只把视线引到某个点，再让位给信息；运动由剪纸的动作驱动（跟随剪刀尖、纸层视差、折剪展的桌面俯拍）。",
+    "vocabulary": [
+      { "move": "极特写跟随剪刀尖", "expresses": "正在制作；对工艺的专注", "serves": "一段工作的开始；一个精确的动作；签名" },
+      { "move": "平面正视，锁定", "expresses": "剪纸作为一枚徽记", "serves": "片名；一句宣言；一张全家福" },
+      { "move": "慢摇掠过纸层（视差）", "expresses": "一个被铺开的世界", "serves": "村庄、一条路线、一条时间线" },
+      { "move": "低角度广角，一个形状从底纸立起", "expresses": "尺度、威胁", "serves": "一场风暴；一个对手；一个逼近的期限" },
+      { "move": "俯拍桌面", "expresses": "手艺即情节", "serves": "折、剪、拼、分拣" },
+      { "move": "推向发光的片再拉回成一片", "expresses": "一个动作扩散开", "serves": "影响；一张亮起的网络" },
+      { "move": "翻页 / 揭纸", "expresses": "时间或地点改变", "serves": "昼到夜；之前与之后；章节" },
+      { "move": "拉远到房间里的一件物件", "expresses": "整部片子是某个人做出来的东西", "serves": "记忆；礼物；传统" },
+      { "move": "绕团花中心旋转", "expresses": "秩序、重复", "serves": "一个循环；一支队伍" }
+    ],
+    "transitions": [
+      "折（fold）：纸沿中线/对角线折起",
+      "翻页 / 揭纸（page turn / sheet peel）",
+      "一张纸飞走（a sheet flying off）",
+      "一刀切穿画面（a cut through the frame）"
+    ],
+    "forbidden": [
+      "溶解/叠化（dissolve）等 UI 式转场",
+      "任何元素的淡入/滑入（文字要么被「剪」出来，要么被「贴」上去）",
+      "用透视制造纵深（层永远平行于屏幕，纵深只来自视差与纸的深浅）",
+      "无来由的运镜（镜头运动必须由「看什么」驱动）"
+    ]
+  },
+  "idioms": [
+    "折—剪—展：把一张纸折 2/4/8 次，一刀变成很多刀；展开落在强拍上。",
+    "孔就是光：背光的剪纸透出深红，每个孔都发亮，纹样被投到世界上。",
+    "对称复制：镜像母题剥落并增殖（团花 → 窗花 → 烟花）。",
+    "纸屑有未来：剪落下的碎屑后面回来当雪、彩纸、星星。",
+    "万物同一张平纸：东西共享同一批剪纹，所以一道山脊能立起来变成怪兽，一道浪能变成一条路。",
+    "镜像成对：两个人物从一张对折的纸里剪出。",
+    "角色 12fps 硬步进（pose 取样 floor(t·12)/12）；镜头、光、天气、火焰、飞行的纸片按 24fps 逐格动。",
+    "折的假透视：翻起的纸分成约 16 条，每条按 cosθ 压缩、沿折线按 1 + 0.28·height 放大，竖起时变暗、过 90° 露出浅色背面，约 0.5s 一折、每折一次 hit。",
+    "剪的揭示：图案沿剪刀路径的一串圆蒙版露出来，剪过外缘后角料整块掉落，刃每 0.25s 开合一次，纸屑飘出落地。",
+    "展开：连续几次展开，每次一拍快于前一拍，各纸瓣从折到平 ease-out（「啪」的一声），随后一个尺度弹跳 + 暖闪。"
+  ],
+  "atmosphere": "一间安静的老式剪纸作坊 / 除夕夜的村子：有纸的味道、红纸的暖、墨的干；光从背后透进来，尘埃在光柱里。整体是「耐心、精确、值得被保存」的气质，而不是戏剧性。",
+  "sound_palette": {
+    "instruments": [
+      "明亮的中式室内小合奏，不是钢琴与弦乐、也不是皮影的锣鼓经：琵琶（长音用轮指）",
+      "筝（dan_tranh：琶音、刮奏、轮指）、二胡（滑音）、笛子",
+      "笙或扬琴的音色、木鱼、小锣与大锣、手鼓；五声音阶（demo 为 D 宫五声 D E F# A B）"
+    ],
+    "foley": "按材料分层：剪刀 = 金属擦切（2.5–9kHz 带通）+ 短铃音 + 纤维断裂的「咔」；折 = swish + 折痕轻拍；展开 = 清脆的「啪」；重步 = 厚纸板的闷「嘭」（55Hz + 低频噪声，每步约 6px 画面抖动）；揭纸 = 细碎撕拉；贴纸 = 手掌轻拍；火柴擦燃与「噗」；爆竹 = 20–60ms 间隔的密集噼啪 + 远处闷响。",
+    "mix_rules": "音乐在人声下压 ≈9dB、拟音压 ≈3dB；人声窗口内不放撞击声。旁白（奶奶，Kokoro af_sarah 0.9）近、暖、小屋子混响（room_ir .8 混 .12）；整体 −14 LUFS，**不加胶片颗粒**（纸纤维本身就是质感）。一剪 = 一拍细分；上行筝音一个音符对应一个出现之物；手鼓心跳给重量；一记大锣只留一个重音；屏息处全静。"
+  },
+  "variation_space": "可自由决定：主题、人物（或无人）、场景、纸的家族（白天浅纸 / 夜晚染纸 / 靛蓝 / 玉绿 / 黑纸）、开场、结尾、镜头路径、节奏、以及哪些「原生动作」承载故事。远离 demo 的方向——结构：一年的十二剪（生肖或日历轮，一月一楔形，旋转）；一条流水线（产品由剪纸零件一件件拼成，每件一个纹样）；一封信（折起的消息一块块展开，每块一个场景）。开场：一个已完成的花样（整朵团花，随后一片掉出来自己走掉）；一张空底纸（白纸，一道折痕出现）；一群已剪好的人物正在跳舞、视差全开。结尾：重新折起（世界折回一个小方块交到某人手里）；纸屑落定（每片角料飘落成一个新图案）；只剩背光（灯全灭，只剩一片剪纸背后亮着，把最后一幅画投在墙上）。同一版的多重状态、一册图版、一堂解剖课也都是允许的结构。",
+  "taboos": [
+    "任何「填灰」——色调必须由剪孔/纸的深浅构成，不能出现灰色色块或渐变阴影。",
+    "描边线或等宽线（会读成矢量插画）——纸的轮廓必须由刀口亮/暗边构成。",
+    "文字或图形淡入、滑入（要么剪出来、要么贴上去）。",
+    "用透视制造纵深（层必须平行于屏幕）。",
+    "照抄任何真实的窗花纹样、团花版式、人物剪影或标题。",
+    "复用示例的故事、叙事弧、镜头、道具或时长（DEMO.md:3）。",
+    "把「换 content.json 重跑」当成做片子的方式——它只是技术检查。"
+  ],
+  "asset_contract": {
+    "content_fields": "story.js 是唯一真值：DUR（秒）、BEAT=0.5、T{…}（每个关键时刻的秒数：snips/lift/title/titleFold/village/rise/lightsOut/room/blink/decide/red/light/noise/nod/folds/cut0/cut1/unfolds/bloom/paste/outside/lanterns/nianClose/flinch/flee/fireworks/dawn/sunUp/asleep/reveal/cadence/end/endTicks）、VO[]（{id,t,text}，id 为 L1..L6）、SHOTS[]（[起,止,名]）。lines.json 是配音脚本 {id,text,voice,speed,asr?}；同音词（Nian→Nyan/Nion）要写 asr 别名。",
+    "new_subject_contract": "新人物/新物 = 一个「关节片模块」，必须导出：一组 piece（由 paper.js 的 piece(box,draw,opt) 预渲染，fill→cut→inset→finishPaper 走完整工序）、rig parts 表（rig.js 的 {name,parent,at,piece,ang,z}，solveRig 解出各部件矩阵）、以及可换的脸片/表情片。造型规则：红块 + 内刻线，孔用月牙 + 瞳孔孔，不留孤岛；对称物用 D4 变换（tuanhua.js）。",
+    "timeline_contract": "页面契约由 main.js 暴露 window.READY / window.render(t) / window.DUR / window.EV。story.js 导出 DUR/BEAT/T/VO/SHOTS/shotAt；fold.js 导出 drawFold(g,t)、camFold(t)；light.js 导出 beginLight/pool/glowWindow/bloom/rays/applyLight。events.mjs 读 window.EV 生成 events.json 驱动声音。",
+    "event_vocabulary": "main.js 的 EV.push 产生的 type 与消费者（mix.py）：snip(剪刀，可 big) / paperwhoosh(纸呼啸) / place(贴纸) / stamp(印章) / pageturn(翻页) / windbed(风声床) / thud(年兽脚步) / growl(低吼) / puff(烛火熄) / breath(呼吸) / blink(眨眼) / paperpop(纸弹) / match(火柴) / rattle(纸串) / fold(折) / unfold(展开) / bloom(绽放) / pat(拍纸) / glowon(点亮) / lanternarrive(灯笼抵达) / crackers(爆竹) / yelp(年兽呜咽) / firework(烟花) / peel(揭纸) / bird(鸟) / roomtone(室内底噪) / vo(人声，读 voices/<id>.wav)。"
+  },
+  "evidence": [
+    "styles/papercut-red/STYLE.md:3-4 —— 一句话本质与「参考只借语法」",
+    "styles/papercut-red/STYLE.md:6-10 —— 本质与「不是什么」（非皮影/非平面矢量/非剪影片）",
+    "styles/papercut-red/STYLE.md:12-23 —— 材料与渲染（纸纹/刀口/纸厚/内刻线/剪纹词汇/不留孤岛/团花/光/投影）",
+    "styles/papercut-red/STYLE.md:25-30 —— 颜色逻辑（中国红/纸档/底与主角不同纸族/金箔）",
+    "styles/papercut-red/STYLE.md:32-36 —— 字体与字幕（纸横批、Fraunces、停留 ≥ max(1.8, speech+0.7)）",
+    "styles/papercut-red/STYLE.md:38-45 —— 运动质量（12fps 角色/24fps 镜头、折的假透视、剪的揭示、展开）",
+    "styles/papercut-red/STYLE.md:47-63 —— 镜头语法表 + 允许的转场 + 禁止溶解",
+    "styles/papercut-red/STYLE.md:65-71 —— 声音（民乐小合奏/按材料拟音/duck 9dB/−14 LUFS 不加颗粒）",
+    "styles/papercut-red/STYLE.md:73-82 —— 原生动作（折剪展/孔就是光/对称复制/纸屑有未来/万物同一张平纸/镜像成对）",
+    "styles/papercut-red/STYLE.md:98-104 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/papercut-red/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/papercut-red/DEMO.md:10-18 —— demo 故事结构与 49s 弧线",
+    "styles/papercut-red/DEMO.md:22-37 —— 逐镜表（120 BPM、0.5s 拍、S1–S12）",
+    "styles/papercut-red/DEMO.md:39-58 —— 配乐结构（D 宫五声、乐器、cue 表、duck 8–9dB）",
+    "styles/papercut-red/DEMO.md:74-84 —— 调色板与道具（纸色、纸影、内刻线、背光窗花、团花、女孩、年兽、剪参数）",
+    "styles/papercut-red/demo/story.js:1-13 —— 120 BPM/2/4、DUR 49、T 关键时刻表",
+    "styles/papercut-red/demo/story.js:15-27 —— VO 起点与 SHOTS 镜头表",
+    "styles/papercut-red/demo/hud.js:19-36 —— 字幕纸横批 subStrip（燕尾锯齿、洒金、Fraunces 44px）",
+    "styles/papercut-red/demo/hud.js:38-47 —— drawSubs 12fps 两步落下",
+    "styles/papercut-red/demo/paper.js:45-59 —— paperGrain 中性灰 soft-light 纹理",
+    "styles/papercut-red/demo/paper.js:145-150 —— inset 内刻线（双线轮廓）",
+    "styles/papercut-red/demo/paper.js:165-187 —— finishPaper（soft-light 斑驳 + 刀口亮/暗边 + alpha 还原）",
+    "styles/papercut-red/demo/paper.js:198-206 —— transmitOf 背光透射贴图",
+    "styles/papercut-red/demo/motifs.js:19-34 —— sawRow / sawEdge 锯齿纹",
+    "styles/papercut-red/demo/motifs.js:36-54 —— crescent / crescentRows 月牙纹",
+    "styles/papercut-red/demo/motifs.js:56-87 —— swirl / doubleSwirl / cloudCut / plum / rosette",
+    "styles/papercut-red/demo/tuanhua.js:6-15 —— TR=400、outerR、wedgePoly 楔形",
+    "styles/papercut-red/demo/tuanhua.js:17-65 —— wedgeCuts 阳刻/阴刻、灯笼、折线如意云卷",
+    "styles/papercut-red/demo/tuanhua.js:98-111 —— D4 八个变换与整张团花",
+    "styles/papercut-red/demo/light.js:39-64 —— glowWindow 背光窗（光场 × 窗花透射）",
+    "styles/papercut-red/demo/light.js:67-73 —— bloom 两级辉光 10px/40px",
+    "styles/papercut-red/demo/fold.js:39-61 —— flap 翻起的纸（16 条、伪透视、变暗）",
+    "styles/papercut-red/demo/fold.js:84-91 —— camFold 桌面俯拍相机路径",
+    "styles/papercut-red/demo/mix.py:21-29 —— snip 剪刀（2.5–9kHz 带通 + 纤维断）",
+    "styles/papercut-red/demo/mix.py:50-52 —— thud 厚纸板闷响 55Hz",
+    "styles/papercut-red/demo/mix.py:77-85 —— crackers 爆竹 20–60ms 间隔",
+    "styles/papercut-red/demo/mix.py:150-158 —— 配乐读 score.wav、duck 9dB、foley 3dB",
+    "styles/papercut-red/demo/main.js:524-549 —— EV 全部事件 type 与 window.EV/DUR/render/READY",
+    "styles/papercut-red/demo/subs.py:1-13 —— cues 规则（t1 = min(下一句−0.15, 起点+max(1.8, dur+0.7))）",
+    "styles/papercut-red/style.json:16-17 —— frame_sec 35.28 / dur 49.0"
+  ]
+}

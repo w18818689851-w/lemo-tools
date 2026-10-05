@@ -1,0 +1,109 @@
+{
+  "slug": "silkscreen-poster",
+  "nameZh": "丝印旅行海报",
+  "distilledAt": "2026-10-03T00:00:00.000Z",
+  "matchScore": 92,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 19,
+    "typography": 17,
+    "rhythm": 18,
+    "audio": 19
+  },
+  "defects": [
+    "typography −1：片尾卡（帧 f23）的深色信息带塞了 5 行小字（SILKSCREEN TRAVEL POSTER / LEMO-OPUSCAR / LEMOLAB × CLAUDE OPUS 5.5 / 字体署名 / 采样署名），而 STYLE.md:50 的页脚规则是「≤45 字符、一行」——现代署名块被印进了海报语法。",
+    "typography −1：同一片名在全片有两种排版——banner 段（帧 f02/f03）是两行平衡（3 TRAILS IN / GRANITE VALLEY，符合 STYLE.md:48 与 DEMO.md:67），片尾卡（帧 f23）却是一行（engine/poster.js:210-212 的 if (lines.length === 1) 分支）。",
+    "typography −1：lib/dub-styles.json#silkscreen-poster 派生的字幕是 SimHei + 底部浮动 caption + lowerThird: true，与真实海报排版（Big Shoulders Display + Outfit、文字印在画面里的 near 信息带上）直接冲突；该条目 notes 亦自认「本机无 Big Shoulders Display / League Gothic」。",
+    "palette −1：dub 派生的 bgRecipe.stops 固定为 dawn 的 5 级色带（#F6CD98 → #EE9A73 → #9A7FA8 → #3E7079 → #1E3B3F），只能复现同色系海报；而真实成片配色是内容驱动、一张海报一套（本次用到 dawn/noon/dusk 三套 + 爬升段经 golden 过渡）。",
+    "composition −1：墙面落版（帧 f20/f22）里 banner 宽 1800 u（engine/poster.js:183 BW=1800），三张海报行宽 1700 u（film.js:270 maxW=1700），上方横幅比下方海报行左右各宽约 50 u，形成轻微上宽下窄。",
+    "composition −1（同分项第二处观察，不重复扣分）：爬升段（帧 f13/f14）层与层之间有 3 u 纸缝，但 9 u @28% 的纸厚阴影在抽帧上几乎不可辨，「层在动」主要靠视差——正是 STYLE.md:106 警告的「Parallax alone reads as the mountains are moving」的边界情形。",
+    "rhythm −1：tools/cuecheck.py 报 cues >10ms: 2——harm +10.7 ms、name2(口琴分轨) +22.7 ms（DEMO.md:80 解释为重叠事件 + 慢起音口琴），22.7 ms 约 0.55 帧，已到「一刮一击」精度下限。",
+    "rhythm −1：配乐比画面长 1.5 s——compose.py 的 TOT = DUR + 1.5，实测 mix.wav 39.90 s vs 画面 38.42 s（922 帧）；混流后成片时长由画面决定，这 1.5 s 尾巴被截掉。",
+    "audio −1：实测 −14.5 LUFS（目标 −14 LUFS）、LRA 7.6 LU 偏大、真峰值 −1.40 dBTP（`loudnorm` `input_tp`，4× 过采样，在 −1.2 dBTP 交付线内；`ebur128` `Peak` −1.4 dBFS 仅参考）；LRA 偏大意味着两处静音窗与配乐强段的落差在手机外放时更明显。",
+    "通路数据缺陷（不单独扣分，计入 typography 那一条）：dub-styles 条目内部自相矛盾——motion.chapterTransition 字段值是 cut，而同一份 notes 的文字写的是 wipe（squeegee pull）；STYLE.md:77 明确禁止 bare cuts。"
+  ],
+  "assetGaps": [
+    "本风格没有 lines.json（设计如此：无旁白，STYLE.md:49「The poster text is the subtitle」）。文案通路是 demo/content.json 与 content_alt.json 的字段，不是 lines 数组。",
+    "本风格没有字幕生成器：demo/tools/ 下只有 timeline.mjs 与 cuecheck.py，没有 subs.mjs / subs.py / cues.mjs / export.mjs。因此 lemo-make.mjs 第 3 步与第 6 步各报一次「该 demo 没有本编排器支持的字幕生成器——字幕源不重新生成」的告警（_distill/logs/silkscreen-poster.log:29-30, 110）。",
+    "上述告警文案与实际不符：styles/silkscreen-poster/ 目录下根本没有 .srt 文件（只有 DEMO.md / STYLE.md / demo/ / poster.jpg / style.json），所谓「沿用仓库里已提交的旧文件」实际是「无字幕文件」，成片没有字幕轨——语义上与本风格一致（文字已印在画面里），但告警文案会误导下游以为存在一份可用旧 .srt。",
+    "字体无缺口：demo/fonts/ 下 BigShouldersDisplay.ttf / Outfit.ttf / LeagueGothic.ttf 与三份 OFL 授权文件齐全。"
+  ],
+  "limits": [
+    "本风格没有 aspects 声明，只支持 16:9（1920×1080）。9:16 下信息带特写（帧 f07/f11/f17）的 TIME / CLIMB 两列（x 到 938 u）会整列被切掉，banner 段右半丢失，系列墙只剩最左一张多。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "条目容量只有 1–4：trails[] 超过 4 条，墙上海报会小到读不了（DEMO.md:146）。4 条塞进 40 s 的三种压缩办法见 DEMO.md:159-162。",
+    "必须有「可印的事实」：没有名字/数字/日期的题材（纯情绪、纯叙事、需要人物表演或旁白）无处安放，风格会退化成一张会动的插画。",
+    "文字墨色不能写死：必须走 pickInk 的 WCAG 对比度推导，否则夜景调色板会吞掉页眉（DEMO.md:93）。",
+    "纹理预算有上限：纸纹 0.6 u/texel + 霉斑 55% + 针孔 75% + ffmpeg grain 3；再加就变 risograph（STYLE.md:33、DEMO.md:63）。",
+    "渐变被绝对禁止（本风格在 44 个风格里独有的硬约束）：天空与雾必须是阶梯色带（平色 → 变细的条纹 → 下一个颜色），bgRecipe.type = bands。任何一层出现连续渐变（含「只有一点点柔化」）都算破风格。",
+    "本次最高可达分受实现与通路限制约为 92：片尾卡署名密度、标题折行不一致、墙面宽度不齐属于源码实现问题，不改源码无法消除；dub 派生条目（SimHei 字幕、单套色板、chapterTransition 字段自相矛盾）属于通路数据问题。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f03.jpg",
+    "f04.jpg",
+    "f07.jpg",
+    "f09.jpg",
+    "f11.jpg",
+    "f13.jpg",
+    "f17.jpg",
+    "f20.jpg",
+    "f22.jpg",
+    "f23.jpg"
+  ],
+  "sources": [
+    "styles/silkscreen-poster/STYLE.md",
+    "styles/silkscreen-poster/DEMO.md",
+    "styles/silkscreen-poster/demo/build.sh",
+    "styles/silkscreen-poster/demo/content.json",
+    "styles/silkscreen-poster/demo/content_alt.json",
+    "styles/silkscreen-poster/demo/film.js",
+    "styles/silkscreen-poster/demo/engine/poster.js",
+    "styles/silkscreen-poster/demo/engine/scenes.js",
+    "styles/silkscreen-poster/demo/music/compose.py",
+    "styles/silkscreen-poster/demo/mix.py",
+    "styles/silkscreen-poster/style.json",
+    "lib/style-dna/silkscreen-poster.md",
+    "lib/style-dna/silkscreen-poster.json",
+    "lib/dub-styles.json#silkscreen-poster",
+    "lib/dub-visual.json#silkscreen-poster",
+    "_distill/logs/silkscreen-poster.log",
+    "_distill/frames/silkscreen-poster/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/silkscreen-poster/silkscreen-poster.mp4",
+    "durSec": 38.42,
+    "bytes": 26452481,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 922
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "首跑 events.mjs 失败、重跑通过（瞬时故障）：2026-10-03 首次批量出片时导出步骤失败（退出码 1），同一命令手工重跑即通过——本次日志里 `events.mjs → events 55 dur 38.4 → events.json` 一次成功（_distill/logs/silkscreen-poster.log:26），判定为瞬时故障，非代码缺陷。遇到该条直接重跑，不要改 film.js 或 events.mjs。",
+      "字幕生成器缺失（真实告警，非瞬时故障）：该 demo 没有本编排器支持的字幕生成器（已探测 tools/subs.mjs、subs.mjs、tools/export.mjs、tools/subs.py、subs.py、tools/cues.py、cues_export.py），字幕源不重新生成（log:29-30 与 log:110 各报一次）。",
+      "但 styles/silkscreen-poster/ 下实际不存在任何 .srt 文件，告警文案里「沿用仓库里已提交的旧文件」与事实不符——实际是「无字幕文件」，成片没有字幕轨。",
+      "本次音频链路（日志第 [4] 步）为空：该 demo 无 lines.json，跳过配音（log:36），没有使用任何预生成配音；配乐与混音由 demo 自己的 music/compose.py + mix.py 现场生成（compose.py 的 TOT = DUR + 1.5，配乐 39.90 s peak -1.50 dBFS；mix.wav 39.90 s peak -2.6 dBFS）。",
+      "静音窗实测：silence1 18.00-19.20 rms -59.6 dBFS（瀑布尾巴，符合 style-dna 声明的约 -59 dBFS）；silence2 23.40-24.00 rms -42.0 dBFS（就是声明中「只留山风」的那阵风）。",
+      "cuecheck 卡点自检：cues >10ms: 2（harm +10.7 ms、name2(口琴分轨) +22.7 ms）；其余在中位 4 ms、30/33 在 1 帧内。",
+      "命令行带 --skip-sync --no-preflight（log:1），同步两份库被跳过（log:21）。",
+      "成片渲染 922 frames / 29 s / 6 workers → video_gpu.mp4 39.6 MB；混流走 nvenc，MUX_OK 26452481 src_frames=922 out_frames=922，最终 25.2 MB / 总耗时 54.1 s（log:58-123）。"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.4,
+      "integratedLufs": -14.67,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 7.6,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.567962
+    }
+  },
+  "resolvedDefects": []
+}

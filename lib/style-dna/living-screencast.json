@@ -1,0 +1,149 @@
+{
+  "slug": "living-screencast",
+  "name_zh": "活体实机录屏（Living Screencast）",
+  "essence": "一部「看起来像真录屏、其实每个像素都是重画的」产品走查片：所有窗口、菜单、diff 行、按钮都用 HTML/CSS/SVG 重绘（不是截图），所以镜头能去任何地方、文字在任何缩放下都锐利；一个由大方块像素组成的吉祥物住在这个高分辨率界面里——**两种分辨率的对撞**（硬边低分辨率精灵 vs 抗锯齿 UI）就是它的样子。吉祥物是「软件的主观能动性」被看见：软件在读，它就沿着被读的行跑；在计划，它就握着像素铅笔；在测试，它就跺那个按钮。**两个演员，绝不用手**：光标是用户，吉祥物是软件。它不是暗色科技发布会 keynote（没有黑舞台、没有凭空发明的抽象 UI——这是真产品）、不是像素游戏（世界是高分辨率矢量 UI，只有吉祥物和它的道具是像素）、不是真录屏（没有一帧是截图）。",
+  "materials_and_rendering": [
+    "真 UI，重画：每个标签、模式名、快捷键都和真产品一致；没有截图、没有 lorem ipsum。demo 内容（代码、数据、测试输出）是自洽的，被测应用真的会变。",
+    "像素网格神圣：吉祥物、它的道具（铅笔、\"!\"、闪光、爱心、尘土）与拖尾共享一个方块像素网格、边缘锐利。它随镜头缩放；位置对齐到半像素，所以运动感觉是「步进」的。",
+    "重力 = UI 的顶边：吉祥物只站在真实元素的顶边上（输入框、菜单、列表行、代码行、按钮、状态栏、标题的字母）。位置来自**每帧测量活 DOM**，绝不手写坐标（`main.js:29-30` 的 A() 用 getBoundingClientRect 反算世界坐标）。",
+    "窗口浮在桌面上：应用漂在一张壁纸上，带柔和阴影；缩放永不超出显示器。",
+    "深度只在服务注意力时出现：rack focus（把不重要的窗格模糊）、暗角聚光。**绝不模糊观众要读的文字。**",
+    "运动模糊由镜头速度推导，作用在**未变换的外层**上（各向异性高斯），只在甩镜时用；慢速移动保持锐利（`main.js:33-36`）。",
+    "UI 动画像真产品（它自己的菜单、浮层、diff 揭示）；不要发明产品没有的花活。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 11–77 个字符（约 2–15 个英文词）。demo 17 行里最短 11 字符（\"Meet Clawd.\"），最长 77 字符（\"It runs your app in the preview, and clicks through it, just like you would.\"）。字幕是磨砂玻璃胶囊，停在底部、绝不压在被讨论的元素上、也绝不在吉祥物下面；停留 ≥ max(1.8s, 语音 + 0.6s)（`film.js:134` 用 t0 = t−.05、t1 = t + dur + .25）。",
+    "person_and_tense": "第三人称 + 现在时为主（\"Now it lives right inside the Claude app.\"）；可用第二人称对用户说话（\"Just say what you want, in plain words.\"）。一功能一句。",
+    "typical_openers": [
+      "介绍角色式开场（\"Meet Clawd.\"）",
+      "以「它以前/现在在哪」对照起句（\"It used to live in your terminal.\" / \"Now it lives right inside the Claude app.\"）",
+      "以祈使句给指令（\"Just say what you want, in plain words.\"）",
+      "以「你得到什么」起句（\"You get a clear plan, and nothing changes until you say go.\"）",
+      "结尾用一句口号收束（\"Say it. Plan it. Review it. Ship it.\"）"
+    ],
+    "forbidden": [
+      "第一人称抒情与内心独白（该风格靠光标与吉祥物的动作承载情节）",
+      "网络口播腔、感叹号堆叠、营销话术",
+      "编造的功能或改名的模式（文档里没有的东西不许进片子）",
+      "一句里塞进两个以上并列信息点（一功能一句）",
+      "把产品名放进会被按键音盖住的位置（否则 whisper 会听错）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一次「吉祥物搬进新家」的走查）：冷开场（终端里打出 claude，logo 的方块活过来、吉祥物爬出、留下虚线轮廓）→ 应用窗口打开、吉祥物落在空状态标题上（diegetic title，落在重拍上）→ 四个章节：01 直接说（自然语言 prompt + @ 提及、读文件）→ 02 先计划（Plan 模式，不说 go 就什么都不改）→ 03 复查（diff、行内评论、修订）→ 04 自检（预览、暗色模式开关、并行会话）→ 口号收尾（\"Say it. Plan it. Review it. Ship it.\"，吉祥物逐词跳）。",
+    "beat_durations": "时间挂在 100 BPM 网格上（1 拍 = 0.6s，段落切点都落在拍上）。VO 起点（秒）：v01 2.3 / v02 3.5 / v03 6.2 / v04 10.9 / v05 13.5 / v06 16.1 / v07 20.3 / v08 22.9 / v09 28.1 / v10 30.5 / v11 32.8 / v12 36.5 / v13 38.2 / v14 43.0 / v15 45.8 / v16 50.8 / v17 52.42。镜头是一连串 move（`cam(t0, d, to, ease)`，可重叠、后一个从前一个的当前值出发，保持连续），ease 可选 eio/ss/eo/whip/spring。关键锚点：T.land1 = 8.4（第 14 拍重拍落地）、T.jump0 7.62、T.title 8.18、四个章节转场 wipe1/2/3/4 = 10.2 / 19.2 / 27.0 / 35.4、T.stomp 40.2（暗色模式跺脚）、T.dark1 = T.stomp + 1.5、T.split（分屏）。吉祥物：起跳前蓄力下蹲 0.14s（压扁 0.28）、落地压扁 0.22s 阻尼回弹、行走 9 步/秒、站立时随拍轻点（0.12s 内 +0.07 的正弦）、每 2.9s 眨一次眼。字幕停留 = 语音 + 0.25s 尾。",
+    "total_length_range": "主 demo 59.4s（style.json:16-17，dur=59.4 / frame_sec=5.94）。STYLE.md:12 说明本风格通常 **45–75s**。",
+    "silence_policy": "静默用在「关键承诺之前」：把音乐降到只剩房间底噪，让那句最重要的话落地（STYLE.md:80）。demo 的用法是聚光冻结（spotlight freeze）——在「nothing changes until you say go」上推近并给 No files changed 徽章打暗角，音乐让位给这句话。"
+  },
+  "tone": "一位冷静、一功能一句的产品讲解者：语速正常（Kokoro `am_michael`，speed 1.0；其它音色会把 \"Claude\" 读成 \"Clod\"）；不夸张、不喊口号，让界面与吉祥物的动作自己说话。",
+  "shot_logic": {
+    "camera_is": "一台录屏软件的镜头（Screen Studio 式）：在屏幕内一镜到底，缩放 ≥ 1，只在章节转场时切；自动跟随光标、点击时轻微推近、光标平滑。",
+    "vocabulary": [
+      { "move": "推近光标或插入符", "expresses": "「事情发生在这里」", "serves": "打 prompt；选菜单项；改设置" },
+      { "move": "静止时缓慢漂移", "expresses": "我们听的时候应用是活的", "serves": "一行旁白；等一个结果" },
+      { "move": "在窗格间甩镜（带模糊）", "expresses": "因在这里、果在那里", "serves": "发消息 → 结果出现；代码 → 预览" },
+      { "move": "推近 + 暗角冻结", "expresses": "唯一要记住的承诺", "serves": "安全保证；价格；撤销" },
+      { "move": "在窗格间 rack focus", "expresses": "注意力移动，其它不动", "serves": "读文件；日志滚动时聊天在等" },
+      { "move": "拉回到整个窗口", "expresses": "整条工作流尽收眼底", "serves": "总结；并行任务；前后对比" },
+      { "move": "跟着吉祥物沿列表走", "expresses": "软件在逐项处理", "serves": "扫结果；清单；迁移" },
+      { "move": "分屏重构图", "expresses": "两件事同时发生", "serves": "并行会话；对比两个版本" }
+    ],
+    "transitions": [
+      "章节胶囊擦除（chapter pill wipe）",
+      "像素块擦除（32×18 网格的方块从左下扫到右上，中间一只奶油色小 Clawd 跑过）",
+      "主题揭示圆（暗色模式从按钮处 circle 扩散覆盖整个应用与桌面）",
+      "在转场遮挡下换机位"
+    ],
+    "forbidden": [
+      "溶解或截图（转场不能是 dissolve，也不能用截图）",
+      "让吉祥物浮空或漂离元素（必须每帧量 DOM、只站顶边）",
+      "让吉祥物盖住要读的文字，或坐在字幕下面",
+      "对手要读的文字做模糊滤镜式的「假景深」，或缩放超出屏幕（zoom ≥ 1）",
+      "画面里出现手、手臂或手指（光标就是用户）",
+      "把运动模糊加在已变换的层上（会抹坏像素精灵）"
+    ]
+  },
+  "idioms": [
+    "Match-cut 起源（match-cut origin）：吉祥物从 UI 里已有的东西（logo 的方块字符、一个图标、一个加载转圈）里诞生并爬出来，留下一个轮廓。",
+    "Diegetic title：产品名作为真实 UI 元素出现（空状态标题、新建对话框、欢迎邮件），吉祥物在重拍上落在它上面。",
+    "移动的地板（moving floor）：吉祥物骑着插入符、浮层、被发出的消息、进度条。",
+    "带标签的延时（time-lapse with a tag）：长活儿以 N× 跑，带闪烁标签与 rack focus。",
+    "聚光冻结（spotlight freeze）：推近并给唯一承载承诺的徽章打暗角。",
+    "片子本身改变状态：一个开关的效果逃出预览、接管整部片子，稍后再还回来。",
+    "细胞分裂（cell division）：新会话把屏幕劈开，吉祥物跟着像素爆散分裂。",
+    "光标与吉祥物是角色：光标拍它、戳它、拖它，它会反应。",
+    "卡拉 OK 词（karaoke-ball words）：吉祥物随着被说出的词逐词跳。"
+  ],
+  "atmosphere": "一张真实的桌面：应用窗口浮在壁纸上、有柔和阴影；UI 是产品自己的浅色/暗色主题；吉祥物是一小块饱和的品牌色，在任何一帧里都最先被眼睛找到。整体是「友好、精确、每件事都真的发生了」的气质。",
+  "sound_palette": {
+    "instruments": [
+      "两个分辨率的配乐：高保真层（钢琴、立式/电贝斯、鼓刷或紧实的鼓组、钟琴、真采样）是「世界」；chiptune 方波/脉冲声部是吉祥物。两者可以交替、二重奏或融合。",
+      "可选：给暗色主题做一版低通的「夜晚」乐队；章节接缝处用 tom fill + crash；在吉祥物落到的词上给它的音；分屏时做左右声场分离；冻结时一条长 pad。"
+    ],
+    "foley": "键盘（thock + click，带人手节奏抖动）、触控板点击、窗格 swish、浮层 pop、通知铃声、CI tick、截图快门。吉祥物的走、跳、落地是 8-bit 的。",
+    "mix_rules": "人声清晰、一功能一句；产品名用 whisper 验证。**效果声避开词的首音**（一个落在 \"Start\" 上的按键音把词盖住了）。音乐在人声下压；整体 −14 LUFS。静默：在关键承诺之前短促地降到只剩房间底噪。demo 的配乐约 104 BPM，片尾词是 chiptune C5 E5 G5 C6。"
+  },
+  "variation_space": "可自由决定：功能与顺序、吉祥物（产品自带的，或原创像素角色）、故事、开场、结尾、镜头路径、章节与音乐。远离 demo 的方向（STYLE.md:116-118）：结构——一场捉虫（吉祥物在日志、代码、修复之间追一个错误，只有一个章节）；一个用户的一天（一个应用里从早到晚，主题与音乐随时辰变）；一场比赛（两个窗口并排，老办法 vs 新办法，右边赢）。开场——半途（一份写了一半的文档，吉祥物已经在推光标的选区）；通知（一个系统 toast 落下，吉祥物在里面）；空状态（空应用、闪烁的插入符，吉祥物从菜单栏掉下来）。结尾——吉祥物在完成的条目上睡着，窗口暗下；应用关掉，吉祥物留在 Dock 上；一次真分享（结果被发出去，吉祥物搭着它出画）。",
+  "taboos": [
+    "暗色科技发布会 keynote（黑舞台、凭空发明的抽象 UI）",
+    "像素游戏（世界是高分辨率矢量 UI，只有吉祥物和它的道具是像素）",
+    "任何一帧是真实截图",
+    "编造的功能或改名的模式",
+    "画面上出现手、手臂或手指",
+    "溶解/划像转场",
+    "对要读的文字做假景深，或缩放超出屏幕",
+    "照抄任何真实的角色、UI、音乐或素材"
+  ],
+  "asset_contract": {
+    "content_fields": "`demo/lines.json` 是配音文案：[{id, text, voice, speed, lang, asr?}]（demo：`am_michael` / speed 1.0 / en-us；v01 的 asr 记了 \"Meet Claude.\"）。时间线 `film.js` 里 `VO` 是 {id: 起点秒} 的表；字幕强调用 `{}` 包住（`film.js:129-132` 的 cap 表）。镜头用 `cam(t0, d, to, ease)` 追加到 MOVES；吉祥物用 `Actor` 的 `stand/walk/jump/hide` 段落；光标用 `Cursor` 的 `show/move/click`。",
+    "new_subject_contract": "吉祥物是一个可替换的精灵：`clawd.js` 的 `grid({eyes, arms, legs})` 返回 [[c, r, kind]]（kind 1 身体、2 眼睛），`sprite({x, y, px, flip, sq, rot, op, shadow, ...pose})` 渲染成 SVG（`shape-rendering: crispEdges`），`pixels(o)` 给像素爆散用，`pixart(rows, o)` 画任意像素图；道具（PENCIL/SPARK/HEART/CHECK/BANG/DOTS/SWEAT/dust/speedlines）共享同一网格。眼睛状态 n/l/r/u/d/blink/happy/wide/shut，手臂 down/up/wave/tuck，腿 stand/walkA/walkB/tuck/none。换成你自己的吉祥物只需替换这个精灵网格与道具。",
+    "timeline_contract": "`film.js` 是唯一时间线：导出 `BPM/B/DUR/VO/EV`、`W(id, word, n)` / `WE(id, word, n)`（按 whisper 逐词时间戳取某词起点/终点，画面节拍挂词）、`camAt(t)`、`build(words)`（构建 MOVES/EV/SUBS/T）、`frame(t)`（返回该帧的 cam/desk/app/dark/actors/cursor/hud/fx 等）。页面契约由 `main.js` 暴露 `window.READY` / `window.render(t)` / `window.DUR` / `window.EV` / `window.SUBS` / `window.T`。",
+    "event_vocabulary": "`film.js` 的 `ev(t, type, o)` 产生：`vo{id}`（人声）；`step{v}`（吉祥物脚步，8-bit）；`jump{d}` / `land{v,big}`；`key{v,sp}`（键盘，typing() 生成人手节奏）/`tkey`；`tenter`（终端回车）；`blip{n}`（logo 方块亮）；`blink`；`morph`（logo 方块变精灵）；`winopen`；`hit`（重拍落地）；`click`；`pop`（浮层弹出）；`enter`；`chip`（@ 提及选中）；`send`；`pane`（窗格切换）；`whoosh{d}`（甩镜）；`read{i}`（逐行读）；`tick`（高亮）；`write`（写计划项）；`dash`（虚线走开）；`tool`（工具调用）；`count`（数字滚动）；`rkey{v}`（连续修订按键）；`boing`（被拍）；`stomp`（跺按钮）；`darkon`（暗色扩散）；`shutter`（快门）。由 `sound.py` 消费（含 ducking）。"
+  },
+  "evidence": [
+    "styles/living-screencast/STYLE.md:14-24 —— 本质与「不是什么」（非暗色 keynote / 非像素游戏 / 非真录屏；两个演员、光标=用户、吉祥物=软件）",
+    "styles/living-screencast/STYLE.md:26-33 —— 材料与渲染（真 UI 重画、像素网格神圣、重力=UI 顶边、窗口浮桌面、深度、运动模糊）",
+    "styles/living-screencast/STYLE.md:35-40 —— 颜色逻辑（产品自己的主题、吉祥物一色、叠加层中性磨砂玻璃、主题切换可以是剧情事件）",
+    "styles/living-screencast/STYLE.md:42-47 —— 字体与字幕（信息层只有章节胶囊/按键 HUD/字幕胶囊/延时标签；字幕停留规则；标题是 diegetic）",
+    "styles/living-screencast/STYLE.md:49-56 —— 运动质量（30fps、吉祥物表演、眼睛承担表演、光标平滑、因果、UI 像真产品）",
+    "styles/living-screencast/STYLE.md:58-73 —— 镜头词汇表（8 条）+ 构图规则 + 转场",
+    "styles/living-screencast/STYLE.md:75-81 —— 声音（两个分辨率、foley、静默、人声、duck、−14 LUFS）",
+    "styles/living-screencast/STYLE.md:83-95 —— 九条 native moves",
+    "styles/living-screencast/STYLE.md:97-106 —— 媒介陷阱（编造功能、浮空、盖文字、假景深、手、运动模糊层、按键盖词、TTS 读错）",
+    "styles/living-screencast/STYLE.md:108-110 —— 引擎文件清单",
+    "styles/living-screencast/STYLE.md:112-118 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/living-screencast/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/living-screencast/DEMO.md:10 —— demo 故事：Clawd 从终端搬进 Claude 应用，四章",
+    "styles/living-screencast/DEMO.md:14-21 —— 六条硬规则（真 UI/录屏镜头/像素网格/重力=顶边/因果/信息层）",
+    "styles/living-screencast/DEMO.md:23-34 —— 导演工具箱十项全部用上",
+    "styles/living-screencast/DEMO.md:38-53 —— 逐拍镜头表（12 镜）",
+    "styles/living-screencast/DEMO.md:55-78 —— 配乐（两个分辨率、四章、暗色低通、分屏二重奏、foley、VO、吉祥物动作数值）",
+    "styles/living-screencast/DEMO.md:80-84 —— 调色板（Claude 应用浅/暗主题 + Clawd 品牌色）",
+    "styles/living-screencast/DEMO.md:86-88 —— 片尾卡拉 OK 词与版权说明",
+    "styles/living-screencast/demo/film.js:6-7 —— BPM 100 / B 0.6 / DUR 59.4",
+    "styles/living-screencast/demo/film.js:8-9 —— VO 17 行的起点秒表",
+    "styles/living-screencast/demo/film.js:13-18 —— W()/WE()：按 whisper 逐词时间戳取词起点/终点",
+    "styles/living-screencast/demo/film.js:25-34 —— typing() 人手节奏 + typed() 逐字揭示",
+    "styles/living-screencast/demo/film.js:37-47 —— EASE 表（eio/ss/eo/whip/spring）与 camAt() 连续可重叠镜头",
+    "styles/living-screencast/demo/film.js:50-91 —— Actor：stand/walk/jump/hide、蓄力下蹲 0.14s、落地压扁、随拍轻点、眨眼、半像素对齐",
+    "styles/living-screencast/demo/film.js:94-114 —— Cursor：平滑 spring 路径、点击缩放与扩散环",
+    "styles/living-screencast/demo/film.js:125-134 —— build()：VO 事件与字幕条（t0 = t−.05、t1 = t + dur + .25）",
+    "styles/living-screencast/demo/film.js:136-217 —— A/B/C/D/E 五段编排（冷开场/四章）",
+    "styles/living-screencast/demo/film.js:303 —— frame(t) 逐帧装配",
+    "styles/living-screencast/demo/clawd.js:1-22 —— 18×10 像素网格与眼睛/手臂/腿状态",
+    "styles/living-screencast/demo/clawd.js:25-33 —— sprite() 渲染（crispEdges、压扁/翻转/旋转）",
+    "styles/living-screencast/demo/clawd.js:39-70 —— pixart/道具/尘土/速度线",
+    "styles/living-screencast/demo/main.js:29-31 —— A()：每帧量 DOM 反算世界坐标（重力=UI 顶边）",
+    "styles/living-screencast/demo/main.js:33-36 —— 运动模糊由镜头速度推导、只在甩镜时、作用在未变换外层",
+    "styles/living-screencast/demo/main.js:85-99 —— HUD（聚光/通知/闪烁/章节胶囊/延时标签/按键/字幕/像素擦除）",
+    "styles/living-screencast/demo/main.js:102-116 —— wipe() 像素块章节转场",
+    "styles/living-screencast/demo/ui.js:3-6 —— 窗口/终端/logo 的几何常量",
+    "styles/living-screencast/demo/ui.js:104-139 —— 真实被测代码（useTheme）与应用窗口",
+    "styles/living-screencast/demo/sound.py:44-46 —— 小节/和弦进行（bar_of/chord_at）与分屏左右声场",
+    "styles/living-screencast/demo/sound.py:62-114 —— groove()/theme()（两个分辨率）",
+    "styles/living-screencast/demo/sound.py:144-153 —— 键盘/浮层/甩镜/低频 boom 的合成",
+    "styles/living-screencast/demo/sound.py:204-205 —— duck = 1 − .62·env 的人声闪避",
+    "styles/living-screencast/demo/lines.json:1-121 —— 17 行旁白实测文案与音色/语速",
+    "styles/living-screencast/style.json:16-17 —— frame_sec 5.94 / dur 59.4"
+  ]
+}

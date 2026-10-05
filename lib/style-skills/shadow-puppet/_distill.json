@@ -1,0 +1,100 @@
+{
+  "slug": "shadow-puppet",
+  "nameZh": "皮影戏",
+  "distilledAt": "2026-10-03T13:41:55+08:00",
+  "matchScore": 93,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 19,
+    "typography": 17,
+    "rhythm": 20,
+    "audio": 18
+  },
+  "defects": [
+    "composition −1：十灯全亮时 expo = 1.75/√10 ≈ 0.55，f06（≈13.6s 焦土段）上半幅几乎全白，太阳的刻火舌、山的山纹地层、地面条的回纹与古钱孔都只剩很淡的轮廓，擦到 STYLE.md:17「more lamps bleach the frame but keep it readable」与 STYLE.md:100「过曝处出灰角」的边界",
+    "typography −1：片尾暖白闪 fadeCol (1,.82,.55) 衰减慢于片尾牌到位——f23（≈52.1s）里镂空字牌「SHADOW PUPPETRY」被漂白成浅底深字、几乎读不出，直到 f24（54.4s）才恢复深底金字",
+    "typography −1：dub 通路字幕位置与 demo 差约 6 个百分点——demo 题板底边距画面底 58px（5.4%）、牌心约在画面高 91.4%；dub 的 marginVFactor 0.14537 是距底 14.5%，模板通路会把题板推到明显更高处，破坏「贴在台口下沿」的剧场感",
+    "typography −1：dub 通路会丢掉题板的全部装饰——subtitleOutline 为 #00000000（全透明）、fontFamily 回退 SimSun、subtitleFadeIn 0.1（demo 是上滑 18px / 0.22s），细金线、朱红「说」字印、漆面渐变与上滑动作全部丢失",
+    "audio −2：STYLE.md:81 的硬规则是「每句旁白比床高 ≥ 12 dB」，实测 L3（Then came Hou Yi, the archer.）只有 11.9 dB、L4 是 12.0 dB（logs/shadow-puppet.log:111-112），L3 严格没过线；另配乐阶段 peak dBFS −1.01、混音后 mix.wav peak 0.95（线性域 ≈ −0.45 dBFS），素材本身留的动态余量偏小",
+    "口径分叉（不扣分但需记录）：lib/style-dna/shadow-puppet.md:40-44 与 STYLE.md:39 描述的是「说书人、6 句、每句 8–16 字中文短句」，但本次成片实际用的 demo/lines.json 是 6 句英文（Kokoro am_michael，speed 0.86–0.88），所以成片是英文旁白 + 中文「说」字印的题板",
+    "【palette −1】细纹理 `textureRaw: backlit-leather` 声明了但渲染未实现：`lib/dub-styles.json#shadow-puppet.bgRecipe.textureRaw` 是 `backlit-leather`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），不读 `textureRaw` ⇒ `backlit-leather` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `backlit-leather` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "没有真实皮影的纹样库：所有刻皮词汇（鱼鳞、云头卷、联珠、锦纹、古钱、水波、回纹、山纹地层、锥形裂缝、火舌）都是 carve.js 里的程序化函数，没有任何历史皮影的扫描件可参考（也不该参考，STYLE.md:4 明确不许复刻）",
+    "锣鼓与板胡音色依赖外部采样库（Karoryfer erhu、Versilian Studios 系列，CC0），不在仓库里；换机器或断网重跑 music/score.py 有失败风险",
+    "字体 Cormorant Garamond / Ma Shan Zheng（OFL）在 demo/fonts/ 里，但 dub 通路未接",
+    "没有任何可复用的角色库：主角 11 片 + 全部景片都是代码画的刻皮件，换主题必须重刻"
+  ],
+  "limits": [
+    "只有 16:9：无 aspects 声明。本风格是横向展开的（横移讲广度、锁死全景数变暗、左右分立对峙），9:16 导出丢右侧约 43.75% 的伤害比其他风格更大——f16 的「英雄在左 / 空天在中 / 太阳在右」三分布会被裁掉右侧的太阳，整个抉择段失去意义；题板底边距底 58px 会落进下方黑区完全看不见（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "脸永不改变：皮影永远侧身、脸是镂空空脸，态度只能靠头角度与身体倾斜，做不了表情戏",
+    "没有粒子：火、烟、水都是刻好的皮件插在杆上，靠换片与抖动演出，做不到真实流体",
+    "幕布与木框永远不动；皮件只能绕铆钉转、沿杆滑、或被换掉，没有任何形变",
+    "dub 通路拿不到 WebGL2 的灯光场 × 透射率 × 布纹合成、镂空透光、铆钉与手抖——这些是本风格的命门（lib/dub-styles.json#shadow-puppet 是 derived:true 的派生条目）",
+    "GPU 与 Index-TTS 都是独占资源，不能并发；多 agent 共用 GPU 时无头截图偶尔超时（STYLE.md:106），build.sh 已内置 3 次重试",
+    "最高可达分说明：palette/rhythm 已满分；composition 受十灯全亮可读性扣 1；typography 受片尾闪白漂白与 dub 通路两处偏离扣 3；audio 受成片真峰值 +1.43 dBTP 削波（−4，本次新补记）与 L3 间隔未达 12 dB、素材峰值余量（−2）扣 6，故 audio 上限 14/20。不改灯光场可读性下限、不错开闪白时序、不接字体与题板叠加层、不在 mux 层补足 AAC 编码余量，90 即为当前上限"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f04.jpg",
+    "f06.jpg",
+    "f08.jpg",
+    "f12.jpg",
+    "f14.jpg",
+    "f16.jpg",
+    "f18.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/shadow-puppet/STYLE.md",
+    "styles/shadow-puppet/DEMO.md",
+    "styles/shadow-puppet/style.json",
+    "styles/shadow-puppet/shadow-puppet.srt",
+    "styles/shadow-puppet/demo/build.sh",
+    "styles/shadow-puppet/demo/story.js",
+    "styles/shadow-puppet/demo/hud.js",
+    "styles/shadow-puppet/demo/gl.js",
+    "styles/shadow-puppet/demo/lines.json",
+    "styles/shadow-puppet/demo/tools/mux.sh",
+    "lib/style-dna/shadow-puppet.md",
+    "lib/style-dna/shadow-puppet.json",
+    "lib/dub-styles.json#shadow-puppet",
+    "_distill/logs/shadow-puppet.log",
+    "scripts/patch-style-mux.mjs"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/shadow-puppet/shadow-puppet.mp4",
+    "durSec": 54.4,
+    "bytes": 36077490,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1306
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14.73,
+      "lra": 7.1,
+      "truePeakDbtp": -1.6,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），超 -1.2 dBTP 交付线 2.6 dB、已实际削波。本风格走自己的补丁副本 demo/tools/mux.sh，它只打 I / LRA、不打印 Peak 行，故未触发 missed-target 告警。",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "samplePeakDbfs": -2.727889
+    },
+    "warnings": [
+      "成片真峰值 +1.43 dBTP（loudnorm input_tp，4× 过采样）超 -1.2 dBTP 交付线 2.6 dB、已实际削波；此前漏记。根因：本风格副本 demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（未采用 core 版的 LN_TP=-1.7），AAC 编码无余量；项目级既有缺陷的加重版（全 43 片 19 个超线、6 个为正）。（★ 原记·2026-10-03；成片已于 2026-10-03 用 scripts/fix-truepeak.mjs 重混，实测真峰值 -1.60 dBTP 达标）"
+    ]
+  },
+  "resolvedDefects": [
+    "audio −4：成片真峰值削波（本次新补记）。成片真峰值 = loudnorm 的 input_tp（4× 过采样）= +1.43 dBTP，超 -1.2 dBTP 交付线 2.6 dB，且真峰值为正即已实际削波。此前只记了「素材峰值余量偏紧」而没记真峰值数字，日志里也没有 mux 的 missed-target 告警——原因是本风格走自己的补丁副本 styles/shadow-puppet/demo/tools/mux.sh（不是 core/render/mux.sh）：其实测段用 ebur128（未带 peak=true）只打 I / LRA、不打印 Peak 行，也没有 astats 读数与 missed-target 判据（tools/mux.sh:30），告警不触发。根因是 AAC 编码余量不足：该副本 loudnorm 目标写死 TP=-1.2（tools/mux.sh:7,9）、完全没给 AAC 留余量，而 core 版用 LN_TP=-1.7（留 0.5 dB、走 core 版的片子稳定落在 ≈-1.54 dBTP）；本片把「无编码余量」叠加在「mix.wav 峰值 0.95 偏热」上，成片最终到 +1.43 dBTP。属项目级既有缺陷的加重版（全 43 片实测 19 个真峰值超 -1.2 dBTP、其中 6 个为正），不是本风格音频链造成的（本片 mix.wav 峰值 0.95，链路本身合规）。扣分依据：库内同类「真峰值为正 = 实际削波」先例 iso-infographic +1.20 dBTP 与 papercut-red +1.73 dBTP 各扣 -6，本片 +1.43 介于两者之间但根因在下游编码器，故取 -4。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 +1.43 dBTP → **−1.60 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +4（见第 10 节）。"
+  ]
+}

@@ -1,0 +1,444 @@
+# 风格蒸馏 · 子智能体作业简报（每风格一份 Skill 文档）
+
+> 这份简报是**长期循环**的作业标准：每次项目新增风格、或已有风格源码变更，
+> 都按它重跑一遍。它只描述「怎么做」，不描述「本次做了哪些风格」。
+
+---
+
+## 你的交付物（两份，缺一不可）
+
+1. `D:/lemo-tools/lib/style-skills/<slug>/SKILL.md`
+   —— 人类可读的风格制作 Skill 文档，**严格按 11 节契约**（见下）。
+2. `D:/lemo-tools/lib/style-skills/<slug>/_distill.json`
+   —— 机器可读的自检记录（形状见下）。
+
+---
+
+## ★ 先搞清「四个件」与「唯一读取入口」的关系（别只知 check 不知 reader）
+
+这套流水线**只有四个件**（不要再造第五个），外加**一个读取入口**：
+
+| 件 | 职责 |
+|---|---|
+| `D:/lemo-tools/scripts/style-distill.mjs` | **顺序驱动**：`plan`（按**源码指纹**报出新增/变更风格）· `render`（顺序出片，可断点续跑，失败不阻断）· `frames`（24 帧 + 6×4 接触印样）· `status` |
+| `D:/lemo-tools/scripts/style-skill-check.mjs` | **文档自检校验器**：11 节齐全 / 顺序 / 无占位符 / 每节 ≥80 字 / `_distill.json` 完整 |
+| `D:/lemo-tools/lib/style-skill-reader.mjs` | ★ **Skill 文档的唯一读取入口**（三条生成通路共用；缺失即返回 null 降级，**绝不抛**）。导出 `readStyleSkill` / `hasStyleSkill` / `summarizeStyleSkill` / `describeStyleSkill` |
+| `D:/lemo-tools/_distill/AGENT-BRIEF.md` | 本文件：**长期循环复用**的作业标准（新增风格按它重跑） |
+
+**「自动纳入」怎么落地**：指纹判据复用 `scripts/style-scan.mjs` 的**内容哈希**（不是时间戳）；
+`style-distill.mjs plan` 把它与 `_distill/state.json` 里「上次蒸馏时记下的指纹」比对 ⇒ 新增目录与源码变更都自己冒出来。
+★ 注意：**指纹读 WIN 副本（`D:/lemo-opuscar`）、渲染读 WSL 副本** ⇒ 跑 `plan` 之前先用
+`node D:/lemo-tools/scripts/check-dual-copy-sync.mjs` 确认两边一致，否则结论无效。
+★ 已知边界：`.py`（混音/TTS 源码）**不在**指纹范围内（见 `style-scan.mjs` 的排除说明）——
+改混音源码不会触发重新蒸馏，需要时手工 `render --only <slug>`。
+
+**三条通路怎么用它**：`lemo-make.mjs`（主题+风格）与 `dub.mjs`（文案+风格 / 文案+口播+风格）
+都在选定风格后经 `lib/style-skill-reader.mjs` 读出该风格的方案并打印进日志/上下文（供人或下游智能体参考）。
+★ 与 `lib/style-dna/` 的分工**不要合并**：`style-dna` = **原料**（可机器消费的数值：grain / 折行 / 响度目标）；
+`style-skills` = **成品**（给人/智能体读的制作方案）。**先问 skill 要「方案」，再从 dna 取「数值」。**
+
+---
+
+## 第一步：先读资料（**优先用项目内的详细资料**）
+
+按这个顺序读，**能读到哪份就用哪份**，不要跳过：
+
+| 优先级 | 文件 | 里面有什么 |
+|---|---|---|
+| 1 | `D:/lemo-opuscar/styles/<slug>/STYLE.md` | 风格规范（硬规则、配色、字体、禁忌） |
+| 2 | `D:/lemo-tools/lib/style-dna/<slug>.md` | **最详细**的创作逻辑档案（换主题仍成立的规则 + `file:line` 证据） |
+| 3 | `D:/lemo-opuscar/styles/<slug>/DEMO.md` | 样本片《片名》是怎么做出来的 |
+| 4 | `D:/lemo-opuscar/styles/<slug>/demo/build.sh` | **权威**的完整构建链（9 步：配音→声线→ASR→配乐→事件→混音→字幕→渲染→混流） |
+| 5 | `D:/lemo-tools/lib/style-dna/<slug>.json` | 15 个结构化字段（essence / materials_and_rendering / sentence_patterns / narrative_rhythm / shot_logic / sound_palette / asset_contract / evidence …） |
+| 6 | `D:/lemo-opuscar/styles/<slug>/style.json` | 元数据：片名、一句话主题、分类、时长、帧数 |
+| 7 | `D:/lemo-tools/lib/dub-styles.json` 里的 `<slug>` 条目 | 「文案+风格」通路的参数：palette / bgRecipe / subtitle / tags |
+| 8 | `D:/lemo-opuscar/styles/<slug>/demo/` 下的源码 | `film.js` / `main.js` / `engine/` / `subjects/` / `mix.py` / `music/*.py` / `tools/*` |
+| 9 | `D:/lemo-tools/_distill/logs/<slug>.log` | **本次真实出片**的完整日志（含耗时、帧数、混流参数、任何警告） |
+
+**若某风格确实没有任何详细资料** → 明确写「本风格无额外详细资料，以下结论来自成片逐帧拆解 + 源码」，
+不要编造资料出处。
+
+---
+
+## 第二步：逐帧看片（**一帧一帧地分析**）
+
+帧图在 `D:/lemo-tools/_distill/frames/<slug>/`：
+
+- `_contact.jpg` —— 6×4 接触印样，**先看这张**，一眼看全片节奏与色走。
+- `f01.jpg` … `f24.jpg` —— 等间隔 24 帧单图，**逐张看**，用来核对细节。
+
+### ★★ 抽帧时刻的**权威公式**（2026-10-03 实测判定，别再猜）
+
+**`frames/<slug>/fNN.jpg` 的内容对应影片的 `t(NN) = (NN − 0.5) × dur / 24`。**
+
+- 即 f01 在 `0.5×dur/24`、f24 在 `23.5×dur/24` —— **区间中心**，不是 `NN×dur/24`，也不是 `(NN−1)×dur/24`。
+- 例：`pictogram-motion`（dur=163.583333）→ f11 在 **71.568 s**。
+- **判据怎么来的**（可复现）：拿项目配方 `-vf fps=<24/dur>` 抽出 24 帧，与「按候选公式直抽的帧」逐帧比 SSIM。
+  在 `pictogram-motion` 上：`(k−0.5)·d/N` 平均 **0.959**，`(k−1)·d/N` 0.783，`k·d/N` 0.762。
+  再以 k=11 细扫：t=71.57 → **0.9937**，两侧 70.72 → 0.914、72.42 → 0.815 **陡降** ⇒ 峰位唯一。
+- ⚠️ **不要用 `-vf "fps=…,showinfo"` 的输出 PTS 去反推** —— 它印的是 `0, d/N, 2d/N…`，
+  与内容的实际时刻**差半个区间**（这正是本轮三份证据互相矛盾的来源）。
+- ⚠️ 也因此：**文档里引用 `fNN` 时，要么只描述「这一帧里是什么」（推荐），
+  要么按上面的公式写时刻**。写 `NN×dur/24` 会系统性偏后半个区间。
+
+**逐帧要真的看出东西**，至少回答：
+- 画面元素怎么随时间变？有没有"不动"的段落？
+- 配色在片内有没有推移（暗→亮 / 冷→暖）？
+- 字幕什么时候出现、停在哪儿、单行几个字？
+- 转场是硬切还是叠化？切点大致在哪些帧？
+- 有没有明显的瑕疵帧（糊、闪、错位、字幕溢出、黑边）？
+
+**这些观察必须写进 SKILL.md 的「逐帧拆解要点」，并作为 `_distill.json.evidenceFrames` 的记录。**
+
+### ★ 关于输出比例（2026-10-03 的重要口径，别搞错）
+
+- **样片是用 `--ratio 16:9`（1920×1080）渲的** —— 43 个风格全部按 1920×1080 绝对像素构图，
+  多数没有 `aspects` 声明（= 只支持 16:9）。**抽帧就是 16:9 的**，这是「风格原本长什么样」的权威证据。
+- **产品导出默认值是 9:16（1080×1920）**。把 16:9 风格硬渲成 9:16 时，画面会被 1:1 塞在左上角、
+  右侧约 43.75% 丢失、下方整片黑 —— 这是**已知缺陷**，要在第 2 节（画面构图）里**单独写一小段**
+  「在 9:16（产品默认）下的表现」，写清楚会丢什么、字幕会不会被切。
+- 也就是说：**第 2 节的主体按 16:9 写**（风格的原生构图），9:16 只作为一个带缺陷说明的子段。
+
+---
+
+## 第三步：写 SKILL.md（11 节契约，**标题逐字一致**）
+
+模板见 `D:/lemo-tools/lib/style-skills/_TEMPLATE/SKILL.md`。11 节标题**必须**是：
+
+```
+## 1. 风格说明
+## 2. 画面构图
+## 3. 配色体系
+## 4. 转场规则
+## 5. 字幕样式
+## 6. BGM / 音效特征
+## 7. 素材偏好
+## 8. 镜头节奏
+## 9. 制作参数清单
+## 10. 编排规则
+## 11. 当前短板与避坑要点
+```
+
+外加文末的 `## 蒸馏证据` 一节（不算在 11 节里）。
+
+### 硬性要求
+
+- **每节 ≥ 80 字实质内容**（校验器会数）。
+- **不许留占位符**：`<slug>` / `<中文名>` / `___` / `…` 都不许残留。
+- **参数必须具体**：写「字号 4.2% 画面宽」而不是「字号适中」；写 `#f1e8d2` 而不是「米黄」。
+- **能追溯到证据**：关键结论后面挂来源，如 `（STYLE.md §2）` / `（style-dna/ascii-crt.md:41）` / `（帧 f07/f13）`。
+- **第 11 节要诚实**：已知缺陷、素材缺口、能力限制、踩过的坑，**有什么写什么**，不许粉饰。
+  特别要写清楚：**本次成片实际跑通了没有**、有没有走 `--skip-sync`、有没有用预生成配音、
+  混流走的是 GPU 还是 CPU、有没有告警。
+- **第 9 节要给可直接抄的命令**（以 `demo/build.sh` 为准）。
+- **第 10 节要写清「换主题时要改哪些文件」** —— 这是三条生成通路复用本风格的关键。
+
+### frontmatter
+
+```yaml
+---
+name: lemo-style-<slug>
+description: 【lemo 风格 Skill · <中文名>】<一句话：什么时候用、能交付什么观感>。选定本风格做视频时，优先读本文件。
+slug: <slug>
+name_zh: <中文名>
+category: <分类>
+film: <样本片名>
+---
+```
+
+---
+
+## 第四步：写 `_distill.json`
+
+```json
+{
+  "slug": "<slug>",
+  "nameZh": "<中文名>",
+  "distilledAt": "<ISO 时间>",
+  "matchScore": 0,
+  "scoreBreakdown": {
+    "palette": 0,
+    "composition": 0,
+    "typography": 0,
+    "rhythm": 0,
+    "audio": 0
+  },
+  "defects": [],
+  "resolvedDefects": [],
+  "assetGaps": [],
+  "limits": [],
+  "evidenceFrames": ["_contact.jpg", "f01.jpg"],
+  "sources": ["styles/<slug>/STYLE.md", "lib/style-dna/<slug>.md"],
+  "generatedVideo": {
+    "path": "D:/lemo-films/<slug>/<slug>.mp4",
+    "durSec": 0, "bytes": 0, "width": 0, "height": 0, "fps": 0, "frames": 0
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [],
+    "loudness": {
+      "integratedLufs": 0, "truePeakDbtp": 0, "lra": 0,
+      "peakDbtpTarget": -1.2, "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg … -af loudnorm=…:print_format=json 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径）"
+    }
+  }
+}
+```
+
+### ★★ 结构契约（**必填键，一个都不能少**）
+
+`check-skill-scores.mjs` / `check-film-delivery.mjs` / `check-lra-caliber.mjs` 会逐项核。历史上有过 43 份字段漂移
+（`resolvedDefects` 缺 22 份、`loudness.lra` 缺 23 份），已由 `scripts/normalize-skill-schema.mjs` 拉齐 ⇒ **别再漏**。
+
+| 要求 | 说明 |
+|---|---|
+| `resolvedDefects` | **必须有**，没有已修缺陷时写 `[]`（不要省掉这个键） |
+| `scoreBreakdown` 五键 | 必须是**数字**（`matchScore` == 五键之和，机械校验）。**不要**往里塞对象/旁注 |
+| `selfCheck.loudness` | 七个键齐全（见上）。★ **真峰值/响度的权威位置就是这里**，不是 `generatedVideo` |
+| `generatedVideo` | 除 path/durSec/bytes 外，`width/height/fps/frames` 也要写（下游要靠它免解析散文） |
+| `matchScore` | == `scoreBreakdown` 五项之和（**上限 20/维**）；改任一维必须重算 |
+
+**口径约定（别用错，历史上踩过四次）**：
+- **真峰值** = `loudnorm` 的 **`input_tp`**（4× 过采样）。**不是** `astats` 的 `Peak level dB`（那是采样峰值，差最大 1.62 dB）。
+- **LRA** = **`ebur128`** 的 `LRA`。**不是** `loudnorm` 的 `input_lra`（系统性偏大，实测同一片 6.0 vs 8.20）。
+- **采样峰值**只作参考，不要拿来判达标。
+- 交付线：真峰值 **≤ −1.2 dBTP**、响度 **≈ −14 LUFS**。
+
+### ★ 「已修」约定（缺陷修好之后怎么写）
+
+**原始观察一律保留**，在句末追加 `★ **<日期> 已修**：…原记录保留作历史`。
+同时把该条从 `defects` **移入 `resolvedDefects`**，并把它的标签扣分**回补**到对应维度（上限 20）、重算 `matchScore`。
+★ **改完一定要同步 SKILL.md 的自评分数行**（`check-skill-scores.mjs` 第 ③ 项会核「人读的分数 == json 的分数」）。
+
+### `matchScore` 怎么给（0–100，**不许虚高**）
+
+拿**成片抽帧**与 **`STYLE.md` / `style-dna` 里声明的风格特质**逐条对：
+- 配色是否对得上声明的色值？（`palette` 20 分）
+- 构图/负空间/图层顺序是否对得上？（`composition` 20 分）
+- 字幕字体/字号/位置/折行是否对得上？（`typography` 20 分）
+- 镜头节奏与全片时长是否落在声明区间？（`rhythm` 20 分）
+- 配乐/拟音/响度是否对得上？（`audio` 20 分）
+
+**每扣一分都要在 `defects` 里写出对应的具体缺陷。** 客观受限（素材缺、本机跑不通）就在
+`limits` / `assetGaps` 里写明，并说明「最高可达分是多少、为什么达不到」。
+
+### 「真峰值超标」怎么扣（2026-10-03 立，用于后续统一）
+
+判据一律用 `loudnorm` 的 `input_tp`（4× 过采样），不用 astats 采样峰值。
+- 真峰值为**正** ⇒ 实际削波 ⇒ 扣 **−4**（这是本项最重的一档）
+- 真峰值为**负但超 −1.2 dBTP 交付线** ⇒ 未削波、仅超线 ⇒ 扣 **−2**
+- 达标（≤ −1.2 dBTP）⇒ 不扣
+- ★ **减半条款**（口径在此定死，别再各读各的）：若过冲的**根因在 mux/编码阶段** ——
+  即该风格的 `mix.wav` 本身合规、越线是 **loudnorm 抬峰 + AAC 编码过冲**引入的、
+  **不是它自己的混音链造成的** ⇒ 上述扣分**减半**，并在缺陷条目里注明「项目级既有缺陷，非本风格音频链所致」。
+  ★ **不要按「走 core 还是走自带副本」来分**：`core/render/mux.sh`（**2026-10-03 起 `LN_TP` 默认已由 −1.7 改为 −3.5，且可被 `LEMO_LN_TP` 覆盖**；改前是 −1.7、0.5 dB 余量 —— 全量扫描证明那余量不够，过冲最高 +1.66 dB）
+  与各 demo 自带的 `mux.sh` 副本（多半写死 `TP=-1.2`，**零余量**）**都是项目提供的模板**，
+  都不是该风格音频设计的锅 ⇒ **两类一律减半**。
+  （2026-10-03 实测归属：`blueprint`/`dataviz` 走 core；`microgame`/`risograph`/`stained-glass`/`crayon-book`
+  走自带副本 —— 两类都按减半处理。）
+- ★ 该风格自己的 `STYLE.md` 若声明了更严上限（已知 3 家：`game-show:76` / `halftone-dossier:79` /
+  `pictogram-motion:80` 都写「true peak ≤ −1 dB」），**按它的声明判达标**，并在文档里注明出处。
+
+⚠️ 已知未统一（2026-10-03）：`game-show` audio −4、`halftone-dossier` −7、`pictogram-motion` −2
+三家在真峰值项上的扣分与本规则不一致。**下一轮统一时，先逐份读它们的 `defects` 确认扣分构成**，
+不要只看总分就改。
+
+---
+
+## ★★ 第 5 节「字幕样式」必须写清「两条通路」的字幕差异（2026-10-03 立）
+
+★ **先说清一个容易搞混的编号**：
+- **`STYLE.md` 的 §4** = "Type & subtitles"（原样本的风格声明）。
+- **`SKILL.md` 的第 5 节** = 「字幕样式」（你要写的那一节）。
+- `SKILL.md` 的 11 节顺序是：1 风格说明 / 2 画面构图 / 3 配色体系 / **4 转场规则** / **5 字幕样式** /
+  6 BGM·音效特征 / 7 素材偏好 / 8 镜头节奏 / 9 制作参数清单 / 10 编排规则 / 11 当前短板与避坑要点。
+  ★ 别把「STYLE.md §4」当成「SKILL.md 第 4 节」——第 4 节是**转场规则**，写错章节会被 `style-skill-check.mjs` 拦下。
+
+★ **两条通路的字幕不是同一套实现，第 5 节要分别交代**：
+1. **样板片通路**（`lemo-make.mjs` 驱动各风格自己的 `demo/`）：字幕由该风格 `demo/` 的 Canvas/DOM
+   代码自己画（见 `lib/dub-visual.json` 的 `styles.<slug>.subtitleStyle`，有 `fn`/`file`/`line`/`band` 等实据）。
+2. **「文案+风格」「文案+口播+风格」通路**（`dub.mjs` + `lib/dub-core.mjs` 的 `buildAss()`）：
+   字幕走 ASS。★ 这里 2026-10-03 修了一个**长期存在但没人发现**的缺口 ——
+   ASS 的 `BorderStyle=1` 下 **`BackColour` 不参与渲染**（只有 Outline + Shadow 生效），
+   所以各风格 §4 声明的「底衬 / 胶囊 / 色带 / 字幕卡」在这条通路上**从来没画出来过**。
+   现在按 `subtitle.plate` 分档：缺省 `'shadow'`（= 旧行为，逐字节不变）/ `'box'`（切 `BorderStyle=3`，
+   此时 `Outline` 变成**盒内边距**、**`OutlineColour` 变成盒填充色** —— ★ 注意是 OutlineColour 不是 BackColour）/ `'none'`。
+   目前 25 个风格开了 `'box'`，其余 18 个 + `plain-dark` 基线保持 `'shadow'`。
+
+★ **写第 5 节时的硬要求**：
+- 对开了 `plate='box'` 的风格，要写明：底衬形态（引 §4 原句）、`BorderStyle=3` / 盒内边距 10 / `Shadow=1`、
+  `BackColour` 的具体值、**该值的来源**、以及**字色与有效底衬的 WCAG 对比度**。
+  数据一律从 `lib/dub-styles.json`（实际配置）与 `lib/dub-visual.json` 的
+  `styles.<slug>.subtitleStyle`（`plate` / `plateColor` / `plateContrast` / `plateSource` / `plateEvidence`）读，**不许自己编**。
+- 若 `plateSource` 显示是**回退值**（不是 demo 的 band 真值），必须写明「底衬色为回退值」及原因
+  （demo 的 band 色与该风格配置的 `palette.subtitle` 字色对比度不足），并在第 11 节补一条短板。
+- 未开 `box` 的风格，要写明「本风格未开底衬」以及为什么（§4 明写 no box / demo 的底衬是手撕边等
+  **非矩形**形状 ASS 画不了 / 底衬属于说话人名牌而非字幕行 / 与配置字色冲突）。
+
+★ **box 模式下 `Shadow` 必须为 0**（2026-10-03 像素实测判定）：
+`BorderStyle=3` 下 ASS 的阴影是一份**与底盒几乎完全重叠**的整盒副本，会把半透明底衬**二次合成**
+（不透明度从 `a` 变成 `1−(1−a)²`）。实测 `hd-2d`：`Shadow=1` → 盒内 rgb(110,103,85)、对比度 3.18；
+`Shadow=0` → rgb(158,148,124)、对比度 5.95（= 单层合成的理论值）。25 个风格里 18 个是半透明底衬。
+
+★★ **底衬有「两个检查器」，改完两个都要跑**（缺一不可）：
+- `node scripts/check-dub-styles.mjs` —— **模型级**：取值合法 / 显式色画不出来 / 对比度 ≥4.5 /
+  STYLE.md 声明冲突 / 必须有 `dub-visual` 证据。**快，但只看模型。**
+- `node scripts/check-plate-pixel.mjs` —— **像素级**：真实渲染一帧，用「品红标记色」验证
+  底衬色**确实取自 `plateColor` 字段**，并实测字色对比度 ≥4.5。**慢（25 个风格约 1 分钟），但是真值。**
+  ★ 为什么必须有它：模型级检查器**漏报过** —— 底衬色被填错字段时它仍报 25/25 通过，
+    而实际渲染 12/25 个风格对比度只有 1.00~1.43（字幕根本看不清）。
+  ★ 它的绝对色差阈值只能当**粗筛**：渲染链有 YUV 往返，高饱和色会掉饱和（实测偏差与饱和度正相关：
+    `backrooms` Δ0 → `risograph` Δ2 → `tilt-shift` Δ8 → `papercut-red` Δ17），
+    所以**决定性判据是品红标记色测试，不是绝对色差**。
+
+★ **踩过的坑（别重犯）**：
+- **ASS 的 alpha 是「透明度」：`00` = 完全不透明，`FF` = 完全透明**（与 CSS 相反）。
+  判「这个颜色画得出来吗」必须用 `isVisibleColor()`，**不能**写 `alphaOf(v) > 0`
+  （那会把 `#00A8111F` 这种**不透明**色误判成不可用；也会误以为 `#00000000` 是全透明 ——
+  它其实是不透明黑）。
+- 开底衬前**必须**算「字色 vs 有效底衬」的 WCAG 对比度。半透明底衬要先与该风格的有效背景合成
+  （`bgRecipe.type='solid'` ⇒ 用 `stops[0]`，否则用 `palette.bg`）。已有实例：`silkscreen-poster`
+  的字色与它自己的 `subtitleBack` **完全相同**，直接开 `box` 会让字幕整体消失。
+  该检查已固化为 `node D:/lemo-tools/scripts/check-dub-styles.mjs` 的硬红线（对比度 < 3.0 直接 FAIL）。
+
+---
+
+## 第五步：自检（**必须做**）
+
+**先跑这两个**（快、必过）：
+
+```bash
+node D:/lemo-tools/scripts/style-skill-check.mjs --only <slug>   # 11 节契约 + 无占位符 + 每节 ≥80 字
+node D:/lemo-tools/scripts/check-skill-scores.mjs                # 评分自洽（3 项，含「正文自评 == json」）
+```
+
+必须输出 `✔` / `OK`。不通过就改到通过为止（常见：某节字数不足、占位符没清、`_distill.json` 字段缺、
+`matchScore` 与五项之和对不上、SKILL.md 的自评分数与 json 不一致）。
+
+**再跑这些**（全库级，确认你没把别的风格弄坏）：
+
+```bash
+node D:/lemo-tools/scripts/check-film-delivery.mjs     # 成片口径：文档声称值 vs 实测值 + 容器健康
+node D:/lemo-tools/scripts/check-tp-prose.mjs          # SKILL.md **正文**里的真峰值声称 vs 实测（★ 2026-10-05 修结构性失明：旧「值 > −1.2 才查」把「已修/重渲后**已达标**」的值**全排除** ⇒ 现「关于成片的**当前结论句无论是否达标**，与实测差 > 0.15 dB 即 FAIL」；旧 ① 换成「阈值/交付线提及」排除（数值 == `peakDbtpTarget`，或阈值词紧贴）；★ 2026-10-05 **修 60 字窗假阴**：判据 ③ 由「匹配点前后 **60 字**内出现『成片』」放宽为「**整行**含『成片』」（实测旧窗假阴 8/8 = 100%；`hd-2d:120` 的『成片』离数值 **69** 字）；配合新增 **⑥ 非本片产物排除**（数值所在句出现 `mix.wav`/`score.wav`/`母带`/`中间产物`/`上游`/`样片`/`素材` ⇒ 那是上游读数、不是成片声称）把误报压到 **0**（不加 ⑥ 时误报 2/10 = 20%）；★ 实验行「多目标→多实测」排除；全部读不到真峰值即判失明；LEMO_DISTILL_ROOT / LEMO_TP_MEASURED_JSON 可覆盖，供非破坏变异；★★ **2026-10-05 泛化**：本闸门已从「只查 dBTP」变成「**成片读数这一类声明**」的通用闸门（同一套抽取/排除/对账流水线，量纲以 `DIMS` 登记项加入）—— 覆盖 **dBTP / LUFS / LRA / 字节数 / 分辨率 / 帧数（FAIL）+ 体积 MB / 时长（参考）**，真值复用 `check-film-delivery` 的实测结论；覆盖点新增 **`LEMO_READINGS_MEASURED_JSON`**（多量纲真值覆盖 `{slug:{dBTP,LUFS,LRA,bytes,durSec,width,height,frames,dBFS:{samplePeak,truePeak,ebur128Peak}}}`，指向 `{}` 即逐量纲失明）；★★ **2026-10-05 下半场再纳入 `dBFS`（第 9 类量纲）**：全库 149 个 `<数> dBFS` 此前无人对账，难点是**口径歧义**（混用 `ebur128 Peak` 1 位小数 / `astats` 采样峰值 6 位 / `loudnorm input_tp` 真峰值三个口径）⇒ 必须「**口径感知 + 多真值**」：真值取 `samplePeak`（json `samplePeakDbfs` / `audioEvidence.astatsPeak6dp`，43/43 都有）、`truePeak`（`truePeakDbtp`）、`ebur128Peak`（= `round(truePeak,1)`，实测 43/43 相等）；口径词按「所在句内离 token 最近」选（`astats|采样峰值` ⇒ 采样峰值容差 0.01；`ebur128|Peak` ⇒ 容差 0.001；`input_tp|真峰值|dBTP|TPK` ⇒ 0.15；`RMS` ⇒ 参考；**无口径词 ⇒ 参考、不判**）。**误报率逐级实测**：放宽 20 命中/误报 20（100%）→ 朴素单真值 4/100% → 口径「首个命中」8/100% → 最终 **0/0**。**另立第 ⑩ 类「物理约束」FAIL**（真峰值 ≥ 采样峰值 恒成立 ⇒ 「采样峰值 > 真峰值」物理不可能，不需口径判断）：数据级（json 自相矛盾）+ 声称级（同句），容差 0.1。**实测 dBFS 真陈旧 0、物理不可能 0 ⇒ 未改任何文档**）
+node D:/lemo-tools/scripts/check-skill-film-fields.mjs # SKILL.md **正文**里的成片帧数/分辨率/时长 vs generatedVideo（★ 帧数=FAIL、分辨率=FAIL、时长=参考；全部读不到 generatedVideo 即判失明）
+node D:/lemo-tools/scripts/check-lra-caliber.mjs       # 43 份的 lra 是否统一 ebur128 口径
+node D:/lemo-tools/scripts/check-loudness-targets.mjs  # style-dna 能否解析出响度目标（防静默回落 −16）
+node D:/lemo-tools/scripts/check-config-notes.mjs      # dub-styles.json 的 notes 与字段是否自相矛盾
+node D:/lemo-tools/scripts/check-config-vs-doc.mjs     # 配置底色是否在该风格 §3 配色体系里
+node D:/lemo-tools/scripts/check-skill-artifacts.mjs   # json 记录的成片信息 vs 磁盘实物
+node D:/lemo-tools/scripts/check-shell-structure.mjs   # shell 脚本结构（续行被注释吃掉 / 判定块缺 exit 0）
+node D:/lemo-tools/scripts/measure-truepeak.mjs --check # 43 部成片真峰值是否都 ≤ −1.2 dBTP
+node D:/lemo-tools/scripts/check-dub-styles.mjs        # 纹理红线 + 字幕底衬（模型级）
+node D:/lemo-tools/scripts/check-doc-coverage.mjs      # 你新增的脚本有没有登记进文档（本简报 + test/README.md）
+node D:/lemo-tools/scripts/check-dna-coverage.mjs      # 风格注册表的**字段消费覆盖**（三节）：① style-dna 的已接线链路没断（防风格特质静默失效）；② ★ lib/dub-styles.json 的**每条字段路径**要么「有消费者」、要么在**元数据白名单**/未实现清单里，否则 FAIL（防「注册表声明了、代码没人读」——44/44 声明 textureRaw 却零读取就是这么漏的；已剥注释，否则解释缺陷的注释会被当成消费者；排除 scripts/ 否则闸门读到自己；注册表读不到/枚举 0 条即判失明；LEMO_DUB_STYLES 可覆盖，供非破坏变异）；③ ★ **`bgRecipe.textureRaw` 的「取值级」实现状态**（2026-10-05 扩展，补的正是 ② 原先登记的「已知边界」）：**可解析名字集合 R** 从 `lib/dub-core.mjs` **源码抽**（`bgFilters()` 的 `switch (tex)` case + `TEXTURE_SYNONYMS` 键 + `TEXTURE_RAW_FALLBACK` 键 + `none`，不手抄）⇒ 判**双向**：(A) 声明但未标（值 ∉ R 而散文清单没登记）FAIL、(B) 标了但已实现（值 ∈ R 而散文清单仍列着）FAIL，另加 4 条防清单腐烂 + slug 级核对；**误报率**：原始判据首跑命中 2 名（`vignette`/`paper-grain`）**真 0 / 误 2（100%）** ⇒ 加豁免表 `TEXTURE_COVERED_BY_OTHER` 后 0/0（★ **「可解析 R」≠「已实现全集」**：31 个声明值 = R 内 11 + 未实现 18 + 豁免 2）；**失明守卫**尤其重要（判据依赖解析源码）：源码读不到/抽不到两张表/找不到 `bgFilters()` 或其 `switch (tex)`/R 为空/注册表为空/散文找不到「声明但未实现」条目 ⇒ 一律 FAIL 并明说「已失明」；覆盖点 **LEMO_DUB_CORE**（新增）+ `LEMO_DUB_STYLES`，均供非破坏变异）
+node D:/lemo-tools/scripts/check-mux-selection.mjs     # 编排器实际挑中的那个 mux 脚本口径是否完整（★ 脚本存在 ≠ 会被采用）
+node D:/lemo-tools/scripts/check-mix-candidates.mjs    # 混音文件有没有「靠前的旧占位遮蔽靠后的真混音」（★ 真实发生过事故）
+node D:/lemo-tools/scripts/check-cli-docs.mjs          # 命令行参数的用法块与实现是否对得上（★ 防「文档先于实现」）
+node D:/lemo-tools/scripts/check-lexicon-coverage.mjs  # 风格 tags ↔ 规则词表双向对齐（★ 漏登记 = 规则路永远选不中该风格；schema 不符即判 FAIL）
+node D:/lemo-tools/scripts/check-api-docs.mjs          # server.mjs 路由 ↔ README 接口表双向对齐（★ 防「文档先于实现」；任一侧解析为 0 即判失明）
+node D:/lemo-tools/scripts/check-render-venc.mjs       # ★ 渲染一律 GPU 优先（未设 LEMO_VENC ⇒ h264_nvenc；非法值 ⇒ 报错；双副本不一致 ⇒ FAIL）
+node D:/lemo-tools/scripts/patch-render-venc.mjs       # 按上述判据幂等回灌 26 个编码器决策点（双副本一起写）
+node D:/lemo-tools/scripts/check-venc-args.mjs         # ★ 每个编码参数组合**真编 1 帧**证明 ffmpeg/nvenc 接受（32 组合，~4s；抽到 0 个即判失明）
+node D:/lemo-tools/scripts/check-dual-copy-sync.mjs   # ★ 全仓两份副本同步（源文件漂移/单侧缺失 ⇒ FAIL；生成物与资产只列 backlog；WSL 不可达即判失明）
+node D:/lemo-tools/scripts/check-film-aspect.mjs      # ★ 成片画幅：A 声明支持（未声明=只支持16:9）+ B 43 部画幅应一致（少数派即违规）+ ★C 用 ffprobe 读**实际成片文件**要求恰为 1920×1080（样板片一律 16:9；文件缺失只单列、0 部成片/文件根不存在/无 ffprobe 即判失明；`LEMO_FILMS_ROOT` 可覆盖，供非破坏变异）
+node D:/lemo-tools/scripts/check-audio-chain.mjs      # ★ 音频链可跑性：哪些风格的混音步编排器跑不了（A 无路径/B 基线/Bnew 新增 ⇒ FAIL），把「只有真渲才发现」的缺口静态化
+node D:/lemo-tools/scripts/check-aspect-declaration.mjs # ★ 影片入口画幅声明：没有 film*.js 的风格，其真实入口（index.html 引的本地 .js / 内联脚本）若读了视口 ⇒ FAIL（否则控制台会误报「只支持 16:9」）；风格目录不存在 / 0 风格即判失明
+node D:/lemo-tools/scripts/check-aspect-prose.mjs     # ★ SKILL.md 画幅论述：§2/§9/§11 的「只支持 16:9 / 9:16 不可用 / 43.75%」类否定式声称 vs styleAspects() 的能力声明（双向；整行历史标记 + 引号/删除线豁免；「现状/当前」标记可推翻豁免；--ignore 排除在途风格；风格目录/事实源探不到即判失明）
+node D:/lemo-tools/scripts/check-esm-import-paths.mjs # ★ 动态 import 传运行时绝对路径（Windows 下 path.join ⇒ 报 'd:' 崩，POSIX 走 WSL 不暴露）：import(path.join(…)) 无 pathToFileURL/file:// ⇒ FAIL，报 file:line；首片段 ./ ../ / scheme 放行；扫描根不存在 / 0 文件即判失明
+```
+
+**★ 三条最容易漏的**：
+1. **`check-tp-prose.mjs`** —— 你写在正文里的真峰值数字必须与实测一致。**只改 json 不改正文 = 文档撒谎**
+   （实测漏过：正文写 `+0.08 dBTP`、json 已改 `−1.72`）。改完跑 `patch-tp-prose.mjs` 或
+   `refresh-style-skill.mjs` 来补「已修」标注。
+   ★ 例外：**逐档扫描/对照表**（一行里 ≥2 组「箭头 → 数值 dBTP」，如 `PLR 12.99 → +0.28 dBTP` ·
+   `10.70 → −1.27 dBTP`）属**实验记录**，闸门把它单列「实验行」、不计 FAIL —— 但**交付声称**仍必须与实测一致。
+   ★★ **2026-10-05 覆盖面变了**：判据由「值 > −1.2 才查」改成「**当前结论句无论是否达标都比对**」
+   ⇒ 除「超标 → 达标」外，**「一直达标、但重渲/重混后实测值变了」也算 FAIL**（实测 3 处：
+   `halftone-dossier:186` −2.79→−3.26、`hd-2d:299` −1.54→−3.21、`watercolor:105` −1.72→−3.34）。
+   ★ **这一类没有工具会写**：`patch-tp-prose.mjs` 与 `refresh-style-skill.mjs` 的判据里都带「值 > −1.2」
+   ⇒ 它们只补「超标 → 达标」，**「一直达标但值变了」只能人工按 `loudnorm input_tp` 实测改**
+   （改法：**当前结论句**直接改成实测值、**不加**历史标记；**历史记录句**保留原句 + 加 `原记` + 补现值。
+   ★★ **「只加标记不补现值」= 把闸门永久豁免**：④ 是**整行**粒度，行里出现 `已修` 就整行放行
+   ⇒ 历史句**必须**同时补上当前实测值，否则那一行再也测不出来）。
+   ★★ **2026-10-05 判据 ③ 放宽（60 字窗 ⇒ 整行）+ 新增 ⑥**：旧 60 字窗在「成片」离数值较远时**整类漏报**
+   （对照树实测假阴 **8/8 = 100%**；`hd-2d:120` 的「成片」离 `−1.54` **69** 字、`watercolor:214` 离 **144** 字）。
+   放宽到整行后命中 **10**（真陈旧 8 / **误报 2 = 20%** —— 两处都是**上游 `demo/mix.wav` 的真峰值**被连带捞进来）；
+   加 **⑥ 非本片产物排除**（数值**所在句**出现 `mix.wav`/`score.wav`/`母带`/`中间产物`/`上游`/`样片`/`素材`）
+   ⇒ 命中 **8** / 真陈旧 **8** / **误报 0**。★ ⑥ 必须排在 ⑤ 之后：实验行讲的正是「`mix.wav` 的波峰因子扫描」。
+   ★ 也试过更窄的「同句（按 `。！？；` 分句）」：命中 **1**，但连 `hd-2d:120` 与 `watercolor:214` 一起漏掉 ⇒ **不采用**。
+   ★ 放宽后**新覆盖**的 6 处真陈旧（此前被 60 字窗遮蔽，已按实测改正）：
+   `paper-lantern:112/117/230/245/266`（正文 −1.66 / 实测 −3.37）、`paper-popup:215`（−1.65 / −2.33）。
+2. **`check-config-vs-doc.mjs`** —— 若你在 §11 里指出「配置配色与本风格不符」，
+   **§3 里必须给出可核对的色值**（hex），否则下游**没有依据**去改配置（凭猜就是编值）。
+   ★ 色值**优先从该风格自己的源码取**（`styles/<slug>/demo/*.js`），带 `file:line` 出处；
+   ★ 若该风格配色**本来就是参数化的**（如 HSL + hue 参数、源码里没有固定 hex），
+     就**如实记参数表达式**并在 §3 写明「为什么没有 hex」，**不要为了格式整齐硬编一个 hex**。
+3. **`_distill.json` 自身的散文 / 旁证字段没有任何闸门覆盖** —— 闸门只读**结构化字段**
+   （`generatedVideo.*` 与 `selfCheck.loudness.{truePeakDbtp,integratedLufs,lra,peakDbtpTarget}`）
+   与 **`SKILL.md` 正文**。实测踩过（2026-10-05 穷举发现）：
+   · `selfCheck.loudness.samplePeakDbfs` 曾有 **5 份陈旧**（`risograph` −1.107324→−3.106276、
+     `blueprint` −1.611899→−2.754564、`dataviz` −1.372202→−2.401433、`microgame` −0.856469→−2.291309、
+     `papercut-red` 0.33→−2.189661），旧值甚至 **> 同片 `truePeakDbtp`（物理不可能：采样峰值必 ≤ 真峰值）**；
+     根因：`fix-truepeak.mjs` 只回写 `truePeakDbtp/integratedLufs/lra/peakTargetMet`，**不回写 `samplePeakDbfs`**。
+     ★ **2026-10-05 已从工具侧修掉**：`fix-truepeak.mjs` 现在用**同一次 ffmpeg 测量**（`astats,loudnorm` 串联）
+     一起产出真峰值与采样峰值，并**对已达标成片做纯元数据对账**（只改 json、成片零改动、只在内容真变时落盘）
+     ⇒ 该字段不再会陈旧。全库复扫 **43/43** 满足 `samplePeakDbfs ≤ truePeakDbtp`；
+     其中 **25 份原本根本没有该字段**，已由工具按实测补上（补字段前这条约束在它们身上**根本不可检**）。
+     ★ **精度陷阱**：`truePeakDbtp` 只存 2 位小数（loudnorm 口径）、`astats` 给 6 位 ⇒ 真峰值被**向下**舍入时
+     采样峰值会「看起来」更高（实测 5 片：`ascii-crt`/`backrooms`/`paper-popup`/`rubber-hose`/`risograph`，
+     差 0.0008–0.0037 dB，纯伪影、物理上并不违反）⇒ 工具落盘时把采样峰值**夹到真峰值以内**。
+   · `selfCheck.loudness.peakNote` 与 `audioEvidence.measuredInFilm.*` 同样会陈旧（`paper-lantern` 的
+     `lra 3.4 / truePeakDbfs −1.7 / astatsPeak6dp −1.668024`、`watercolor` 的 `lra 6.8` 已按实测更正）。
+   ⇒ **重渲 / 重混后必须连这些字段一起复测**（`refresh-style-skill.mjs` 也不写它们）；
+   改法与正文同源：**当前读数直接换实测值；历史读数保留原句 + 加 `原记` + 补现值**。
+   ★ 另有两类**语法盲区**：`nb_frames=2922`（正则要求「数+帧」，等号写法看不见）、
+   `mix.wav` 等**非本片产物**读数（按设计排除，不判 FAIL）。
+
+### ★ 出片/重渲之后：反向更新文档
+
+**这是长期循环的闭环，别忘**：
+
+```bash
+node D:/lemo-tools/scripts/refresh-style-skill.mjs --only <slug>   # 或 --all
+```
+
+它按**实测**回填 `generatedVideo` + `selfCheck.loudness`，并在**真峰值由超标变达标**时
+自动在 SKILL.md 标「已修」。★ 反向情况（旧达标、新超标）它**只告警不自动写** ——
+那需要你新增一条缺陷并定扣分档，属人工判断。
+
+---
+
+## 纪律（红线）
+
+1. **不许编造**：任何参数、色值、耗时、帧号都要来自你读过的文件或帧图。写不出来就写「未知」。
+2. **不许逐帧复刻的承诺**：目标是**对齐特质、复用制作思路 / 视觉元素 / 编排手法**，不是还原样本画面。
+3. **不改** `lemo-make.mjs`（红线：编排器不能被改）、不改 `D:/lemo-opuscar` 下的源码
+   （除非你在第 11 节里明确记录了「为补齐短板做了什么」并且改动极小、可回滚）。
+4. **不并发**：不要自己起渲染或 TTS（GPU / Index-TTS 都是独占资源）。
+5. 只写 `<slug>` 自己的目录，不碰别人的。
+6. ★ **不要再写「硬编码 slug 表」的一次性补丁脚本** —— 历史上 `sync-tp-docs.mjs`（写死 18 个 slug）与
+   `patch-tp-prose.mjs`（写死 7 个锚点）就是这样，**换个风格就得手改**。
+   通用入口是 **`refresh-style-skill.mjs`**：要改「出片后回填 + 标已修」的逻辑就改它一个。
+7. ★ **改过成片之后，LRA 也会变**（压限会收窄动态，实测 `shadow-puppet` 9.1 → 7.1）
+   ⇒ 重混/重渲后**必须重测 LRA**，不能只更新真峰值。跑 `refresh-style-skill.mjs` 会自动做。
+8. ★ **出片前会先查显存，不够会自动腾挪**（`lib/vram.mjs`，插在 `dub.mjs` 的 TTS 之前与
+   `core/render/video.mjs` 的渲染之前）。它只在**不足时**才动别人的模型，够用时**零输出**；
+   真腾挪了会打 `[vram] ...` 日志（腾了什么、腾出多少）。相关环境变量（详见 `test/README.md`）：
+   `INDEXTTS_MIN_FREE_MIB`（默认 6700，与 `core/tts/tts_indextts.py` 同一个变量，`0` = 两边都关）、
+   `LEMO_RENDER_MIN_FREE_MIB`（默认 3000）、`LEMO_NO_VRAM_FREE=1`（只查不腾）、
+   `LEMO_VRAM_DEBUG=1`（够用时也打读数）。★ 你**自己不要去起渲染或 TTS**（见第 4 条），
+   所以正常情况下看不到这些日志；看到 `显存不足，拒绝继续…` 就说明**真的缺显存**，
+   按它给的「两条出路」办（别设 `LEMO_NO_VRAM_FREE=1` 绕过 —— 那只会把静默挂死还回来）。
+9. ★ **Index-TTS 的四个「内层读」配置走 argv，不是环境变量**（2026-10-05 实测）。
+   `core/tts/tts_indextts.py` 是两层结构（外层 + 内层 Windows venv python），而
+   **WSL→Windows interop 完全不传环境变量** ⇒ 外层把 `INDEXTTS_ENGINE` / `INDEXTTS_QUANT` /
+   `INDEXTTS_DEVICE` / `INDEXTTS_MIN_FREE_MIB` 翻译成 `--engine=` / `--quant=` / `--device=` /
+   `--min-free-mib=` 交给内层（映射表 `INNER_OPTS`）。在 **WSL 里 export** 或设 **Windows 环境变量**
+   都有效；生效值打在内层 `内层配置 —— …` 行上（一眼可核对）。非法值**明确报错**：
+   `ENGINE` 只认 `v2_5`/`v2`，`MIN_FREE_MIB` 非整数或为负 ⇒ 非 0 退出（不静默回落）。
+   `HOME`/`APP`/`PYTHON`/`REF_DIR`/`VOICE_LIB`/`TIMEOUT`/`STALL_TIMEOUT`/`LOCK*` 则是**外层读**，
+   在 WSL 里 export 即有效。

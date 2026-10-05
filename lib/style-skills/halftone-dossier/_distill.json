@@ -1,0 +1,84 @@
+{
+  "slug": "halftone-dossier",
+  "nameZh": "复古半调案卷",
+  "distilledAt": "2026-10-03T06:40:00.000Z",
+  "matchScore": 91,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 20,
+    "typography": 18,
+    "rhythm": 18,
+    "audio": 17
+  },
+  "defects": [
+    "本 demo 目录没有 build.sh，一键复现只能照 DEMO.md 六步手动走",
+    "events.mjs 导出 0 条事件（本风格 SFX 时间硬编码在 music.py），本次字幕源未重新生成、沿用仓库旧 .srt",
+    "本次出片走 --skip-sync"
+  ],
+  "assetGaps": [
+    "五个字体家族 Noto Serif SC 900 / Bagel Fat One / ZCOOL KuaiLe / JetBrains Mono 800 / Noto Sans SC 900 必须本地 woff2 就位，缺任一会导致逐字位置算错、字形重叠"
+  ],
+  "limits": [
+    "依赖 Playwright + headless Chromium；720 帧 / 6 workers ≈ 26s",
+    "clipPath id 全局唯一；时间窗场景需显式 op(0) 隐藏 cue 前元素",
+    "demo/stills/t_*.png 里部分早于纸纹理（0.5-7.1s 看着是平的），成片与新渲染一致、不与那些早期静帧一致",
+    "index.html 有未使用残留：#ink 滤镜、charsIdle()、E.elastic",
+    "音频最高给 13/20：配乐本身真实且完整，但响度超出目标、有削波风险"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f04.jpg",
+    "f06.jpg",
+    "f11.jpg",
+    "f13.jpg",
+    "f15.jpg"
+  ],
+  "sources": [
+    "styles/halftone-dossier/STYLE.md",
+    "styles/halftone-dossier/DEMO.md",
+    "styles/halftone-dossier/style.json",
+    "styles/halftone-dossier/demo/music.py",
+    "styles/halftone-dossier/demo/index.html",
+    "styles/halftone-dossier/demo/render.mjs",
+    "lib/style-dna/halftone-dossier.md",
+    "lib/dub-styles.json#halftone-dossier",
+    "_distill/logs/halftone-dossier.log"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/halftone-dossier/halftone-dossier.mp4",
+    "durSec": 30,
+    "bytes": 39613063,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 720
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "mux.sh: the film missed the target (-14 LUFS, true peak <= -1.2 dB): measured -13.8 LUFS, peak 0.433880 dB",
+      "该 demo 没有本编排器支持的字幕生成器，.srt 沿用仓库旧文件",
+      "lemo-make 步骤[4] 为 --skip-audio，但 demo/mix.wav（music.py 产出）仍被 mux 采用"
+    ],
+    "loudness": {
+      "truePeakDbtp": -3.26,
+      "integratedLufs": -14.26,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= −3.26 dBTP，见 selfCheck.loudness.truePeakDbtp。★ 0.43 dBTP 是 2026-10-03 音频重混前的读数，仅作历史。",
+      "lra": 3.1,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -3.340726
+    }
+  },
+  "resolvedDefects": [
+    "走不了编排器的音频链（原缺陷·2026-10-05 前）：本风格没有独立的混音脚本（配乐职责全在 demo/music.py 里一步做完），而 lemo-make.mjs 的混音步只按 demo/mix.py / demo/sound.py / demo/audio/mix.py 三个**文件名**找脚本，一个都找不到就报 `STEP_FAIL 该 demo 没有 mix.py / sound.py / audio/mix.py —— 它用的是另一套音频架构` 并 exit 1（lemo-make.mjs:2290-2297）⇒ 只能 `--skip-audio` 复用仓库里那份旧的 demo/mix.wav，走不了标准「主题出片」通路。★ **2026-10-05 已修**：新增薄壳 demo/mix.py（**不接受命令行参数**、用同一个解释器 subprocess 调既有 music.py 并把输出路径指向 demo/mix.wav；不重写任何配乐逻辑、不碰视频、幂等），编排器混音步已命中本风格 —— 实测 `MIX_OK 5292044 …/styles/halftone-dossier/demo/mix.wav`、`MUX_OK 46164256 src_frames=720 out_frames=720`，成片 1080×1920 / 30.00s / 真峰值 −2.79 dBTP / −14.24 LUFS（两条交付口径都达标）。★ 本条原本**没有**独立扣分项（defects[] 里从未记过它、也无 `【audio −N】`），故 scoreBreakdown 与 matchScore **不变**。",
+    "音频响度未达标：music.py 真实配乐实测 -13.8 LUFS / 峰值 0.4 dBFS，目标 -14 LUFS / TP <= -1.2 dBTP，mux.sh 报 missed the target、probably clipping\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 +0.43 dBTP → **−2.06 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +4（见第 10 节）。",
+    "composition −2（原缺陷）：无 aspects 声明，产品默认 9:16 硬渲时右侧约 43.75% 画面丢失、下方黑边；出血数字与右中主体被裁（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 89→91（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

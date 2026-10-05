@@ -1,0 +1,98 @@
+{
+  "slug": "urban-sketch",
+  "nameZh": "钢笔淡彩",
+  "distilledAt": "2026-10-03T00:00:00.000Z",
+  "matchScore": 90,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 20,
+    "typography": 15,
+    "rhythm": 19,
+    "audio": 18
+  },
+  "defects": [
+    "编排器不认本 demo 的字幕生成器，第 3 步报警，.srt 沿用仓库里已提交的旧文件、未重新生成（logs/urban-sketch.log:29,119）",
+    "字体通路回退 KaiTi：demo 全片文字是手写体 Reenie Beanie（页角批注）+ Caveat 500-600（标题/版权页），本机无，手写感有损（dub-styles.json#urban-sketch.notes）",
+    "通路不承载「手写 reveal + 写在页边」这一核心形态，只给一个楷体字幕位；motion.subtitleFadeIn 0 但通路仍是通用字幕条语义",
+    "still.mjs 报 still waiting for window.READY after 20 s 共 7 次（logs/urban-sketch.log:74-94），页面在 headless 下未及时置 READY，海报/风格帧步骤可能未产出",
+    "音视频时长微差：视频 32.413411s 长于音频 32.400s，mux 补静音到 32.455s（logs/urban-sketch.log:127）",
+    "【palette −1】细纹理 `textureRaw: pen-wash` 声明了但渲染未实现：`lib/dub-styles.json#urban-sketch.bgRecipe.textureRaw` 是 `pen-wash`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），不读 `textureRaw` ⇒ `pen-wash` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `pen-wash` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "Reenie Beanie / Caveat 手写字体文件缺失（需装进 demo/fonts/ 才能消除回退）",
+    "新主题需要的世界资产（静态页 + 颜色到达源 + 帽子/物件轨迹）必须自建，不能沿用《Where the Wind Went》的公园与草帽"
+  ],
+  "limits": [
+    "骨架不可拆：线 + 淡彩两者必须同时在，且什么都没画满边（STYLE.md:19,21），撑不起满版实拍质感与写实光影",
+    "墨只有一种颜色，天然不支持用颜色区分多个并列品类",
+    "颜色只能「到达」不能 snap，快切式信息投放相性差",
+    "本 demo 无 lines.json、无旁白；换主题要加旁白需自建 lines.json 并确认编排器认得字幕生成器",
+    "最高可达分受限：字幕链路（编排器不重建 srt + 手写字体回退）客观扣分，故 typography 封顶约 15/20"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f06.jpg",
+    "f12.jpg",
+    "f17.jpg",
+    "f20.jpg",
+    "f22.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/urban-sketch/STYLE.md",
+    "styles/urban-sketch/DEMO.md",
+    "styles/urban-sketch/style.json",
+    "styles/urban-sketch/demo/build.sh",
+    "styles/urban-sketch/demo/film.js",
+    "styles/urban-sketch/demo/world.js",
+    "styles/urban-sketch/demo/engine.js",
+    "styles/urban-sketch/demo/poses.js",
+    "styles/urban-sketch/demo/audio/score.py",
+    "styles/urban-sketch/demo/audio/foley.py",
+    "styles/urban-sketch/demo/audio/mix.py",
+    "styles/urban-sketch/demo/subs.json",
+    "styles/urban-sketch/demo/events.json",
+    "styles/urban-sketch/urban-sketch.srt",
+    "lib/style-dna/urban-sketch.md",
+    "lib/style-dna/urban-sketch.json",
+    "lib/dub-styles.json#urban-sketch",
+    "_distill/logs/urban-sketch.log",
+    "_distill/frames/urban-sketch/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/urban-sketch/urban-sketch.mp4",
+    "durSec": 32.42,
+    "bytes": 35031561,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 778
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "本 demo 无 lines.json，编排器跳过 TTS 与 whisper（logs/urban-sketch.log:36）",
+      "本 demo 无编排器支持的字幕生成器，.srt 未重新生成、沿用仓库旧文件（logs/urban-sketch.log:29,119）",
+      "still.mjs 报 window.READY 20s 超时 7 次（logs/urban-sketch.log:74-94）",
+      "mux note: 音频 32.400s 短于视频 32.413411s，补静音到 32.455s（logs/urban-sketch.log:127）",
+      "真峰值 -1.5 dBFS 达标（<= -1.2 dBTP）；静音窗 20.4-21.58s 实测 -52.5 dBFS"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.54,
+      "integratedLufs": -14.38,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= -1.54 dBTP，见 selfCheck.loudness.truePeakDbtp。",
+      "lra": 7,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.543045
+    }
+  },
+  "resolvedDefects": [
+    "composition −1（原缺陷）：无 aspects 声明，硬渲 9:16 会丢失右侧约 43.75% 并留下方黑区（见 SKILL 第 2 节）（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 90→91（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

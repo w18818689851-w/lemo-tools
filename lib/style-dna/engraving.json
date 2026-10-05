@@ -1,0 +1,131 @@
+{
+  "slug": "engraving",
+  "name_zh": "铜版画（Copperplate Engraving）",
+  "essence": "一部「雕版自己刻出来」的凹版印刷片：线条是雕刀在铜上刻出的沟槽里兜住的墨，明暗全靠线密度而非填色，颜色是印完之后手工一笔笔罩上去的透明水彩——它不是木刻、不是钢笔速写、不是工程图、更不是加个褐色滤镜的老照片。",
+  "materials_and_rendering": [
+    "纸即世界：1920×1080 世界单位的手工帘纹纸（米黄 ~#f1e8d2），纸纹（纤维、帘纹、零星霉斑 #9a6a34）随镜头缩放；外加压印的倒角版痕与「双线」边框。",
+    "墨只有一种暖近黑 ~#1c1510。线条宽度按层级：轮廓最重（起伏 ×0.45–1.35），第一层排线从发丝 ~0.18px 到 ~2px，交叉层 ~0.8×，第三层 ~0.6×，发丝与点刻最细。",
+    "间距是相对主体的（约其高度的 1/180，越靠后的线族略宽），所以小图形永远不会糊成灰块。",
+    "每一条排线都遵循「鼓胀律」：宽度 ×(0.2 + 0.8·sin(πu)^0.7)，首尾各约 22% 收成尖。三族线按色调阈值（0–1 色调上的 ~0.14 / ~0.5 / ~0.75）依次开启。",
+    "全片只有一个光向（惯例左上，demo 实测 {x:-0.55, y:-0.62, z:0.56}）；背光处轮廓更重；色调来自形体本身（枕形光照、解析球/柱），绝不来自贴图。遮挡是几何的：线在前景形体处直接断掉。",
+    "圆形放大图（roundel）：双线圆环 + 机械排线的底纹 + 主体周围留白晕；内容按大半径（500 单位）绘制再缩进（demo 实际半径 120）。引线：从部件上的点出发的 0.95px 发丝线，绕开遮挡物（≥34px 余量），根部带一个小号斜体图号。",
+    "手工上色是「纸之上、墨之下」的乘算：几像素的外溢、轻微套色错位、湿边水痕、低频密度抬升、偶发回渗、颗粒感；每个色块从画笔落点处晕开。",
+    "铜版（仅开场出现）：抛光暖金属、抛光发丝痕、柔和反射的窗格；沟槽 = 暗槽 + 朝光侧的亮毛刺。雕刀（菱形钢身、倒角面、蘑菇柄）放低且偏线 ≤15°；卷屑是一条约有收窄的飘带在刀尖前卷起，一条边受光。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 44–80 个字符（约 8–15 个英文词）；标题句最短（44 字符），细节句最长（80 字符）。字幕排布宽度上限 860px（38px 字），最多两行。",
+    "person_and_tense": "第三人称、现在时为主，偶用祈使/邀请（结尾的行动号召）；叙述者是博物学家/策展人，克制、不煽情。",
+    "typical_openers": [
+      "编号/版次式开场（\"Plate seven.\" 这类版号 + 主体名）",
+      "以部件为主语的陈述句（\"Each eye is built from …\"）",
+      "以环境状语起句再落到主体（\"In flight, …\"）",
+      "用一个具体数字或量词做钩子（\"some six thousand facets\"）",
+      "结尾用一个反差量词收束（\"a twelfth of a teaspoon\"）"
+    ],
+    "forbidden": [
+      "第一人称抒情（\"I feel…\"）",
+      "网络化口播腔、感叹号堆叠、营销话术（\"amazing\"、\"you won't believe\"）",
+      "抽象概念名词当主语（该风格只谈可被画出来的实物、部件、位置）",
+      "一句里塞进两个以上并列信息点（每句只承担一层信息）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（博物馆标签式）：版号+系列 → 标题（罗马大写）+ 斜体学名 → 主体成形（轮廓→排线→交叉→暗部） → N 条放大细节，每条走「在哪(部件)→是什么(名称/学名)→一句注解」 → 采集完成 → 静默 → 手工上色 → 锁定终版（图注=行动号召 + 版画家签名） → 衬纸结尾卡。",
+    "beat_durations": "时间轴挂在 96 BPM 网格上（1 拍 = 0.625s，1 小节 = 2.5s）。首条细节 = 9 拍（5.625s），其后每条 = 7 拍（4.375s），细节总数 1–4 条自动重排；细节结束后的固定段：gather 2 拍 → silence 2 拍 → colour 8 拍 → landing 7 拍 → end 7 拍。刻字停留 ≥ max(1.8s, 语音时长 + 0.6s)；刻写注解停留 = 字符数 ÷ 12 + 1 s。字幕：提前 0.1s 上、滞后 0.6s 下。色块间隔 0.42s、每块晕开 1.25–1.6s。",
+    "total_length_range": "主 demo 40.0s（style.json dur=40.0，frame_sec=34.0）；alt 内容 35.6s；STYLE.md 用例表给出 20–60s 的区间（教材图 20–45s，博物馆标签 30–40s，\"一分钟讲…\" 35–60s）。",
+    "silence_policy": "静默是真实存在的：在采集完成与上色之间保留整整 2 拍（demo 实测 25.0–26.25s，1.25s），此时连房间底噪都压到 0.25 倍，全片只留一个极小的声音；上色是静默之后才发生的「奖赏」。"
+  },
+  "tone": "一位安静的策展人或博物学家在解说一件馆藏：语速偏慢（Kokoro bm_fable en-gb，speed 0.92），用词精确、带一点老式印刷品的郑重感；不喊口号、不追问、不设悬念钩子，只是把一件「被认真做出来的东西」逐层讲清楚。",
+  "shot_logic": {
+    "camera_is": "一枚压在图版上的放大镜（loupe over a sheet）——镜头不制造情绪，它只是「看」，把视线引到某个点上，再让位给信息。",
+    "vocabulary": [
+      { "move": "跟随雕刀刀尖（follow the burin tip）", "expresses": "注意力集中在一处；正在制作", "serves": "第一道刻痕；签名" },
+      { "move": "对数拉远（log-zoom pull-out）", "expresses": "这条线原来属于一个更大的整体", "serves": "尺度揭示；给出语境" },
+      { "move": "推向某部件并随其圆形图飞行（push, then ride the roundel）", "expresses": "「在哪」与「是什么」一镜完成", "serves": "不可见的细节；某种机制" },
+      { "move": "以阅读倍率沿纸面平移/俯仰（tilt/pan at reading zoom）", "expresses": "标签按顺序读出", "serves": "零件表；一段海岸线" },
+      { "move": "一边拉远一边有东西飞过（pull back while something flies）", "expresses": "所有元素就位后的相互关系", "serves": "加速；总结" },
+      { "move": "锁死机位，或 ≤2% 的呼吸式轻推", "expresses": "图版作为一件文献", "serves": "阅读时间；颜色在动" },
+      { "move": "沿铜面掠射视角（raking view across the copper）", "expresses": "沟槽作为深度", "serves": "工艺的代价" },
+      { "move": "从镜像铜版切到真实印张（mirrored copper → true proof）", "expresses": "反转/真相", "serves": "被隐藏的事实；前后对比" }
+    ],
+    "transitions": [
+      "揭起印张（the proof pulled）：纸从铜上掀起，镜像铜面变成正的纸面",
+      "盖下衬纸（tissue guard laid over）",
+      "局部擦掉重刻（a region burnished out and re-cut）",
+      "换一张新纸上机（new sheet on the bed）"
+    ],
+    "forbidden": [
+      "溶解/叠化（dissolve）、划像（wipe）等 UI 式转场",
+      "任何元素的淡入/滑入（fade-in / slide-in）——文字要么被「刻」出来，要么被「写」出来",
+      "无来由的运镜（镜头运动必须由「看什么」驱动）"
+    ]
+  },
+  "idioms": [
+    "刻制顺序即动画：轮廓 → 第一层排线扫过形体 → 交叉 → 暗部/发丝/点刻，一帧帧「长」出来。",
+    "排线的三趟法（three passes）：形体靠一趟趟叠出体积感。",
+    "圆形放大图作为信息载体：先刻环、擦净、放大重刻，再带着引线飞到页边，落地时标签才刻上。",
+    "手工上色作为高潮，且一定发生在「所有信息都已就位」之后，读起来是奖赏而不是新信息。",
+    "终版图版 = 海报：所有标签、图注、签名一次锁定。",
+    "长笔画由镜头跟随（首条轮廓 5.4s，第 0 帧就已刻了约 1/3，保证没有空帧）。",
+    "自然尺寸对照：空槽位放一个真实比例的小图，交代「实物有多大」。"
+  ],
+  "atmosphere": "一间安静的老式工作室 / 博物馆库房：有纸的味道、铜的冷、墨的干；光线从左上斜进来，尘埃在光柱里。整体是「耐心、精确、值得被保存」的气质，而不是戏剧性。",
+  "sound_palette": {
+    "instruments": [
+      "羽管键琴（harpsichord）",
+      "弦乐四重奏（小提琴/中提琴/大提琴/低音提琴）",
+      "可选：独奏大提琴或维奥尔琴、鲁特琴、室内管风琴、玻璃琴（冷调主题）"
+    ],
+    "foley": "按材料分层：纸（揭纸的噼啪、衬纸轻拍、薄纸沙沙、整张纸的呼啦声）；压印机（滚筒低鸣、闷响）；铜与钢（2.6–9kHz 带通雕刀嘶声 + 颤振 + 1.18/2.31/3.47kHz 版材共振，卷屑 5–9kHz 小叮声，抬刀金属嗒声，画圆刻划，擦亮摩擦）；墨与水（笔尖刮擦、刻字的点状嗒声、水滴 plip 与湿笔唰声）。排线 = 每一趟都更密的微刮擦。",
+    "mix_rules": "旋律比人声高一个八度；音乐在人声下压到 ~50%（弓弦压得最少）；整体 −14 LUFS。三段分层：房间底噪 + 贴画面事件的动作声 + 巴洛克室内乐。刻制段落全用拨弦（pizzicato，对应雕刀的小而准的切），密度随趟数递增；每个圆形图 = 刻环时一声高音「叮」+ 飞行时的上行线 + 落地时一声低拨弦；上色前一段跑动戛然而止，然后真正的静默（1.25s）；上色是弓弦第一次上弓；终版图版落在 V–I 终止式。"
+  },
+  "variation_space": "可自由决定：主题、细节条目与数量（1–4 条，时间轴自动重排）、信息顺序、开场、结尾、镜头路径、颜色（哪一块上色、上什么色、或完全不上色）、节奏、配乐。STYLE.md 明确列出远离 demo 的结构（同一版的多重状态/一册图版/一堂解剖课）、开场（从终版擦回第一条线／1× 纸面上先刻标题／掠过空白铜面）、结尾（版与印张并置／单独的自然尺寸小图／一张空白新纸落上纸堆）。",
+  "taboos": [
+    "任何「填灰」——色调必须由线构成，不能出现灰色色块。",
+    "等宽线（读起来像钢笔或矢量图）——每条线必须鼓胀收尖。",
+    "文字或图形淡入、滑入。",
+    "使用溶解/划像等非印刷工艺的转场。",
+    "不透明色、给文字/边框/纸面上色（颜色只能是主体上的透明水彩）。",
+    "直接照抄任何一张真实的图版、姿势、边框或标题。",
+    "复用示例的故事、叙事弧、镜头、道具或时长。"
+  ],
+  "asset_contract": {
+    "content_fields": "content.json 驱动每一个字、数字和颜色。字段表：title(string ≤22 字符，超长会顶破学名行宽，需在 film.js 里降到 44px)；latin(string ≤30，超长会顶到 9.4s 的首次推镜前读不完)；plate_no(≤10)/series(≤48，series 超过 ~48 会与标题相撞)；subject(\"bee\"|\"scallop\"，未知则回退 bee)；details[]({name,latin,note,focus}，1–4 条，>4 被忽略，不足则空槽位显示自然尺寸图)；details[].focus(该主体 focus 字典里的键，无对应放大图则对主体本身做实时放大)；details[].note(≤60 字符，2 行 29px，第 3 行会碰到下一个圆形图)；colors[]({region,color}，未知 region 被跳过，顺序即上色顺序)；caption(≤50，须在 4.4s 终版里满足 chars/12+1s)；signature.left/right(短)；nat_size_label(≤16)；voice.voice/speed(0.8–1.0)/lines[]({id,text,asr?}，id 为 title/d1..dN/close，单行 ≤4.5s)；end.film_title/style_name/credits[](credits ≤3 行、每行 ≤35 字符)。",
+    "new_subject_contract": "新画面主体是一个模块，必须导出 {ink, regions, focus} 三个东西：ink 是 B.Ink 描边库（且必须以一条名为 ol0 的首笔画打头，镜头跟随的就是它）；regions 是 {regionName: {path, polys, bbox}} 供上色和引线避让使用；focus 是 {focusKey: {x,y,r}} 供放大圆形图取景。参见 subjects/scallop.js。",
+    "timeline_contract": "时间线模块（film.js）必须导出 makeFilm(C, voiceDur) → {render, DUR, T, EV, subs, dets, cam}。其中 render(ctx,t) 是逐帧绘制；DUR 是总时长；T 是各段落秒数表；EV 是按时间排序的事件数组（供 events.mjs 导出 events.json 驱动声音）；subs 是字幕条；dets 是细节实例。页面契约由 main.js 暴露 window.READY / window.render(t) / window.DUR / window.EV。",
+    "event_vocabulary": "事件表的 type 与消费者：burin(→mix.py 雕刀嘶声) / lift(抬刀嗒声) / press(压印机滚筒+闷响，J-cut 提前 0.35s) / peel(揭纸噼啪) / hatch(排线微刮擦) / pass{g}(每一趟的开场轻刮) / title{n,dur}(标题刻字的点状嗒声) / push{i,role,dur}(推镜的呼啸) / ring(刻圆环) / burnish(擦亮摩擦) / cut{i}(细节的微刮擦) / travel(圆形图飞行的纸呼啸) / land{i}(落地纸拍声) / letters(标签刻字点声) / quill{i}(注解的笔尖刮擦 ~4.2Hz) / natsize(自然尺寸图刮擦) / silence{until}(静默段) / drop{region}(上色水滴+湿笔) / landing(图注落地) / dot(签名小点) / tissue(衬纸沙沙) / vo{id,dur}(人声)。全部由 film.js 里 EV.push 产生，再由 tools/events.mjs 序列化成 events.json。"
+  },
+  "evidence": [
+    "styles/engraving/STYLE.md:8-14 —— 本质三条硬规则与「不是什么」",
+    "styles/engraving/STYLE.md:18-24 —— 纸张/墨/线宽/鼓胀律/单光源/圆形图/手工上色/铜版的材料规则",
+    "styles/engraving/STYLE.md:28-31 —— 颜色逻辑（只有透明水彩）",
+    "styles/engraving/STYLE.md:35-37 —— 字体与字幕规则，含 chars/12+1s",
+    "styles/engraving/STYLE.md:41-44 —— 刻制顺序即动画、圆形图飞行、禁止淡入滑动",
+    "styles/engraving/STYLE.md:48-61 —— 镜头词汇表与允许的转场",
+    "styles/engraving/STYLE.md:65-69 —— 声音分层、乐器、静默、混音 −14 LUFS",
+    "styles/engraving/STYLE.md:101-117 —— 变化空间与用例表（时长区间、停留规则）",
+    "styles/engraving/STYLE.md:117 —— 「换 content.json 重跑只是技术检查，不是做片子的方式」",
+    "styles/engraving/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/engraving/DEMO.md:12 —— demo 结构与 40s 段落",
+    "styles/engraving/DEMO.md:36-47 —— 逐拍镜头表与运动时长（首笔画 5.4s、圆形图抬升 30px、半径 120、色块 1.25–1.6s/间隔 0.42s）",
+    "styles/engraving/DEMO.md:51-56 —— 配乐三层、96 BPM/D 大调、静默位置、foley 参数、叙述者 bm_fable 0.92",
+    "styles/engraving/DEMO.md:60-74 —— 色值、线宽、光向、字体、圆形图、引线、上色参数、铜版参数",
+    "styles/engraving/DEMO.md:101-121 —— content.json 字段表与 build 步骤",
+    "styles/engraving/DEMO.md:138-183 —— 引擎参考与函数表",
+    "styles/engraving/demo/film.js:14-16 —— W/H/BEAT=0.625、PLATE/BORDER/SLOTS/RR=120",
+    "styles/engraving/demo/film.js:28-38 —— 时间轴计算（9 拍/7 拍、gather/silence/colour/landing/end 各 2/2/8/7/7 拍）",
+    "styles/engraving/demo/film.js:42-50 —— ink.schedule 各组与 conc 值",
+    "styles/engraving/demo/film.js:64-66 —— 细节三段相对时间（A 长/B 俯仰/C 拉远再推）",
+    "styles/engraving/demo/film.js:96-104 —— 上色 alpha/间隔 0.42/时长/spill",
+    "styles/engraving/demo/film.js:108 —— 语音兜底时长 = max(1.6, chars/14)",
+    "styles/engraving/demo/film.js:122-123 —— HOOKZ=4.2 与跟随镜头",
+    "styles/engraving/demo/film.js:196-247 —— 标题/版号/系列/引线/圆形图/自然尺寸/图注/签名的绘制与时机",
+    "styles/engraving/demo/film.js:341-353 —— 事件表 EV 的全部 type",
+    "styles/engraving/demo/mix.py:34-42 —— 雕刀带通 2.6–9kHz、版材共振 1.18/2.31/3.47kHz",
+    "styles/engraving/demo/mix.py:139-150 —— 三 stem 分轨与 duck 0.5、弓弦压得最少",
+    "styles/engraving/demo/music/score.py:2-4 —— D 大调/96 BPM/4/4/1 拍 0.625s/16 小节 = 40.0s、输出三 stem",
+    "styles/engraving/demo/build.sh:1-25 —— 完整构建链（TTS→检查→配乐→事件→混音→cue 检查→字幕→帧→封装→剧照）",
+    "styles/engraving/demo/content.json:1-100 —— 示例内容字段与实测数值",
+    "styles/engraving/style.json:16-17 —— frame_sec 34.0 / dur 40.0"
+  ]
+}

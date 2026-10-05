@@ -1,0 +1,152 @@
+{
+  "slug": "dataviz",
+  "name_zh": "数据叙事（Data Storytelling）",
+  "essence": "一部「图表本身就是电影」的片子：每一个标记都是一个真实的数，每一次运动都是一个有意义的图表操作（一个点落下来、一条轴长出来、量程改变、一个系列变形、一条批注被钉上）；数据是真实的、开放授权、可追溯，你改的是取景，**永远不改数字**。让它是故事而不是信息图的，是三层：人的尺度（手写批注钉在标记上）、表演者（一支真的红蓝铅笔在画每一个标记）、可听化（每个标记是一个音高，趋势在被读到之前先被听到）。它不是仪表盘（一次只讲一个想法）、不是带图的发布会（没有幻灯片）、也绝不是装饰。",
+  "materials_and_rendering": [
+    "纸：暖米色（`#F6F3EC`），固定种子的纤维噪声 + 世界空间里的淡点阵（24px `#E4DDCF`）；墨是暖近黑（`#2B2723`），网格与零线用暖浅灰（`#DDD6C9` / `#BDB4A5`），刻度数字用 IBM Plex Mono。",
+    "标记：数据点带一圈细墨环，让浅色值在米色上仍然可见；落点有一个短促的 pop（0.25s、×1.55）和一圈细涟漪；标记间隔小于 ~0.1s 时抑制涟漪。",
+    "手写（Caveat）用铅笔：逐字抖动（±1.7° 旋转、±2.5% 基线）、石墨颗粒（16% 像素被挖空）、笔尖在 x-height 上跳动地写；引线是抖动的曲线，末端是一个**不闭合**的圈套住标记。",
+    "红蓝铅笔：六角笔身、一半蓝一半红、削尖的木锥；只露出笔尖那一端、从右下角进来；抬起越高影子越远越软；笔尖锐、笔身软。",
+    "版面：一个固定在世界空间的绘图框、一个给早期批注的「记忆区」、每条批注钉在**数据空间**（值 + 像素偏移，所以重量程也不破坏布局）、底部一条给图注的带。",
+    "量程与诚实：颜色只编码一件事——值；发散数据用一条以有意义的参照期均值为中心、对称跨度的色带（ColorBrewer RdBu 家族），没有自然中心的数据用单条顺序色带；浅的值就保持浅，**绝不拉伸色带来把变化做大**。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白是图注式的陈述句：demo 5 行实测 38–70 个字符，最短是结论句 \"The next summer hasn't been drawn yet.\"（38 字符），最长是一句把人的尺度与数据绑在一起的句子 \"This summer, she turned one hundred. It was the warmest ever measured.\"（70 字符）；多为一句 8–16 个英文词。字幕就是**图的图注**（Newsreader 42px、墨色、与图左对齐、≤2 行、上方一条发丝线、还有一个小号等宽 kicker 标出「目前画到的年份区间」），词按各自的时间戳在纸色带上浮现；停留 ≥ max(1.8s, 语音 + 0.6s)。",
+    "person_and_tense": "第三人称、现在时为主，偶尔回到过去时讲一个人的一生；叙述者是一位克制的数据记者/纪录片旁白，让数字和批注自己说话，不煽情、不评论。允许在关键处点出「她/他」这个人的尺度。",
+    "typical_openers": [
+      "先定义标记再讲意义（\"Each dot is one summer: the whole planet's average temperature.\"）",
+      "用一个时间跨度起句（\"For fifty years, her summers barely moved.\"）",
+      "用转折词推进趋势（\"Then the dots began to climb, and they never came back down.\"）",
+      "把人的尺度与极值绑在一起（\"This summer, she turned one hundred. It was the warmest ever measured.\"）",
+      "用一句关于未知的收束（\"The next summer hasn't been drawn yet.\"）"
+    ],
+    "forbidden": [
+      "第一人称抒情与评论（数据自己说话）",
+      "营销腔、感叹号堆叠、\"amazing\"/\"shocking\" 式话术",
+      "在急速段、静默或变形段压上旁白",
+      "念出超过画面所画/所印的数字（旁白声称的每个事实都必须被画出来并打印核对）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一张图一次讲完）：冷开场在一个点上 → 标题拉远（下垂线变成 x 轴、标题在图上排字） → 早年稀疏的点 → 稳定的中段 → 加速（批注变密、铅笔变快） → 破框（笔一顿、翻到红端） → 急速 → **一切在半拍之前停住；这是全片唯一的一次硬切，切进静默** → 最后一个数据点单独出现 → 整条系列在一个视图里 → 变形为条纹 → 更长的真实记录 → 一个给未知值的空槽（\"Next summer?\"） → 片尾卡住在这个空槽里。",
+    "beat_durations": "时间挂在 90 BPM、4/4 网格上（1 拍 = 0.667s，1 小节 = 2.667s，`timeline.js:3`）。节奏用「细分拍子」加速而不是改速度：7 个点在四分音符上 → 24 个在八分 → 40 个在十六分 → 27 个在三十二分（每 2 帧一个点，`timeline.js:8-15`）。关键拍（k）：出生 1、写 1926 [1.4,3.3]、轴 [4,5.5]、标题 [4.2,5.1]、网格 [8.4,10]、破框 40、惊跳 [40.0,40.5]、翻红 [40.5,41.0]、重量程 [41,41.5]、停 46.5、2026 单独 48、拉远 [51,55]、变形 [56,57]、尺度 [60,64]、静默 [64,65]、空槽 [65,66]、片尾 [68,75]；DUR = 75 拍 = 50.0s。字幕停留 = max(1.8s, 语音 + 0.6s)。",
+    "total_length_range": "主 demo 50.0s（style.json dur=50.0，frame_sec=42.0）；DEMO 明确该片长 50.0s。适合 30–90s 的数据短片；101 个点的序列适配 60–150 点。",
+    "silence_policy": "静默是工具：最后一个点之前 1.0s 是**真的数字静默**（所有层），空槽之前 0.67s 是近静默。它们之后的第一声最重要——最后一个「嗒」加它的音符，然后是空槽的第一笔。全片唯一一次硬切（`stop` = 46.5 拍）切进静默。"
+  },
+  "tone": "一位克制、精确、可被信任的数据记者：句子是图注式的陈述，把真实数字讲清楚，把「人」的尺度放在数字旁边；不夸张、不喊口号、不把变化做大。铅笔本身有表演——它会急促、会颤抖、会惊跳、会犹豫、会退场。",
+  "shot_logic": {
+    "camera_is": "一台在**一整张纸**上移动的 2D 摄影机 `{x, y, zoom, roll}`。一部片就是一镜到底，硬切很少且有意义。它表达的是一种「可以放大到一条命、也可以拉远到一整个世纪」的世界。",
+    "vocabulary": [
+      { "move": "极特写在一个标记上、跟着它的引线", "expresses": "一个事实、一条命", "serves": "一个单独的案例；一个有名有姓的人" },
+      { "move": "先给全图、再俯冲到某个标记", "expresses": "先看模式、再看个案", "serves": "一个熟悉的趋势；一个要被纠正的误解" },
+      { "move": "随着轴从标记里长出来而拉远", "expresses": "框随单位一起到来", "serves": "给一个度量命名；扩大一个断言" },
+      { "move": "跟踪铅笔，最新的点在画面宽度的 ~60%", "expresses": "进度：过去在后面、未来在前面", "serves": "一条时间序列；一场比赛；一个队列" },
+      { "move": "随着上升的数据升高机位、荷兰角慢慢进来", "expresses": "升级、不安", "serves": "失控的增长；一笔债" },
+      { "move": "2 帧内推近 + 衰减的抖动 + 重量程时的一顿", "expresses": "意外、被打断的框", "serves": "一个离群值；一次崩盘" },
+      { "move": "快速拉出 + 侧倾 + 恒定的微小震颤", "expresses": "一阵急冲", "serves": "一次暴涨；一场连锁；一次恐慌" },
+      { "move": "锁死机位", "expresses": "变形本身就是运动", "serves": "一次变形；一段慢读" },
+      { "move": "停在一个标记上再拉远", "expresses": "整体里的那一部分", "serves": "一个裁决；给出语境" },
+      { "move": "拉远并平移以加入更多真实数据", "expresses": "切换尺度", "serves": "更长的记录；清单的其余部分" },
+      { "move": "横移过记忆区里的批注", "expresses": "回忆", "serves": "一段生平；一串事件" }
+    ],
+    "transitions": [
+      "轴生长（axis growth）：坐标轴从标记里长出来",
+      "拉远 / 重量程（pull-back / rescale）：框随数据改变",
+      "变形（morph）：一个系列错落地扫入新的形态",
+      "一个格子变宽成下一帧（frame within frame）"
+    ],
+    "forbidden": [
+      "淡出到空白、溶解（dissolve）",
+      "不是图表操作的转场（转场必须是轴生长、拉远、重量程、变形、格子变宽之一）",
+      "在签名式图表操作或静默上压字幕",
+      "把旁白放在急速段、静默或变形上"
+    ]
+  },
+  "idioms": [
+    "一个标记 = 一个事实（one mark = one fact）。",
+    "轴随故事生长（axes grow with the story）：y 轴在旁白第一次给单位命名时到来。",
+    "钉住的批注（pinned annotations）：内容与颜色承载叙事弧（蓝=记忆与人、红=记录与警告）。",
+    "打破画框（breaking the frame）：图表必须让出空间；撕裂的边缘留下伤疤。",
+    "编码变形（encoding morph）：柱变成华夫图、地图变成排名、线变成斜率——整体的揭示。",
+    "尺度切换（scale switch）：一个值 → 该系列 → 更长的真实记录，**绝不外推**。",
+    "空的下一个格子（the empty next cell）：一个虚线槽，留给没人知道的那个值。",
+    "可听化即音乐：音高 = 值、节奏 = 时间密度；趋势先被听到、再被读到。"
+  ],
+  "atmosphere": "一张铺在桌上的暖米色纸、一支红蓝铅笔、一堆手写便签：有纸和石墨的味道；安静、耐心、被认真对待。整体是「诚实、可追溯、有人的温度」的气质，而不是冷冰冰的仪表盘。",
+  "sound_palette": {
+    "instruments": [
+      "环境声跟随批注唤起的地点（J-cut 进、L-cut 出）：房间底噪 → 傍晚蟋蟀 → 海（在 \"1933\" 前 J-cut、后 L-cut）→ 随温度变得更响更密的蝉（爬升前 J-cut）→ 静默后的开阔风声 → 房间底噪",
+      "床：失谐锯齿 pad、软 kick、噪声沙锤、低通 hat、正弦 sub、采样保持 blip、drone；和声随数据变暗或变亮（demo：pad Dmaj9 → G/D → D–Bm–G–A → Bb/D–Dm → 半音簇；静默后 D 空五度、变形的 101 点 glissando、Gmaj7#11、片尾卡下第一个点的音）"
+    ],
+    "foley": "石墨、纸与木头：笔尖在纸上的「嗒」、手写的刮擦、画轴的尺子嘶声、破框时纸张被戳破、翻笔时木头咔哒、重量程的棘轮齿、变形时纸张扫过。签名动作各有其声（最后一个点的「嗒」是全片最干净最干的一声）。",
+    "mix_rules": "音乐在人声下压 ~−11 dB（`STYLE.md:82`、`DEMO.md:47`；`mix.py` 文档串写作 ~−8 dB）、蝉声 −6 dB；旁白在 300–4000Hz 频段的 SNR 8.6–16 dB；整体 −14 LUFS、无颗粒。可听化就是音乐本身：`midi = 62 + (v + 0.4) × 17`，低于中心的音吸附到 D 大调五声；只在最后 ~15 个点上失谐（5→45 音分）；静默前最后一个音最不协和（最大失谐 + 小二度影子），静默后最后一个点是全片最干净最高的音。"
+  },
+  "variation_space": "可自由决定：数据集、图表类型、人的尺度、批注、开场、结尾、镜头路径、节奏与静默。远离 demo 的方向——结构：一场排名赛（柱子往上爬并互相超越；一根柱子是主角；一个新手从下方破框而入）；一张地图变成一个计数（点随事件聚到地图上，然后在一个变形里落成一张人数单位图）；之前→之后的对话（两年以斜率图面对面，一条线留着没画完）。开场：一张已经画完的图（整个模式已经画好，片子倒着讲）；先给物件再给轴（一支铅笔画出被测量的东西——一张票、一只鞋——它变成第一个标记）；先给问题（一张只有单位和一句手写问题的空图，铅笔悬着）。结尾：一个标记、很近（落在一个单独的值和它的批注上，绝不给全图）；回到物件（图表折成它所测量的那个东西的画）；改标题（铅笔划掉标题里的一个词、写上正确的那个）。",
+  "taboos": [
+    "仪表盘（一次只讲一个想法）",
+    "带图表的发布会（没有幻灯片）",
+    "纯装饰（每个标记必须是真实的数）",
+    "改数字来制造戏剧性（只改取景，不改数字）",
+    "把色带拉伸来把变化做大",
+    "外推（尺度切换只能切到更长的真实记录）",
+    "淡出到空白、溶解等非图表操作的转场",
+    "照抄任何真实图表、版面或字体"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一个数、每一句与每一色。要素：真实数据集（开放授权、可追溯；demo 用 NASA GISTEMP v4 的 JJA 列，`data/GLB.Ts+dSST.csv` + `tools/extract_data.py`）；`timeline.js`（90 BPM 网格、年份→拍映射、每个关键拍、图表几何，是唯一真值）；`lines.json`（每行 {id, t, text, voice, speed, asr?, hold?}，demo 用 af_alloy、speed 0.92、5 行；whisper 把数字写成阿拉伯数字，故 `asr` 写 \"For 50 years…\"）；批注（内容 + 颜色 + 数据空间锚点）；强调色（可绕过色带，给非数据标记）。",
+    "new_subject_contract": "新画面元素用引擎画：任意折线走 `pencilStroke(g, pts, {color,width,progress,seed,wobble,passes,grain})`（铅笔 + 写入手感，返回笔尖）；任意闭合形状走 `inkShape(g, path, {fill|value, hatch, progress})`；任意路径采成点线序列走 `plotShape`；把任意闭合形状填成条纹走 `stripesFill`；手写 `handText`；印刷字 `setType`；数据点 `dataDot`；点→条纹变形 `morphMark`；批注几何 `leader / ringPath / wavePath / heartPath / bracketPath / sparklePath / quadPath`；空槽 `dashedCell`；铅笔 `drawPencil`；字幕 `caption`。",
+    "timeline_contract": "`timeline.js` 是**唯一真值**：导出 `BPM/B/BAR/T`、`LIFE0/LIFE1`、`yearK(y)`、`lifeYears()`、关键拍 `K`、`DUR`、图表几何 `U/X/BOX/BAND`。`film.js` 导出 `setData(d)`、`setCaptions(lines,dur,words)`、`subs()`、`renderFilm(g,t,opt)`、`buildEvents()`；页面契约 `window.READY / window.render(t) / window.DUR / window.EV`。",
+    "event_vocabulary": "事件由 `film.js` 的 `buildEvents()` 产生（供 mix.py）：每个数据点一个 `dot_{year}`（落点「嗒」+ 可听化音符）、`tap2026`（最干净最干的「嗒」）、`celltap`（空槽的第一笔）、破框/惊跳/翻红/重量程/变形/静默等命名事件。`tools/cuecheck.py` 用 107 个 cue 对配乐校点（最大偏差 0.03ms）。"
+  },
+  "evidence": [
+    "styles/dataviz/STYLE.md:8 —— 本质（图表即电影、改取景不改数字、数据真实可追溯）",
+    "styles/dataviz/STYLE.md:12-21 —— 按数据选图表类型（表）",
+    "styles/dataviz/STYLE.md:23 —— 三层：人的尺度 / 表演者 / 可听化",
+    "styles/dataviz/STYLE.md:25 —— 不是什么（非仪表盘/非带图发布会/非装饰）",
+    "styles/dataviz/STYLE.md:29-33 —— 材料与渲染（纸/墨/标记/手写/红蓝铅笔/版面）",
+    "styles/dataviz/STYLE.md:37-40 —— 颜色逻辑（只编码值、诚实胜过戏剧、两色铅芯的含义）",
+    "styles/dataviz/STYLE.md:44-46 —— 字体与字幕（字幕=图注、Newsreader、kicker、停留规则）",
+    "styles/dataviz/STYLE.md:50-54 —— 运动质量（细分拍子加速、铅笔表演、重量程、变形、无淡出）",
+    "styles/dataviz/STYLE.md:58-74 —— 镜头语法表 + 取景（冻结窗格）",
+    "styles/dataviz/STYLE.md:78-82 —— 声音（环境/拟音/可听化/床/静默/混音）",
+    "styles/dataviz/STYLE.md:88-94 —— native moves（一个标记=一个事实/轴生长/钉批注/破框/变形/尺度切换/空槽）",
+    "styles/dataviz/STYLE.md:113-117 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/dataviz/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/dataviz/DEMO.md:8 —— demo 用 NASA GISTEMP v4 的 JJA 真实数据",
+    "styles/dataviz/DEMO.md:14 —— 故事形状（冷开场→…→空槽→片尾卡）",
+    "styles/dataviz/DEMO.md:16 —— 101 个点、3 条蓝批注、2 条红批注、一次破框、最后一个点给静默",
+    "styles/dataviz/DEMO.md:20-32 —— 逐拍镜头表",
+    "styles/dataviz/DEMO.md:38 —— 运动数值（90 BPM、细分拍、重量程四步、惊跳翻笔、变形）",
+    "styles/dataviz/DEMO.md:42-49 —— 配乐结构（可听化公式、失谐、床、静默、混音、人声）",
+    "styles/dataviz/DEMO.md:53-60 —— 调色板与道具（纸/墨/点/色带/手写/铅笔/绘图框/字幕）",
+    "styles/dataviz/demo/timeline.js:3 —— BPM 90 / B / BAR",
+    "styles/dataviz/demo/timeline.js:8-15 —— yearK：四分→八分→十六分→三十二分加速",
+    "styles/dataviz/demo/timeline.js:19-35 —— 关键拍 K（含 stop 46.5 = 全片唯一硬切）",
+    "styles/dataviz/demo/timeline.js:36 —— DUR = T(75) = 50.0s",
+    "styles/dataviz/demo/timeline.js:39-42 —— 图表几何 U/X/BOX/BAND",
+    "styles/dataviz/demo/engine.js:9-13 —— 调色板 P（纸/墨/蓝/红/石墨/木）",
+    "styles/dataviz/demo/engine.js:15-16 —— RAMP 发散色带（ColorBrewer RdBu 家族）",
+    "styles/dataviz/demo/engine.js:29 —— valueColor（centre 0.22 / half 0.85）",
+    "styles/dataviz/demo/engine.js:78 —— drawPaper（纸 + 点阵）",
+    "styles/dataviz/demo/engine.js:102 —— pencilStroke（任意折线的铅笔）",
+    "styles/dataviz/demo/engine.js:137 —— ringPath（不闭合的手画圈）",
+    "styles/dataviz/demo/engine.js:177 —— handText",
+    "styles/dataviz/demo/engine.js:210 —— dataDot（落点 pop + 涟漪）",
+    "styles/dataviz/demo/engine.js:231 —— morphMark（点→条纹变形）",
+    "styles/dataviz/demo/engine.js:244 —— dashedCell（空槽）",
+    "styles/dataviz/demo/engine.js:279 —— drawPencil（红蓝铅笔）",
+    "styles/dataviz/demo/engine.js:322 —— caption（图注字幕）",
+    "styles/dataviz/demo/engine.js:380 —— inkShape（任意闭合形状）",
+    "styles/dataviz/demo/film.js:68-79 —— trackPose（跟踪铅笔、最新点 ~60%）",
+    "styles/dataviz/demo/film.js:80-117 —— camAt（2D 相机路径）",
+    "styles/dataviz/demo/film.js:130-131 —— 右对齐批注的铅笔「跳」",
+    "styles/dataviz/demo/film.js:298 —— renderFilm",
+    "styles/dataviz/demo/film.js:453 —— buildEvents",
+    "styles/dataviz/demo/music/score.py:33-34 —— pitch：midi = 62 + (v + 0.4) × 17",
+    "styles/dataviz/demo/music/score.py:70-71 —— 失谐只在最后 ~15 个点；2025 最不协和",
+    "styles/dataviz/demo/mix.py:1-3 —— 三层（环境/拟音/音乐）、音乐 ~−8 dB、两处真静默",
+    "styles/dataviz/demo/mix.py:31-54 —— 铅笔/手写/尺子/破框/木头 拟音",
+    "styles/dataviz/demo/mix.py:102-115 —— 房间/蟋蟀/海/蝉/风 环境",
+    "styles/dataviz/style.json:16-17 —— frame_sec 42.0 / dur 50.0"
+  ]
+}

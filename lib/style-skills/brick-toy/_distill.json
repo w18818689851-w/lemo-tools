@@ -1,0 +1,106 @@
+{
+  "slug": "brick-toy",
+  "nameZh": "积木玩具",
+  "distilledAt": "2026-10-03T08:05:00.000Z",
+  "matchScore": 90,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 20,
+    "typography": 16,
+    "rhythm": 18,
+    "audio": 18
+  },
+  "audioScoreBasis": "满分 20，按「配乐/拟音/响度是否对得上声明特质」评分：配乐为两首 Kevin MacLeod（incompetech.com）CC BY 4.0 曲目，由 edit.py 按小节对齐剪辑，beats npy 下拍与仓库 score.json 吻合到 1e-9，final_hit=51.707、reprise_downbeat_song=66.75736961451247 均精确复现；拟音全部代码合成、按 events.json 111 事件驱动；旁白 8/8 ASR 校验通过；成片响度 I=-13.9 LUFS（目标 -14）、真峰值 -1.52 dBTP（loudnorm input_tp，4× 过采样）——真峰值达标（≤ -1.2 dBTP）。扣 2 分：mux 两遍 loudnorm 输出 -13.9 LUFS 略高于 -14 目标，且中间 mix.wav 真峰值 -0.1 dBTP 贴近上限，裕度偏小。",
+  "defects": [
+    "本 demo 目录没有 build.sh，一键复现只能照 DEMO.md 手动五步走",
+    "本次出片走 --skip-sync，字幕源沿用仓库已提交旧 .srt、未重新生成",
+    "配乐 mp3 与 Monkeys_Spinning_Monkeys_beats.npy 被 .gitignore 排除，只落本地不进版本库；新 clone 未先取源时 edit.py 直接报 LibsndfileError"
+  ],
+  "assetGaps": [
+    "两首配乐 mp3 与 Monkeys_Spinning_Monkeys_beats.npy 被 .gitignore 排除（styles/*/demo/**/*.mp3|wav、styles/*/demo/music/*.npy），只落本地不进版本库——非版权缺口：CREDITS:3-4 已声明 Kevin MacLeod / CC BY 4.0，直链在 incompetech 官方站，新 clone 必须先跑取源步骤",
+    "Kokoro TTS 声线 bm_george（旁白）/ am_adam（对讲）本机需自行生成"
+  ],
+  "limits": [
+    "依赖 three.js + 物理景深 + GTAO + 2× SSAA，必须 GPU；1296 帧 / 6 workers ≈ 590s，重资源",
+    "换主题重跑只验证引擎重排，不等于做出成片",
+    "音频分项当前上限 18/20：配乐/拟音/人声/响度均已实测并对照声明特质，成片真峰值 -1.52 dBTP 达标（≤ -1.2 dBTP）；仅余混流输出 -13.9 LUFS 略高于 -14 目标、mix.wav 真峰值 -0.1 dBTP 贴近上限的微小裕度"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f04.jpg",
+    "f08.jpg",
+    "f12.jpg",
+    "f16.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/brick-toy/STYLE.md",
+    "styles/brick-toy/DEMO.md",
+    "styles/brick-toy/style.json",
+    "styles/brick-toy/demo/story.js",
+    "styles/brick-toy/demo/main.js",
+    "styles/brick-toy/demo/mix.py",
+    "styles/brick-toy/demo/music/edit.py",
+    "styles/brick-toy/demo/music/score.json",
+    "styles/brick-toy/demo/music/score.wav",
+    "styles/brick-toy/demo/music/Monkeys_Spinning_Monkeys_beats.npy",
+    "styles/brick-toy/demo/mix.wav",
+    "styles/brick-toy/demo/voices",
+    "styles/brick-toy/demo/CREDITS",
+    "lib/style-dna/brick-toy.md",
+    "lib/dub-styles.json#brick-toy",
+    "_distill/logs/brick-toy.log"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/brick-toy/brick-toy.mp4",
+    "durSec": 54,
+    "bytes": 24296434,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1296
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": true,
+    "muxEncoder": "nvenc",
+    "audio": {
+      "filmLufs": -13.9,
+      "filmTruePeakDbtp": -1.52,
+      "filmSamplePeakDbfs": -1.687,
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样）；astats 采样峰值 -1.686971 比真峰值低 0.17 dB，不能当真峰值用",
+      "mixLufs": -15.5,
+      "mixLra": 7.9,
+      "mixTruePeakDbtp": -0.1,
+      "scoreWavBytes": 10368044,
+      "mixWavBytes": 10368044,
+      "bpm": 143.5547,
+      "beats": 298,
+      "finalHit": 51.70700000000001,
+      "repriseDownbeatSong": 66.75736961451247,
+      "voicesAsrOk": "8/8",
+      "loudnormPasses": 2,
+      "musicLicense": "Kevin MacLeod (incompetech.com) — CC BY 4.0"
+    },
+    "warnings": [
+      "该 demo 没有本编排器支持的字幕生成器，.srt 沿用仓库旧文件",
+      "配乐 mp3 与 beats npy 被 .gitignore 排除，只落本地不进 git；新 clone 需先取源"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.52,
+      "integratedLufs": -13.93,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 6.9,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.686971
+    }
+  },
+  "resolvedDefects": [
+    "composition −3（原缺陷）：无 aspects 声明，产品默认 9:16 硬渲时右侧约 43.75% 画面丢失、下方黑边（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→20，matchScore 87→90（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

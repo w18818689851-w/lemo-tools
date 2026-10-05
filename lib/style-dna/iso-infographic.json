@@ -1,0 +1,142 @@
+{
+  "slug": "iso-infographic",
+  "name_zh": "等距信息图（Isometric Infographic）",
+  "essence": "一张「会动的系统图」：真正的等距投影（轴 30°、无透视、无轮廓线，形体只靠每个面的三档色调区分），信息图的家具（引线、标签针、剖切线、剖面阴影线、追踪环、图例、路线）都长在世界里，数字由重复的图标（Isotype）搭出来而且要对得上；整个系统坐在一块漂浮的板上，板边露出剖面（土层、水柱、楼层、管道）。它不是低多边形 3D（没有透视、没有三档面调以外的光照）、不是扁平 2D 讲解片（所有东西都有等距厚度）、不是蓝图（是色块，不是蓝底线稿）。",
+  "materials_and_rendering": [
+    "投影：轴 30°，`sx = (x − y)·cos30°·k`、`sy = ((x + y)·½ − z)·k`；x 向右下、y 向左下、z 向上；画家深度 = x + y + z。所有图元入队、按深度排序后一次 flush（`engine.js:39-98`）。",
+    "每个面三档色调，由法线决定：顶亮、左（+y）中、右（+x）暗。由一个基色派生：顶向暖白混 ~20%，暗侧向冷暗 `#231A2C` 混 ~22%，所以阴影偏冷（`engine.js:26`）。",
+    "墨线（2px）只用于信息图元素：引线、标签针、剖切线、追踪环、路线、标签（`STYLE.md:19`）。",
+    "板：漂在浅底上，带淡淡的等距点阵与柔和模糊阴影；板的前两个面露出剖面（土层、水柱、楼层、管道）。",
+    "复合件（带灌木的梯田、压在船上的吊车）作为**一个有序图元**绘制，或给深度偏移；通用画家排序在它们身上会失效（`STYLE.md:21`）。",
+    "人物：极简立牌（圆头、锥形双色身体、粗手臂线、帽子或头发做身份、无脸），12fps 步进（`engine.js:346-372`）。",
+    "手/物件的特写：扁平棱面 + 三档色调，与方块同一套逻辑。",
+    "按缩放的 LOD：高倍时跳过细小的世界细节，按缩放把高物体淡入，拉远时不会有一个巨物扫过画面（`STYLE.md:24`）。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 20–61 个字符（约 4–12 个英文词）。demo 6 行里最短 20 字符（\"Eighteen days at sea.\"），最长 61 字符（\"Dried in the sun, then packed with four hundred thousand others.\" / \"Eleven thousand kilometres, from one pair of hands to yours.\"）。字幕是一张地图标签卡：Jost 500 42px、底居中、距底 64px，底部 ~170px 保持清空；停留 ≥ max(1.8s, 语音 + 0.6s)，行与行、与标题、与片尾卡都不重叠。",
+    "person_and_tense": "第三人称 + 现在时为主，也可用第二人称直接问观众（\"How far did your coffee travel?\"）。叙述者是清晰友善的讲解者（explainer），每句只讲一个事实。",
+    "typical_openers": [
+      "用一个问句开场（\"How far did your coffee travel?\"）",
+      "以「它原本是什么」起句（\"It began as a cherry on a hillside, with two seeds inside.\"）",
+      "以过程动词起句（\"Dried in the sun, then packed with…\"）",
+      "用一个极短的量化事实做钩子（\"Eighteen days at sea.\"）",
+      "以「你」收束（\"Somewhere in here is yours.\"）"
+    ],
+    "forbidden": [
+      "第一人称抒情与内心独白（该风格靠图标、数字和路线承载情节）",
+      "网络口播腔、感叹号堆叠、营销话术",
+      "抽象概念名词当主语（只谈能被画成等距图形的东西）",
+      "一句里塞进两个以上并列信息点（一个站点 = 一个动作 + 一个标签 + 一个数字）",
+      "含糊的量词（该风格必须能数、能加）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一次跨一块板的旅程）：极特写（主体落在手里，挂一个 0 km 的标签）→ 拉远到第一站与标题 → 数字一站一站长大（2 粒种子 → 一袋 40 万粒 → 14000 个集装箱），主体被淹没 → 在最挤的地方穿过嵌套剖面下潜去找它（静默，全片只剩它有颜色）→ 全片最响的一声打断静默、镜头猛地拉回（时间跳变藏在下潜里）→ 转化站、第二段静默、温和的收束 → 回响（同样的特写构图，另一只手、另一个物件，标签写总数）→ 拉远到整块板。",
+    "beat_durations": "时间挂在 100 BPM 网格上（1 拍 = 0.6s，1 小节 = 2.4s；转成 80 BPM 后 1 拍 = 0.75s）。关键锚点（timeline.js 的 TL）：SNAP 1.5、TITLE0 5.4、HARV_LAB 8.1、INSET0 8.4、CUT 9.3、DRY0 12.0、SACK 15.0、JCUT_PORT 17.4、PORT0 18.0、CASCADE 21.6、SEA0 22.8、FF0 25.2、DIVE0 27.6、BOX_CUT 28.8、SACK_CUT 29.4、SIL0 30.0、HORN 33.6、ROAST0 36.0、CRACK0 38.4、CAFE0 40.8、GRIND 42.6、SIL2 45.3、DROP 45.9、PUSH 48.9、HAND 49.65、FULL0 51.9、CARD 54.9、END 58.8。太阳 21 个 16 分音符（12.00→15.00）、日/夜 18 格（25.20→27.75）、爆裂 8 个切分 16 分音符（38.4→39.6）、拉回时每站一个 kalimba 音（52.65→54.9）。",
+    "total_length_range": "主 demo 58.8s（style.json:16-17，dur=58.8 / frame_sec=35.28）。DEMO.md:8 说明本风格适合 **45–60s** 的片（一块板、一个连续镜头、一条 Z 形路线）。",
+    "silence_policy": "两段真实静默：下潜段（30.0–33.6s，只剩路线与 −66dB 的船体吱呀）与第一滴咖啡之前（45.3–45.9s，数字零）。每段静默之后的第一声都是全片最重要之一——**船笛**（约高出其它一切 10dB；D2 锯齿叠失谐 + 2.8s 尾音）与**一滴落进空杯**。STYLE.md:74 明确：静默可以是数字零，也可以是留一个极小的声音，但静默之后的第一声要是全片最重要的声音之一。"
+  },
+  "tone": "一位清晰、友善的讲解者在带你走一遍系统：语速中偏快（Kokoro `bf_alice`，speed .88–1.0），每句只讲一个事实，让图标与数字自己说话；不煽情、不设悬念、不喊口号。",
+  "shot_logic": {
+    "camera_is": "一个「世界中心 + 对数插值缩放 k（px/单位）」的正交等距镜头：投影永不改变，它只沿路线推进/拉远/平移，像一只在系统图上滑动的手。",
+    "vocabulary": [
+      { "move": "沿路线跟随", "expresses": "过程；因果", "serves": "供应链；一段旅程；一个信号" },
+      { "move": "大全景 + 圆形插图（inset）", "expresses": "系统与个体同时在画面里", "serves": "工厂里的一个工人；器官里的一个细胞" },
+      { "move": "穿过嵌套剖面推进", "expresses": "跌进尺度；在百万里找一个", "serves": "大海捞针；机器内部" },
+      { "move": "快速对数拉远", "expresses": "释放；细节之后的大局", "serves": "尺度揭示；一个被物化的统计数字" },
+      { "move": "锁定机位、东西不断累积", "expresses": "系统被填满；过载", "serves": "队列；交通；增长的数据" },
+      { "move": "在空处横向跟随", "expresses": "一口气；距离", "serves": "一片海；一段等待；一个安静阶段" },
+      { "move": "上下俯仰穿过地层", "expresses": "层；深度；历史", "serves": "地质；城市地下；软件栈" },
+      { "move": "换一块板（第二个 diorama）", "expresses": "前后；此地与彼地", "serves": "两座城；两个时代；两种设计" }
+    ],
+    "transitions": [
+      "剖切（cutaway）：剖切线画出 → 近侧皮肤沿法线滑出并淡出 → 阴影线剖面沿留在原地",
+      "换板（切到第二个 diorama）",
+      "切进/切出一个圆形插图",
+      "在空处的一次长横移（当作「一口气」）"
+    ],
+    "forbidden": [
+      "透视或旋转/倾斜投影（投影一旦改变就不是这个风格）",
+      "半透明运动的实体（看起来像鬼——实体只能靠运动到场，不能靠 alpha）",
+      "让标签盖住主体（每站要选针的方向）",
+      "字幕与其它文字重叠，或占用底部 ~170px 的保留带",
+      "无来由的运镜"
+    ]
+  },
+  "idioms": [
+    "剖切（cutaway）：剖切线 → 皮肤滑走 → 阴影线剖面沿留下。用来切水果、船壳、集装箱、麻袋、建筑或机器。",
+    "Isotype 数字：同样的小图标每次摆成不同排布（日历、柱状、甚至用图标本身拼出一个剪影）。",
+    "焦点 + 上下文（focus + context）：除了主体，一切都灰掉。",
+    "框中框（frame within the frame）：引线长成一个圆形插图，里面是特写。",
+    "尺度揭示：一直拉远到所有标签同时上屏，最后一帧是一张完成的信息图。",
+    "被追踪的主体：一个物件被「你在这里」环跟着走。",
+    "地层剖面：板边成为故事（层被加上或拿走）。"
+  ],
+  "atmosphere": "一张摊在工作台上的系统图 / 一块漂浮的沙盘：奶油色的底、点阵、柔和的模糊阴影、几档明快的平涂色；整体是「清楚、可信、可数、值得被拆开看」的气质，而不是戏剧性。",
+  "sound_palette": {
+    "instruments": [
+      "轻的原声：kalimba、marimba、尼龙吉他、pizzicato、木鱼与手鼓（shaker、bongo、cajon）、立式或合成贝斯、钟琴、玩具钢琴，或干净电子脉冲（技术类系统）",
+      "一个短动机可以在主体每次出现时标记它（demo 是三音「豆子动机」A4–F#4–D4 的 kalimba）",
+      "demo 的配器：尼龙吉他指弹（D–A–Bm–G）+ kalimba + shaker/bongo/cajon 反拍 + 港口/海上加 upright bass；没有钢琴、没有弦乐 pad"
+    ],
+    "foley": "按材质分层：纤维断裂（果柄）、肉的闷响（樱桃落掌）、颗粒哗啦（樱桃落网）、谷物倒进麻袋、集装箱门与落地的非谐钢泛音、麻布撕裂、鼓筒旋转、干裂的爆响、磨豆机啸叫 + 碾压、压粉的 thock、陶瓷 plink、升调的倾倒。每个点亮的图标 = 一个声音。",
+    "mix_rules": "音乐在人声下压 ~8dB，环境压 7dB；说话时鸟叫静音（否则 whisper 会把 \"travel\" 听成 \"travels\"）。J-cut 承载建筑：港口噪声在港口出现前 0.6s 进来、烤炉鼓在它开墙前 0.6s、船笛尾音 L-cut 进城市。最终拉回时每站一个 kalimba 音。整体 −14 LUFS、grain 0。"
+  },
+  "variation_space": "可自由决定：系统、板（或几块）、是否有一个被追踪的主体、那些数字、镜头路径、开场与结尾。远离 demo 的方向（STYLE.md:107-111）：结构——一栋楼、一层一层（从剖面塔里俯仰下来，每层一个阶段）；两块板对照（同一个系统在两个地方或两个时代，交替后并置）；一个循环（一条环形路线回到起点，每圈改一个数字）。开场——先给完成的信息图，再拆成会动的零件；一个小图标不断复制直到变成风景；一个用等距字写在空板上的问题。结尾——一个没有答案的站点（路线停在一块带问号的空板上）；只剩图例，板淡出；一个图标的特写，背后那个大数字虚焦。强调色、被计数的对象、以及「一块板还是几块板」都可换。",
+  "taboos": [
+    "透视或旋转/倾斜的投影（等距就是等距）",
+    "低多边形 3D 的光照（三档面调之外没有光照）",
+    "半透明运动的实体（幽灵感）",
+    "让标签或字幕盖住主体",
+    "数字对不上（这个风格靠可信度活着）",
+    "无轮廓线之外的黑色卡通描边（墨线只属于信息图家具）",
+    "照抄任何真实的图标、建筑、配色或音乐"
+  ],
+  "asset_contract": {
+    "content_fields": "`demo/timeline.js` 是唯一真值：导出 `BPM/BEAT/BAR/BPM2/BEAT2`、`TL`（命名锚点表，含 SNAP/LAND/TITLE0/HARV_LAB/INSET0/CUT/DRY0/SACK/TRUCK0/JCUT_PORT/PORT0/CASCADE/SEA0/FF0/DIVE0/HULL/BOX_CUT/SACK_CUT/SIL0/HORN/ROAST0/WALL/CRACK0/CAFE0/GRIND/TAMP/LOCK/MACHINE/SIL2/DROP/PUSH/HAND/FULL0/CARD/END 等）、派生数组（`TL.SUNS` 21 个 16 分音符、`TL.DAYS` 18 格、`TL.CRACKS` 8 个切分音、`TL.FULL_STATIONS` 7 个音）、`SUBS[]`（{id, t0, t1, text}）、`KM = {farm, sea, city, total}`（**必须相加**）。配音文本 `demo/lines.json`：[{id, t, text, voice, speed, asr?}]。",
+    "new_subject_contract": "新画面元素用 `engine.js` 画：任意路径走 `shape(iso, pts2d, at, {color, depth, plane, scale})`（把 2D 轮廓变成三档色调的等距实体）；现成轮廓 `sparkPath(n,r,inner)`、`cursorPath(h,w,x,y)`。方块/柱/锥/屋顶/球用 `iso.box/prism/cyl/cone/roof/sphere`；地面贴花 `iso.flat`、三维折线 `iso.line3`、立牌 `iso.bill`；等距字 `iso.text3`；局部坐标系 `iso.push/pop`（法线一起旋转，任何朝向着色都对）。单色例外用 `iso.keep = true`（配合 `iso.desat = 0..1`）。",
+    "timeline_contract": "`film.js` 导出 `DUR`、`camAt(t)`（对数插值的 k + 世界中心）、`ROUTE`（Z 形路线折线）、`render(g, t, Q)`（逐帧绘制）、`events()`（按时间排序的事件数组）。页面契约：`window.READY` / `window.render(t)` / `window.DUR` / `window.EV`。",
+    "event_vocabulary": "`film.js` 的 `events()` 产生：`title_word`（标题字）、`pin`（标签针）、`inset_open`/`inset_close`（圆形插图开合）、`knife`（剖切线）、`cherry_cut`（切）、`slide_steel`（皮肤滑走，`small:1` 表示小号）、`tear`（麻布撕裂）、`silence`（静默）、`creak`（船体吱呀）、`sack_load`、`truck{dur}`、`amb_port`（港口环境 J-cut）、`vo{id}`（人声，mix.py 从 voices/<id>.wav 读）；其余动作声按材料（纤维断裂、肉闷响、颗粒、倒谷、钢泛音、鼓筒、爆响、磨豆、压粉、陶瓷、升调倾倒）由 mix.py 按 TL 里的命名时刻生成。`tools/cuecheck.py` 用 68 个画面同步点对 `music/score.json` 校点（demo 最大偏差 0ms）。"
+  },
+  "evidence": [
+    "styles/iso-infographic/STYLE.md:6-13 —— 本质与「不是什么」（非低多边形 3D / 非扁平 2D 讲解 / 非蓝图）",
+    "styles/iso-infographic/STYLE.md:15-24 —— 材料与渲染（30° 投影公式、三档色调、2px 墨线只给信息图家具、板与剖面、复合件、人物、特写、LOD）",
+    "styles/iso-infographic/STYLE.md:26-32 —— 颜色逻辑（浅中性底 + 5–7 个平涂色、一色一义、主体色保留、站点用淡板）",
+    "styles/iso-infographic/STYLE.md:34-40 —— 字体与字幕（Jost、7px halo、标签针、字幕是一张地图标签、停留规则）",
+    "styles/iso-infographic/STYLE.md:42-49 —— 运动质量（没有一条线引导就不许动、剖切时序、Isotype 回弹、累积=加速、实体靠运动到场）",
+    "styles/iso-infographic/STYLE.md:51-66 —— 镜头词汇表（8 条）与构图规则",
+    "styles/iso-infographic/STYLE.md:68-76 —— 声音（乐器、技巧、环境床、按材质 foley、静默、混音 −14 LUFS）",
+    "styles/iso-infographic/STYLE.md:78-88 —— 七条 native moves",
+    "styles/iso-infographic/STYLE.md:90-99 —— 媒介陷阱（Newell 法线与顶点序、画家排序、半透明、拉远穿过高物）",
+    "styles/iso-infographic/STYLE.md:101-103 —— 引擎 API 清单",
+    "styles/iso-infographic/STYLE.md:105-111 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/iso-infographic/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/iso-infographic/DEMO.md:8 —— 全片是一张等距图、45–60s、Z 形路线",
+    "styles/iso-infographic/DEMO.md:12 —— 每个站点讲法一致：一个动作 + 一个标签 + 一个由图标搭出的数字",
+    "styles/iso-infographic/DEMO.md:23-28 —— 六种 native power 的用法（一块板 / 剖切 / Isotype / 焦点+上下文 / 框中框 / 尺度揭示）",
+    "styles/iso-infographic/DEMO.md:30-39 —— 故事形状与「数字必须相加」（400+10500+100=11000km）",
+    "styles/iso-infographic/DEMO.md:43-58 —— 逐拍镜头表（k=3.75 到 8000、下潜 0.9/0.6/0.6s、拉回 ×470）",
+    "styles/iso-infographic/DEMO.md:60-67 —— 运动数值（剖切 0.3/0.35s、Isotype 回弹 2.2、累积=加速、主体表演、车辆沿折线）",
+    "styles/iso-infographic/DEMO.md:69-79 —— 配乐（约 100BPM、两段静默、船笛 +10dB、三层、J/L-cut、bf_alice .88–1.0）",
+    "styles/iso-infographic/DEMO.md:81-100 —— 调色板（红/绿/蓝/奶油/土/芥末 + 墨）、板、站点、人物、手部特写、标签针、标题、云",
+    "styles/iso-infographic/DEMO.md:102-106 —— 字幕卡与片尾卡=图例",
+    "styles/iso-infographic/DEMO.md:108-119 —— 逐条陷阱（法线、画家排序、半透明、船头搁浅、下潜里的时间跳变、巨物、whisper 误听）",
+    "styles/iso-infographic/demo/timeline.js:1-34 —— 唯一真值：BPM 网格、TL 锚点表、派生数组、SUBS、KM 必须相加",
+    "styles/iso-infographic/demo/engine.js:4-36 —— 30° 常量、缓动、tri() 三档色调、PAL 调色板",
+    "styles/iso-infographic/demo/engine.js:39-98 —— Iso 类（相机、投影、深度排序队列、sub 子队列、face3 背面剔除）",
+    "styles/iso-infographic/demo/engine.js:100-119 —— box() 六面按中心深度排序 + out 法线提示",
+    "styles/iso-infographic/demo/engine.js:245-249 —— normal() Newell 法线",
+    "styles/iso-infographic/demo/engine.js:259-286 —— pin() 标签针 / inset() 圆形插图",
+    "styles/iso-infographic/demo/engine.js:302-328 —— ring() 追踪环 / cutLine() 剖切线 / hatch() 剖面阴影线",
+    "styles/iso-infographic/demo/engine.js:331-345 —— ICON.sun/moon/box/sack/bean/cherry + iconGrid（Isotype）",
+    "styles/iso-infographic/demo/engine.js:346-372 —— person() 极简人物立牌",
+    "styles/iso-infographic/demo/engine.js:373-388 —— shape() 任意轮廓 → 等距实体 + sparkPath/cursorPath",
+    "styles/iso-infographic/demo/film.js:7 —— DUR = TL.END",
+    "styles/iso-infographic/demo/film.js:61-82 —— camAt()：对数插值缩放与下潜（13→60→420→3200）",
+    "styles/iso-infographic/demo/film.js:188 —— ROUTE：Z 形路线折线",
+    "styles/iso-infographic/demo/film.js:523-540 —— 圆形插图剖切 / 追踪环 / 剖切线",
+    "styles/iso-infographic/demo/film.js:588-598 —— events() 的全部 type",
+    "styles/iso-infographic/demo/lines.json:1-35 —— 6 行旁白实测文案与音色/语速",
+    "styles/iso-infographic/style.json:16-17 —— frame_sec 35.28 / dur 58.8"
+  ]
+}

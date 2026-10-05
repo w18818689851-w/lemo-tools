@@ -1,0 +1,152 @@
+{
+  "slug": "glass-product",
+  "name_zh": "玻璃质感产品（Glass Product Render）",
+  "essence": "一部在透明与磨砂玻璃里做产品渲染的发布片：一个由**玻璃、金属与光**构成的单一英雄物件悬浮在无限黑的影棚里，长灯条在它**背后与旁边**把透明玻璃变成一条带彩虹边的细白轮廓，内部像陈列柜一样透出来；一切缓慢而精确地移动，每一次剪辑、光扫与脉冲都落在拍上。物件永远是**虚构的**——绝不复制真实产品的剪影、品牌名、logo、字体或 UI。它不是白幕目录棚拍、不是线框 HUD、不是发布会幻灯片：材质与光才是主角。",
+  "materials_and_rendering": [
+    "影棚是一套**灯条场景，不是 HDRI**：摄影棚 HDRI 里的窗户和杂物会在玻璃上印成乱条纹。用发光面片搭一个极小的黑场景，并**每帧**烘焙成 PMREM（`pmrem.fromScene(env,0,1,1000)`，销毁上一张 RT）：身后的高侧灯条（剪影）、一条远处的宽条（地平线轮廓光）、一个柔和顶箱（给磨砂玻璃与金属体积感）、一块弱的前卡片（凹面玻璃朝镜头时关掉）、只在需要逐件读零件时的顶前主光、一块由脉冲驱动的强调色卡、以及**光扫**——一根在**镜头背后**（方位角 = 镜头 + π）走弧线的高灯条。它是真几何，所以高光、折射与色散都物理地移动；**绝不画 2D 高光**。",
+    "透明玻璃：`MeshPhysicalMaterial`，transmission 1、roughness ≈0.015、IOR ≈1.5，thickness 决定透镜效果（越厚越强），**开色散**（three r163+），近中性衰减，`side: DoubleSide` 让别的玻璃能看见它的背面。",
+    "磨砂玻璃：transmission ~0.85、roughness ~0.4、乳白染色、厚。在黑色上会读成深灰塑料，除非**它背后或内部有亮的东西**：内部一个不透明的自发光形状（糊成一团柔和内发光）和/或背后一条亮渐变。",
+    "金属让透明值得一看：缎面条带、镀铬（roughness ≥ ~0.14）、用 roughness map 做的拉丝面、带金走线的电路板。**任何放在透射玻璃里的东西都必须不透明**（只有不透明物体才会进入 transmission buffer）。",
+    "导光条：深色抛光不透明亚克力、clearcoat、沿 UV 轴的**彗星脉冲**自发光（`onBeforeCompile`：高斯头、指数尾、白热核心、色相随年龄漂移）；idle 自发光 ≈0。",
+    "背景：黑色 + 一条可选的深灰径向渐变把玻璃边缘分出来；地板融进它、**没有地平线**。地板：黑色光泽、模糊镜像、径向淡出、程序化焦散（透镜环 + R/G/B 半径偏移、扭曲的 Voronoi 细丝、从事件扩散的环）。",
+    "后期：2× 超采样；物理景深（浅微距、深爆炸视图）；bloom 只在 ~1.1 以上；**Neutral 色调映射**（AgX 会把强调色洗成白）；grain 0。以 mm 建模，近平面 1。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白极少、极短：demo 4 行实测 10–27 个字符，最短是点题句 \"Meet Aura.\"（10 字符）与 \"Hear the light.\"（15 字符），最长是一句主张 \"Every part, in plain sight.\"（27 字符）；多为 2–5 个词。字幕是**一块磨砂玻璃**：居中圆角条，用实时画面模糊填充（对 WebGL canvas 用 `filter: blur() brightness()`，`preserveDrawingBuffer: true`）、一点冷白、一条细高光描边和顶上一条强调色线；Inter Tight 轻字重 ~36–44px、近白；停留 ≥ max(1.8s, 语音 + 0.6s)。",
+    "person_and_tense": "无主语/祈使式的产品宣言，现在时：语气克制、低沉、像发布片，句子极少极短。**绝不单独念产品名**（ASR 和观众都会听错）——给它一个动词（demo 把 \"Aura.\" 改成 \"Meet Aura.\"）。",
+    "typical_openers": [
+      "一句短语式主张（\"Nothing to hide.\"）",
+      "强调「全部可见」（\"Every part, in plain sight.\"）",
+      "给产品一个动词的自我介绍（\"Meet Aura.\"）",
+      "一句感官收束（\"Hear the light.\"）",
+      "小号全大写 kicker 起句（\"A GLASS PRODUCT FILM\" / \"MEET\"）"
+    ],
+    "forbidden": [
+      "长句、从句、书面语（每行 2–5 个词）",
+      "单独念产品名（必须配一个动词）",
+      "营销腔、感叹号堆叠（\"amazing\"、\"unbelievable\"）",
+      "第一人称抒情与解说"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一次揭示）：黑场里被外部光照亮（神秘） → 打开（好奇） → 看透（亲密、微距） → 拆开（悬念、全静默） → **在 drop 上合拢并从内部亮起来**（释放） → 自信的节奏 → 回家（安定、回响）。一个物件、一个目标（自己发光）、一次转折（重新组装）。首尾呼应：开场用一道光扫揭示黑暗的物件，结尾用**同一道**光扫扫过已经自己发光的它。",
+    "beat_durations": "时间挂在 120 BPM 网格上（1 拍 = 0.5s，1 小节 = 2s，`story.js:2`）。demo 总长 32.0s（`story.js:3`、`style.json:17`）。关键锚点：光扫1 [0.5,1.7]、光扫2 [2.0,3.2]、标题 [1.0,3.9]、开盖 [4.5,7.6]、磁吸 8.0、浮起 [8.0,9.4]、爆炸 [12.0,15.2]、屏息 15.5、**合拢 16.0（drop）**、左耳机 [20.0,21.2]、结尾光扫 24.0、落回 [27.0,27.8]、片名 [24.5,27.7]、结束 28.0。爆炸段被拉长到 17.0s 让零件冲回来、16.0 合拢、光纹在同一帧首次亮起（因果在同一个机位里）。剪辑点都在小节线上。",
+    "total_length_range": "主 demo 32.0s（style.json dur=32.0，frame_sec=19.2）；DEMO 给的故事弧是 30–40s（`DEMO.md:14`）。产品片体裁适合 15–60s。",
+    "silence_policy": "静默是工具：合拢（drop）之前**半小节的完全静默（连混响尾巴都切掉）**，里面最多放一条反向呼啸（demo 15.55s 一条 0.45s 的 `revwhoosh`——零件被吸回）。静默之后的第一个声音最重要——16.0 的合拢 = 一串磁吸 click 簇 + 一个非谐玻璃和弦。"
+  },
+  "tone": "一位克制、低沉、发布片式的旁白：句子极少极短，让材质与光把话说清楚；不喊口号、不解释。物件在黑暗里先是只反别人的光，然后自己亮起来。",
+  "shot_logic": {
+    "camera_is": "一台**永远在漂移**的影棚摄影机：缓慢环绕或推进，绝不锁死、绝不手持（除了撞击时几帧的微震）。产品片**不需要镜头间的空间连续性**——每一镜都是它自己的展示台，所以可以藏起或移走任何不为它服务的东西。",
+    "vocabulary": [
+      { "move": "扫过黑暗物件、缓慢推进", "expresses": "先看轮廓、再看内容", "serves": "一个未知的东西；一个之前的状态" },
+      { "move": "缓慢的高位 3/4 环绕", "expresses": "一次运动看完整件", "serves": "一个机构打开；变体" },
+      { "move": "微距、从表面机架对焦到内部零件", "expresses": "没什么可藏的", "serves": "一个成分；一个传感器" },
+      { "move": "侧面微距环绕", "expresses": "材质对比", "serves": "层次；一条缝" },
+      { "move": "爆炸视图、轴与视线约 40°、环绕", "expresses": "技术美、悬浮", "serves": "架构；一次转折前的停顿" },
+      { "move": "正面直对、轻微推进", "expresses": "宣告", "serves": "一个数字；一个名字" },
+      { "move": "俯视微距", "expresses": "满尺寸下的一个图案", "serves": "通道；一块电路" },
+      { "move": "俯视地板", "expresses": "效果离开物件", "serves": "范围；扩散的能量" },
+      { "move": "低角度环绕物件下方", "expresses": "纪念碑、重量", "serves": "耐用；旗舰" },
+      { "move": "缓慢拉远进入负空间", "expresses": "给字留位置", "serves": "一个主张；一个问题" }
+    ],
+    "transitions": [
+      "在拍上剪辑（尽量落在小节线）",
+      "一道光扫穿过黑场"
+    ],
+    "forbidden": [
+      "溶解（dissolve）与划像（wipe）",
+      "锁死机位（镜头必须一直漂移；除了撞击的几帧微震）",
+      "手持",
+      "在宽景里让英雄物件被画框边缘切掉",
+      "非拍点的剪辑"
+    ]
+  },
+  "idioms": [
+    "透明（transparency）：里面才是英雄；从外壳机架对焦到内部零件。",
+    "透镜（lensing）：厚玻璃穹顶会放大并弯曲它背后的东西；穿过它做微距像看进一颗宝石。",
+    "色散（dispersion）：一道光扫穿过厚边缘时变成一段移动的光谱。",
+    "光在内部旅行（light that travels inside）：能量（电、数据、热、声）作为光在通道里跑。",
+    "焦散（caustics）：一次内部脉冲变成地板上扩散的环。",
+    "爆炸视图与合拢（exploded view and snap）：零件浮开，在 downbeat 上「啪」地合回去。",
+    "磨砂变透明（frost to clear）：磨砂壳变清（roughness 与 tint 动画到 0），内部出现。",
+    "把任意主题套用：找到「产品做的那个看不见的事」，让它在玻璃里变成光。"
+  ],
+  "atmosphere": "一间无限黑的影棚：只有灯条、玻璃、金属与一条会流动的光；冷、静、精密。整体是「透明、可信、被认真打光」的气质，而不是喧闹或温暖的。",
+  "sound_palette": {
+    "instruments": [
+      "极简电子，**绝不用钢琴加弦乐**：弓奏玻璃或湿指音、颗粒水晶云、玻璃铃与 FM 玻璃拨弦、一个给精确感的滤波 tick 网格、暖 pad、sub drone、软短 kick 与拍手、808 低音（正弦 + 音高包络、软饱和、滑音）、噪声与锯齿 riser、一声高玻璃叮；小调与调式色彩适合这个暗影棚（demo：120 BPM、F 小调，`score.py:2`）"
+    ],
+    "foley": "按材质分层：光扫用玻璃微光（带通噪声 + 非谐泛音，随灯条声像移动）；移动盖子用玻璃-金属摩擦；磁吸 click（<2ms 瞬态 + 3–5kHz 金属共振 + 低频闷响）；移动零件用气流噗；合拢 = 一串相隔几毫秒的 click + 一个非谐玻璃和弦（泛音 ×2.76、×5.4）；玻璃碰玻璃的 tick。",
+    "mix_rules": "音乐在人声下压 ~12 dB、拟音 ~6 dB；把最大的低频峰值限掉 ~3 dB 让 loudnorm 保持线性；−14 LUFS；grain 0。demo：808 峰值没留 headroom 时 loudnorm 掉进 dynamic 模式（−13.7 LUFS），在混音里把 drop 峰值限掉 ~3 dB 才修好。每一条脉冲、光扫与合拢都锁在配乐上——**先写 cue 表**，配乐与渲染器共用同一份 hit list。"
+  },
+  "variation_space": "可自由决定：物件（永远虚构）、内部、强调色、结构、开场、结尾、镜头路径、节奏与音乐。远离 demo 的方向——结构：一条产品线（三个变体靠内部发光的东西来对比）；光的一天（一个物件经历早、中、晚，灯条组绕着它转）；材质堆叠（每拍去掉一层，直到核心独自立着）。开场：先看里面（一个内部零件；外壳在它周围成形）；先看焦散（地板上的光，顺着它往上找到物件）；剪影（几个黑轮廓；一个开始发光）。结尾：只剩地板（物件离开，它的焦散还在脉动）；降温（自发光淡到只剩灯条轮廓）；停在微距（不拉远；一个细节，名字很小）。强调色与「什么被可视化」都可换。",
+  "taboos": [
+    "白幕目录棚拍",
+    "线框 HUD",
+    "发布会幻灯片",
+    "复制真实产品剪影、品牌名、logo、字体或 UI",
+    "画 2D 高光（光扫必须是真几何，高光/折射/色散要物理移动）",
+    "溶解、划像、手持、锁死机位",
+    "把强调色用在非光的东西上",
+    "在非拍点剪辑"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一个字、每一拍与每一个脉冲。要素：`story.js`（BPM 网格、镜头表 SHOTS、kick 表 KICKS、光扫表 MACRO_SWEEPS、旁白 VO、拟音 SFX——**是配乐与渲染器共用的唯一真值**）；`lines.json`（每行 {id,text,voice,speed}，demo 用 am_michael、speed 0.86–0.88、3–4 短行）；强调色族（冰蓝 `#62DCFF` → 淡紫 `#A98BFF`）；灯条组尺寸/强度；材质参数（玻璃 roughness/IOR/thickness/dispersion、磨砂 transmission/roughness、金属 roughness）；`cues.json`（关键时间点，供自检）。",
+    "new_subject_contract": "新物件：替换 `product.js` 里的几何（例如把玻璃圆柱 + 盘绕导光条），**保留材质与 `studio.js`**。材质用 `glass({...})` / `frosted({...})` / `metal(color,rough,{...})` / `guideMat(wrap)`（彗星脉冲 `onBeforeCompile`、`setPulses(mat,list,base)`）；爆炸用 `explode(bud,e,spin)`。影棚用 `makeStudio(renderer,scene)`（每帧 PMREM、光扫、背景、地板镜像 + 焦散 + 拍环）。",
+    "timeline_contract": "`story.js` 是**唯一真值**：导出 `BPM/BEAT/BAR/DUR`、`T`（关键时间点）、`SHOTS/shotAt`、`KICKS`、`MACRO_SWEEPS`、`VO`、`SFX`。`main.js` 的 `frame(t)` 按 `shotAt(t)` 分镜布景、相机、光与脉冲、磨砂字幕、标题、片尾卡。页面契约 `window.READY / window.render(t) / window.DUR`。",
+    "event_vocabulary": "事件（供 mix.py）：`sweep{d,pan,v}` / `slide{d,v}`（玻璃翻盖摩擦）/ `tock`（翻盖到位）/ `click{v,pan}`（磁吸）/ `lift{d,v,pan}`（浮起）/ `puff{v,pan}`（零件气流）/ `slowwhoosh{d,v}` / `revwhoosh{d,v}`（静默里的反向呼啸）/ `snap{v}`（合拢 = click 簇 + 玻璃和弦）。全部由 `story.js` 的 `SFX` 声明，再由 `core/render/events.mjs` 序列化成 `events.json`。"
+  },
+  "evidence": [
+    "styles/glass-product/STYLE.md:8 —— 本质（玻璃/金属/光的单一英雄物件，灯条在背后与旁边，一切落拍）",
+    "styles/glass-product/STYLE.md:10 —— 物件永远虚构，不复制真实产品剪影/品牌/logo/字体/UI",
+    "styles/glass-product/STYLE.md:12 —— 不是什么（非白幕棚拍/非线框 HUD/非发布会幻灯片）",
+    "styles/glass-product/STYLE.md:16 —— 影棚=灯条场景不是 HDRI；每帧 PMREM；光扫在镜头背后",
+    "styles/glass-product/STYLE.md:17-20 —— 透明玻璃/磨砂玻璃/金属/导光条参数",
+    "styles/glass-product/STYLE.md:21-22 —— 背景/地板焦散/后期（2×SSAA、物理 DoF、bloom>1.1、Neutral、grain 0）",
+    "styles/glass-product/STYLE.md:26-29 —— 颜色逻辑（中性世界、一个强调色族只给光、色散只在厚边）",
+    "styles/glass-product/STYLE.md:33-35 —— 字体与字幕（磨砂玻璃字幕条、超细宽字距标题、停留规则）",
+    "styles/glass-product/STYLE.md:39-43 —— 运动质量（on ones、镜头永远漂移、爆炸-屏息-合拢、脉冲是拍上的事件）",
+    "styles/glass-product/STYLE.md:49-62 —— 镜头语法表 + 无空间连续性 + 只在拍上剪",
+    "styles/glass-product/STYLE.md:66-71 —— 声音（极简电子、锁拍、静默、拟音按材质、人声、混音）",
+    "styles/glass-product/STYLE.md:75-83 —— native moves（透明/透镜/色散/内部光/焦散/爆炸合拢/磨砂变清）",
+    "styles/glass-product/STYLE.md:100-104 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/glass-product/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/glass-product/DEMO.md:10-12 —— demo 故事与「把声变成光」的不可见之物可视化",
+    "styles/glass-product/DEMO.md:14 —— 故事弧 30–40s",
+    "styles/glass-product/DEMO.md:16 —— 首尾呼应（同一道光扫）",
+    "styles/glass-product/DEMO.md:24-33 —— 逐拍镜头表",
+    "styles/glass-product/DEMO.md:37 —— 运动数值（环绕 0.2–0.4rad、爆炸 tilt、3s 分开→0.75s 悬浮→0.25s 合拢、微震 2 帧）",
+    "styles/glass-product/DEMO.md:41 —— 配乐（120 BPM 小调、808 drop、半小节全静默、共享 kick 表）",
+    "styles/glass-product/DEMO.md:43-45 —— 拟音与混音（snap = 6 个 click 相隔 15ms、duck −12/−6、限峰 3dB）",
+    "styles/glass-product/DEMO.md:49-57 —— 强调色、灯条组、材质参数、后期、字幕条、标题",
+    "styles/glass-product/demo/story.js:2-3 —— BPM 120 / BEAT 0.5 / BAR 2 / DUR 32",
+    "styles/glass-product/demo/story.js:6-15 —— 关键时间点 T（含 snap 16.0 = drop）",
+    "styles/glass-product/demo/story.js:18-22 —— SHOTS 镜头表 + shotAt",
+    "styles/glass-product/demo/story.js:25-30 —— KICKS（808 每小节 0/.75/1/1.5）+ MACRO_SWEEPS",
+    "styles/glass-product/demo/story.js:33-38 —— VO 4 行",
+    "styles/glass-product/demo/story.js:41-57 —— SFX 全部拟音事件",
+    "styles/glass-product/demo/studio.js:6-8 —— makeStudio + 黑 env",
+    "styles/glass-product/demo/studio.js:20 —— 光扫灯条",
+    "styles/glass-product/demo/studio.js:34-48 —— 每帧 pmrem.fromScene",
+    "styles/glass-product/demo/studio.js:89 —— 透镜环形焦散",
+    "styles/glass-product/demo/studio.js:109 —— Reflector 地板镜像",
+    "styles/glass-product/demo/product.js:6-7 —— 光纹主色冰蓝→淡紫",
+    "styles/glass-product/demo/product.js:9-16 —— glass / frosted 材质",
+    "styles/glass-product/demo/product.js:47-69 —— guideMat 彗星脉冲 + setPulses",
+    "styles/glass-product/demo/product.js:82-88 —— makeBud + 玻璃穹顶",
+    "styles/glass-product/demo/product.js:142 —— explode",
+    "styles/glass-product/demo/product.js:153-158 —— makeCase + 磨砂底座",
+    "styles/glass-product/demo/main.js:42-48 —— kickState / budLight（光脉冲跟 kick）",
+    "styles/glass-product/demo/main.js:70-71 —— frame / shotAt",
+    "styles/glass-product/demo/main.js:180 —— 微距段每拍一道光扫",
+    "styles/glass-product/demo/main.js:229-261 —— glintText 标题斜光扫 / AURA 标题",
+    "styles/glass-product/demo/main.js:237-242 —— subtitle 磨砂玻璃条（blur 18px）",
+    "styles/glass-product/demo/music/score.py:2 —— 120 BPM / F 小调 / 32.0s",
+    "styles/glass-product/demo/music/score.py:20 —— KICKS_808 落点",
+    "styles/glass-product/demo/music/score.py:65-106 —— k808 / glass_pluck / bell",
+    "styles/glass-product/demo/mix.py:17-74 —— sweep/mag_click/glass_ding/slide/whoosh_air/puff",
+    "styles/glass-product/demo/mix.py:89-90 —— snap = 6 个 click 相隔 15ms",
+    "styles/glass-product/demo/mix.py:114-120 —— duck −12dB / fxduck / limit",
+    "styles/glass-product/style.json:16-17 —— frame_sec 19.2 / dur 32.0"
+  ]
+}

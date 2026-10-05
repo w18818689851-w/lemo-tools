@@ -1,0 +1,199 @@
+{
+  "slug": "watercolor",
+  "nameZh": "水彩笔刷",
+  "distilledAt": "2026-10-03T07:52:38Z",
+  "matchScore": 93,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 19,
+    "typography": 18,
+    "rhythm": 19,
+    "audio": 19
+  },
+  "defects": [
+    "palette −1：mux 以脚本默认 grain 2（noise=c0s=2:allf=t）在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分（paper.py 生成 ±3.5% 噪声 + 约 2600 条纤维 + 细颗粒），再加颗粒属双重质感；同类纸纹风格（ink-wash）显式传 grain 0。本次音频修复只重做音频、未改混流参数，该缺陷仍在。",
+    "composition −1：顶部 HUD 安全边距只有 76px（约 3.96% 画面宽，scene.js 区块卡从 x=76 起排），窄于常见的 5% 安全区，是本风格构图上最紧的一处，任何裁切或加边都会先吃掉区块卡。",
+    "typography −2：dub 通路（dub-styles.json#watercolor）把字幕映射到 SimHei（黑体）+ 白色描边（outlineFactor 0.00278），而 STYLE.md:36-38 要求 Cormorant Garamond 衬线斜体 + 纸色光晕、中文用 Noto Serif SC 衬线、ink 78% 无描边。该条目的 notes 自己承认这是派生值 + 字体修正（原等宽字体不含中文字形）。",
+    "rhythm −1：成片以 24 fps 导出（产品导出默认帧率），而 STYLE.md:48 声明「60 fps suits the slow, fluid brush」，demo 的 render.mjs:18 原生 FPS 默认 60；笔触推进与摆动（sway 的 sin(1.15t+φ)）被降采样。",
+    "audio −1：STYLE.md:71 把「把笔抬起来——音乐退场，只剩纸与房间」列为声音调色板的一条静默特质，但 mix.py 从不把音乐归零（mus *= (1 - .38·duck) 只做约 −4 dB 闪避），全片 113.6 s 音乐不停；70.3 s 的雾擦除段只叠了一层 airy 纸声，声明的静默没有出现。配乐 / 拟音 / 旁白 / 响度四项均已实测达标，故只扣这 1 分。",
+    "【palette −1】细纹理 `textureRaw: watercolor` 声明了但渲染未实现：`lib/dub-styles.json#watercolor.bgRecipe.textureRaw` 是 `watercolor`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `rice-paper` ⇒ 宣纸噪点（`noise=alls=6:allf=t+u`）），不读 `textureRaw` ⇒ `watercolor` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `watercolor` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "配乐源不进版本库：music/*.mp3 与 *.wav 被根 .gitignore 忽略，新 clone 的 music/ 里没有曲源，必须先跑 sh music/prep.sh（脚本自己 curl 下载 Wildflowers.mp3 再解码）。这不是版权缺口——Scott Buckley《Wildflowers》是 CC BY 4.0，直链写在 music/prep.sh:8，可合法使用。",
+    "配音文件只在 WSL 侧：voices/v01–v13.wav 同样被 .gitignore 忽略，Windows 副本的 voices/ 里只有 dur.json；跨侧核对音频链必须到 WSL 路径下看。",
+    "无 styles/watercolor/demo/build.sh：AGENT-BRIEF 优先级 4 指定的这个文件在本风格不存在，构建链只以 DEMO.md:106-150「Build notes」的命令清单形式存在（tts/gen.py → asr.py → music/{prep,analyze,jump,edit}.py → mix.py → render.mjs → mux.sh）。",
+    "字体为自托管且需联网获取：demo/fonts/ + fetch_fonts.mjs 下载 Cormorant Garamond / Caveat / IBM Plex Mono / Noto Serif SC；Noto Serif SC 被 subset 到 scene.js + main.js 里出现的 CJK 字符，新增中文字幕字符会 fallback 到别的字体直到重新 subset（STYLE.md:95）。"
+  ],
+  "limits": [
+    "只有 16:9：style.json 无 aspects 声明，产品默认 9:16 下画面会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑；本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "帧率上限 24 fps：产品导出默认 24，而风格原生声明 60 fps；本次未能按原生帧率交付。",
+    "音频链跑在 WSL 侧 .venv（numpy / scipy / soundfile + kokoro-onnx），Windows 侧没有这套环境；缺 WSL 就只能落静音占位。",
+    "matchScore 上限说明：成片即本风格自身的 demo，理论上限 100。本次五项均有可核验的实测证据，扣掉的 8 分全部来自可复现的具体缺陷（grain 2、9:16 缺陷、HUD 边距、dub 字体、24 fps、静默特质未实现），无「不可达分」。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f03.jpg",
+    "f04.jpg",
+    "f05.jpg",
+    "f06.jpg",
+    "f07.jpg",
+    "f08.jpg",
+    "f09.jpg",
+    "f10.jpg",
+    "f11.jpg",
+    "f12.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f15.jpg",
+    "f16.jpg",
+    "f17.jpg",
+    "f18.jpg",
+    "f19.jpg",
+    "f20.jpg",
+    "f21.jpg",
+    "f22.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/watercolor/STYLE.md",
+    "styles/watercolor/DEMO.md",
+    "styles/watercolor/style.json",
+    "styles/watercolor/demo/scene.js",
+    "styles/watercolor/demo/main.js",
+    "styles/watercolor/demo/engine.js",
+    "styles/watercolor/demo/plants.js",
+    "styles/watercolor/demo/mix.py",
+    "styles/watercolor/demo/mux.sh",
+    "styles/watercolor/demo/render.mjs",
+    "styles/watercolor/demo/paper.py",
+    "styles/watercolor/demo/music/prep.sh",
+    "styles/watercolor/demo/music/score_beats.json",
+    "styles/watercolor/demo/tts/gen.py",
+    "styles/watercolor/demo/voices/dur.json",
+    "lib/style-dna/watercolor.md",
+    "lib/style-dna/watercolor.json",
+    "lib/dub-styles.json#watercolor",
+    "_distill/logs/watercolor.log",
+    "_distill/frames/watercolor/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/watercolor/watercolor.mp4",
+    "durSec": 113.58,
+    "bytes": 51106197,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 2726
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14.11,
+      "lra": 6.6,
+      "truePeakDbtp": -3.34,
+      "samplePeakDbfs": -3.350128,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−3.34 dBTP，在 −1.2 dBTP 交付线内（余量 2.14 dB）、未削波。此前 §6/audioEvidence 写的「真峰值 −1.716 dBFS（astats −1.716380）」是采样峰值（下界，口径不同）。★ 2026-10-05 复测当前入库成片（51,106,197 B）：input_tp = −3.34 dBTP、astats Peak = −3.350128 dBFS。旧读数（真峰值 −1.72 / 采样峰值 −1.716）属重渲前版本，仅作历史。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
+    },
+    "warnings": [
+      "styles/watercolor/demo/mux.sh 存在，但它的接口不是 V A O [fps] [grain]（自成一体），回退 core/render/mux.sh",
+      "该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件",
+      "首版出片曾告警：mux.sh: warning: the audio is silent or quieter than -70 LUFS, so loudness normalisation was skipped（该短板已于 2026-10-03 15:47 修复并重混，成片现为 I=-14.0 LUFS / 真峰值 -1.72 dBTP（loudnorm input_tp，4× 过采样；此前记的 -1.716 dBFS 是 astats 采样峰值，口径不同））",
+      "首版出片命令为 node lemo-make.mjs watercolor --skip-sync --no-preflight --ratio 16:9 --skip-audio（跳过两份库同步、预检与音频链；音频链后单独补齐）"
+    ]
+  },
+  "audioEvidence": {
+    "music": {
+      "track": "Scott Buckley — Wildflowers",
+      "license": "CC BY 4.0",
+      "sourceUrlInPrepSh": "https://www.scottbuckley.com.au/library/wp-content/uploads/2025/12/Wildflowers.mp3",
+      "mp3": {
+        "path": "styles/watercolor/demo/music/Wildflowers.mp3",
+        "bytes": 12891141,
+        "md5": "132be755238c09853720556bb833e999"
+      },
+      "wildflowersWav": {
+        "bytes": 14207822,
+        "sampleRate": 22050,
+        "channels": 1,
+        "durSec": 322.168437
+      },
+      "wf48Wav": {
+        "bytes": 61856534,
+        "sampleRate": 48000,
+        "channels": 2,
+        "durSec": 322.168437
+      },
+      "tempo": 103.359375,
+      "nbeats": 502,
+      "jump": {
+        "aSec": 61.23102040816327,
+        "bSec": 265.613,
+        "lagSec": 204.38204081632654,
+        "chromaSimilarity": 0.915
+      },
+      "scoreWav": {
+        "bytes": 22615032,
+        "codec": "pcm_s16le",
+        "sampleRate": 48000,
+        "channels": 2,
+        "durSec": 117.786396
+      },
+      "beatGridCheck": "score_beats.json 的 cut=61.23102040816327 / lag=204.38204081632654 / beats[0]=11.865396825 与 scene.js:284 的 BEAT0=11.865、BEAT=0.5805 逐项吻合（60/0.5805 ≈ 103.36 BPM）"
+    },
+    "mix": {
+      "path": "styles/watercolor/demo/mix.wav",
+      "bytes": 43622488,
+      "codec": "pcm_f32le",
+      "sampleRate": 48000,
+      "channels": 2,
+      "durSec": 113.6,
+      "measuredBeforeMux": {
+        "integratedLufs": -13.3,
+        "lra": 6.6,
+        "peakDbfs": -1
+      },
+      "note": "格式为 pcm_f32le（mix.py 的 subtype='FLOAT'）；此前的静音占位是 pcm_s16le，可用格式区分音频链是否跑过"
+    },
+    "voice": {
+      "engine": "Kokoro af_heart, speed 0.93, lang en-us",
+      "generator": "styles/watercolor/demo/tts/gen.py",
+      "files": "voices/v01-v13.wav（24 kHz 单声道，WSL 侧）",
+      "durationCheck": "v01 5.901083 / v04 7.419958 / v06 1.714250 / v13 3.388292 与 voices/dur.json 的 5.9 / 7.42 / 1.71 / 3.39 逐条吻合"
+    },
+    "foley": "全部由 mix.py 程序合成（numpy/scipy）：笔刷沙沙、盖印闷响、沙漠风、46 声鹦鹉、14 声雨滴 plink、火吼+噼啪、渐大的雨、2 声鞭鸟、雾起、地图上的火",
+    "mux": {
+      "script": "core/render/mux.sh",
+      "encoder": "h264_nvenc (LEMO_VENC=h264_nvenc, GPU)",
+      "loudnorm": "两遍 loudnorm I=-14 TP=-1.7",
+      "videoUnchanged": "1920x1080 / 24 fps / 2726 帧 / 113.583333 s 与首版逐项一致"
+    },
+    "measuredInFilm": {
+      "integratedLufs": -14,
+      "lra": 6.6,
+      "truePeakDbtp": -3.34,
+      "samplePeakDbfs": -3.350128,
+      "astatsPeak6dp": -3.350128,
+      "truePeakMethod": "loudnorm 的 input_tp（4× 过采样）；astats/peakDbfs 是采样峰值下界。★ 2026-10-05 复测当前入库成片（51,106,197 B）：input_tp = −3.34 dBTP / astats Peak = −3.350128 dBFS；旧读数（真峰值 −1.72 / 采样峰值 −1.716）属重渲前版本，仅作历史。",
+      "note": "（★ 2026-10-05 更正：`lra` 原记 6.8 属重渲前版本，当前入库成片 ebur128 LRA 实测 6.6。）"
+    },
+    "firstVersionDefect": {
+      "integratedLufs": -70,
+      "peak": "-inf",
+      "rms": "-inf",
+      "cause": "首版出片带 --skip-audio，音频链未执行；unblock-placeholder-audio.mjs 把 watercolor 登记为 placeholder:true（误判曲源为「仓库不含的第三方音源」），写入 21,999,822 字节的 pcm_s16le 静音占位 mix.wav",
+      "fixedAt": "2026-10-03T15:47+08:00"
+    }
+  },
+  "resolvedDefects": [
+    "composition −2（原缺陷）：composition −2：本风格无 aspects 声明，只支持 16:9；产品默认 9:16（1080×1920）下 1920×1080 画面会被 1:1 塞在左上角，右侧 840px（43.75%）整条丢失、下方 840px（43.75%）是黑带，右上角的雨量计整块被切。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→19，matchScore 92→94（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

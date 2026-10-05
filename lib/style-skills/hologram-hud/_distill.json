@@ -1,0 +1,92 @@
+{
+  "slug": "hologram-hud",
+  "nameZh": "科幻全息界面",
+  "distilledAt": "2026-10-03T00:00:00Z",
+  "matchScore": 94,
+  "scoreBreakdown": {
+    "palette": 20,
+    "composition": 19,
+    "typography": 18,
+    "rhythm": 19,
+    "audio": 18
+  },
+  "defects": [
+    "composition −1：帧 f13 的「拉远 + 放大镜」镜位里，左侧三枚芯片、右侧大卡片、右上放大镜圆窗、底部字幕四组信息同屏；虽然彼此未碰撞（符合 STYLE.md:69），但放大镜圆窗已贴近画面右缘，接近 STYLE.md:69「never colliding」的边界；帧 f22 扫描擦除后仍留有两团极淡残影。",
+    "typography −2：① 出片日志 [3]/[6] 段明确告警 tools/export.mjs 退出码 1 失败，字幕源没有重新生成，随片 .srt 沿用仓库里已提交的旧文件，成片字幕与随片 .srt 可能不同步；② STYLE.md:36 点名 Rajdhani（Light/Medium/SemiBold）+ Share Tech Mono，本机均无，dub 通路回退 DengXian（等线），无法还原窄体几何大写与等宽数字滚动的气质。成片本身用的 demo/fonts 字体不受影响，字幕字号/位置与声明一致（38px 正文、底板宽 1180px、基线 y 962）。",
+    "rhythm −1：全片 39.0s 落在 STYLE.md §11 规格讲解用例声明的 30–40s 区间内，段落停留（intro 8s / 第一条 callout 6s / 其余 4s / regroup 2s / high 4s / lock 6s / end 5s）与 style-dna:67-75 逐条吻合，切点全部落在 120 BPM 网格（cuecheck 0 ms 偏移）。但帧 f09 处于甩镜的 5 子帧运动模糊中，整幅画面几乎不可读——甩镜段无法承载必读信息，节奏上有一小段对观众不产出内容。",
+    "audio −2：响度精确达标（实测 −14.0 LUFS、真峰值 −1.53 dBTP，均在 −14 LUFS / −1.2 dBTP 交付线内，与 mux 目标完全一致）。扣分来自：① LRA 仅 3.4 LU，全片动态偏平，与 STYLE.md:75「密度跟着信息走」（半速 / 真静音 / drop / 转调）声明的动态落差相比压缩过度；② mix.wav peak 0.95 逼近满刻度、score.wav peak −1.20 dBFS，留白偏紧；③ 本 demo 无 voice_fx.py / voice.py，旁白为 Kokoro TTS 直出，无 EQ / 压缩 / 空间化（日志 [配音 1/1] 行）。"
+  ],
+  "resolvedDefects": [
+    "palette −1：成片严格守住 STYLE.md:29-32「一个冷色相 + 一个暖强调，强调只花在锁定的真值上」——逐帧核对全片色相数为 2（青 hue 188 + 琥珀 accent 38），琥珀只出现在数字变真那一帧（帧 f08 的 80 km、f11 的 250 w、f13 的 160 mm）。但 lib/dub-styles.json#hologram-hud 的 palette 全为 null，只有 accent #D97757，而该值取自 demo frames.js:18 的 keep 保留色（STYLE.md:32 的「单色例外」），并非本片真正使用的 hue 188 / accent 38；下游走 dub 通路时无法复现本风格配色内核。（★ 2026-10-03 校正：该缺陷已修 —— 当前 lib/dub-styles.json#hologram-hud 的 palette 各项均为 null（含 accent），配置不再断言 accent #D97757 这个错误的 keep 代理色；STYLE.md §3 本就把颜色写成参数（全篇不给固定 hex），故 null 是诚实的缺失而非错值。）"
+  ],
+  "assetGaps": [
+    "无外部图像/视频素材缺口：线框模型、舞台、投影台、点阵网格、HUD 家具、配乐、拟音全部由 demo 引擎程序化生成（engine/holo.js、engine/hud.js、models/mkmodel.mjs、music/score.py、mix.py）。",
+    "模型素材需自制：content.json 的 model 字段指向的线框模型 JSON 必须自己写生成器（models/gen_<name>.mjs），或用 engine/holo.js 的 modelFromPath 从任意闭合 2D 路径挤出。demo 自带 models/gen_volt.mjs（电助力车）与 models/gen_kite.mjs（无人机）可作模板。",
+    "字体缺口：STYLE.md:36 声明的 Rajdhani 与 Share Tech Mono 本机均不存在，dub 通路回退 DengXian（等线）；等线不是窄体几何大写，滚动数字的等宽抖动控制与 Rajdhani 气质会明显失真。",
+    "配色参数缺口：lib/dub-styles.json#hologram-hud 的 bg/bg2/fg/subtitle 全为 null，只有 accent #D97757（= demo frames.js:18 的 keep 保留色）。STYLE.md §3 把颜色写成参数而不给固定 hex，所以下游必须自行按主题选冷色相，否则回退 plain-dark 底色。"
+  ],
+  "limits": [
+    "只有 16:9：style.json 无 aspects 声明，产品默认 9:16（1080×1920）下画面会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑。本风格 HUD 全部按 1920 宽绝对像素布局（大卡片 x ≥ 1240、左侧栏 x 110–470、字幕基线 y 962、四角括号距边 44px），竖屏会把右侧大卡片与全部大数值切掉、四角括号错位。本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "题材限制：只适合有部件、有可量化参数的物件；STYLE.md §11 给的用例区间为 规格讲解 30–40s（2–5 部件）/ 循环屏 20–30s / 拆解 40–60s / 升级 20–30s / 装配顺序 20–40s，超出区间本风格撑不住；撑不起纯情绪、纯人物、纯风景题材。",
+    "callouts 硬上限 5 条（超过放不进左侧栏，侧栏步距 min(112, 410/(n−1)) px 只够 5 枚）。",
+    "渲染成本：936 帧普通帧 19s 渲完，但甩镜帧成本是普通帧的 5 倍（DEMO.md:77）。GPU 独占，不可并发。",
+    "matchScore 上限说明：成片即本风格自身的 demo，客观上限 100；扣掉的 7 分全部来自可复现的具体缺陷（dub palette 缺口、放大镜贴边、export.mjs 失败致 .srt 未重生成、字体回退、甩镜帧不可读、LRA 偏低 + 旁白无后期），无「不可达分」。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f03.jpg",
+    "f07.jpg",
+    "f08.jpg",
+    "f09.jpg",
+    "f11.jpg",
+    "f13.jpg",
+    "f17.jpg",
+    "f19.jpg",
+    "f22.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/hologram-hud/STYLE.md",
+    "styles/hologram-hud/DEMO.md",
+    "styles/hologram-hud/demo/build.sh",
+    "styles/hologram-hud/style.json",
+    "lib/style-dna/hologram-hud.md",
+    "lib/style-dna/hologram-hud.json",
+    "lib/dub-styles.json#hologram-hud",
+    "_distill/logs/hologram-hud.log",
+    "_distill/frames/hologram-hud/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/hologram-hud/hologram-hud.mp4",
+    "durSec": 39,
+    "bytes": 35622018,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 936
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "出片命令为 node lemo-make.mjs hologram-hud --skip-sync --no-preflight --ratio 16:9（跳过两份库同步与预检，16:9 是手动补的参数）",
+      "tools/export.mjs 失败（退出码 1）—— 该 demo 的字幕源没有更新；.srt 沿用仓库里已提交的旧文件，未重新生成",
+      "本 demo 无 voice_fx.py / voice.py，旁白为 TTS 直出（日志 [配音 1/1] 行）",
+      "ASR 校对 5 行全部 OK，mismatches 0（lang=en, model=base.en）；ASR 对数字与标点均不敏感（Eighty kilometres ↔ 80 kilometers、Seventeen point four ↔ 17.4、A 250-watt ↔ A two hundred and fifty watt 均判 OK）",
+      "混流实测 −14.0 LUFS / LRA 3.4（`ebur128`）、真峰值 −1.53 dBTP（`loudnorm` `input_tp`），响度精确达标但动态偏平",
+      "音频与渲染并行完成，总耗时 47.8s（936 帧渲染 19s）"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.53,
+      "integratedLufs": -14.11,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 3.4,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.645161
+    }
+  }
+}

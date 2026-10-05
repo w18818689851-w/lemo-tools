@@ -1,0 +1,97 @@
+{
+  "slug": "stained-glass",
+  "nameZh": "彩色玻璃窗",
+  "distilledAt": "2026-10-03T05:45:00.000Z",
+  "matchScore": 95,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 20,
+    "typography": 19,
+    "rhythm": 20,
+    "audio": 18
+  },
+  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.12 dBTP（4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.08 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位用 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量（本风格副本 demo/tools/mux.sh:6,8 写死 TP=-1.2，未采用 core 版 LN_TP=-1.7）故减半 = −1，audio 18→17。另 −2 为既有：响度 I=−14.1 LUFS 偏 −14 目标 0.1 LU（可接受，仅记录）+ 配乐依赖外部 CC0 采样库（FreePats / VSCO 2 CE / VCSL），缺库即整体退化。",
+  "defects": [
+    "字幕链在两处不一致：编排器第 3 步（导出事件与字幕）探测不到本 demo 的字幕生成器，告警『字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件』（日志第 29-30 行）；真正重新生成发生在第 6 步（混流），由 demo 自带的 demo/subs_export.py 完成（日志第 112-115 行）。只看第 3 步产物会拿到旧字幕",
+    "派生通路的 subtitle.fontFamily 是 SimSun（面向中文文案），与 demo 实际使用的 IM Fell English 不同；字幕几何（fontSizeFactor 0.04074 / marginVFactor 0.14537）一致但字体气质差异明显",
+    "派生通路的 palette.bg 是深灰 #2a2a2e，而 demo 画面主色是钴蓝 #1d3a9c，两者只在 bg2 上对上",
+    "派生通路 overlay.chapterCards=true，与 demo 实际不符——demo 没有独立章节卡层，它的『章节』就是四格竖棂本身",
+    "成片响度 I: -14.1 LUFS，相对 -14 LUFS 目标偏高 0.1 LU（在容差内，仅记录）",
+    "STYLE.md / DEMO.md 未声明本风格的时长区间，因此无法做『全片时长落在声明区间』的符合性判断，只能确认与 story.js:8 的 DUR = 56.5 完全一致",
+    "【palette −1】细纹理 `textureRaw: glass` 声明了但渲染未实现：`lib/dub-styles.json#stained-glass.bgRecipe.textureRaw` 是 `glass`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `glass` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `glass` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "配乐依赖外部 CC0 采样库（FreePats / VSCO 2 CE / VCSL），缺库时配乐整体缺失或退化",
+    "字体需自带：IM Fell English（字幕横幅）与 Cinzel 600（刻字）必须随 demo 复制，缺字体则横幅与刻字退化",
+    "刚性骨架只有两套：knight.js（骑士 + 可换脸块 stern/astonished）与 dragon.js（翼龙脊链 + 折叠/展开翼 + 余烬），换题材必须新写",
+    "window.js 只有样本这一套『四格竖棂 + 玫瑰』，STYLE.md §11 列的另外三种窗形（玫瑰窗当表盘 / 一格高竖棂 / 两扇相对窗）没有现成变体"
+  ],
+  "limits": [
+    "只支持 16:9；必须 WebGL2（comp.js 的着色器、bloom、暗角、抖动全在这条管线），无 WebGL2 环境跑不起来（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "渲染成本高：本机 1356 帧用 98s（6 workers），音频与渲染并行合计 104.4s，混流阶段总 131.3s，比同长度 Canvas2D 风格慢很多",
+    "『光即时间』要求受光顺序与时间线严格同源（light(t) 同时驱动太阳位置/颜色/强度/光带宽度/斜切与『哪一格是活的』），替换 BGM 或改剪辑点会让受光顺序与音乐错位",
+    "人物只能 8fps 分级步进（风格要求，非性能妥协），做不了流畅动作戏",
+    "题材必须世俗：不能出现十字架、圣徒、光环等宗教图像",
+    "最高可达分 94/100：受限于 9:16 架构缺陷、派生通路参数偏差与项目级 AAC 编码余量不足（★ 原记·首版成片真峰值 −1.12 dBTP 曾超线；该缺陷已于 2026-10-03 音频重混修复，现成片实测 −1.83 dBTP 达标），再往上需改架构/改 mux 而非改文档"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f03.jpg",
+    "f04.jpg",
+    "f06.jpg",
+    "f09.jpg",
+    "f12.jpg",
+    "f15.jpg",
+    "f18.jpg",
+    "f20.jpg",
+    "f22.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/stained-glass/STYLE.md",
+    "styles/stained-glass/DEMO.md",
+    "styles/stained-glass/style.json",
+    "styles/stained-glass/demo/build.sh",
+    "styles/stained-glass/demo/tools/mux.sh",
+    "styles/stained-glass/demo/subs_export.py",
+    "lib/style-dna/stained-glass.md",
+    "lib/dub-styles.json#stained-glass",
+    "_distill/logs/stained-glass.log",
+    "_distill/frames/stained-glass/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/stained-glass/stained-glass.mp4",
+    "durSec": 56.5,
+    "bytes": 32346602,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1356
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "出片走的是编排器 --skip-sync --no-preflight（日志第 1 行），WSL/Windows 双份库未做同步校验",
+      "第 3 步告警：该 demo 没有本编排器支持的字幕生成器，字幕源不重新生成、.srt 沿用仓库旧文件；第 6 步由 demo 自带的 subs_export.py 真正重新生成 8 cues（本风格独有的字幕链）",
+      "音频 56.5s（2712000 采样 / 48000Hz）与画面 1356/24 = 56.5s 等长，mux.sh 新增的『音频短于画面时补静音』分支本次未触发",
+      "本次出片非本智能体执行（GPU 独占，纪律禁止起渲染），以上数据全部转录自 _distill/logs/stained-glass.log"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.83,
+      "integratedLufs": -14.44,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 5.7,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -2.444778
+    }
+  },
+  "resolvedDefects": [
+    "【audio 真峰值超线，本次新补记】成片真峰值 −1.12 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.08 dB；真峰值为负 ⇒ 未削波，属『仅超线』。根因在下游 AAC 编码余量：本风格副本 demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（tools/mux.sh:6,8），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），AAC 编码过冲把真峰值顶到 −1.12。属项目级既有缺陷、非本风格音频链所致（本片 mix.wav 链本身合规）。扣分按 AGENT-BRIEF『真峰值超标怎么扣』：真峰值为负但超线取 −2 档，根因在下游 AAC 故减半 = −1。此前 §6 只写了上限 −1.2、未记实测值\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −1.12 dBTP → **−1.83 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。",
+    "composition −1（原缺陷）：9:16（产品默认）不可用：本风格无 aspects 声明、按 1920x1080 绝对像素构图，硬渲成 1080x1920 会丢右侧 43.75%，被切掉的正好是 III/IV 两格与玫瑰右半（即『下午的战斗』与『黄昏的余烬/重上铅条』两段核心戏），石带上的片名刻字与底部字幕横幅也会被下方黑边吞掉（架构级缺陷）。（未实渲复核，按既有 1:1 左上角塞入口径推导）（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 95→96（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

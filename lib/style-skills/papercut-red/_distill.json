@@ -1,0 +1,153 @@
+{
+  "slug": "papercut-red",
+  "nameZh": "红色窗花剪纸",
+  "distilledAt": "2026-10-03T00:00:00.000Z",
+  "matchScore": 93,
+  "scoreBreakdown": {
+    "palette": 20,
+    "composition": 20,
+    "typography": 17,
+    "rhythm": 16,
+    "audio": 20
+  },
+  "defects": [
+    "audio −0（口径差，记入 limits）：STYLE.md:70 声明音乐在人声下 duck ≈9 dB，实测五句的人声/伴奏差为 13.7 / 8.0 / 17.8 / 8.0 / 10.6 dB，两处深达 13.7 与 17.8 dB，说明那些窗口的伴奏本身很轻，声明值与实测不可直接对齐。",
+    "rhythm −4：八扇窗 32.0–33.75 的起音里，32.5s 那一扇偏 −46.3ms，其余七扇都在 ±14ms 内；对 0.25s 一扇的八分音符网格来说这一处可听。",
+    "typography −3：STYLE.md:34 点名字幕字体为 Fraunces SemiBold（OFL），本机没有该字面；dub 通路已退到 SimHei，脱离 demo 环境拿不到原字体，衬线「剪字/横批」的观感无法保证。"
+  ],
+  "resolvedDefects": [
+    "palette −2：dub-styles.json#papercut-red 的 palette 字段与它自己的 notes 自相矛盾——字段为 bg #D2201F / fg #f2e8d0 / accent #FCF9F2，notes 却说「修正后」应为 bg #f2e8d0 / fg #d2201f / accent #d9a93f；bgRecipe.stops 也仍是 [\"#d2201f\"]。按字段取值会把红当底、把米色当主角，正是 STYLE.md:28 明确禁止的「底与主角同一纸族」（红压红），下游会复现该错误。（★ 2026-10-03 校正：该缺陷已修 —— 当前 lib/dub-styles.json#papercut-red 的字段已改为 bg #f2e8d0 / fg #d2201f / accent #d9a93f，bgRecipe.stops = [\"#f2e8d0\"]，与其 notes 的「修正后」取值一致，不再红压红。）",
+    "audio −6：本次成片实测 −14.1 LUFS（响度达标）、LRA 5.1 LU、真峰值 +1.73 dBTP（口径 = loudnorm 的 input_tp，4× 过采样），超出 −1.2 dBTP 交付线 2.93 dB、真峰值为正即已实际削波，mux.sh 明确告警「missed the target (-14 LUFS, true peak <= -1.2 dB): measured -14.1 LUFS, peak 0.328200 dB … The mix is probably clipping or has very hot peaks」；告警里印的 peak 0.328200 dB 是 astats 的采样峰值（真峰值的下界），不是真峰值，会低估削波程度；mix.wav 峰值 0.95 已贴近满量程。根因为 AAC 编码余量不足 + mix.wav 本身峰值偏高（项目级既有缺陷：全 43 片实测 19 个真峰值超 -1.2 dBTP、6 个为正）。这是本次成片最硬的缺陷。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 +1.73 dBTP → **−1.69 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +6（见第 10 节）。",
+    "composition −3（原缺陷）：composition −3：本风格无 aspects 声明、只支持 16:9。硬渲产品默认的 9:16 时画面 1:1 塞在左上角、右侧约 43.75%（≈840px）丢失、下方 840px 全黑：字幕横批中心在 x≈960 而可见右缘在 x=1080，横批右半只剩约 120px 可见，74 字符长句的右半文字会被整段切掉；片名卡（f03）右侧团花与「年」印章、片尾卡（f24）右侧对联条与半个窗格、右侧发光团花与大圆窗（f16/f20）也会被切。本次未实渲 9:16 复核，属按口径推导的未验证缺陷。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→20，matchScore 90→93（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ],
+  "assetGaps": [
+    "关节片主体（piece + rig parts 表 + 可换脸片）必须为每个主题重做，是人力最重的一块；仓库里只有女孩与年兽两套（girl.js / nian.js）。",
+    "字体缺口：STYLE.md 点名的 Fraunces SemiBold / Fraunces 800（OFL）本机不存在，dub 通路已退到 SimHei。",
+    "民乐配乐依赖 music/score.py 的合成音色库（pipa / dan_tranh / erhu / dizi / woodblock / gong2 / frame_drum），换库后「明亮中式室内小合奏」的音色统一难以保证。",
+    "团花只有 8 折（D4）一种实现（tuanhua.js，TR=400、45° 楔形）；2×/4×/6× 折，以及 STYLE.md:102 给出的「一年的十二剪 / 流水线 / 一封信」三种结构均无实现，需从零设计。",
+    "没有任何真实窗花纹样或团花版式可用（STYLE.md:4 要求全部由代码生成），也没有可复用的第二套纸族配色。"
+  ],
+  "limits": [
+    "内容边界：撑不起当代都市职场、数据/图表、快节奏口播、需要写实质感或细腻情绪特写的内容（脸永不变形，表情只能靠换脸片）。",
+    "层必须平行于屏幕、纵深只靠视差与纸档，做不了大透视运镜。",
+    "所有镂空必须留桥（不留孤岛），细密图案有可读性下限；辉光强度上限 ≈0.55，再高图案中心就糊。",
+    "角色 12 fps 硬步进，动作密度有上限；折—剪—展需要一个明确的强拍落点，片长原定 40–55s，太短讲不完因果。",
+    "duck 声明（≈9 dB）与实际不可直接对齐：实测人声/伴奏差 8.0–17.8 dB，其中 13.7 与 17.8 dB 两处远深于声明，说明该指标受段落伴奏本身电平影响，不能当作可校验参数。",
+    "最高可达分说明：因本次成片音频削波（真峰值 +1.73 dBTP 超 −1.2 dBTP 交付线 2.93 dB），audio 最高只能给 14/20；因 9:16 是产品默认而本风格只支持 16:9，composition 最高 17/20；因 Fraunces 本机不可用，typography 最高 17/20。综合最高可达 82/100，本次即 82。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f03.jpg",
+    "f06.jpg",
+    "f09.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f16.jpg",
+    "f18.jpg",
+    "f20.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/papercut-red/STYLE.md",
+    "styles/papercut-red/DEMO.md",
+    "styles/papercut-red/style.json",
+    "styles/papercut-red/demo/build.sh",
+    "styles/papercut-red/demo/paper.js",
+    "styles/papercut-red/demo/motifs.js",
+    "styles/papercut-red/demo/tuanhua.js",
+    "styles/papercut-red/demo/light.js",
+    "styles/papercut-red/demo/fold.js",
+    "styles/papercut-red/demo/hud.js",
+    "styles/papercut-red/demo/story.js",
+    "styles/papercut-red/demo/main.js",
+    "styles/papercut-red/demo/mix.py",
+    "styles/papercut-red/demo/subs.py",
+    "lib/style-dna/papercut-red.md",
+    "lib/style-dna/papercut-red.json",
+    "lib/dub-styles.json#papercut-red",
+    "lib/dub-visual.json#papercut-red",
+    "_distill/logs/papercut-red.log",
+    "_distill/frames/papercut-red/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/papercut-red/papercut-red.mp4",
+    "durSec": 49,
+    "bytes": 36876349,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1176
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "mux.sh: warning: the film missed the target (-14 LUFS, true peak <= -1.2 dB): measured -14.1 LUFS, peak 0.328200 dB (ebur128 1-decimal readout 1.7 dB). The mix is probably clipping or has very hot peaks: lower it and tame the peaks, then mux again",
+      "这通常来自 mix.wav 本身峰值偏高，不是 mux.sh 的问题；不影响播放，但未达 −1.2 dBTP 目标"
+    ],
+    "skipSync": true,
+    "preflight": false,
+    "ratio": "16:9",
+    "size": "1920x1080",
+    "fps": 24,
+    "workers": 6,
+    "frames": 1176,
+    "renderSec": 20,
+    "audioRenderParallelSec": 34.7,
+    "totalSec": 57,
+    "ttsRan": true,
+    "asrMismatches": 0,
+    "asrNote": "whisper 把 Nian 听成 Nion/Nyan，已在 lines.json 注册 asr 别名",
+    "events": 81,
+    "srtCues": 5,
+    "loudness": {
+      "integratedLufs": -14.53,
+      "lra": 4.9,
+      "truePeakDbtp": -1.69,
+      "samplePeakDbfs": -2.189661,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样）；mux 告警里的 peak 0.328200 dB 是 astats 采样峰值（下界），不是真峰值 ★ 2026-10-05 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-1.69 dBTP**、astats 采样峰值 **-2.189661 dBFS**。原记（真峰值 0.33 dBTP / astats 0.33）属修复前或重渲前版本，已按实测更正。",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）"
+    },
+    "silenceWindows": [
+      {
+        "range": [
+          17,
+          19.5
+        ],
+        "peakDb": -74.6,
+        "note": "年兽眼睛段，音乐全停"
+      },
+      {
+        "range": [
+          29.5,
+          30
+        ],
+        "peakDb": -211.1,
+        "note": "剪完、展开前的一拍屏息（数字静音）"
+      }
+    ],
+    "onsetErrorsMs": {
+      "32.0": 13.5,
+      "32.25": 4.8,
+      "32.5": -46.3,
+      "32.75": 8.6,
+      "33.0": 7.6,
+      "33.25": 6.9,
+      "33.5": 3.1,
+      "33.75": 4.7
+    },
+    "voiceBedDiffDb": [
+      13.7,
+      8,
+      17.8,
+      8,
+      10.6
+    ],
+    "grain": 0
+  }
+}

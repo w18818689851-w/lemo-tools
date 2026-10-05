@@ -1,0 +1,92 @@
+{
+  "slug": "ukiyoe",
+  "nameZh": "浮世绘",
+  "distilledAt": "2026-10-03T00:00:00.000Z",
+  "matchScore": 92,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 20,
+    "typography": 16,
+    "rhythm": 19,
+    "audio": 18
+  },
+  "defects": [
+    "字体通路回退 SimSun：demo 声明 Shippori Mincho 500（字幕）+ Yuji Syuku（竖题签毛笔），本机无，题签笔意与字宽有损（dub-styles.json#ukiyoe.notes）",
+    "通路不承载题签的双墨线边框与朱印，只承载墨色字 + 题签底色 #f3e7c6，印刷语言有损失",
+    "dub-styles.json#ukiyoe 的 motion.chapterTransition 写 cut，但同条 notes 论证 wipe（斜向馬連扫过的印刷揭示），两处口径不一致"
+  ],
+  "assetGaps": [
+    "Shippori Mincho / Yuji Syuku 字体文件缺失（需装进 demo/fonts/ 才能消除回退）",
+    "新主题需要的颜料组（6-9 平涂色相）与母题资产（山/浪/松/旅人）必须自建，不能沿用《Toward the Mountain》的五景"
+  ],
+  "limits": [
+    "骨架三条不可拆：纸即画框 + 一色一版且套色错位 + 平涂叠层出纵深（STYLE.md:100-106），撑不起写实光影与 3D 透视",
+    "人物在风景里只有约 80-130 px，撑不起多角色复杂表演与精细面部戏",
+    "native move 需约一秒停留才读得出来，节奏天然偏慢（STYLE.md:47）",
+    "最高可达分受限：真峰值未达标（audio 扣 4）+ 字体回退（typography 扣 4），故封顶约 89/100"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f04.jpg",
+    "f11.jpg",
+    "f15.jpg",
+    "f17.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/ukiyoe/STYLE.md",
+    "styles/ukiyoe/DEMO.md",
+    "styles/ukiyoe/style.json",
+    "styles/ukiyoe/demo/build.sh",
+    "styles/ukiyoe/demo/story.js",
+    "styles/ukiyoe/demo/print.js",
+    "styles/ukiyoe/demo/views.js",
+    "styles/ukiyoe/demo/nature.js",
+    "styles/ukiyoe/demo/wave.js",
+    "styles/ukiyoe/demo/traveler.js",
+    "styles/ukiyoe/demo/mix.py",
+    "styles/ukiyoe/demo/subs.py",
+    "styles/ukiyoe/demo/lines.json",
+    "lib/style-dna/ukiyoe.md",
+    "lib/style-dna/ukiyoe.json",
+    "lib/dub-styles.json#ukiyoe",
+    "_distill/logs/ukiyoe.log",
+    "_distill/frames/ukiyoe/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/ukiyoe/ukiyoe.mp4",
+    "durSec": 44,
+    "bytes": 29203367,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1056
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "mux.sh 告警：成片未达目标（-14 LUFS, true peak <= -1.2 dB），实测 -14.1 LUFS / peak -0.643 dB（logs/ukiyoe.log:118）",
+      "whisper ASR 把 L5 的句号听成逗号，mismatches 0，判 OK（logs/ukiyoe.log:61-62）",
+      "渲染 1056 帧仅 19s（Canvas2D，非 GPU 重负载）"
+    ],
+    "loudness": {
+      "truePeakDbtp": -2.6,
+      "integratedLufs": -14.48,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 5.6,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -2.812695
+    }
+  },
+  "resolvedDefects": [
+    "成片真峰值 -0.6 dBFS，未达 mux.sh 的 ≤ -1.2 dBTP 目标；mux 告警 the mix is probably clipping or has very hot peaks（logs/ukiyoe.log:113-121）\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 -0.6 dBFS → **−2.60 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +2（见第 10 节）。",
+    "composition −1（原缺陷）：无 aspects 声明，硬渲 9:16 会丢失右侧约 43.75% 并留下方黑区（见 SKILL 第 2 节）（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 91→92（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

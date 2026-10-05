@@ -1,0 +1,95 @@
+{
+  "slug": "iso-infographic",
+  "nameZh": "等距信息图",
+  "distilledAt": "2026-10-03T00:00:00Z",
+  "matchScore": 94,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 19,
+    "typography": 18,
+    "rhythm": 19,
+    "audio": 20
+  },
+  "defects": [
+    "audio 内含：第一段静默不静。DEMO.md:73 声明下潜静默（30.0-33.6s）只应剩路线与 -66 dB 船体吱呀，但 mix.wav 实测 silence 30.1-33.5: -25.9 dB，其中 voc sil1 -26.8 dB（环境/音乐/拟音三路已分别 -180/-180/-66.4），即静默段内仍有人声残留。第二段静默 45.35-45.85 实测 -180.0 dB，干净。",
+    "typography −2：底居中字幕卡的「11,000 km」标签针引线横线末端离字幕卡很近（帧 f21/f22），逼近 DEMO.md:105「lines never overlap the end card」的边界，余量偏小；另样片用 Jost，dub 通路回退 DengXian 等线，字重与几何感有差。",
+    "palette −1：片尾图例卡在拉回到位前（帧 f23）与城市/板面有轻微叠压，DEMO.md:106 说它应在「空的奶油角」，中间态并非空角。",
+    "composition −1：板是方形投影菱形以贴合 16:9，因此边缘留白不均匀（帧 f10 右侧与下方奶油留白偏多），未做到声明中的「几乎正好填满」。",
+    "【palette −1】细纹理 `textureRaw: flat-iso` 声明了但渲染未实现：`lib/dub-styles.json#iso-infographic.bgRecipe.textureRaw` 是 `flat-iso`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `flat-iso` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `flat-iso` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "无外部图像/视频素材缺口：整块板、地形、建筑、船、吊车、集装箱、麻袋、人物、手部特写、图标全部由 demo/engine.js（零依赖 Canvas 2D）+ world.js + hero.js 程序化绘制。",
+    "字体缺口：STYLE.md §4 与 DEMO.md:98 点名 Jost（几何无衬线，标题 600 全大写 0.12em 字距、数字 400/44px），dub-styles.json#iso-infographic 回退 DengXian 等线。",
+    "图标缺口：engine.js 的 ICON.* 只提供 sun/moon/box/sack/bean/cherry 六种 Isotype 图标；新题材（药片、电池、信封等）需自写 iconGrid 绘制回调或走 shape()。"
+  ],
+  "limits": [
+    "只有 16:9：style.json 无 aspects 声明；DEMO.md:8 明说方形板投影成菱形「几乎正好 16:9」，即板形是按 16:9 定制的。产品默认 9:16 下会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑，右侧的港口/城市/片尾图例卡会被切。本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "适合 45-60s（DEMO.md:8，样片 58.8s）：更长靠累积填充会拖节奏，更短则「数字一站站长起来」的层次铺不开。",
+    "可信度是命门：数字必须相加（DEMO.md:39 的 KM={farm,sea,city,total}，400+10,500+100=11,000 km），工序顺序必须符合现实，否则风格立刻崩。",
+    "卡点与成片复核依赖 demo/tools/cuecheck.py（68 个同步点，0 ms 偏移）与 final_asr.py；缺这两步易出字幕与旁白错位而不自知。",
+    "matchScore 上限说明：成片即本风格自身的 demo，客观上限 100；扣掉的 11 分全部来自可复现的具体缺陷（削顶、静默残留、标签余量、图例卡叠压、板边留白），无「不可达分」。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f03.jpg",
+    "f05.jpg",
+    "f06.jpg",
+    "f09.jpg",
+    "f10.jpg",
+    "f12.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f15.jpg",
+    "f18.jpg",
+    "f21.jpg",
+    "f22.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/iso-infographic/STYLE.md",
+    "styles/iso-infographic/DEMO.md",
+    "styles/iso-infographic/demo/build.sh",
+    "styles/iso-infographic/style.json",
+    "lib/style-dna/iso-infographic.md",
+    "lib/style-dna/iso-infographic.json",
+    "lib/dub-styles.json#iso-infographic",
+    "_distill/logs/iso-infographic.log",
+    "_distill/frames/iso-infographic/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/iso-infographic/iso-infographic.mp4",
+    "durSec": 58.79,
+    "bytes": 33204354,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1411
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "mux.sh: warning: the film missed the target (-14 LUFS, true peak <= -1.2 dB): measured -14.2 LUFS, peak 0.326858 dB (ebur128 1-decimal readout 1.2 dB). The mix is probably clipping or has very hot peaks: lower it and tame the peaks, then mux again",
+      "该告警通常来自 mix.wav 本身峰值偏高，不是 mux.sh 的问题；不影响播放，但未达 -1.2 dBTP 目标",
+      "复测口径订正：成片真峰值以 loudnorm 的 input_tp 为准 = +1.20 dBTP（4× 过采样），超 -1.2 dBTP 交付线 2.40 dB。告警里印的 peak 0.326858 dB 是 astats 采样峰值、不是真峰值；astats 采样峰值是真峰值的下界，会低估削波程度。（★ 原记·2026-10-03；成片已于 2026-10-03 用 scripts/fix-truepeak.mjs 重混，实测真峰值 -1.69 dBTP 达标）",
+      "出片命令为 node lemo-make.mjs iso-infographic --skip-sync --no-preflight --ratio 16:9（跳过两份库同步与预检）"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.69,
+      "integratedLufs": -14.46,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 6.3,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -2.083625
+    }
+  },
+  "resolvedDefects": [
+    "audio −6：成片真峰值 +1.20 dBTP（口径 = loudnorm 的 input_tp，4× 过采样），超 -1.2 dBTP 交付线 2.40 dB、真峰值为正即已实际削波。mux.sh 告警里印的 peak 0.326858 dB 是 astats 的采样峰值（真峰值的下界），会低估削波程度；同一告警括号里的 ebur128 1 位小数读值 1.2 才接近真峰值。根因是 AAC 编码余量不足叠加 mix.wav 本身峰值偏高（项目级既有缺陷：全 43 片实测 19 个真峰值超 -1.2 dBTP、其中 6 个为正）。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 +1.20 dBTP → **−1.69 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +6（见第 10 节）。"
+  ]
+}

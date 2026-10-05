@@ -1,0 +1,150 @@
+{
+  "slug": "ink-wash",
+  "name_zh": "中国水墨（Chinese Ink Wash）",
+  "essence": "一部「一笔一笔画出来」的写意水墨片：暖白宣纸是空间，墨以五种浓淡（焦浓重淡清）乘算在纸上，形体靠「没骨」——笔腹的深边就是轮廓，湿墨在合成器里晕开、干墨露出笔毫的飞白；留白（水、天、雾、静默）占了画面大半，东西是「被画出来」的，不是被剪进去的。全片只有一种彩色，朱红印章（最多再加一处极小点缀）。它不是水彩（没有彩色晕染）、不是加了笔刷纹理的矢量图（没有平涂、没有闭合轮廓线）、不是书法片头。",
+  "materials_and_rendering": [
+    "纸是程序化的，在合成器里生成、绝不是贴图：暖宣纸约 `#F2ECDE`（rgb .95/.925/.87），云状斑驳 ±7%、三个方向的纤维（+1.8% 亮）、纸浆暗斑、缩小时细纹淡出（否则闪）、轻微暗角；全部锚在世界空间，随镜头缩放。",
+    "墨是「乘算到纸上」的描边不透明度，分五色：焦 .96（书法、最利的线、点苔）、浓 .82（轮廓、没骨笔的深边）、重 .60（次线、衣褶）、淡 .34（山体、袍与身体底块）、清 .16（远山、脸、雾）。",
+    "笔触模型 = 中心线 × 压力轮廓 × 宽度噪声，外加 4–60 根「笔毫」；笔毫的墨量沿笔程下降、并在长尺度噪声上断开。`dry` 从实心湿笔连续过渡到飞白（干笔只剩笔毫轨迹）。",
+    "没骨笔（loaded stroke）：笔毫一侧更浓，所以一笔自带轮廓——身体、石头、浪因此读成墨而不是矢量。",
+    "两层：湿层在合成器里晕开（12 抽样噪声 Poisson 模糊约 5px + 边缘积墨 + 颗粒），干层只吃纤维抖动与纸纹咬边。",
+    "墨块 = 软多边形 + 抖动边缘 + 渐变，绝不平涂；远山向下溶进雾带，近山才有披麻皴与苔点；石头 = 轮廓 → 斧劈皴 → 影染 → 点。",
+    "水就是留白：靠淡淡的干笔划痕与开放的墨环暗示；实心水用宋式平行水纹（近岸密）或一块淡底加几笔巨大没骨笔沿水面。",
+    "人物是写意：一块淡身体底 + 两笔没骨，四肢用焦墨线；脸若出现只用 3–5 笔（剑眉、凤眼睑、一笔鼻、垂须）。",
+    "书法：OFL 毛笔字只当「骨架」——按笔顺描中心线，压力来自字形粗细，藏锋起笔、出锋收笔。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 28–45 个字符（约 5–9 个英文词）。demo 5 行里最短 28 字符（\"and the water only flows on.\"），最长 44 字符（\"The river keeps no name. It waits for no one.\"）。字幕最多两行（story.js 的 L1 就是显式两行），每行 46px 斜体 Cormorant；停留 = 语音时长 + 0.6s（story.js 的 sub 区间比语音长 0.6–1.3s）。",
+    "person_and_tense": "第三人称、现在时为主；偶有祈使/邀请（\"Draw a sword to cut the water…\"）。叙述者像题跋作者，克制、不解释画面，句子短而留白。",
+    "typical_openers": [
+      "以「不变之物」起句（\"The river keeps no name.\"）",
+      "以主体动作起句（\"He crossed it the only way he knew —\"）",
+      "以时间/方位状语起句再落到主体（\"Halfway over, …\"）",
+      "祈使句作转折（\"Draw a sword to cut the water…\"）",
+      "结尾用一句格言式收束（\"…and the water only flows on.\"）"
+    ],
+    "forbidden": [
+      "第一人称内心独白与抒情（该风格靠留白与动作承载情绪）",
+      "网络口播腔、感叹号堆叠、营销话术",
+      "抽象概念名词当主语（只谈能被一笔画出来的东西）",
+      "一句里塞进两个以上并列信息点（每句只承担一层）",
+      "解释性的旁白（题跋不解释画面）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一笔画成一件事）：虚白空纸 → 一滴墨落下（creation）→ 小人物在巨大留白里 → 轻快（踏水/凌空的喜悦）→ 压倒性的障碍被画成一块墨（湿墨溅开成巨浪）→ 静默 → 决定性的一笔（剑=写出的「水」字）→ 释放 → 尺度揭示（人物成了整幅画里的一个小点）→ 印章 → 片尾卡。全片只有一个转折（夜里落下来 / 障碍升起）。",
+    "beat_durations": "时间线是 story.js 的 T 表（唯一真值）：dropFall .5 → dropHit .9 → bloomEnd 5.2；titleIn 2.6 / titleOut 6.4；panA 5.6 → panB 10.6；三笔 paint = [8.8, 9.4, 10.0]、tassel 10.3；leap 14.2 → 墨晕转场 x3a 14.45 → x3b 15.3；过江 9 步，step0 = 15.3333、beat = .66667；darken 19.9；shot4 21.3；cut5 26.8（第一段静默起点）；draw 28.0；三笔 w1 [28.5,29.0] / w2 [29.2,29.75] / w3 [29.95,30.35]；hush 30.5（第二段静默起点）；cut 32.4 → cutEnd 32.57（决定性的一笔只用 0.17s）；x7a 35.0；close [38.6,40.2]；bow [40.9,41.5]；scrollA 42.6；seal 44.6；endCard 45.6。人物 12fps（on twos），镜头/墨晕/涟漪/溅墨 24fps。",
+    "total_length_range": "主 demo 48.0s（style.json:16-17，dur=48.0 / frame_sec=34.56）。STYLE.md 未硬性给时长区间；本风格适合 40–60s 的单场景短片（demo 是 5 行旁白 + 一次转折）。",
+    "silence_policy": "静默是真实存在的、且是「最重的一笔之前的清场」：events() 里声明两段 silence——T.cut5(26.8)→T.drip5-.01(27.59) 与 T.hush(30.5)→T.cut(32.4)。mix.py 把整个总线（音乐+环境+混响尾）清零，只用 20ms 淡入淡出，最多留一个声音（一滴水、一声剑鸣）。最长的一段（1.9s）之后，才是那把断流的剑。"
+  },
+  "tone": "一位安静的题跋作者在讲一幅画：语速慢（Kokoro `bm_george`，en-gb，speed .82–.86），用词克制、带一点古意，不解释、不设悬念、不喊口号；最后一句是哲思而不是胜利（\"…and the water only flows on.\"）。",
+  "shot_logic": {
+    "camera_is": "一只在宣纸上方缓慢移动的眼睛（手卷/立轴的观者）：镜头不制造情绪，它跟随笔尖、沿卷轴平移或竖直俯仰，把「正在被画出来」这件事本身当成叙事。",
+    "vocabulary": [
+      { "move": "锁定在纸上的固定机位", "expresses": "纸就是舞台；东西被画进去", "serves": "成形中的东西；正在被读的一行；一个静止的决定" },
+      { "move": "从右向左平移（手卷展开）", "expresses": "时间与距离是同一幅画", "serves": "旅程；一段历史；一个过程" },
+      { "move": "竖直俯仰（立轴）", "expresses": "高度、层层堆叠的阶段", "serves": "季节；攀爬；代际" },
+      { "move": "横向跟随、前方留空、远景极慢视差", "expresses": "在一个世界里移动", "serves": "旅行；追逐；通勤" },
+      { "move": "高处大全景，一个小人在留白里", "expresses": "渺小、孤独", "serves": "孤独；自然的尺度；众生中的一条命" },
+      { "move": "低角度，暗块压顶，缓慢推近并带震", "expresses": "重量、威胁", "serves": "障碍；风暴；压力" },
+      { "move": "硬切到极大特写", "expresses": "流动被打断（本风格唯一的硬切）", "serves": "一个决定；一次震动；一段记忆" },
+      { "move": "推进一团墨晕或雾", "expresses": "在两种状态之间穿过", "serves": "记忆；梦；季节轮转" },
+      { "move": "拉远直到某一笔归入整体", "expresses": "这一部分原来在一个更大的东西里", "serves": "总结；尺度的反讽" },
+      { "move": "回到更早的取景", "expresses": "韵脚让「变了什么」被看见", "serves": "余波；成长；前后对比" }
+    ],
+    "transitions": [
+      "墨晕转场（ink bloom）：下一场从一滴正在扩散的墨里长出来，前沿有一圈深色水线（噪声径向蒙版；元素锚在世界，场景在合成器里做）",
+      "沿卷轴平移（pan along the scroll）",
+      "雾（mist）",
+      "起跳处的墨晕（demo 的 leap → 过江就是用 x3a→x3b 的墨晕接的）"
+    ],
+    "forbidden": [
+      "通用的溶解/划像转场",
+      "任何矢量式的补间（东西是被画出来、晕开或溶进雾里的，不是 tween 的）",
+      "无来由的运镜（每次移动都要表达「看什么」）",
+      "在湿墨上填不透明色块（墨只能是乘算的浓淡）"
+    ]
+  },
+  "idioms": [
+    "一笔就是全部（one stroke is everything）：产品从一根线里诞生；城市从一条街长出来；一天从一只鸟开始。",
+    "留白即实体（emptiness is matter）：擦掉墨反而露出纸白——墙上一扇门打开、人群分开、合影里缺一个人。",
+    "笔 = 手势 = 动作（brush = gesture = action）：笔顺变成编舞——一个舞者的句子拼出一个字、一个签名、一段刀工。",
+    "飞白：一记快速干笔横扫画面，从静默里出来最强——冲刺终点、一个决定、一颗彗星。",
+    "墨晕转场：下一场在扩散的水滴里长出，带深色水线。",
+    "手卷（the handscroll）：一幅长画从右向左展开，最后一眼看全——一段历史、从田间到手里的供应链、街上的一天。",
+    "把一块墨劈开（splitting a mass）：两半各被裁在切线两侧，一半升起淡出、一半塌下，溅墨留在原地。"
+  ],
+  "atmosphere": "一张铺开的宣纸、一间安静的书房：有墨的干、纸的暖、水的凉；雾在远山之间，尘埃在光里。整体是「克制、留白、值得被慢慢看」的气质，而不是戏剧性。",
+  "sound_palette": {
+    "instruments": [
+      "古琴领奏（`core/audio/pluck.py` 的 guqin：散音与按音、滑音、吟猱、清脆泛音、扫弦）",
+      "低而带气声的箫",
+      "大鼓与定音鼓（表现「块」的重量）",
+      "框鼓（脚步）、小锣（印章）",
+      "中国五声音阶调式（demo 用 F 宫五声 F G A C D）"
+    ],
+    "foley": "按材质分层：墨滴落纸（短促的「叮」+ 湿软的噗，mix.py 的 drip 从 1300Hz 滑到 380Hz）；毛笔/剑气破空（1200–6500Hz 带通噪声 + 毛刷颗粒，绝不是金属 whoosh）；点水（轻水花 + 小咚 + 5 颗随机水珠）；溅墨（70 颗极短湿点）；印章（木印闷「咚」+ 纸面细响）。剑 = 铁鞘摩擦上行（2500–7000Hz）+ 长而细的金属清鸣（1870/3140/4420/6110/2490Hz 五音叠加）。",
+    "mix_rules": "人声作为基准（RMS −? 归一到 .16）；音乐 ×1.35、foley ×.9、环境 ×.7。人声闪避 −6 dB（.5s 平滑），环境同步压到 30%。静默段把整个总线清零（20ms 淡入淡出），但静默之后的第一声（滴水/断流）不受影响。整体 −14 LUFS（mux 做），grain 0（纸纹在 shader 里）。配乐不循环，按段落 cue：散板开场、60 BPM 山水、90 BPM 过江（脚步落拍）、鼓滚表威胁、数字静默、三记泛音对应三笔、再一次静默，然后是鼓 + 七弦扫弦落在断流那一笔；主题在释放段回归，最后一个音 = 印章。"
+  },
+  "variation_space": "可自由决定：结构、人物（或无人）、山水、开场、结尾、镜头路径、节奏、以及红色出现在哪。远离 demo 的方向（STYLE.md:110-114）：结构——「一个字，一笔一笔」（不画人物，一个大字的每一笔展开成主题的一个小景）；「立轴」（从天空到地面的竖直俯仰，分四段、墨色渐深）；「两支笔对话」（交替的笔互相回应，最后在一团墨晕里相遇）。开场——「已经在动」（人物已经画好并在移动，世界在它周围晕开）；「先满后空」（先给一张画满墨的画，在出现光或路的地方把墨擦掉）；「笔毫」（一记湿笔填满画面，等它抬起我们才看见它画了什么）。结尾——「一个小记号」（特写一个脚印或一片叶子，周围的墨在干，不拉远）；「蒸发」（整幅画按笔顺倒着消失）；「停在半途」（笔在最后一笔落下之前停住）。红色可以给别的东西（demo 给的是剑穗），或完全不用。",
+  "taboos": [
+    "任何「填灰」——浓淡必须由墨与笔毫构成，不能出现不透明色块。",
+    "彩色晕染（这是水墨，不是水彩）。",
+    "闭合的矢量轮廓线或平涂（形状必须由没骨笔与墨块构成）。",
+    "给文字或纸面上色；第二种彩色（除了一枚朱印与一处极小点缀）。",
+    "通用溶解/划像转场；矢量式补间。",
+    "把 OFL 毛笔字体直接描轮廓当字（只能当骨架，否则笔画交界处会缺口）。",
+    "照抄任何一张真实水墨画、构图、人物或音乐。",
+    "复用示例的故事、叙事弧、镜头、道具或时长。"
+  ],
+  "asset_contract": {
+    "content_fields": "时间线由 `demo/story.js` 承担唯一真值：导出 `DUR`（秒）、`T`（各段落时刻表，含 dropFall/dropHit/bloomEnd/titleIn/panA/panB/paint[]/leap/x3a/x3b/step0/beat/nSteps/darken/shot4/cut5/draw/w1..w3/hush/cut/cutEnd/x7a/x7b/close/bow/scrollA/seal/endCard）、`VO[]`（{id, t, sub:[t0,t1], text}，text 用 \\n 显式断行）、`stepTimes()`。配音文本另存 `demo/lines.json`：[{id, text, voice, speed, lang}]，demo 用 `bm_george` / en-gb / .82–.86。字幕位置在 `demo/shots.js` 的 `subPos(id, t)` 里按镜头留白手写（L1 [170,860]、L2 [150,250]、L3 [1180,170]、L4 [140,200]、L5 依 t 切换）。",
+    "new_subject_contract": "新画面主体是一个模块，至少要用到 `ink.js` 的笔触库：`mk(pts, {w, tone, dry, wet, prof, rough, nb, seed, ds, fade, darkDir, side, brWet, solid, gapLen})` 建一笔、`draw({wet,dry}, stroke, p, am)` 逐帧画、`drawSeq` 按书写顺序画一组、`blot` 点苔/溅墨、`mass` 湿墨块、`qpts` 二次贝塞尔点列。TONE 字典（jiao/nong/zhong/dan/qing）与 PROF（brush/even/tip/lens/nail/na/press/fan/robe/rise/cone/dot）是可复用的笔法。人物参考 `hero.js`（`POSE`/`mixPose`/`hero(L, pose, X)`，VERM=[176,46,34]）；山石参考 `land.js`（mountainLayer/cun/cliff/pine/reed/ripple）；浪参考 `wave.js`（waveShape/wave）；书法参考 `glyph.js`（SHUI 骨架、glyphMask、shuiStrokes、cutStroke、writeShui、tipAt）。",
+    "timeline_contract": "`story.js` → `shots.js` 的 `frame(t, A, B, TMP)` 返回该帧的合成参数（含 `paper/bleed/rim/trans` 与两套画面 A/B 的墨晕蒙版 `[cx,cy,R,on]`），`subPos(id,t)` 给字幕位置，`events()` 返回音效/对白事件数组。`comp.js` 的 `makeComp(canvas)` 返回 `composite(A, B, o)`；`layerSet(W,H)` 造 A/B 各一套 {wet, dry, col} 三张画布。页面契约由 `main.js` 暴露 `window.READY` / `window.render(t)` / `window.DUR` / `window.EV`。",
+    "event_vocabulary": "`shots.js` 的 `events()` 产生：`vo{id}`（人声，mix.py 读 voices/<id>.wav）；`drip{gain}`（墨滴）；`brush{gain,dur}`（毛笔破空）；`whoosh{gain,k}`（起跳/脚步带的风）；`step{gain,k}`（点水脚步）；`splash{gain}`；`skid{gain}`；`sword{gain}`（拔剑：鞘摩擦 + 金属清鸣，且必须在第二段静默前收掉）；`cut{gain}`（断流）；`splatter{gain}`；`collapse{gain}`；`waterclose{gain}`；`cloth{gain}`（袍角）；`seal{gain}`（印章）；`silence{t0,t1}`；`amb{kind:'wind'|'water'|'roar', t0, t1}`（环境床，crossfade）。由 `tools/events.mjs` 序列化成 events.json 供 mix.py 消费。"
+  },
+  "evidence": [
+    "styles/ink-wash/STYLE.md:6-13 —— 本质与「不是什么」（不是水彩/不是带笔刷纹理的矢量图/不是书法片头）",
+    "styles/ink-wash/STYLE.md:16-34 —— 材料与渲染（程序化纸、墨分五色表、笔触模型、没骨、两层、墨块、山石、水、写意人物、书法当骨架）",
+    "styles/ink-wash/STYLE.md:36-40 —— 颜色逻辑（只有墨 + 一枚朱红，绝不用红做字或大面积晕染）",
+    "styles/ink-wash/STYLE.md:42-46 —— 字体与字幕（题跋式、≤2 行、停留 ≥ max(1.8s, 语音+0.6s)、题字写进画里）",
+    "styles/ink-wash/STYLE.md:48-54 —— 运动质量（人物 12fps、镜头/晕/涟漪 24fps、稳定笔触、画出来、决定性一笔之前的静止）",
+    "styles/ink-wash/STYLE.md:56-73 —— 镜头词汇表（10 条）与允许的转场、禁止通用溶解/划像",
+    "styles/ink-wash/STYLE.md:75-81 —— 声音（古琴领奏、按画面 cue 不循环、静默清零整个总线、按材质的 foley、人声闪避 ~8dB）",
+    "styles/ink-wash/STYLE.md:83-93 —— 七条 native moves",
+    "styles/ink-wash/STYLE.md:95-102 —— 媒介陷阱（干笔读成虚线、平行半透明笔读成管风琴、字轮廓缺口等）",
+    "styles/ink-wash/STYLE.md:104-106 —— 引擎文件清单",
+    "styles/ink-wash/STYLE.md:108-114 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/ink-wash/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/ink-wash/DEMO.md:5 —— demo《The Swordsman and the River》48s",
+    "styles/ink-wash/DEMO.md:12 —— 48s 叙事弧（虚白→墨滴→小人→轻快→障碍→静默→一笔→释放→尺度揭示→印章）",
+    "styles/ink-wash/DEMO.md:18-28 —— 逐拍镜头表（开场锁定空白纸 / 手卷平移 / 过江横向跟随 / 低角度威胁 / 静默硬切 / 释放回到建立镜头 / 拉远到裱好的手卷）",
+    "styles/ink-wash/DEMO.md:32-38 —— 配乐（F 宫五声、按段落 cue、两段数字静默、bm_george .82–.86、音乐闪避 ~8dB）",
+    "styles/ink-wash/DEMO.md:42-54 —— 色值、合成器参数（12 抽样 ~5px 模糊、边缘积墨 = 小模糊−大模糊）、笔压与 dryness、山石/水/浪/人物/水字/墨晕参数",
+    "styles/ink-wash/demo/story.js:1-31 —— 时间线唯一真值（DUR=48、T 表、VO 5 行与字幕区间、stepTimes）",
+    "styles/ink-wash/demo/ink.js:6 —— TONE 焦浓重淡清 = .96/.82/.6/.34/.16",
+    "styles/ink-wash/demo/ink.js:42-55 —— PROF 笔法表（brush/even/tip/lens/nail/na/press/fan/robe/rise/cone/dot）",
+    "styles/ink-wash/demo/ink.js:62-94 —— mk()：笔毫墨量沿笔程下降、边缘墨少、gapLen 固定参考长度",
+    "styles/ink-wash/demo/ink.js:97-153 —— draw()：墨体乘算 + 笔毫断墨（飞白）",
+    "styles/ink-wash/demo/ink.js:183-200 —— mass() 湿墨块（边缘细分 + 噪声抖动 + 可选渐变）",
+    "styles/ink-wash/demo/comp.js:22-35 —— 纸 shader（云纹/三向纤维/颗粒/纸浆暗斑/缩小淡出）",
+    "styles/ink-wash/demo/comp.js:44-72 —— inkD()：湿层 12 抽样晕开 + 边缘积墨 + 干层纸纹咬边 + 显现前沿水线",
+    "styles/ink-wash/demo/comp.js:73 —— inkCol()：从冷灰 rgb(.52,.55,.58) 到暖黑 rgb(.075,.068,.062)",
+    "styles/ink-wash/demo/comp.js:87-99 —— 墨晕转场蒙版（噪声前沿 + 深色水线 band）",
+    "styles/ink-wash/demo/seal.js:4-31 —— 朱红白文方印（不规则方印面 + 挖白的篆意线条 + 印泥白点）",
+    "styles/ink-wash/demo/subs.js:4-20 —— 题跋字幕（先湿后干、Cormorant 斜体 500、句首一枚小朱印）",
+    "styles/ink-wash/demo/shots.js:12-30 —— frame()：镜头分段与两次墨晕转场",
+    "styles/ink-wash/demo/shots.js:33-42 —— subPos()：每个镜头字幕写在留白处",
+    "styles/ink-wash/demo/shots.js:45-71 —— events() 的全部事件 type 与两段 silence / 三条 amb",
+    "styles/ink-wash/demo/mix.py:19-77 —— 按材质的 foley（drip/brush/water_step/splash/skid/sword/cut/splatter/collapse/waterclose/cloth/seal）",
+    "styles/ink-wash/demo/mix.py:116-132 —— 人声闪避 −6dB 与环境同步压、静默段整个总线清零",
+    "styles/ink-wash/demo/music/score.py:1-5 —— 古琴/箫/大鼓/盖印/脚步的配器与 F 宫五声",
+    "styles/ink-wash/demo/hero.js:6 —— VERM = [176,46,34]（全片唯一的朱红）",
+    "styles/ink-wash/demo/hero.js:11-94 —— POSE 与 mixPose（写意人物的姿态插值）",
+    "styles/ink-wash/demo/land.js:16-144 —— ridgeFn/mountainLayer/cun/cliff/pine/reed/ripple（山石皴法与苔点）",
+    "styles/ink-wash/demo/wave.js:15-25 —— waveShape/wave（手势化的浪）",
+    "styles/ink-wash/demo/glyph.js:7-69 —— 「水」字骨架 SHUI、glyphMask、shuiStrokes、cutStroke、writeShui、tipAt",
+    "styles/ink-wash/demo/lines.json:1-7 —— 5 行旁白实测文案与音色/语速",
+    "styles/ink-wash/style.json:16-17 —— frame_sec 34.56 / dur 48.0"
+  ]
+}

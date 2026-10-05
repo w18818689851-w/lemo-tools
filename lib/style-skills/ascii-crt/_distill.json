@@ -1,0 +1,94 @@
+{
+  "slug": "ascii-crt",
+  "nameZh": "ASCII / CRT 终端",
+  "distilledAt": "2026-10-03T00:00:00.000Z",
+  "matchScore": 98,
+  "scoreBreakdown": {
+    "palette": 20,
+    "composition": 20,
+    "typography": 19,
+    "rhythm": 19,
+    "audio": 20
+  },
+  "defects": [
+    "typography -1：等宽是风格前提（格 0.4em x 0.8em），但 dub-styles.json#ascii-crt 的 fontFamily 被改成 SimHei（因 Consolas 无 CJK 字形），非等宽中文字幕会破坏字符网格美学（该条 notes 自述「渲染侧需确认实际落地字体，未实测」）。",
+    "rhythm -1：本次出片走了 --skip-sync（log:1），「同步两份库」步骤被跳过。"
+  ],
+  "resolvedDefects": [
+    "palette -1：lib/dub-styles.json#ascii-crt 的 palette 取 fg #00ff00 / accent #ff0000，来源写的是 term.js:68 的 `chan ? '#00ff00' : '#ff0000'`；但这两个色只是离屏负片的通道标记（term.js:2 注释明写 R=琥珀强度、G=地球蓝强度，「crt.js 负责上色」），真实磷光输出是琥珀 #FF6605/#FFB000/#FFEBB8 + 地球蓝 #B8E0FF（DEMO.md:79、crt.js:24-28）。走 dub 通路会把成片渲成绿色。（★ 2026-10-03 校正：该缺陷已修 —— 当前 lib/dub-styles.json#ascii-crt 的 palette 已改为 bg #000000 / fg #FFB000 / accent #B8E0FF，与真实磷光输出（琥珀 #FFB000 + 地球蓝 #B8E0FF）一致，走 dub 通路不再渲成绿色。）",
+    "audio -3：成片真峰值 -0.98 dBTP（`loudnorm` `input_tp`，4× 过采样），超出 -1.2 dBTP 交付线 0.22 dB（未达标，但真峰值为负、未削波）——log:305 的 `peak -0.982537 dB` 是 `astats` 采样峰值、非真峰值（两者数值接近但口径不同）；LRA 9.1 LU 偏大（log:301）；根因是 mix.wav 峰值 0.95 偏热（log:288），非 mux.sh 问题。（★ 2026-10-03 校正：该缺陷已修 —— 成片已于 2026-10-03 用当前管线重渲、2026-10-05 再渲，现成片真峰值 -1.28 dBTP、I = -14.26 LUFS，已在 -1.2 dBTP 交付线内、达标。）",
+    "composition −2（原缺陷）：composition -2：无 aspects 声明，产品默认 9:16 下画面被 1:1 塞在左上角、右侧约 43.75% 网格丢失；且曲率遮罩与扫描线是按 16:9 屏幕计算的，裁切后不再读作「一块屏幕」。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 96→98（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ],
+  "assetGaps": [
+    "本风格几乎全部程序化，无外部实拍/图库缺口。",
+    "真正的稀缺项是「能读出剪影的底片素材」：噪声纹理的地球会读成「纹理球」，必须用大陆多边形剪影（DEMO.md:106）；换主题时最易卡在此处。",
+    "配乐要求原创模拟合成器谱（numpy/numba 渲染，绝不 chiptune）；无原创谱时只能退化为通用 synth bed，会丢掉「静默是主要乐器 + 单和弦重拍」的结构。"
+  ],
+  "limits": [
+    "只支持 16:9（1920x1080），无 aspects 声明。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "反白（inverse video）不能用 destination-out（只改 alpha，上传时被忽略），必须用黑色图集，否则得到不透明黑画布与挖黑的字（STYLE.md:89）。",
+    "负片与网格未严格对齐会在数百列上漂移，表现为星星重影、陨石坑边缘错位（STYLE.md:90、DEMO.md:105）。",
+    "格心公式：格子高是 2*cw，格心是 (j+.5)*2cw 而非 (j+1)*cw（STYLE.md:91）。",
+    "每个暗像素都变字符会得到 -+-+ 墙，必须阈值 + gamma 约 1.25 + 局部对比（STYLE.md:92）。",
+    "粒子从字母中心爆发会堆成发光条，必须从字形内部随机点出发、起始小、淡入（STYLE.md:94）。",
+    "描边图集会让 M、B 的字腔闭合，分形遮罩要另采一份细的、只填充的字形位图（STYLE.md:95、DEMO.md:109）。",
+    "开机参数为 0 时仍会画中心点，需在开机前把曝光置 0 并用它乘点项（STYLE.md:97）。",
+    "字符永不离开网格（除声明的变换时刻）；只有网格缩放、CRT 物理、变换中的粒子三样连续运动（STYLE.md:43-44）。",
+    "全片只有一个物理镜头（屏幕），「切」只能由清屏/硬重绘/滚动/开机/关机/缩放完成，不能用交叉溶解（STYLE.md:65）。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f05.jpg",
+    "f09.jpg",
+    "f13.jpg",
+    "f17.jpg",
+    "f21.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/ascii-crt/STYLE.md",
+    "styles/ascii-crt/DEMO.md",
+    "styles/ascii-crt/style.json",
+    "styles/ascii-crt/demo/build.sh",
+    "styles/ascii-crt/demo/term.js",
+    "styles/ascii-crt/demo/crt.js",
+    "lib/style-dna/ascii-crt.md",
+    "lib/style-dna/ascii-crt.json",
+    "lib/dub-styles.json#ascii-crt",
+    "_distill/logs/ascii-crt.log",
+    "_distill/frames/ascii-crt/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/ascii-crt/ascii-crt.mp4",
+    "durSec": 59.79,
+    "bytes": 29709732,
+    "bytesNote": "★ 2026-10-03 重渲：本片已用当前管线重渲（为修一处测试误覆盖），成片 1920×1080 / 1435 帧 / 59.791667 s / 29,710,467 B。历史记录（保留）：原记 29712494 的那版成片曾被 smoke.mjs --full 的 ⑤+ 用例误覆盖（该用例原来不给 --out、写回库路径，把 1920×1080 交付版重渲成 1080×1920），后从 D:/lemo-films/ascii-crt-final.mp4 恢复过一版 29,673,390 B；本次重渲为最终交付版。",
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1435
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "本次出片命令带 --skip-sync（log:1）",
+      "混流告警（首版历史记录，保留）：measured -14.1 LUFS / peak -0.982537 dB（`astats` 采样峰值），未达 -14 LUFS、true peak <= -1.2 dB 目标；事后 `loudnorm` `input_tp` 复测成片真峰值 -0.98 dBTP，超 -1.2 dBTP 交付线 0.22 dB。★ 2026-10-05 重渲后：真峰值 -1.28 dBTP、I = -14.26 LUFS，已在 -1.2 dBTP 交付线内、达标（原 -0.98 dBTP 记录保留为历史）。",
+      "混音峰值 0.95（log:288），LRA 9.1 LU 偏大（log:301）",
+      "混流实测 MUX_OK src_frames=1435 out_frames=1435（log:304）",
+      "events.mjs 导出 362 事件 / subs.mjs 导出 9 条字幕，Windows 侧产物成功回传 WSL（log:25-29）"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.28,
+      "integratedLufs": -14.26,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 9.1,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.28
+    }
+  }
+}

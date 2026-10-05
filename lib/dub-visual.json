@@ -1,0 +1,5454 @@
+{
+  "version": 1,
+  "purpose": "文案出片用的机读视觉注册表：每个风格的配色/纹理/动效/排版，全部从 styles/<slug>/demo 下的绘图代码抽取。",
+  "extractionRule": "每个 hex 与数值都必须在 sourceFiles 里逐字找得到；找不到就填 null，并在 evidence 里说明原因。宁可 null，不许编。",
+  "notes": [
+    "43 个真实风格；styles/_template 是脚手架（其 style.json 的 slug 字段恰为 my-style），不收录。",
+    "颜色有两种来源：① 具名调色板常量（PAL/C/COL/INK）；② 逐处内联 hex。evidence 里标注是哪一种。",
+    "少数风格颜色是程序化生成的（hologram-hud 用 hue/accent 参数、risograph 用 RGB 数组 + WebGL），palette 填参数而不是 hex。",
+    "字体来自各风格 demo/fonts/fonts.css 的 @font-face（或 index.html 内联），非共享。",
+    "v1.1 增补 copySources/copyContract/copyInjection/fontCoverage/routeClass 五字段（任务：四字段跑遍 43 个 + CJK 检查）。fontCoverage 为 fc-query 实测；copySources/copyInjection 为 grep 实测 + 人工核对；copyContract 来自 lines.json 实读或源码内联计数。"
+  ],
+  "sharedAssets": {
+    "core/lib.js": "只有数学与缓动（clamp/lerp/seg/ss/eio/eo/ei/back/spring/mulberry/hash/vnoise/TAU/monotone/track/env），零视觉参数",
+    "core/fonts/fonts.css": "全库唯一共享字体栈（ZCOOL KuaiLe / Fredoka 等），仅部分风格使用",
+    "core/three/post.js": "3D 后期；core/render/ 提供页面装载与出片（见 routeB）"
+  },
+  "styles": {
+    "art-deco": {
+      "slug": "art-deco",
+      "cn": "装饰艺术",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/art-deco/demo/engine/deco.js",
+        "styles/art-deco/demo/fonts/fonts.css"
+      ],
+      "evidence": "engine/deco.js:16-22 `export const C = { ink: '#060504', // deepest black (lacquer)  black: '#0d0b09', // warm black ground  night: '#0a0e16', gold0: '#6f5220', gold1: '#c9a24b', gold2: '#f3d98b', ... }`（具名调色板）",
+      "palette": {
+        "bg": "#0d0b09",
+        "bg2": "#0a0e16",
+        "fg": "#060504",
+        "accent": "#c9a24b"
+      },
+      "texture": {
+        "type": "vignette",
+        "params": {
+          "radialGradientUses": 45
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Italiana / Limelight / PoiretOne / JosefinSans",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/art-deco/demo/film.js",
+          "line": 115,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/art-deco/demo/timeline.js",
+          "line": 46,
+          "role": "inline LINES 副本"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split('.')",
+        "lineIds": [
+          "L1",
+          "L2",
+          "B1",
+          "L3",
+          "L4",
+          "B2",
+          "L5"
+        ],
+        "count": 7,
+        "maxTextChars": 84,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/art-deco/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitleCard",
+        "file": "styles/art-deco/demo/engine/type.js",
+        "line": 199,
+        "textColor": "#f2e8d5",
+        "band": "rgba(6,5,4,0.88)",
+        "bandStops": null,
+        "font": "FONTS.sans 600",
+        "size": 42,
+        "pos": "居中 cx=960, cy=985；宽=maxW(1500)，高=size*1.9",
+        "reveal": "金色细线先出现 → 牌面横向展开(w=ss(seg(k,0,.7))) → 文字在 k>0.6 淡入",
+        "note": "牌面是圆角铭牌 plaquePts(cx,cy,w,hh,.14) + 描边 gline；说话人图标 radio=麦克风 / boy=鸭舌帽，占 size*1.3",
+        "plate": "box",
+        "plateColor": "#1F060504",
+        "plateEvidence": "STYLE.md §4「Subtitle card: a lacquer bar (~88 % black) with stepped ends」；demo band rgba(6,5,4,0.88) ｜ 底衬色取自 demo band rgba(6,5,4,0.88)，与字色 #FFFFFF 的 WCAG 对比度 20.25（直接用 demo 真值）",
+        "plateContrast": 20.25,
+        "plateSource": "demo band rgba(6,5,4,0.88)"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "shotAt",
+        "file": "styles/art-deco/demo/film.js",
+        "line": 38,
+        "cutSource": "styles/art-deco/demo/film.js:16 `const SHOTS = [`",
+        "chapterCard": "shotTitle @ styles/art-deco/demo/shots_misc.js:12",
+        "note": "SHOTS 表 + shotAt(t)=SHOTS.find(s=>t<s[1]) 直接切，无转场函数"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "ascii-crt": {
+      "slug": "ascii-crt",
+      "cn": "ASCII / CRT 终端",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/ascii-crt/demo/crt.js",
+        "styles/ascii-crt/demo/term.js"
+      ],
+      "evidence": "磷光色来自 crt.js:92 的 CRT 参数 `amber:[1.0,.69,.0], amberLo:[1.0,.40,.02], amberHi:[1.0,.92,.72], earth:[.72,.88,1.0]`（P3 amber 主色 + earth 冰蓝白第二色）；crt.js:90 另有 `{ curv:.045, zoom:1.0, scan:.3, glow:.55, halo:.22, beam:.8, noiseA:.025, flick:.012, ... }`（程序化 CRT 参数）。★ 修正：term.js:68 `g.fillStyle = chan ? '#00ff00' : '#ff0000'` 是 inverse()/cursor() 里的**离屏通道标记色**（chan 参数选通道，不是屏显调色板），先前误当磷光色，已废弃。palette.fg=#FFB000 取 crt.js:92 amber [1.0,.69,.0]（=255,176,0），accent=#B8E0FF 取 earth [.72,.88,1.0]（=184,224,255），对应 STYLE.md:8「P3 amber」与 :32「amber screen with an ice blue-white」。",
+      "palette": {
+        "bg": "#000000",
+        "bg2": null,
+        "fg": "#FFB000",
+        "accent": "#B8E0FF"
+      },
+      "texture": {
+        "type": "crt",
+        "params": {
+          "scan": 0.3,
+          "curv": 0.045,
+          "glow": 0.55,
+          "halo": 0.22,
+          "noiseA": 0.025,
+          "flick": 0.012
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "VT323",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/ascii-crt/demo/main.js",
+          "line": 14,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/ascii-crt/demo/main.js",
+          "line": 183,
+          "role": "inline MSG 开机文本"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' ')",
+        "lineIds": [
+          "l1",
+          "l2",
+          "l3",
+          "l4",
+          "l5"
+        ],
+        "count": 5,
+        "maxTextChars": 55,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/ascii-crt/demo/fonts",
+        "fontFiles": 1,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "text",
+        "file": "styles/ascii-crt/demo/term.js",
+        "line": 60,
+        "textColor": "per-cell（glyph 取色）",
+        "band": null,
+        "bandStops": null,
+        "font": "点阵字模（CHARS + glyph()）",
+        "size": "cw（字符格宽）",
+        "pos": "字符网格 (col,row) → ox+(col+i)*cw, oy+row*cw*2",
+        "reveal": "逐字符写入（chan 参数做色差）",
+        "note": "字幕不是「文字」而是终端字符格；颜色由 glyph 内部按 chan 分通道决定，无单一 textColor"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "未查清：本次未定位到镜头分派点"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "backrooms": {
+      "slug": "backrooms",
+      "cn": "后室 / 新怪谈",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/backrooms/demo/main.js",
+        "styles/backrooms/demo/figures.js"
+      ],
+      "evidence": "main.js:23 `scene.background = new THREE.Color(0, 0, 0)`；main.js:115 背景由雾色实时算 `scene.background.copy(U.uFogCol.value).multiplyScalar(U.uFogG.value * .15)`（无硬编码背景 hex）；figures.js:37 `paint({ color: '#2a2521', shin: 60, spec: .14 })`",
+      "palette": {
+        "bg": null,
+        "bg2": null,
+        "fg": "#2a2521",
+        "accent": "#6b6457"
+      },
+      "texture": {
+        "type": "vhs-grain",
+        "params": {
+          "keywords": [
+            "grain",
+            "noise",
+            "vhs"
+          ]
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "env",
+          "hash",
+          "lerp",
+          "monotone",
+          "mulberry",
+          "seg",
+          "ss",
+          "track",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "IBM Plex Sans / IBM Plex Sans Condensed / IBM Plex Mono",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/backrooms/demo/story.js",
+          "line": 53,
+          "role": "inline LINES"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' ')",
+        "lineIds": [
+          "p0",
+          "p1",
+          "p2",
+          "p3",
+          "p4",
+          "p6",
+          "w1",
+          "w2",
+          "w3",
+          "w4"
+        ],
+        "count": 10,
+        "maxTextChars": 87,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/backrooms/demo/fonts",
+        "fontFiles": 7,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "drawCaps",
+        "file": "styles/backrooms/demo/subs.js",
+        "line": 45,
+        "textColor": "#f2f2f2",
+        "band": "#000（每行一条实心黑条）",
+        "bandStops": null,
+        "font": "IBM Plex Mono 600",
+        "size": 42,
+        "pos": "底部居中 cx=960，基线 yb=1080-222，行高 54",
+        "reveal": "直接出现（无淡入；整段在 t0..t1 内恒定）",
+        "note": "每行独立黑底条 w=(len+2)*cw；it 行做 -.2 斜切（斜体感）",
+        "plate": "box",
+        "plateColor": "#00000000",
+        "plateEvidence": "STYLE.md §4「white on a solid black box per row」；demo band 每行一条实心黑条 ｜ 底衬色取自 demo band rgba(0,0,0,1)，与字色 #FFFFFF 的 WCAG 对比度 21.00（直接用 demo 真值）",
+        "plateContrast": 21,
+        "plateSource": "demo band rgba(0,0,0,1)"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "T.tear（墙面撕裂时刻）",
+        "file": "styles/backrooms/demo/story.js",
+        "line": 99,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "story.js:99 `if (t < T.tear[0] + 0.3)`；main.js:68 `if (t > T.tear[0] + .3 …) k = 0` —— 撕裂时刻有实据，但**撕裂的具体绘制未读**，故 fn 只记时刻名"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "blueprint": {
+      "slug": "blueprint",
+      "cn": "蓝图 / 工程制图",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/blueprint/demo/draw.js",
+        "styles/blueprint/demo/main.js",
+        "styles/blueprint/demo/paper.js"
+      ],
+      "evidence": "draw.js:17 `g.fillStyle = '#000'; g.fillRect(0, 0, W, H)`；main.js:101 `ov.fillStyle = '#eaf1fa'; ov.font = '400 58px Architects'`；蓝色是程序化的——paper.js:21 WebGL 片元着色器 `vec3 dark = vec3(.094,.200,.420), light = vec3(.165,.345,.650); // ≈ #18336B → #2A58A6`（hex 只作注释，不是可取值）",
+      "palette": {
+        "bg": "#000",
+        "bg2": null,
+        "fg": "#eaf1fa",
+        "accent": null,
+        "programmatic": {
+          "shader": "vec3(.094,.200,.420) → vec3(.165,.345,.650)",
+          "comment": "≈ #18336B → #2A58A6",
+          "file": "styles/blueprint/demo/paper.js:21"
+        }
+      },
+      "texture": {
+        "type": "grid",
+        "params": {
+          "radialGradientUses": 5
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "B612 / B612Mono / Architects Daughter / Allura",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/blueprint/demo/main.js",
+          "line": 86,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/blueprint/demo/film.js",
+          "line": 37,
+          "role": "inline NOTETEXT 图注"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' ')",
+        "lineIds": [
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "v5",
+          "v6"
+        ],
+        "count": 6,
+        "maxTextChars": 69,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "setter",
+        "setters": [
+          "setLines(lines,dur)"
+        ],
+        "evidence": "styles/blueprint/demo/film.js:38",
+        "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/blueprint/demo/fonts",
+        "fontFiles": 5,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "B",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/blueprint/demo/film.js",
+        "line": 42,
+        "textColor": "rgba(234,241,250,1)",
+        "band": "rgba(12,28,62,0.58)",
+        "bandStops": null,
+        "font": "Architects 400",
+        "size": 38,
+        "pos": "注释框：x0 传入(默认 90/940/1180/1200 等)，宽=124+tw+36，maxW=880",
+        "reveal": "逐字擦除（rect 裁剪按 u 推进，每行按字数分配进度）",
+        "note": "图纸注释框形态：双层描边 + 左侧 108px 竖线 + NOTE 编号 + 左下引线折角；main.js:12 另有一版简化字幕（44px，x0=96，H-64）",
+        "plate": "box",
+        "plateColor": "#6B0C1C3E",
+        "plateEvidence": "STYLE.md §4「a light translucent box with double white rules」；demo band rgba(12,28,62,0.58)（实为深蓝半透明） ｜ 底衬色取自 demo band rgba(12,28,62,0.58)，与字色 #E7F0F9 的 WCAG 对比度 12.84（直接用 demo 真值）",
+        "plateContrast": 12.84,
+        "plateSource": "demo band rgba(12,28,62,0.58)"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "未查清：film.js:117 renderFilm(t) 内部为连续绘制，未定位切镜点"
+      },
+      "cameraMotion": {
+        "evidence": "setCam @ styles/blueprint/demo/draw.js:13",
+        "note": "图纸缩放/平移"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "brick-toy": {
+      "slug": "brick-toy",
+      "cn": "积木玩具",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/brick-toy/demo/bricks.js"
+      ],
+      "evidence": "bricks.js:7-8 `export const COL = { red:'#c91a09', blue:'#0055bf', yellow:'#f2cd37', green:'#237841', white:'#f4f4f1', black:'#1b2a34', orange:'#fe8a18', ... }`（具名调色板，乐高色）",
+      "palette": {
+        "bg": "#f4f4f1",
+        "bg2": null,
+        "fg": "#1b2a34",
+        "accent": "#c91a09"
+      },
+      "texture": {
+        "type": "none",
+        "params": {}
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Fredoka",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/brick-toy/demo/story.js",
+          "line": 39,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "c3",
+          "c2",
+          "c1",
+          "v5"
+        ],
+        "count": 8,
+        "maxTextChars": 45,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": null,
+        "fontFiles": null,
+        "cjkFonts": null,
+        "cjkCodepoints": null,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": "brick-toy 无 fonts/ 目录（未查到字体文件）"
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "pill",
+        "file": "styles/brick-toy/demo/main.js",
+        "line": 181,
+        "textColor": "#FFFFFF",
+        "band": "rgba(18,20,26,0.62)",
+        "bandStops": null,
+        "font": "Fredoka 600",
+        "size": 46,
+        "pos": "底部居中，y=H-150（VO 非 radio）；圆角 42 胶囊",
+        "reveal": "直接出现",
+        "note": "radio 台词走另一路（main.js:194 用 VO.filter(v=>v.radio) 计数显示）；tag 标签是 pill 上方的红色小胶囊",
+        "plate": "box",
+        "plateColor": "#6112141A",
+        "plateEvidence": "STYLE.md §4「a dark rounded pill low in the frame」；demo band rgba(18,20,26,0.62) ｜ 底衬色取自 palette.bg #f4f4f1 @0.90，与字色 #1B2A34 的 WCAG 对比度 13.35 ｜ STYLE.md §4「a dark rounded pill … **White on dark**」；demo main.js:182,191 band rgba(18,20,26,.62) + 字 #fff。原配置为深字#1B2A34/浅底#F4F4F1，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。",
+        "plateContrast": 5.49,
+        "plateSource": "demo 真值（demo main.js:182,191 band rgba(18,20,26,.62) + 字 #fff。原配置为深字#1B2A34/浅底#F4F4F1，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。）"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "shotAt",
+        "file": "styles/brick-toy/demo/story.js",
+        "line": 58,
+        "cutSource": "styles/brick-toy/demo/story.js:51 `export const SHOTS = [`",
+        "chapterCard": null,
+        "note": "SHOTS 表 + shotAt(t)=SHOTS.find(...)，硬切"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "cel-anime-80s": {
+      "slug": "cel-anime-80s",
+      "cn": "80 年代赛璐璐动画",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/cel-anime-80s/demo/pal.js",
+        "styles/cel-anime-80s/demo/cel.js",
+        "styles/cel-anime-80s/demo/bg.js",
+        "styles/cel-anime-80s/demo/scenes2.js"
+      ],
+      "evidence": "pal.js:51 `export const PAL = { day: palette('day'), night: palette('night'), dawn: palette('dawn'), sil: palette('sil'), backlit: palette('backlit') }`（5 套场景配色，palette() 工厂生成）；bg.js:4 `export const NEON = ['#ff3fa4','#35e7ff','#ffd23f','#ff5a3c','#b36bff','#4dff9a']`；scenes2.js:232 灯色 `'#fff0c0'`",
+      "palette": {
+        "bg": "#fff0c0",
+        "bg2": null,
+        "fg": null,
+        "accent": "#ff3fa4"
+      },
+      "texture": {
+        "type": "cel",
+        "params": {
+          "note": "赛璐璐平涂 + 硬阴影"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Dela Gothic One / Kanit / Barlow Semi Condensed",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/cel-anime-80s/demo/story.js",
+          "line": 31,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "d1",
+          "d2",
+          "g1",
+          "d3",
+          "g2",
+          "g3",
+          "d4",
+          "g4"
+        ],
+        "count": 8,
+        "maxTextChars": 42,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/cel-anime-80s/demo/fonts",
+        "fontFiles": 7,
+        "cjkFonts": [
+          "DelaGothicOne-Regular.ttf"
+        ],
+        "cjkCodepoints": 7766,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "hud",
+        "file": "styles/cel-anime-80s/demo/hud.js",
+        "line": 9,
+        "textColor": "radio: '#8ff4ff' / 其他: '#fff0a0'",
+        "band": null,
+        "bandStops": null,
+        "font": "Barlow SC 600",
+        "size": 54,
+        "pos": "底部居中 y=H-96；radio 时整体右移 tagW=150",
+        "reveal": "按 subSpans 时段直接出现（无淡入）",
+        "note": "radio 台词带 128×48 圆角标签（#07121a .78 底 + #8ff4ff 2.5px 描边 + #ff4a4a 圆点 + 'BASE'）；文字统一 9px '#120a1e' 描边 + 投影"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "shotAt",
+        "file": "styles/cel-anime-80s/demo/story.js",
+        "line": null,
+        "cutSource": "styles/cel-anime-80s/demo/main.js:48 `const st = shotAt(t), [t0,t1,name] = st;`",
+        "chapterCard": "title @ styles/cel-anime-80s/demo/scenes1.js:192",
+        "note": "SHOTS 表 + SHOTS_FN 映射（shots.js:96）硬切"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "crayon-book": {
+      "slug": "crayon-book",
+      "cn": "蜡笔儿童绘本",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/crayon-book/demo/pal.js",
+        "styles/crayon-book/demo/crayon.js"
+      ],
+      "evidence": "pal.js:2-3 `export const PAL = { paper: [0.957, 0.937, 0.890], // #f4efe3 暖白画纸  crayon: { ink: '#2d3263', yellow: '#f5c63c', orange: '#ec8a3c', red: '#d4483c', ... } }`；crayon.js:37 默认笔色 '#2d3263'",
+      "palette": {
+        "bg": "#f4efe3",
+        "bg2": null,
+        "fg": "#2d3263",
+        "accent": "#d4483c"
+      },
+      "texture": {
+        "type": "crayon",
+        "params": {
+          "wob": 1,
+          "boil": 1,
+          "p": 0.8
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "ss",
+          "track",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Caveat Brush / Gaegu / Gochi Hand / Patrick Hand / Sniglet",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/crayon-book/demo/film.js",
+          "line": 15,
+          "role": "inline LINES"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "n1",
+          "n2",
+          "n3",
+          "n4",
+          "n5",
+          "n6",
+          "n7"
+        ],
+        "count": 7,
+        "maxTextChars": 47,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/crayon-book/demo/fonts",
+        "fontFiles": 7,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subTo",
+        "file": "styles/crayon-book/demo/film.js",
+        "line": 237,
+        "textColor": "K.ink（蜡笔墨色）",
+        "band": "#000（不规则手撕纸形状，非矩形）",
+        "bandStops": null,
+        "font": "Patrick Hand 400",
+        "size": 54,
+        "pos": "居中 cx=960, cy=1002，纸块 hw=tw/2+46, hh=44",
+        "reveal": "pr(t, t0, t0+0.35) 擦除 + 文字自身 reveal",
+        "note": "纸块是 60 段极坐标噪动多边形（Math.pow(|cos|,0.3) 超椭圆 + 两处 sin 扰动）→ 手撕边"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "未查清：只找到 crayon.js:142 cutPath（这是裁剪路径，不是转场）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "dark-keynote": {
+      "slug": "dark-keynote",
+      "cn": "暗色科技发布",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/dark-keynote/demo/engine.js"
+      ],
+      "evidence": "engine.js:7-9 `export const PAL = { bg0:'#0A0B0F', bg1:'#151822', surf:'#12151C', surf2:'#1A1E28', surf3:'#222734', line:'rgba(255,255,255,.08)', hi:'rgba(255,255,255,.10)', text:'#E8EAF0', dim:'#8A90A0', mute:'#5C6272', acce…' }`（具名调色板）；高频 accent '#b7f34a'×2",
+      "palette": {
+        "bg": "#0A0B0F",
+        "bg2": "#151822",
+        "fg": "#E8EAF0",
+        "accent": "#b7f34a"
+      },
+      "texture": {
+        "type": "vignette",
+        "params": {
+          "radialGradientUses": 16
+        }
+      },
+      "motion": {
+        "easing": [
+          "TAU",
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "monotone",
+          "mulberry",
+          "seg",
+          "spring",
+          "ss"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Inter / Inter Tight / JetBrains Mono",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/dark-keynote/demo/main.js",
+          "line": 6,
+          "role": "fetch lines.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split('.')",
+        "lineIds": [
+          "l1",
+          "l2",
+          "l3",
+          "l4",
+          "l5",
+          "l6"
+        ],
+        "count": 6,
+        "maxTextChars": 42,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "setter",
+        "setters": [
+          "setLines(lines,dur)"
+        ],
+        "evidence": "styles/dark-keynote/demo/film.js:504",
+        "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/dark-keynote/demo/fonts",
+        "fontFiles": 3,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "B",
+      "subtitleStyle": {
+        "fn": "toast",
+        "file": "styles/dark-keynote/demo/engine.js",
+        "line": 440,
+        "textColor": "#E8EAF0",
+        "band": "rgba(12,14,19,0.72~0.88)",
+        "bandStops": null,
+        "font": "font(px,500) → Inter 500",
+        "size": 40,
+        "pos": "底部居中 y=H-72，胶囊圆角 h/2",
+        "reveal": "eo(a) 透明度 + 从下 12px 上浮",
+        "note": "左侧 accent 发光圆点（PAL.accent 默认 #B7F34A，可用 setAccent 换）；带 40px 投影；film.js:508 里 dense = t<16 ? 1 : 0 控制底色浓度",
+        "plate": "box",
+        "plateColor": "#330C0E13",
+        "plateEvidence": "STYLE.md §4「a bottom-centre toast (dark translucent pill, 1 px light border)」；demo band rgba(12,14,19,0.72~0.88) ｜ 底衬色取自 demo band rgba(12,14,19,0.8)，与字色 #E8EAF0 的 WCAG 对比度 16.14（直接用 demo 真值）",
+        "plateContrast": 16.14,
+        "plateSource": "demo band rgba(12,14,19,0.8)"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "lightReveal",
+        "file": "styles/dark-keynote/demo/engine.js",
+        "line": 358,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "有光扫过式揭示函数；调用点未逐处核对"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "dataviz": {
+      "slug": "dataviz",
+      "cn": "数据叙事",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/dataviz/demo/engine.js"
+      ],
+      "evidence": "engine.js:10-11 `paper:'#F6F3EC', dotgrid:'#E4DDCF', ink:'#2B2723', inkSoft:'#6E665C', rule:'#DDD6C9', blue:'#2F5D8A', red:'#A8283A', graphite:'#3A3733', wood:'#E3C79C', woodDark:'#C9A774'`（具名调色板）",
+      "palette": {
+        "bg": "#F6F3EC",
+        "bg2": "#E4DDCF",
+        "fg": "#2B2723",
+        "accent": "#d97757"
+      },
+      "texture": {
+        "type": "dotgrid",
+        "params": {}
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Newsreader / IBM Plex Mono / Caveat",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/dataviz/demo/main.js",
+          "line": 5,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/dataviz/demo/film.js",
+          "line": 207,
+          "role": "inline CAPS"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' '), split('\\n')",
+        "lineIds": [
+          "l1",
+          "l2",
+          "l3",
+          "l4",
+          "l5"
+        ],
+        "count": 5,
+        "maxTextChars": 70,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "setter",
+        "setters": [
+          "setCaptions(lines,dur,words)",
+          "setData(d)"
+        ],
+        "evidence": "styles/dataviz/demo/film.js:208,10",
+        "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/dataviz/demo/fonts",
+        "fontFiles": 5,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "B",
+      "subtitleStyle": {
+        "fn": "caption",
+        "file": "styles/dataviz/demo/engine.js",
+        "line": 322,
+        "textColor": "#2B2723",
+        "band": null,
+        "bandStops": null,
+        "font": "Newsreader 400",
+        "size": 42,
+        "pos": "左下 x=180, y=985, maxW=1380；行高 size*1.22",
+        "reveal": "逐词出现（每词 k=clamp((t-wd.t)/.125)，带 6px 上浮）+ 整条 out 时上移 26px",
+        "note": "上方有一条从 x 向右生长的细墨线 rule（宽 max(260,maxLine)）+ 可选 kicker 小标（18px inkSoft）"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "(相位表)",
+        "file": "styles/dataviz/demo/film.js",
+        "line": 175,
+        "cutSource": "styles/dataviz/demo/film.js:175 `if (t >= a[0] && t <= a[1]) { cur = a; break; }`",
+        "chapterCard": null,
+        "note": "按相位区间表切换；无转场函数，属硬切"
+      },
+      "cameraMotion": {
+        "evidence": "applyCam @ styles/dataviz/demo/engine.js（applyCam 调用）",
+        "note": "图表相机"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "engraving": {
+      "slug": "engraving",
+      "cn": "铜版画",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/engraving/demo/engine/plate.js",
+        "styles/engraving/demo/engine/burin.js",
+        "styles/engraving/demo/engine/copper.js",
+        "styles/engraving/demo/film.js"
+      ],
+      "evidence": "plate.js:7-10 `export const PAL = { paper:'#f1e8d2', plateTone:'#e8ddc2', ink:'#1c1510', inkSoft:'#3a2c20', foxing:'#9a6a34', bevelDark:'rgba(96,70,40,0.42)', bevelLight:'rgba(255,251,240,0.95)' }`；plate.js:11 `FONTS = { roman:'Bodoni Moda', script:'Pinyon Script' }`；burin.js:15 `INK='#1c1510', PAPER='#efe6cf'`；film.js:12 缓动 `import { clamp, eio, eo, ss } from '/core/lib.js'`",
+      "palette": {
+        "bg": "#f1e8d2",
+        "bg2": "#e8ddc2",
+        "fg": "#1c1510",
+        "accent": "#9a6a34"
+      },
+      "texture": {
+        "type": "paper",
+        "params": {
+          "fn": "paperTexture",
+          "seed": 53,
+          "octaves": 3,
+          "line": "plate.js:19-24"
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "eo",
+          "ss"
+        ],
+        "chapterTransition": "peel"
+      },
+      "typography": {
+        "family": "Bodoni Moda / Pinyon Script",
+        "weight": null,
+        "case": "roman caps + italic sci names"
+      },
+      "copySources": [
+        {
+          "file": "styles/engraving/demo/main.js",
+          "line": 11,
+          "role": "fetch content.json（?content= 可换）"
+        },
+        {
+          "file": "styles/engraving/demo/film_coffee.js",
+          "line": 259,
+          "role": "inline ST_LINES"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' '), split(':'), split(/\\s+/)",
+        "lineIds": [
+          "title",
+          "d1",
+          "d2",
+          "d3",
+          "d4",
+          "s1",
+          "s2",
+          "s3",
+          "s4"
+        ],
+        "count": 9,
+        "maxTextChars": 23,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/engraving/demo/fonts",
+        "fontFiles": 3,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "drawSubs",
+        "file": "styles/engraving/demo/film.js",
+        "line": 305,
+        "textColor": "#2b1e14",
+        "band": "#f4eddb",
+        "bandStops": null,
+        "font": "FONTS.script（Pinyon Script）",
+        "size": 38,
+        "pos": "底部居中 W/2，y1=1058*fy；宽=max行宽+70S",
+        "reveal": "seg 淡入 0.25s / 淡出 0.2s；文字用 writeScript 逐笔书写",
+        "note": "纸块是不规则手撕边（RNG(7) 逐点 ±2.2px 抖动）；带 rgba(60,40,20,.28) 14px 投影；film_coffee.js:694 另有一版"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "drawPeel",
+        "file": "styles/engraving/demo/film.js",
+        "line": 353,
+        "cutSource": null,
+        "chapterCard": "TITLE 大字（film_coffee.js:548 String(C.title).toUpperCase()）",
+        "note": "**揭纸**：film.js:353 drawPeel（film_coffee.js:745 另有一版）。这是本库辨识度最高的转场之一"
+      },
+      "cameraMotion": {
+        "evidence": "camAt @ styles/engraving/demo/film.js:181",
+        "note": "镜头缓推/横移，随章节换构图"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "game-show": {
+      "slug": "game-show",
+      "cn": "综艺节奏扁平",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/game-show/demo/main.js"
+      ],
+      "evidence": "main.js:6-8 `ol:'#1B1B1B', white:'#FFFFFF', cream:'#FFF6E5', yellow:'#FFD23F', orange:'#FF8C42', red:'#FF5A5F', pink:'#FF8FB1', purple:'#6B4FBB', purpleD:'#46318F', teal:'#3FB8AF', blue:'#4D7CFE'`（具名调色板）；高频 '#5cf2ff'×12",
+      "palette": {
+        "bg": "#FFF6E5",
+        "bg2": "#6B4FBB",
+        "fg": "#1B1B1B",
+        "accent": "#FFD23F"
+      },
+      "texture": {
+        "type": "none",
+        "params": {}
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Fredoka / ZCOOL KuaiLe / Bagel Fat One / Noto Sans SC / Noto Serif SC / JetBrains Mono",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/game-show/demo/main.js",
+          "line": 467,
+          "role": "inline card() 标题"
+        },
+        {
+          "file": "styles/game-show/demo/main.js",
+          "line": 1320,
+          "role": "inline lines 数组"
+        },
+        {
+          "file": "styles/game-show/demo/index.html",
+          "line": 1515,
+          "role": "同源副本"
+        }
+      ],
+      "copyContract": {
+        "splitter": "card(n,en,zh,period) 逐卡；片尾 lines[] 3 条",
+        "lineIds": null,
+        "count": null,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/game-show/demo/fonts",
+        "fontFiles": 396,
+        "cjkFonts": [
+          "f171.woff2",
+          "f174.woff2",
+          "f175.woff2",
+          "f176.woff2",
+          "f177.woff2",
+          "f178.woff2",
+          "f179.woff2",
+          "f180.woff2",
+          "f181.woff2",
+          "f182.woff2",
+          "f183.woff2",
+          "f184.woff2",
+          "f185.woff2",
+          "f186.woff2",
+          "f187.woff2",
+          "f188.woff2",
+          "f189.woff2",
+          "f294.woff2",
+          "f295.woff2",
+          "f296.woff2",
+          "f297.woff2",
+          "f298.woff2",
+          "f299.woff2",
+          "f300.woff2",
+          "f301.woff2",
+          "f302.woff2",
+          "f303.woff2",
+          "f304.woff2",
+          "f305.woff2",
+          "f306.woff2",
+          "f307.woff2",
+          "f308.woff2",
+          "f309.woff2",
+          "f310.woff2",
+          "f311.woff2",
+          "f312.woff2",
+          "f313.woff2",
+          "f314.woff2",
+          "f315.woff2",
+          "f316.woff2",
+          "f317.woff2",
+          "f318.woff2",
+          "f319.woff2",
+          "f320.woff2",
+          "f321.woff2",
+          "f322.woff2",
+          "f323.woff2",
+          "f324.woff2",
+          "f325.woff2",
+          "f326.woff2",
+          "f327.woff2",
+          "f328.woff2",
+          "f329.woff2",
+          "f330.woff2",
+          "f331.woff2",
+          "f332.woff2",
+          "f333.woff2",
+          "f334.woff2",
+          "f335.woff2",
+          "f336.woff2",
+          "f337.woff2",
+          "f338.woff2",
+          "f339.woff2",
+          "f340.woff2",
+          "f341.woff2",
+          "f342.woff2",
+          "f343.woff2",
+          "f344.woff2",
+          "f345.woff2",
+          "f346.woff2",
+          "f347.woff2",
+          "f348.woff2",
+          "f349.woff2",
+          "f350.woff2",
+          "f351.woff2",
+          "f352.woff2",
+          "f353.woff2",
+          "f354.woff2",
+          "f355.woff2",
+          "f356.woff2",
+          "f357.woff2",
+          "f358.woff2",
+          "f359.woff2",
+          "f369.woff2",
+          "f370.woff2",
+          "f371.woff2",
+          "f372.woff2",
+          "f373.woff2",
+          "f374.woff2",
+          "f375.woff2",
+          "f376.woff2",
+          "f377.woff2",
+          "f378.woff2",
+          "f379.woff2",
+          "f380.woff2",
+          "f381.woff2",
+          "f382.woff2",
+          "f383.woff2",
+          "f384.woff2",
+          "f385.woff2",
+          "f386.woff2",
+          "f387.woff2",
+          "f388.woff2",
+          "f61.woff2",
+          "f72.woff2",
+          "f74.woff2",
+          "f75.woff2",
+          "f76.woff2",
+          "f77.woff2",
+          "f79.woff2",
+          "f80.woff2",
+          "f81.woff2",
+          "f82.woff2",
+          "f83.woff2",
+          "f84.woff2",
+          "f85.woff2",
+          "f86.woff2",
+          "f87.woff2",
+          "f88.woff2",
+          "f89.woff2",
+          "f90.woff2",
+          "f91.woff2"
+        ],
+        "cjkCodepoints": 2212809,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "banner / caption",
+        "file": "styles/game-show/demo/main.js",
+        "line": 92,
+        "textColor": "K.ol(#1B1B1B) on 彩底",
+        "band": "col（每章一色：orange/purple/teal…）",
+        "bandStops": null,
+        "font": "F.round(数字) / F.sans(正文) 900",
+        "size": "64(年) / 54(名) / 34(副)",
+        "pos": "横幅 x=56,y=44 起始（bannerAnim 从 -900 弹入）",
+        "reveal": "E.back 弹入 + 旋转 -6°→-1.5°；出场 y-260 上移",
+        "note": "DOM/SVG 实现（非 canvas 绘制）：banner() 造 <g>，bannerAnim() 做 transform；halftone-dossier/index.html:166-183 有同名同源实现"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "SECT 分段",
+        "file": "styles/game-show/demo/main.js",
+        "line": 467,
+        "cutSource": "card(SECT.g1..g7) 逐章调用",
+        "chapterCard": "card @ styles/game-show/demo/main.js:467（7 章：GAME 1…GAME 7 + remix 章）",
+        "note": "按 SECT 分段，章间是横幅弹入/弹出，不是画面转场；卡片形态=彩底圆角横幅（年+名+副题）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "glass-product": {
+      "slug": "glass-product",
+      "cn": "玻璃质感产品",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/glass-product/demo/product.js",
+        "styles/glass-product/demo/main.js"
+      ],
+      "evidence": "main.js:16 `scene.background = new THREE.Color('#000000')`；product.js:11 `color:'#ffffff', metalness:0, roughness:.015, transmission:1, thickness:3, ior:1.52`（THREE PBR 材质参数，非调色板）",
+      "palette": {
+        "bg": "#000000",
+        "bg2": null,
+        "fg": "#ffffff",
+        "accent": "#62dcff"
+      },
+      "texture": {
+        "type": "pbr-glass",
+        "params": {
+          "roughness": 0.015,
+          "transmission": 1,
+          "thickness": 3,
+          "ior": 1.52
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "seg",
+          "ss"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Inter Tight",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/glass-product/demo/story.js",
+          "line": 33,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "v1",
+          "v2",
+          "v3",
+          "v4"
+        ],
+        "count": 4,
+        "maxTextChars": 27,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/glass-product/demo/fonts",
+        "fontFiles": 1,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/glass-product/demo/main.js",
+        "line": 237,
+        "textColor": "rgba(245,248,252,0.96)",
+        "band": "磨砂玻璃（blur(18px) 取 3D 画面 + rgba(210,225,240,.10)）",
+        "bandStops": null,
+        "font": "Inter Tight 300",
+        "size": 40,
+        "pos": "底部居中 y=H-128，圆角 38，pad 96×76",
+        "reveal": "globalAlpha 淡入",
+        "note": "唯一用 WebGL 画面做背景模糊的：g.drawImage(renderer.domElement) + filter blur；1px 渐变高光边 + 顶部青/紫色散线",
+        "plate": "box",
+        "plateColor": "#E6D2E1F0",
+        "plateEvidence": "STYLE.md §4「a centred rounded bar filled with the live frame blurred」；demo band 磨砂玻璃 rgba(210,225,240,.10) ｜ 底衬色取自 demo band rgba(210,225,240,0.1)，与字色 #ffffff 的 WCAG 对比度 17.99（直接用 demo 真值）",
+        "plateContrast": 17.99,
+        "plateSource": "demo band rgba(210,225,240,0.1)"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "shotAt",
+        "file": "styles/glass-product/demo/main.js",
+        "line": 71,
+        "cutSource": "styles/glass-product/demo/main.js:5 import { SHOTS, shotAt }",
+        "chapterCard": null,
+        "note": "SHOTS 表 + shotAt 硬切"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": "3D（WebGL）产品镜头；未逐点核对"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "halftone-dossier": {
+      "slug": "halftone-dossier",
+      "cn": "复古半调案卷",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/halftone-dossier/demo/index.html"
+      ],
+      "evidence": "无独立 JS；绘图内联在 index.html（1087 行，SVG）。index.html:57 调色板 `#F4ECDD`(cream) `#1D2340`(navy) `#2E55D6`(blue) `#FF5A87`(pink) `#FFC628`(yellow)；index.html:8 '#F4ECDD'；字体走内联 font-family（:106/:162/:364 F.sans / F.mono）",
+      "palette": {
+        "bg": "#F4ECDD",
+        "bg2": "#1D2340",
+        "fg": "#1D2340",
+        "accent": "#FF5A87"
+      },
+      "texture": {
+        "type": "halftone",
+        "params": {
+          "note": "SVG 半调网点"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "内联 F.sans / F.mono（+ fonts.css: Bagel Fat One / JetBrains Mono / Noto Sans SC / ZCOOL KuaiLe）",
+        "weight": 900,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/halftone-dossier/demo/index.html",
+          "line": 568,
+          "role": "inline caption() 分片"
+        },
+        {
+          "file": "styles/halftone-dossier/demo/index.html",
+          "line": 666,
+          "role": "inline caption()"
+        },
+        {
+          "file": "styles/halftone-dossier/demo/index.html",
+          "line": 742,
+          "role": "inline caption()"
+        }
+      ],
+      "copyContract": {
+        "splitter": "caption(g,[[span],[span,color],...]) 逐镜内联分片",
+        "lineIds": null,
+        "count": null,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/halftone-dossier/demo/fonts",
+        "fontFiles": 393,
+        "cjkFonts": [
+          "f171.woff2",
+          "f174.woff2",
+          "f175.woff2",
+          "f176.woff2",
+          "f177.woff2",
+          "f178.woff2",
+          "f179.woff2",
+          "f180.woff2",
+          "f181.woff2",
+          "f182.woff2",
+          "f183.woff2",
+          "f184.woff2",
+          "f185.woff2",
+          "f186.woff2",
+          "f187.woff2",
+          "f188.woff2",
+          "f189.woff2",
+          "f294.woff2",
+          "f295.woff2",
+          "f296.woff2",
+          "f297.woff2",
+          "f298.woff2",
+          "f299.woff2",
+          "f300.woff2",
+          "f301.woff2",
+          "f302.woff2",
+          "f303.woff2",
+          "f304.woff2",
+          "f305.woff2",
+          "f306.woff2",
+          "f307.woff2",
+          "f308.woff2",
+          "f309.woff2",
+          "f310.woff2",
+          "f311.woff2",
+          "f312.woff2",
+          "f313.woff2",
+          "f314.woff2",
+          "f315.woff2",
+          "f316.woff2",
+          "f317.woff2",
+          "f318.woff2",
+          "f319.woff2",
+          "f320.woff2",
+          "f321.woff2",
+          "f322.woff2",
+          "f323.woff2",
+          "f324.woff2",
+          "f325.woff2",
+          "f326.woff2",
+          "f327.woff2",
+          "f328.woff2",
+          "f329.woff2",
+          "f330.woff2",
+          "f331.woff2",
+          "f332.woff2",
+          "f333.woff2",
+          "f334.woff2",
+          "f335.woff2",
+          "f336.woff2",
+          "f337.woff2",
+          "f338.woff2",
+          "f339.woff2",
+          "f340.woff2",
+          "f341.woff2",
+          "f342.woff2",
+          "f343.woff2",
+          "f344.woff2",
+          "f345.woff2",
+          "f346.woff2",
+          "f347.woff2",
+          "f348.woff2",
+          "f349.woff2",
+          "f350.woff2",
+          "f351.woff2",
+          "f352.woff2",
+          "f353.woff2",
+          "f354.woff2",
+          "f355.woff2",
+          "f356.woff2",
+          "f357.woff2",
+          "f358.woff2",
+          "f359.woff2",
+          "f369.woff2",
+          "f370.woff2",
+          "f371.woff2",
+          "f372.woff2",
+          "f373.woff2",
+          "f374.woff2",
+          "f375.woff2",
+          "f376.woff2",
+          "f377.woff2",
+          "f378.woff2",
+          "f379.woff2",
+          "f380.woff2",
+          "f381.woff2",
+          "f382.woff2",
+          "f383.woff2",
+          "f384.woff2",
+          "f385.woff2",
+          "f386.woff2",
+          "f387.woff2",
+          "f388.woff2",
+          "f61.woff2",
+          "f72.woff2",
+          "f74.woff2",
+          "f75.woff2",
+          "f76.woff2",
+          "f77.woff2",
+          "f79.woff2",
+          "f80.woff2",
+          "f81.woff2",
+          "f82.woff2",
+          "f83.woff2",
+          "f84.woff2",
+          "f85.woff2",
+          "f86.woff2",
+          "f87.woff2",
+          "f88.woff2",
+          "f89.woff2",
+          "f90.woff2",
+          "f91.woff2"
+        ],
+        "cjkCodepoints": 2212809,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "caption",
+        "file": "styles/halftone-dossier/demo/index.html",
+        "line": 161,
+        "textColor": "#F4ECDD",
+        "band": "#1D2340(navy) 圆角 14，背后 #FF5A87(pink) 错位 8px",
+        "bandStops": null,
+        "font": "F.sans 900",
+        "size": "传入 size",
+        "pos": "(x,y) 传入；captionAnim 从 y+40 上浮 + scale .8→1 + 旋转 -1.2°→-0.6°",
+        "reveal": "0.4s seg 上浮缩放 + 0.12s 透明度",
+        "note": "字幕是**分片富文本**：parts=[[文本],[文本,颜色]] 逐段 <tspan>，可在一句里换色",
+        "plate": "box",
+        "plateColor": "#001D2340",
+        "plateEvidence": "STYLE.md §4「a dark-ink rounded pill with an overprint-ink offset shadow」；demo band #1D2340 圆角 14 ｜ 底衬色取自 palette.bg #F4ECDD @0.90，与字色 #1D2340 的 WCAG 对比度 13.09 ｜ STYLE.md §4「a **dark-ink** rounded pill … **paper-coloured text**」；demo index.html:166,169 band #1D2340 + 字 #F4ECDD。原配置为深字#1D2340/浅底#F4ECDD，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。",
+        "plateContrast": 13.09,
+        "plateSource": "demo 真值（demo index.html:166,169 band #1D2340 + 字 #F4ECDD。原配置为深字#1D2340/浅底#F4ECDD，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。）"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "未查清：绘图全在 index.html，本次只读了 caption/stamp helper，未定位切镜"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "hd-2d": {
+      "slug": "hd-2d",
+      "cn": "HD-2D",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/hd-2d/demo/chars.js",
+        "styles/hd-2d/demo/px.js",
+        "styles/hd-2d/demo/cliff.js",
+        "styles/hd-2d/demo/forest.js"
+      ],
+      "evidence": "chars.js:8 `const C = { cloak: ramp(['#2e0b14','#521620','#7c222c','#a4333a','#c9503f'], .22), skin: ramp(['#b87a62','#dea282','#f3c9a6','#ffe2c8'], .22), ... }`（ramp() 生成 4-5 阶色阶）；cliff.js:161 灯光色 `'#fff0c8'`；forest.js:118 辉光 `glow('#ffc070', 1.25, 1.1)`",
+      "palette": {
+        "bg": "#fff0c8",
+        "bg2": null,
+        "fg": "#2e0b14",
+        "accent": "#ffc070"
+      },
+      "texture": {
+        "type": "pixel-post",
+        "params": {
+          "note": "像素 + 后期"
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "eo",
+          "lerp",
+          "monotone",
+          "seg",
+          "ss",
+          "track"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Cinzel / Cormorant Garamond",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/hd-2d/demo/story.js",
+          "line": 23,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' ')",
+        "lineIds": [
+          "n1",
+          "n2",
+          "k1",
+          "n3",
+          "n4",
+          "n5",
+          "n6",
+          "n7"
+        ],
+        "count": 8,
+        "maxTextChars": 76,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/hd-2d/demo/fonts",
+        "fontFiles": 5,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/hd-2d/demo/ui.js",
+        "line": 81,
+        "textColor": "#f6f0e2",
+        "band": "横向黑色渐隐条 rgba(0,0,0,0→.38→0)",
+        "bandStops": [
+          "rgba(0,0,0,0)",
+          "rgba(0,0,0,.38)",
+          "rgba(0,0,0,0)"
+        ],
+        "font": "Cormorant Garamond italic 500",
+        "size": 50,
+        "pos": "底部居中 y=H-88，带宽 tw+320 / 高 110",
+        "reveal": "ss 淡入淡出（t-.15..t+.2 进，t+d+.45..t+d+.8 出）",
+        "note": "文字自带 rgba(0,0,0,.9) 10px 投影；无实心底盒，靠渐隐条压暗",
+        "plate": "box",
+        "plateColor": "#9E000000",
+        "plateEvidence": "STYLE.md §4「centred low on a soft dark gradient band」+「a dialogue box: dark plate, thin metal border」；demo band rgba(0,0,0,0→.38→0) ｜ 底衬色取自 demo band rgba(0,0,0,0.38)，与字色 #2E0B14 的 WCAG 对比度 6.00（直接用 demo 真值）",
+        "plateContrast": 6,
+        "plateSource": "demo band rgba(0,0,0,0.38)"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "SHOTS/shot",
+        "file": "styles/hd-2d/demo/main.js",
+        "line": 4,
+        "cutSource": "styles/hd-2d/demo/main.js:4 import { DUR, SHOTS… }",
+        "chapterCard": "title @ styles/hd-2d/demo/ui.js:93",
+        "note": "SHOTS 表硬切；有 title() 章节卡"
+      },
+      "cameraMotion": {
+        "evidence": "THREE 相机 @ styles/hd-2d/demo/harbor.js:246",
+        "note": "3D 场景相机（three.js）"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "hologram-hud": {
+      "slug": "hologram-hud",
+      "cn": "科幻全息界面",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/hologram-hud/demo/engine/hud.js",
+        "styles/hologram-hud/demo/film.js",
+        "styles/hologram-hud/demo/content.json",
+        "styles/hologram-hud/demo/frames.js"
+      ],
+      "evidence": "颜色是参数化的，不是硬编码 hex：content.json:7-8 `\"hue\": 188, \"accent\": 38`；hud.js:11 `export function theme(hue = 190, accent = 38)`；film.js:106 `const T = U.theme(C.hue, C.accent)`；唯一硬编码 hex 是保留色 frames.js:18 `keep: { star: '#D97757' }`。★ 修正：该 #D97757 是「单个物体的例外保留色」（STYLE.md:32「for a brand mark, never for decoration」），不是装饰用 accent，故 palette.accent 由 #D97757 改为 null —— 真正的 accent 由 content.json 的 accent:38 参数派生（STYLE.md:27「One cold hue plus one warm accent, both parameters」）。",
+      "palette": {
+        "bg": null,
+        "bg2": null,
+        "fg": null,
+        "accent": null,
+        "programmatic": {
+          "hue": 188,
+          "accent": 38,
+          "fn": "theme(hue, accent)",
+          "file": "styles/hologram-hud/demo/engine/hud.js:11"
+        }
+      },
+      "texture": {
+        "type": "hologram",
+        "params": {
+          "depthFog": true,
+          "scanline": true,
+          "glowPasses": 2
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": "scan"
+      },
+      "typography": {
+        "family": "Rajdhani / ShareTechMono",
+        "weight": "300/400/500/600",
+        "case": "all caps"
+      },
+      "copySources": [
+        {
+          "file": "styles/hologram-hud/demo/main.js",
+          "line": 8,
+          "role": "fetch content.json（?content= 可换）"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' ')",
+        "lineIds": [
+          "intro",
+          "c0",
+          "c1",
+          "c2",
+          "outro"
+        ],
+        "count": 5,
+        "maxTextChars": 72,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/hologram-hud/demo/fonts",
+        "fontFiles": 5,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/hologram-hud/demo/engine/hud.js",
+        "line": 297,
+        "textColor": "T.hi(0.96a)（HUD 主题高亮色）",
+        "band": "rgba(1,8,12,0.62a)",
+        "bandStops": null,
+        "font": "FONT.ui 500 → Inter",
+        "size": 38,
+        "pos": "底部居中 y=H-118，maxW=1180，行高 46",
+        "reveal": "透明度 a 淡入",
+        "note": "全息细节：globalCompositeOperation='lighter' 画的四角括号角标 + 左侧 4 根随 t 正弦跳动的声纹柱；底板是直角矩形（非圆角）",
+        "plate": "box",
+        "plateColor": "#6101080C",
+        "plateEvidence": "STYLE.md §4「Subtitles are HUD: a dark plate with corner brackets」；demo band rgba(1,8,12,0.62) ｜ 底衬色取自 demo band rgba(1,8,12,0.62)，与字色 null 的 WCAG 对比度 19.78（直接用 demo 真值）",
+        "plateContrast": 19.78,
+        "plateSource": "demo band rgba(1,8,12,0.62)"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "drawScanPlane",
+        "file": "styles/hologram-hud/demo/engine/holo.js",
+        "line": 249,
+        "cutSource": null,
+        "chapterCard": "titleBlock @ styles/hologram-hud/demo/film.js:316",
+        "note": "**扫描面**扫过切换；时间线按条目数自动重排（film.js:1 注释：120 BPM，1 小节=2s）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "impasto": {
+      "slug": "impasto",
+      "cn": "油画厚涂",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/impasto/demo/film.js",
+        "styles/impasto/demo/scenes/ecu.js",
+        "styles/impasto/demo/scenes/figures.js"
+      ],
+      "evidence": "film.js:76-77 涂层色 `coat:'#34303e'`, `coat:'#2c3238'`, `coat:'#3a2e30'`, `coat:'#30303a'`；film.js:68 笔触色 `cols: ['#f8c850','#f0a030','#ffdf80','#e88a28']`；scenes/ecu.js:13 深色 `'#1a0a06'`；scenes/figures.js:20 `hex('#2a2224')`",
+      "palette": {
+        "bg": "#1a0a06",
+        "bg2": "#2a2224",
+        "fg": "#34303e",
+        "accent": "#f8c850"
+      },
+      "texture": {
+        "type": "impasto",
+        "params": {
+          "note": "厚涂笔触"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Cormorant Garamond / Cormorant SC",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/impasto/demo/scenes/cards.js",
+          "line": 4,
+          "role": "inline 标题 buildTitle"
+        },
+        {
+          "file": "styles/impasto/demo/film.js",
+          "line": 37,
+          "role": "inline credits DOM"
+        }
+      ],
+      "copyContract": {
+        "splitter": "无字幕系统；仅标题卡 + DOM credits",
+        "lineIds": null,
+        "count": 0,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/impasto/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": null,
+        "file": null,
+        "line": null,
+        "textColor": null,
+        "band": null,
+        "bandStops": null,
+        "font": null,
+        "size": null,
+        "pos": null,
+        "reveal": null,
+        "note": "**该风格没有字幕系统**：只有画出来的标题/片尾卡（scenes/cards.js:4 buildTitle「The Colour of Rain」、:10 buildEnd）与 film.js:37 的 DOM credits（Cormorant SC 38/30/21px）。旁白没有画面文字。"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": "buildTitle @ styles/impasto/demo/scenes/cards.js:4 / buildEnd @ :10",
+        "note": "未查清转场：只有 SHOTS 注释块（film.js:60），镜头切换点未定位"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "ink-wash": {
+      "slug": "ink-wash",
+      "cn": "中国水墨",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/ink-wash/demo/passage.js",
+        "styles/ink-wash/demo/sheet.js",
+        "styles/ink-wash/demo/ink.js"
+      ],
+      "evidence": "sheet.js:7 `const INK = '#000'`；passage.js:135-137 `'#2f2b27'`(墨) `'#cdc3aa'` `'#5a4634'`；sheet.js:54 纸色注释 'rice paper · #F2ECDE'；印章色 '#b02e22'",
+      "palette": {
+        "bg": "#F2ECDE",
+        "bg2": "#cdc3aa",
+        "fg": "#2f2b27",
+        "accent": "#b02e22"
+      },
+      "texture": {
+        "type": "ink-bleed",
+        "params": {
+          "keywords": [
+            "ink",
+            "bleed",
+            "wash"
+          ]
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Ma Shan Zheng / Zhi Mang Xing / Cormorant / Cormorant SC",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/ink-wash/demo/story.js",
+          "line": 24,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(','), split('\\n')",
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4",
+          "L5"
+        ],
+        "count": 5,
+        "maxTextChars": 46,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/ink-wash/demo/fonts",
+        "fontFiles": 6,
+        "cjkFonts": [
+          "MaShanZheng-Regular.ttf",
+          "ZhiMangXing-Regular.ttf"
+        ],
+        "cjkCodepoints": 13526,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/ink-wash/demo/subs.js",
+        "line": 4,
+        "textColor": "#000（湿层+干层两次叠加）",
+        "band": null,
+        "bandStops": null,
+        "font": "Cormorant italic 500",
+        "size": 46,
+        "pos": "(x,y) 由 subPos(id,t) 给出（shots.js:33），多行按 size*1.22 排",
+        "reveal": "**湿→干**：wetK 控制进 wet 层晕开，再落 dry 层；文字本身不淡入",
+        "note": "句首有一枚 size*0.32 的朱红小印（VERM 色），是签名式元素；支持 \\n 多行"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "blitReveal / revealMasks",
+        "file": "styles/ink-wash/demo/world.js",
+        "line": 79,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "**水墨晕染式揭示**：world.js:61 revealMasks / :79 blitReveal（另有 land.js:144 ripple 涟漪）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "iso-infographic": {
+      "slug": "iso-infographic",
+      "cn": "等距信息图",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/iso-infographic/demo/engine.js"
+      ],
+      "evidence": "engine.js:27-30 `export const PAL = { red:['#CF5140','#B3352B','#8C2620'], green:['#7BA75F','#5E8C4A','#476F37'], blue:['#5A9BCB','#3C7FB1','#2D6390'], cream:['#FBF4E6','#F2E6D0','#D9C8A9'], soil:['#A77850',...] }`（每色 3 阶）；engine.js:35 `ink:'#2E2522', bg:'#F2E6D0', paper:'#FBF4E6'`",
+      "palette": {
+        "bg": "#F2E6D0",
+        "bg2": "#FBF4E6",
+        "fg": "#2E2522",
+        "accent": "#B3352B"
+      },
+      "texture": {
+        "type": "flat-iso",
+        "params": {
+          "note": "等距 3 面明暗（top/left/right）"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Jost",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/iso-infographic/demo/timeline.js",
+          "line": 25,
+          "role": "inline SUBS"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4",
+          "L5",
+          "L6"
+        ],
+        "count": 6,
+        "maxTextChars": 64,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/iso-infographic/demo/fonts",
+        "fontFiles": 1,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/iso-infographic/demo/film.js",
+        "line": 382,
+        "textColor": "#2E2522",
+        "band": "rgba(251,244,230,0.96)",
+        "bandStops": null,
+        "font": "FONT 500",
+        "size": 42,
+        "pos": "底部 y=1080-64-76，宽=tw+56+46，圆角 10",
+        "reveal": "ss 淡入 + 上浮 8px；描边从左往右画（bw=eo(seg(a,0,.35))）+ 文字擦除显现",
+        "note": "左侧有一个 46px 的**等距立方体图标**（用 P(u,v,z) 等距投影画的 3 面红色小方块）",
+        "plate": "box",
+        "plateColor": "#0AFBF4E6",
+        "plateEvidence": "STYLE.md §4「The subtitle is a map label: a pale card with a small radius and an ink border」；demo band rgba(251,244,230,0.96) ｜ 底衬色取自 demo band rgba(251,244,230,0.96)，与字色 #141414 的 WCAG 对比度 16.71（直接用 demo 真值）",
+        "plateContrast": 16.71,
+        "plateSource": "demo band rgba(251,244,230,0.96)"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "tearPoly",
+        "file": "styles/iso-infographic/demo/film.js",
+        "line": 348,
+        "cutSource": null,
+        "chapterCard": "titleCard @ styles/iso-infographic/demo/film.js:399",
+        "note": "**撕纸**：film.js:348 tearPoly（:354 cherryCut 是形状不是转场）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "living-screencast": {
+      "slug": "living-screencast",
+      "cn": "活体实机录屏",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/living-screencast/demo/ui.js",
+        "styles/living-screencast/demo/clawd.js"
+      ],
+      "evidence": "无具名调色板；高频 '#f2c14e'×10 '#d97757'×3 '#b85f40'×2 '#2a2622'×1（分散内联，逐处写死）",
+      "palette": {
+        "bg": null,
+        "bg2": null,
+        "fg": "#2a2622",
+        "accent": "#f2c14e"
+      },
+      "texture": {
+        "type": "none",
+        "params": {}
+      },
+      "motion": {
+        "easing": [
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "seg",
+          "ss"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Inter / JetBrains Mono / Newsreader",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/living-screencast/demo/film.js",
+          "line": 8,
+          "role": "inline VO 时间表"
+        },
+        {
+          "file": "styles/living-screencast/demo/main.js",
+          "line": 10,
+          "role": "fetch voices/words.json（文字）"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' '), split(',')",
+        "lineIds": [
+          "v01",
+          "v02",
+          "v03",
+          "v04",
+          "v05",
+          "v06",
+          "v07",
+          "v08",
+          "v09",
+          "v10",
+          "v11",
+          "v12",
+          "v13",
+          "v14",
+          "v15",
+          "v16",
+          "v17"
+        ],
+        "count": 17,
+        "maxTextChars": 76,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/living-screencast/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "(H.cap 状态) → 由 film.js 的 cap 渲染器画",
+        "file": "styles/living-screencast/demo/film.js",
+        "line": 436,
+        "textColor": null,
+        "band": null,
+        "bandStops": null,
+        "font": null,
+        "size": null,
+        "pos": null,
+        "reveal": "op 淡入（seg .12s）+ y 从 10px 上浮（eo .2s）",
+        "note": "字幕只产出 {text, op, y} 状态对象，**实际绘制在别处**（H.cap 被消费的画布代码），本次未定位到绘制函数 → textColor/band/font 填 null",
+        "plate": "box",
+        "plateColor": "#4C000000",
+        "plateEvidence": "STYLE.md §4「frosted-glass caption pills」+「Captions sit in a pill at the bottom」；demo band 未定位到绘制函数，沿用 palette.subtitleBack ｜ 底衬色取自 palette.subtitleBack #B3000000，与字色 #FFFFFF 的 WCAG 对比度 20.39",
+        "plateContrast": 20.39,
+        "plateSource": "palette.subtitleBack #B3000000"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "wipe",
+        "file": "styles/living-screencast/demo/main.js",
+        "line": 102,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "有 wipe 函数（屏幕式擦除，符合 screencast 语义）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "lowpoly-island": {
+      "slug": "lowpoly-island",
+      "cn": "低多边形等距",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/lowpoly-island/demo/world.js",
+        "styles/lowpoly-island/demo/sea.js",
+        "styles/lowpoly-island/demo/main.js"
+      ],
+      "evidence": "world.js:21-22 `export const PAL = { sandTop:'#f3dfab', sandSide:'#e2c68e', grassTop:'#93c96c', grassTop2:'#7fbd62', earth:'#c99c6e', earth2:'#b88a5e', rockTop:'#b4b8bd', rockSide:'#8f949c', stone:'#d9d5cc', walls:['#fbf3e6', ...] }`；sea.js:23 水色 `new THREE.Color('#3aa3b8')`",
+      "palette": {
+        "bg": "#eef6fb",
+        "bg2": "#3aa3b8",
+        "fg": "#8f949c",
+        "accent": "#ffc676"
+      },
+      "texture": {
+        "type": "flat-shaded-3d",
+        "params": {
+          "flatShading": true,
+          "roughness": 0.55,
+          "metalness": 0
+        }
+      },
+      "motion": {
+        "easing": [
+          "TAU",
+          "clamp",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "monotone",
+          "seg",
+          "ss"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Josefin Sans / Quicksand",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/lowpoly-island/demo/story.js",
+          "line": 31,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "v5"
+        ],
+        "count": 5,
+        "maxTextChars": 46,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/lowpoly-island/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "hud",
+        "file": "styles/lowpoly-island/demo/main.js",
+        "line": 132,
+        "textColor": "#fffdf8",
+        "band": null,
+        "bandStops": null,
+        "font": "Quicksand 600",
+        "size": 44,
+        "pos": "底部居中 y=H-118，左对齐起点 x0=W/2-(tw+58)/2",
+        "reveal": "ss 淡入淡出（a+0.18 进 / b-0.2 出）",
+        "note": "文字左侧有一个 17px 的**等距小六边形地块图标**（hexIcon，顶面颜色随 iconTop(t) 变）"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "shotAt",
+        "file": "styles/lowpoly-island/demo/story.js",
+        "line": 79,
+        "cutSource": "styles/lowpoly-island/demo/story.js:65 `export const SHOTS = [`",
+        "chapterCard": "titleBlock @ styles/lowpoly-island/demo/main.js:112",
+        "note": "SHOTS 表硬切"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "microgame": {
+      "slug": "microgame",
+      "cn": "微游戏快闪",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/microgame/demo/chars.js",
+        "styles/microgame/demo/frames.js"
+      ],
+      "evidence": "无具名调色板；chars.js:72 `'#8a1f3a'` + hi `'#ff7a8a'`；chars.js:228 `'#7a1030'` + `'#ff5a7a'`；frames.js:25 字幕 `fill:'#cbb8ff'`；高频 '#3d168f'×3",
+      "palette": {
+        "bg": null,
+        "bg2": "#3d168f",
+        "fg": "#8a1f3a",
+        "accent": "#cbb8ff"
+      },
+      "texture": {
+        "type": "toon",
+        "params": {
+          "lw": 4.5,
+          "note": "粗描边卡通"
+        }
+      },
+      "motion": {
+        "easing": [
+          "back",
+          "clamp",
+          "ei",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Lilita One / Gochi Hand / Architects Daughter / Inter",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/microgame/demo/main.js",
+          "line": 9,
+          "role": "fetch lines.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split('.')",
+        "lineIds": [
+          "c_pump",
+          "l1",
+          "c_sneeze",
+          "d_ah",
+          "fx_choo1",
+          "l2",
+          "c_strap",
+          "c_catch",
+          "l3",
+          "l4",
+          "c_dodge",
+          "c_zip",
+          "c_salute",
+          "l5",
+          "l6",
+          "c_land",
+          "c_pull",
+          "d_ohno",
+          "d_ah2",
+          "fx_choo2",
+          "l7"
+        ],
+        "count": 21,
+        "maxTextChars": 28,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "setter",
+        "setters": [
+          "setLines(lines,dur)"
+        ],
+        "evidence": "styles/microgame/demo/film.js:32",
+        "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/microgame/demo/fonts",
+        "fontFiles": 8,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "B",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/microgame/demo/hud.js",
+        "line": 136,
+        "textColor": "#1a1030",
+        "band": "P.gold #ffc928（内 #fff0a0 亮面 + #e08a00 暗面）",
+        "bandStops": null,
+        "font": "Lilita 50px",
+        "size": 50,
+        "pos": "x=960, y=o.y（game/boss 时 900，否则 950）",
+        "reveal": "**12fps 逐帧缩放**：k = lt<1/12 ? .82 : lt<2/12 ? .95 : 1，出场 out=.9 —— 复古游戏机的顿帧弹入",
+        "note": "左侧图标：tick=金色秒表（含红指针），dot=生命图标（lifeIcon）",
+        "plate": "box",
+        "plateColor": "#4C000000",
+        "plateEvidence": "STYLE.md §4「a rounded card in the home palette with the home outline and hard shadow」；demo band P.gold #ffc928 ｜ 底衬色取自 palette.subtitleBack #B3000000，与字色 #FFFFFF 的 WCAG 对比度 19.25",
+        "plateContrast": 19.25,
+        "plateSource": "palette.subtitleBack #B3000000"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "(按 s.kind 分派)",
+        "file": "styles/microgame/demo/film.js",
+        "line": 244,
+        "cutSource": "styles/microgame/demo/film.js:244 renderFilm 内按场景 kind 分派",
+        "chapterCard": null,
+        "note": "按场景 kind（stage/game/boss）分派，硬切；:48 `tv_out` 音效提示有「关机」式收尾"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "midcentury-toon": {
+      "slug": "midcentury-toon",
+      "cn": "50s 扁平卡通",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/midcentury-toon/demo/engine/toon.js"
+      ],
+      "evidence": "toon.js:10-17 `export const PAL = { paper:'#F4EAD5', paperD:'#E6D8BC', paperDD:'#D4C29F', ink:'#2B2420', inkSoft:'#4A3F38', coral:'#E4613F', coralD:'#B8452B', coralL:'#F0917A', mustard:'#E8B43A', mustardD:'#C08A1E', mustardL:'#...', pink:'#F0B4A8', pinkD:'#D98F82' }`（具名调色板，35 hex）",
+      "palette": {
+        "bg": "#F4EAD5",
+        "bg2": "#E6D8BC",
+        "fg": "#2B2420",
+        "accent": "#E4613F"
+      },
+      "texture": {
+        "type": "paper",
+        "params": {
+          "keywords": [
+            "grain",
+            "noise",
+            "fibre"
+          ],
+          "hits": 97
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Jost / Alfa Slab One / Oleo Script",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/midcentury-toon/demo/main.js",
+          "line": 7,
+          "role": "fetch content.json（?content= 可换）"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(/\\s+/)",
+        "lineIds": [
+          "hook",
+          "step0",
+          "step1",
+          "step2",
+          "tip",
+          "outro"
+        ],
+        "count": 6,
+        "maxTextChars": 38,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/midcentury-toon/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/midcentury-toon/demo/film.js",
+        "line": 67,
+        "textColor": "COL.ink",
+        "band": "COL.paper",
+        "bandStops": null,
+        "font": "Jost 500",
+        "size": 42,
+        "pos": "底部居中 y=H-60-78，宽=首行宽+120，圆角 12",
+        "reveal": "ss 淡入 + 上浮 10px",
+        "note": "底盒是**手绘纸卡**：shape(rrect, {line:3.2, seed:901, grain:.15, breaks:.08, off:[5,5]})；左右各一颗 8 角星（rot 随 t 反向转）",
+        "plate": "box",
+        "plateColor": "#00F4EAD5",
+        "plateEvidence": "STYLE.md §4「Caption card: a paper-coloured rounded slab with a thin ink border」；demo band COL.paper #F4EAD5 ｜ 底衬色取自 demo band rgba(244,234,213,1)，与字色 #2B2420 的 WCAG 对比度 12.77（直接用 demo 真值）",
+        "plateContrast": 12.77,
+        "plateSource": "demo band rgba(244,234,213,1)"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "cut",
+        "file": "styles/midcentury-toon/demo/film.js",
+        "line": 564,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "有 cut 函数；调用点未逐处核对"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "one-line": {
+      "slug": "one-line",
+      "cn": "一笔画",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/one-line/demo/hands.js",
+        "styles/one-line/demo/ink.js"
+      ],
+      "evidence": "无具名调色板：唯一 6 位 hex 来源是 STYLE.md:17 纸色 #F4EFE4 / :31 墨色 #1D1A17，demo 侧以 rgba() 等价出现——subs.js:4 `rgba(244,239,228,0.9)`（纸色 halo，=#F4EFE4）、ink.js:183 `rgba(29,26,23,0.82…)` 与 subs.js:3 `const INK = 'rgba(29,26,23,'`（墨色，=#1D1A17）；另有 hands.js:32 `g.fillStyle = '#000'`（遮罩用）。★ 修正：先前把 hands.js:32 的遮罩黑 `#000` 当成 palette.fg（3 位 hex，推导时对比度公式被 NaN 绕过），导致字幕/文字取到纯黑压深底；已按 STYLE.md 改为纸色 #F4EFE4 作 bg、墨色 #1D1A17 作 fg。",
+      "palette": {
+        "bg": "#F4EFE4",
+        "bg2": null,
+        "fg": "#1D1A17",
+        "accent": null
+      },
+      "texture": {
+        "type": "ink",
+        "params": {
+          "rgbaUses": 20
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "lerp",
+          "mulberry",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Caveat / Sacramento",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/one-line/demo/story.js",
+          "line": 4,
+          "role": "inline VO"
+        },
+        {
+          "file": "styles/one-line/demo/story.js",
+          "line": 3,
+          "role": "inline TITLE"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(','), split(';'), split('@'), split(/[\\s,]+/)",
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4a",
+          "L4b",
+          "L5"
+        ],
+        "count": 6,
+        "maxTextChars": 41,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/one-line/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "title / subtitle",
+        "file": "styles/one-line/demo/subs.js",
+        "line": 21,
+        "textColor": "rgba(29,26,23,0.9)（副题 0.62）",
+        "band": null,
+        "bandStops": null,
+        "font": "Sacramento 76px（副题 Caveat 500 30px）",
+        "size": 76,
+        "pos": "**右上角** x=W-90-w, y=190（写在空白纸上，不在底部）",
+        "reveal": "左→右擦除书写（write=clamp((t-t0)/1.6)）+ 结尾淡出 0.7s",
+        "note": "主副题分两段出现：副题在 t0+1.2 之后才显；带 halo(ctx,text,14) 纸面晕染"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": "styles/one-line/demo/main.js:46 `if (t >= P.T[0] …) drawLine(...)`",
+        "chapterCard": "title @ styles/one-line/demo/subs.js:21",
+        "note": "按 P.T / P.SEG 段落推进（一条线连续生长），未发现「切镜」——更接近**连续长镜头**"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "paper-lantern": {
+      "slug": "paper-lantern",
+      "cn": "纸雕灯影",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/paper-lantern/demo/src/room.js",
+        "styles/paper-lantern/demo/src/paper.js",
+        "styles/paper-lantern/demo/src/art.js",
+        "styles/paper-lantern/demo/src/shots/s01_night.js",
+        "styles/paper-lantern/demo/src/shots/s02_kitchen.js"
+      ],
+      "evidence": "room.js:35 `new THREE.MeshStandardMaterial({ color: '#0a0806', roughness: 1 })`；art.js:201 窗光 `g.fillStyle = '#fff'`；paper.js:73 颗粒 pattern `x.createPattern(GRAIN, 'repeat')`；room.js:56 物件色 `{ base:'#b8742c', hi:'#e9b25c', lo:'#6a3812' }`；shots/s01_night.js:35 夜色 `'#22325e'`；shots/s02_kitchen.js:59 剪影 `'#2e170d'`",
+      "palette": {
+        "bg": "#0a0806",
+        "bg2": "#22325e",
+        "fg": "#2e170d",
+        "accent": "#e9b25c"
+      },
+      "texture": {
+        "type": "paper-grain",
+        "params": {
+          "grainA": 0.9,
+          "fn": "paper.js:73 createPattern(GRAIN)"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "LongCang / Ma Shan Zheng / Noto Serif SC / Zhi Mang Xing",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/paper-lantern/demo/src/main.js",
+          "line": 10,
+          "role": "fetch script.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": "script.json: [{id,text,rate}]",
+        "lineIds": [
+          "L01",
+          "L02",
+          "L03",
+          "L04",
+          "L05",
+          "L06",
+          "L07",
+          "L08",
+          "L09",
+          "L10",
+          "L11",
+          "L12",
+          "L13",
+          "L14",
+          "L15",
+          "…共25"
+        ],
+        "count": 25,
+        "maxTextChars": 43,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/paper-lantern/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [
+          "LongCang.ttf",
+          "MaShanZheng.ttf",
+          "NotoSerifSC.ttf",
+          "ZhiMangXing.ttf"
+        ],
+        "cjkCodepoints": 269778,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "(DOM #sub)",
+        "file": "styles/paper-lantern/demo/index.html",
+        "line": 10,
+        "textColor": "（继承 CSS color，未在 index.html 内联给出）",
+        "band": null,
+        "bandStops": null,
+        "font": "NotoSerifSC 500",
+        "size": 40,
+        "pos": "绝对定位 bottom:74px，text-align:center，white-space:pre-line，line-height 1.45，letter-spacing .06em",
+        "reveal": "style.opacity = a（ss 淡入 .2s / 淡出 .2s）；文本里「，。：」被替换成全角空格 \\u3000",
+        "note": "**唯一用 DOM 元素而非 canvas 画字幕的风格**；textColor 来自外部 CSS 规则（本次未读到具体色值）→ 填 null 更准，但字体/字号/定位有实据"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "cloudCurtain",
+        "file": "styles/paper-lantern/demo/src/shots/s17_sushi.js",
+        "line": 9,
+        "cutSource": "styles/paper-lantern/demo/src/main.js:23 `const plan = SHOTS(C, DUR);`",
+        "chapterCard": null,
+        "note": "**云幕**：s17_sushi.js:9 cloudCurtain（s13_note.js:11 reveal 是另一处揭示）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "paper-popup": {
+      "slug": "paper-popup",
+      "cn": "纸片立体书",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/paper-popup/demo/paper.js",
+        "styles/paper-popup/demo/art.js",
+        "styles/paper-popup/demo/hud.js"
+      ],
+      "evidence": "paper.js:3 `export const INK = '#3a2a24'`；art.js:11 `const TUNIC = '#3fa1de', TUNIC_S = '#2a78b3', BOOT = '#8a5530'`；art.js:404 纸边 `edge: '#cfc8ba'`",
+      "palette": {
+        "bg": "#fffaf0",
+        "bg2": "#cfc8ba",
+        "fg": "#3a2a24",
+        "accent": "#ffd23f"
+      },
+      "texture": {
+        "type": "paper",
+        "params": {
+          "note": "纸纹 + 折痕阴影"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Fredoka / Lilita One / IM Fell English / ZCOOL KuaiLe",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/paper-popup/demo/story.js",
+          "line": 5,
+          "role": "inline VO"
+        },
+        {
+          "file": "styles/paper-popup/demo/story.js",
+          "line": 24,
+          "role": "inline BUB 气泡"
+        }
+      ],
+      "copyContract": {
+        "splitter": "VO: [id,t,en,zh]；BUB: [who,t0,t1,en,zh]",
+        "lineIds": null,
+        "count": 15,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/paper-popup/demo/fonts",
+        "fontFiles": 8,
+        "cjkFonts": [
+          "f0.woff2"
+        ],
+        "cjkCodepoints": 194,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "drawSubs",
+        "file": "styles/paper-popup/demo/hud.js",
+        "line": 14,
+        "textColor": "#fffaf0（描边 rgba(28,18,12,.78)）",
+        "band": null,
+        "bandStops": null,
+        "font": "Fredoka 500 40px（中文 ZCOOL KuaiLe 32px）",
+        "size": 40,
+        "pos": "底部居中 y=1080-70-(n-1)*48",
+        "reveal": "seg 淡入 .15s / 淡出 .3s",
+        "note": "**中英双行**：英文 40px 在上，中文 32px 在下一行；都有 8px 深色描边 + 16px 投影，无实心底盒"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "SHOTS(由 story 的 keys 生成)",
+        "file": "styles/paper-popup/demo/main.js",
+        "line": 403,
+        "cutSource": "styles/paper-popup/demo/main.js:403 `const SHOTS = SH.map(keys => ({t0, t1, f: track(...)}))`",
+        "chapterCard": "CHAPTERS（story.js，本次未读其结构）",
+        "note": "SHOTS 由关键帧 keys 生成 + track 插值 → 平滑连续而非硬切；cutMesh/finishCut 是剪纸工艺不是转场"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "papercut-red": {
+      "slug": "papercut-red",
+      "cn": "红色窗花剪纸",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/papercut-red/demo/paper.js",
+        "styles/papercut-red/demo/fold.js"
+      ],
+      "evidence": "paper.js:3-9 `export const PAL = { red:'#d2201f', nian:'#b00f26', far:'#7e1424', mid:'#9c1323', rice:'#f2e8d0', indigo:'#1c2446', gold:'#d9a93f', ... }`；fold.js:9 `const FRONT = PAL.red, BACK = '#de3b30'`；★ 底色证据：main.js:65/111/138 `fillPaper(g, 'rice', …)` —— 场景实际地色是米白宣纸 rice #f2e8d0，red #d2201f 是主角剪纸片（girl/团花/房子），夜间场景另用 indigo #1c2446（main.js:206/213/239）。★ 修正：先前 palette.bg 误填 hero 红 #d2201f（把主角色当地色），违反 STYLE.md:28「Ground and hero must be different paper families. If background and hero are both red, the silhouettes stop popping.」；已改为 bg=rice #f2e8d0（地色）、bg2=indigo #1c2446（夜地色）、fg=red #d2201f（主角）、accent=gold #d9a93f（金箔，§3:29 仅片尾一次）。",
+      "palette": {
+        "bg": "#f2e8d0",
+        "bg2": "#1c2446",
+        "fg": "#d2201f",
+        "accent": "#d9a93f"
+      },
+      "texture": {
+        "type": "paper",
+        "params": {
+          "note": "宣纸 + 剪影"
+        }
+      },
+      "motion": {
+        "easing": [
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "seg",
+          "ss",
+          "track",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Fraunces / Ma Shan Zheng",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/papercut-red/demo/story.js",
+          "line": 15,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4",
+          "L5"
+        ],
+        "count": 5,
+        "maxTextChars": 73,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/papercut-red/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [
+          "MaShanZheng-Regular.ttf"
+        ],
+        "cjkCodepoints": 6763,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subStrip",
+        "file": "styles/papercut-red/demo/hud.js",
+        "line": 19,
+        "textColor": "#fff1d6",
+        "band": "#a8111f（PAL.sub，即注释里的「字幕纸条」）",
+        "bandStops": null,
+        "font": "Fraunces 600 44px",
+        "size": 44,
+        "pos": "纸条居中，w=tw+150, h=74，K=1.5 超采样",
+        "reveal": "hud.js:38 drawSubs 控制显隐",
+        "note": "纸条是**六边形两端尖 + 上下锯齿边**（每 10px 交替 3px），带 40 粒洒金（rgba(222,178,84)）与一枚 13px 团花 rosette；文字左边距 80",
+        "plate": "box",
+        "plateColor": "#00A8111F",
+        "plateEvidence": "STYLE.md §4「Subtitles are a paper strip in the world, e.g. a red banner」；demo band #a8111f ｜ 底衬色取自 demo band rgba(168,17,31,1)，与字色 #f2e8d0 的 WCAG 对比度 6.23（直接用 demo 真值）",
+        "plateContrast": 6.23,
+        "plateSource": "demo band rgba(168,17,31,1)"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "shotReveal",
+        "file": "styles/papercut-red/demo/main.js",
+        "line": 451,
+        "cutSource": "styles/papercut-red/demo/main.js:12 import { T, DUR, VO, SHOTS, shotAt }",
+        "chapterCard": "buildTitle @ styles/papercut-red/demo/main.js:99 / drawTitleCard @ :109 / shotTitle @ :127",
+        "note": "SHOTS 表 + shotReveal 揭示式转场；章节卡三件套齐备"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "pictogram-motion": {
+      "slug": "pictogram-motion",
+      "cn": "象形运动图形",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/pictogram-motion/demo/engine.js"
+      ],
+      "evidence": "engine.js:45-48 `const PAL = { red: { name:'Jonetsu Red', t:['#c21d15','#d22419','#e83220','#ec5a26','#f07a45'], fg:CREAM, dim:'#f6c7ae', deep:'#8e150f' }, purple: { name:'Kakitsubata Purple', t:['#231a6e','#2c2084','#4e3a93','#644d9d','#7a62a9'], ... } }`（命名色系 + 5 阶渐变）",
+      "palette": {
+        "bg": "#fbf6ec",
+        "bg2": "#15111c",
+        "fg": "#15111c",
+        "accent": "#c21d15"
+      },
+      "texture": {
+        "type": "flat",
+        "params": {
+          "note": "无纹理，纯色块"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "DM Mono / Inter Tight / Noto Sans JP / Noto Sans SC",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/pictogram-motion/demo/edl.js",
+          "line": 13,
+          "role": "inline card(n,en,zh,jp) EDL"
+        },
+        {
+          "file": "styles/pictogram-motion/demo/scenes.js",
+          "line": 400,
+          "role": "inline maskText 大字"
+        }
+      ],
+      "copyContract": {
+        "splitter": "edl.js card(n,en,zh,jp,pose) 三语；split(' · ')",
+        "lineIds": null,
+        "count": null,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/pictogram-motion/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [
+          "NotoSansJPwght.ttf",
+          "NotoSansSCwght.ttf"
+        ],
+        "cjkCodepoints": 409920,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "G.maskText / G.typeText",
+        "file": "styles/pictogram-motion/demo/engine.js",
+        "line": 289,
+        "textColor": "fg / ghost（每卡从 PAL 取）",
+        "band": null,
+        "bandStops": null,
+        "font": "F.en(900)/F.jp(500)/F.mono(22)",
+        "size": "px（按卡自适应，可达 150）",
+        "pos": "(x,y) 逐卡指定，align 支持 left/center/right",
+        "reveal": "**遮罩上推**：按 actualBoundingBoxAscent/Descent 精确取文字盒，clip 后 dy=(1-E.oExp(p))*(h+16) 把字从下往上推入",
+        "note": "卡面是**三语叠排**：英文大字 900 + 中文大字 900 + 日文 500 28px（EJ 模式下切日文）；另有 mono 22px 的「43 / 43」编号与 CHAPTER 行做打字机逐字",
+        "plate": "box",
+        "plateColor": "#19FBF6EC",
+        "plateEvidence": "STYLE.md §4「captions are a mono line on a solid band in the chapter hue」；demo band 未定位到绘制函数，沿用 palette.subtitleBack ｜ 底衬色取自 palette.bg #fbf6ec @0.90，与字色 #15111C 的 WCAG 对比度 17.27",
+        "plateContrast": 17.27,
+        "plateSource": "palette.bg #fbf6ec @0.90"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "EDL.shots",
+        "file": "styles/pictogram-motion/demo/scenes.js",
+        "line": 667,
+        "cutSource": "styles/pictogram-motion/demo/edl.js（EDL 逐卡）",
+        "chapterCard": "card @ styles/pictogram-motion/demo/edl.js:13（每卡三语标题）+ scenes.js:246 CHAPTER 行",
+        "note": "EDL 逐卡硬切；有 shotAt（scenes.js:667）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "pixel-rpg": {
+      "slug": "pixel-rpg",
+      "cn": "16-bit 像素 RPG",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/pixel-rpg/demo/pixel.js",
+        "styles/pixel-rpg/demo/sheet.js",
+        "styles/pixel-rpg/demo/font.js"
+      ],
+      "evidence": "pixel.js:4-11 `export const PAL = { rust:'#be4a2f', clay:'#d77643', sand:'#ead4aa', tan:'#e4a672', brown:'#b86f50', dbrown:'#733e39', crimson:'#a22633', red:'#e43b44', ink:'#181425', silver:'#c0cbdc', steel:'#8b9bb4', slate:'#5a6988', night:'#262b44', ... }`（32 hex，16-bit 调色板）；sheet.js:21 背景 `o.fillStyle = '#3a4466'`；font.js 是自绘 7px 位图字体（'#'/'.' 点阵）",
+      "palette": {
+        "bg": "#3a4466",
+        "bg2": "#262b44",
+        "fg": "#181425",
+        "accent": "#e43b44"
+      },
+      "texture": {
+        "type": "pixel",
+        "params": {
+          "note": "无抗锯齿像素；字体为自绘点阵"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "自绘点阵字体（demo/font.js，大写高 7 / x 高 5 / 行高 10）",
+        "weight": null,
+        "case": "all caps"
+      },
+      "copySources": [
+        {
+          "file": "styles/pixel-rpg/demo/main.js",
+          "line": 13,
+          "role": "fetch ./lines.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' '), split(','), split(':')",
+        "lineIds": [
+          "vo1",
+          "vo2",
+          "vo4",
+          "vo5",
+          "vo6"
+        ],
+        "count": 5,
+        "maxTextChars": 53,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": null,
+        "fontFiles": null,
+        "cjkFonts": null,
+        "cjkCodepoints": null,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": "pixel-rpg 用自绘点阵 font.js，无 fonts/ 目录"
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "text / textOutlined / titleCard",
+        "file": "styles/pixel-rpg/demo/font.js",
+        "line": 108,
+        "textColor": "col 传入（描边 outline）",
+        "band": null,
+        "bandStops": null,
+        "font": "自绘点阵字模 font.js",
+        "size": "sc 缩放（titleCard 用 2）",
+        "pos": "字符格 x0,y0（titleCard 居中）",
+        "reveal": "titleCard 按 **Bayer 抖动** alpha 显现（逐像素 bayer(x,y)<alpha）",
+        "note": "**没有字体文件**：全部字形是 font.js 里手写的点阵；字幕也是点阵，放大 sc 倍。这是全库唯一自绘字体的风格",
+        "plate": "box",
+        "plateColor": "#00000000",
+        "plateEvidence": "STYLE.md §4「The dialog box is the subtitle, drawn in the framebuffer at the bottom quarter」；demo band 未定位到绘制函数，沿用 palette.subtitleBack ｜ 底衬色取自 palette.subtitleBack #FF000000，与字色 #FFFFFF 的 WCAG 对比度 21.00",
+        "plateContrast": 21,
+        "plateSource": "palette.subtitleBack #FF000000"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "listSlide",
+        "file": "styles/pixel-rpg/demo/main.js",
+        "line": 74,
+        "cutSource": "styles/pixel-rpg/demo/main.js:207 `const st = shotDoor(t)`",
+        "chapterCard": "titleCard @ styles/pixel-rpg/demo/memscenes.js:272",
+        "note": "有 listSlide（列表滑入，像 JRPG 菜单）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "risograph": {
+      "slug": "risograph",
+      "cn": "Risograph 丝网印刷",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/risograph/demo/riso.js"
+      ],
+      "evidence": "riso.js:7-11 `export const INK = { blue:[0,120,191], yellow:[255,232,0], pink:[255,72,176] }; export const PAPER = [246,241,230]`（RGB 数组，非 hex）；riso.js:129-136 送进 WebGL uniform `uInk`",
+      "palette": {
+        "bg": null,
+        "bg2": null,
+        "fg": null,
+        "accent": null,
+        "programmatic": {
+          "paper": [
+            246,
+            241,
+            230
+          ],
+          "inks": {
+            "blue": [
+              0,
+              120,
+              191
+            ],
+            "yellow": [
+              255,
+              232,
+              0
+            ],
+            "pink": [
+              255,
+              72,
+              176
+            ]
+          },
+          "file": "styles/risograph/demo/riso.js:7-11",
+          "note": "PAPER/INK 是 RGB 数组，无 hex；riso.js:129-136 送进 WebGL uniform uInk"
+        }
+      },
+      "texture": {
+        "type": "halftone-misregister",
+        "params": {
+          "note": "专色 multiply 叠印 + 各自网角 + 套色错位"
+        }
+      },
+      "motion": {
+        "easing": [
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Bricolage / Jost",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/risograph/demo/main.js",
+          "line": 11,
+          "role": "fetch lines.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "l1",
+          "l2",
+          "l3",
+          "l4",
+          "l5"
+        ],
+        "count": 5,
+        "maxTextChars": 56,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "setter",
+        "setters": [
+          "setLines(lines,dur)"
+        ],
+        "evidence": "styles/risograph/demo/film.js:29",
+        "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/risograph/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "B",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/risograph/demo/film.js",
+        "line": 306,
+        "textColor": "[1,0,0]（即洋红通道 ink 分量）",
+        "band": "[0,0,0]（黑色底块）",
+        "bandStops": null,
+        "font": "Jost 500 42px",
+        "size": 42,
+        "pos": "底部居中 y=1000，宽=tw+64，圆角 6",
+        "reveal": "直接出现（无淡入；l.t0..min(l.t1,36) 内恒定）",
+        "note": "**文字与底块都是印刷油墨分量而非 CSS 色**：text(..., [1,0,0], ...) / rrect(..., [0,0,0])，由 draw.js:87 的套印引擎按 INK 表混色。这是它「像丝网印刷」的关键",
+        "plate": "box",
+        "plateColor": "#00F4EEE2",
+        "plateEvidence": "STYLE.md §4「a paper-white knockout strip (zero ink, small radius)」；demo band [0,0,0] 黑色底块 ｜ 底衬色取自 palette.subtitleBack #F4EEE2，与字色 #3D5588 的 WCAG 对比度 6.37",
+        "plateContrast": 6.37,
+        "plateSource": "palette.subtitleBack #F4EEE2"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "shotAt",
+        "file": "styles/risograph/demo/film.js",
+        "line": 303,
+        "cutSource": "styles/risograph/demo/film.js:9 `export const SHOTS = [`",
+        "chapterCard": null,
+        "note": "SHOTS 表硬切；film.js:37 `shotAt(t)[1]*10` 用镜头序号做**套印错位量**（这是它的核心手法）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "rubber-hose": {
+      "slug": "rubber-hose",
+      "cn": "1930s 橡皮管卡通",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/rubber-hose/demo/chars.js"
+      ],
+      "evidence": "chars.js:8 `export const P = { white:'#FCFBF7', paper:'#F1EEE6', pale:'#E2DFD6', light:'#C8C5BC', mid:'#9A978F', dmid:'#6B6963', dark:'#3B3A37', ink:'#0E0D0C' }`（具名灰度阶梯）",
+      "palette": {
+        "bg": "#F1EEE6",
+        "bg2": "#C8C5BC",
+        "fg": "#0E0D0C",
+        "accent": null
+      },
+      "texture": {
+        "type": "film-grain",
+        "params": {
+          "keywords": [
+            "grain",
+            "noise"
+          ],
+          "hits": 9
+        }
+      },
+      "motion": {
+        "easing": [
+          "TAU",
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Shrikhand / Limelight / IM Fell English SC",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/rubber-hose/demo/story.js",
+          "line": 15,
+          "role": "inline SUBS"
+        },
+        {
+          "file": "styles/rubber-hose/demo/story.js",
+          "line": 13,
+          "role": "inline VO 时间表"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "v1a",
+          "v1b",
+          "v2",
+          "v3",
+          "v4",
+          "v5",
+          "v6"
+        ],
+        "count": 7,
+        "maxTextChars": 39,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/rubber-hose/demo/fonts",
+        "fontFiles": 3,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subPlate / subtitles",
+        "file": "styles/rubber-hose/demo/scenes.js",
+        "line": 602,
+        "textColor": "#F1EEE6",
+        "band": null,
+        "bandStops": null,
+        "font": null,
+        "size": 36,
+        "pos": "居中 960；pos=\"t\" 时 y=96（顶部），否则 y=986",
+        "reveal": "按 SUBS 的 t0..t1 直接出现",
+        "note": "实际绘制在 subPlate(g, text, cx, cy, {size:38}) → ui.js 的 subPlate（本次未读其函数体）→ textColor/band 填 null；坐标与字号有实据",
+        "plate": "box",
+        "plateColor": "#140C0B0A",
+        "plateEvidence": "STYLE.md §4「a small near-black plate with a white double-rule border」；demo 函数名即 subPlate（scenes.js:602），band 未读函数体，沿用 palette.subtitleBack ｜ 底衬色取自 palette.bg2 #C8C5BC @0.90，与字色 #0E0D0C 的 WCAG 对比度 11.73 ｜ STYLE.md §4「a small **near-black plate** …; text … **paper white**」；demo ui.js:35,45 band rgba(12,11,10,.92) + 字 #F1EEE6。原配置为近黑字#0E0D0C/浅底#C8C5BC，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。",
+        "plateContrast": 14.53,
+        "plateSource": "demo 真值（demo ui.js:35,45 band rgba(12,11,10,.92) + 字 #F1EEE6。原配置为近黑字#0E0D0C/浅底#C8C5BC，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。）"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "shotIris",
+        "file": "styles/rubber-hose/demo/scenes.js",
+        "line": 550,
+        "cutSource": "styles/rubber-hose/demo/main.js:40 `const sh = ST.shotAt(t)`",
+        "chapterCard": "shotTitle @ styles/rubber-hose/demo/scenes.js:79 / fatTitle @ styles/rubber-hose/demo/ui.js:5",
+        "note": "**虹膜开合** shotIris（另 cast.js:135 windowCurtain 窗帘）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "scifi-toon": {
+      "slug": "scifi-toon",
+      "cn": "科幻情景喜剧卡通",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/scifi-toon/demo/chars.js",
+        "styles/scifi-toon/demo/worlds.js"
+      ],
+      "evidence": "chars.js:6 `export const PAL = { skinV:'#f2c9a0', skinVs:'#d9a57c', robe:'#2a9d8f', robeS:'#1c6f66', pj:'#b9a7dc', pjS:'#8e79bd', slip:'#ff9ecb', slipS:'#e0719f', brow:'#3a3340', gogF:'#737b87', ... }`（具名调色板 35 hex）；worlds.js:73 屏幕字色 `'#e8f0e0'`；高频 '#e8392b'×5 '#ff7fd0'×5",
+      "palette": {
+        "bg": "#f4f1ea",
+        "bg2": "#e8f0e0",
+        "fg": "#3a3340",
+        "accent": "#e8392b"
+      },
+      "texture": {
+        "type": "toon",
+        "params": {
+          "note": "平涂 + 粗描边"
+        }
+      },
+      "motion": {
+        "easing": [
+          "TAU",
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "seg",
+          "spring",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Bungee / Titan One / Baloo 2 / VT323",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/scifi-toon/demo/main.js",
+          "line": 10,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/scifi-toon/demo/story.js",
+          "line": 9,
+          "role": "inline VO 时间表"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "p1",
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "p2",
+          "p3",
+          "v5",
+          "v6a",
+          "v6b",
+          "v6c",
+          "p4",
+          "v7",
+          "c1",
+          "p5",
+          "v8",
+          "c2",
+          "v9"
+        ],
+        "count": 18,
+        "maxTextChars": 80,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/scifi-toon/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subs",
+        "file": "styles/scifi-toon/demo/main.js",
+        "line": 401,
+        "textColor": "#fff",
+        "band": "WHO_COL[s.who]（按说话人取色）",
+        "bandStops": null,
+        "font": "Baloo 2 800",
+        "size": 50,
+        "pos": "底部居中 y=H-92；多行时上一条以 a=.7 淡出留在上方",
+        "reveal": "back(seg(t,t0,t0+.12),2) 回弹缩放（pop_）",
+        "note": "**说话人名牌**：左侧 nw×44 圆角标签填 WHO_COL + 白字 26px，再跟正文；正文 11px 描边。同时显示最近 2 条（slice(-2)）"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "wipe",
+        "file": "styles/scifi-toon/demo/main.js",
+        "line": 361,
+        "cutSource": "styles/scifi-toon/demo/story.js WIPES（story.js 里另有 WIPES 表）",
+        "chapterCard": "titleCard @ styles/scifi-toon/demo/main.js:420 / titleArt @ :426",
+        "note": "**WIPES 表驱动的擦除**（story.js 导出 WIPES；main.js:6 import）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "shadow-puppet": {
+      "slug": "shadow-puppet",
+      "cn": "皮影戏",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/shadow-puppet/demo/carve.js",
+        "styles/shadow-puppet/demo/hud.js",
+        "styles/shadow-puppet/demo/test.js"
+      ],
+      "evidence": "carve.js:5-7 `red:'#b8211a', crim:'#8e1813', orange:'#d9541c', yellow:'#dc9d1e', gold:'#c98a26', green:'#236e3a', jade:'#2f8a5c', teal:'#22647e', blue:'#2a5690', hide:'#e2bd80', hide2:'#cf9f5e'` + `ink:'#1a100a', brown:'#6b3a1c', white:'#f4ead2', skin:'#efcf98'`；hud.js:15 印章 `'#b3261b'`；test.js:27 标注色 `'#2b170d'`",
+      "palette": {
+        "bg": "#f4ead2",
+        "bg2": "#2b170d",
+        "fg": "#1a100a",
+        "accent": "#b3261b"
+      },
+      "texture": {
+        "type": "backlit-leather",
+        "params": {
+          "note": "背光 + 皮革半透明"
+        }
+      },
+      "motion": {
+        "easing": [
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Cormorant Garamond / Ma Shan Zheng",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/shadow-puppet/demo/story.js",
+          "line": 20,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4",
+          "L5",
+          "L6"
+        ],
+        "count": 6,
+        "maxTextChars": 73,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/shadow-puppet/demo/fonts",
+        "fontFiles": 5,
+        "cjkFonts": [
+          "MaShanZheng-Regular.ttf"
+        ],
+        "cjkCodepoints": 6763,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "drawSub",
+        "file": "styles/shadow-puppet/demo/hud.js",
+        "line": 2,
+        "textColor": "#f3e2bf",
+        "band": "rgba(46,22,14,.93)→rgba(30,14,9,.93)→rgba(22,10,7,.93)（木牌渐变）",
+        "bandStops": [
+          "rgba(46,22,14,0.93)",
+          "rgba(30,14,9,0.93)",
+          "rgba(22,10,7,0.93)"
+        ],
+        "font": "Cormorant Garamond 600 46px",
+        "size": 46,
+        "pos": "底部居中 x=960-w/2, y=1080-58-70，w=22+46+20+tw+36",
+        "reveal": "透明度 a + slide*18px 上滑",
+        "note": "**木牌 + 朱印**：深褐漆面渐变 + 金色内描边 rgba(168,129,63,.8)；左侧 46×46 朱红印 #b3261b，内含「说」字（Ma Shan Zheng 34px）",
+        "plate": "box",
+        "plateColor": "#122E160E",
+        "plateEvidence": "STYLE.md §4「a storyteller’s placard (narrow dark-lacquer board, thin gold line)」；demo band rgba(46,22,14,.93)→… 木牌渐变 ｜ 底衬色取自 palette.bg #f4ead2 @0.90，与字色 #1A100A 的 WCAG 对比度 15.63 ｜ STYLE.md §4「narrow **dark-lacquer** board … **cream on dark**」；demo hud.js:12,19 band rgba(46,22,14,.93) + 字 #f3e2bf。原配置为深字#1A100A/浅底#F4EAD2，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。",
+        "plateContrast": 11.16,
+        "plateSource": "demo 真值（demo hud.js:12,19 band rgba(46,22,14,.93) + 字 #f3e2bf。原配置为深字#1A100A/浅底#F4EAD2，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。）"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "wipe",
+        "file": "styles/shadow-puppet/demo/scenery.js",
+        "line": 148,
+        "cutSource": "styles/shadow-puppet/demo/story.js SHOTS + main.js:136 camAt",
+        "chapterCard": null,
+        "note": "有 wipe（scenery.js:148）"
+      },
+      "cameraMotion": {
+        "evidence": "camAt @ styles/shadow-puppet/demo/main.js:136（camRaw + 插值）",
+        "note": "皮影戏台式推拉"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "silent-film": {
+      "slug": "silent-film",
+      "cn": "1920s 默片",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/silent-film/demo/engine/cards.js",
+        "styles/silent-film/demo/engine/ink.js",
+        "styles/silent-film/demo/film.js"
+      ],
+      "evidence": "cards.js:3 `export const CARD_BG = '#0e0d0b', CARD_FG = '#ece5d5'`；ink.js:5 `export const INK = '#15120f'`；cards.js:85 `g.fillStyle = '#050404'`；film.js:41 `fg.fillStyle = '#0e0d0b'`",
+      "palette": {
+        "bg": "#0e0d0b",
+        "bg2": "#050404",
+        "fg": "#ece5d5",
+        "accent": "#d97757"
+      },
+      "texture": {
+        "type": "film-grain",
+        "params": {
+          "keywords": [
+            "grain",
+            "noise"
+          ],
+          "hits": 25
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Old Standard TT / Playfair Display / Playfair Display SC",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/silent-film/demo/cardspecs.js",
+          "line": 2,
+          "role": "inline CARDS 字幕卡"
+        }
+      ],
+      "copyContract": {
+        "splitter": "cardspecs.js CARDS{lines:[{text,font,weight,size}]}",
+        "lineIds": [
+          "TITLE",
+          "CARD1",
+          "CARD2",
+          "CARD3",
+          "END"
+        ],
+        "count": 5,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/silent-film/demo/fonts",
+        "fontFiles": 7,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "intertitle",
+        "file": "styles/silent-film/demo/engine/cards.js",
+        "line": 47,
+        "textColor": "CARD_FG",
+        "band": "CARD_BG（整屏卡片，非条状）",
+        "bandStops": null,
+        "font": "每行可指定（Playfair Display SC / Old Standard TT）",
+        "size": "每行指定 24–128",
+        "pos": "整屏居中 W/2，多行按 size*gap(1.28) 排；dy 可整体偏移",
+        "reveal": "整屏硬切（卡片本身就是画面）；spec.shake 时按 sin(t*90) 抖动衰减",
+        "note": "**不是「字幕」而是默片字幕卡**：占满整屏，带 decoBorder 装饰边框 + 90 条胶片纤维噪点；每行可独立 italic/weight/size/caps/spacing/rule"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "iris / drawCurtain",
+        "file": "styles/silent-film/demo/engine/cards.js",
+        "line": 73,
+        "cutSource": "styles/silent-film/demo/film.js:29 `const SHOTS = { BAKERY, CHASE, MARKET, ROLL, SIL, TENDER, IRIS }`",
+        "chapterCard": "intertitle @ styles/silent-film/demo/engine/cards.js:47（整屏字幕卡）+ CARDS_AT @ timeline.js:72",
+        "note": "**虹膜 iris + 幕布 drawCurtain 两套默片转场**（cards.js:73 iris / :86 drawCurtain；shots.js:389 irisShot；film.js:71 curtainsOver、:92 irisAt）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "silkscreen-poster": {
+      "slug": "silkscreen-poster",
+      "cn": "丝印旅行海报",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/silkscreen-poster/demo/engine/silk.js",
+        "styles/silkscreen-poster/demo/engine/poster.js",
+        "styles/silkscreen-poster/demo/film.js"
+      ],
+      "evidence": "调色板由 content.json 驱动：film.js:26 `const pal = (key) => C.palette[key] || C.palette.noon`；代码内默认值 film.js:280 `C.palette.wall || { board:'#5E4432', groove:'#3F2C21', rail:'#8A6547' }`；silk.js:145 油墨高光 `'#ffffff'`；silk.js:184/187 由底墨 mix 出亮/暗边；paper.js（渲染纸面）未提供默认纸色 hex，故 palette.bg 为 null",
+      "palette": {
+        "bg": null,
+        "bg2": "#5E4432",
+        "fg": "#140f14",
+        "accent": null,
+        "contentDriven": "film.js:26 `const pal = (key) => C.palette[key] || C.palette.noon`；纸色取自 content.palette.paper（poster.js:34），代码内无默认纸色 hex"
+      },
+      "texture": {
+        "type": "silk-misregister",
+        "params": {
+          "offsetPx": "1–3",
+          "note": "套色错位 + 过印鬼影"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": "pull"
+      },
+      "typography": {
+        "family": "BigShoulders / LeagueGothic / Outfit",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/silkscreen-poster/demo/main.js",
+          "line": 4,
+          "role": "fetch content.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": "content.json {title,kicker,footer,trails[]}",
+        "lineIds": null,
+        "count": null,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/silkscreen-poster/demo/fonts",
+        "fontFiles": 3,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "drawBanner",
+        "file": "styles/silkscreen-poster/demo/engine/poster.js",
+        "line": 191,
+        "textColor": "pickInk([sky1,sky2],[near,far],3)（按底色选墨）",
+        "band": "海报纸底 paperSheet",
+        "bandStops": null,
+        "font": "FONT_D 900（标题）/ FONT_T 600（页脚）",
+        "size": "150（自适应缩到 BW-200 内）",
+        "pos": "海报版心 BW×BH：标题 y=160/200，页脚 y=413",
+        "reveal": "**刮板擦除**：wipeRegion 按 st.title/footer 进度从右往左刮出（带 17/19 段锯齿）",
+        "note": "标题自动换行 splitTitle；页脚字距 9px；整幅经 inkFinish 做丝印叠印/错位。字幕即海报文字，没有独立字幕条",
+        "plate": "box",
+        "plateColor": "#19F6CD98",
+        "plateEvidence": "STYLE.md §4「subtitles are a printed strip (a band pull), never a floating caption」；demo poster.js:129 信息带 fill=pal.near ｜ 底衬色取自 palette.bg #F6CD98 @0.90，与字色 #1E3B3F 的 WCAG 对比度 8.05",
+        "plateContrast": 8.05,
+        "plateSource": "palette.bg #F6CD98 @0.90"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "squeegee / tiltedWipe / treeWipe / wipeRegion",
+        "file": "styles/silkscreen-poster/demo/engine/silk.js",
+        "line": 160,
+        "cutSource": null,
+        "chapterCard": "drawBanner @ styles/silkscreen-poster/demo/engine/poster.js:191（标题/页脚也走刮板揭示）",
+        "note": "**刮板 squeegee**（silk.js:160）+ 斜向擦除 tiltedWipe（poster.js:64）+ treeWipe（film.js:245）+ 基础 wipeRegion（silk.js:90）、wipeFront（silk.js:115）—— 本库转场最丰富的一个"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "spy-titles": {
+      "slug": "spy-titles",
+      "cn": "60s 间谍片头",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/spy-titles/demo/paper.js"
+      ],
+      "evidence": "paper.js:5-6 `export const C = { ink:'#1b1714', paper:'#efe4c9', red:'#d23a22', mus:'#e2a52a', redD:'#9a2a18', musD:'#b07e1c', paperD:'#d9ccae', inkL:'#3a322b' }`（具名调色板）",
+      "palette": {
+        "bg": "#efe4c9",
+        "bg2": "#d9ccae",
+        "fg": "#1b1714",
+        "accent": "#d23a22"
+      },
+      "texture": {
+        "type": "paper",
+        "params": {}
+      },
+      "motion": {
+        "easing": [
+          "back",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "seg",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "LeagueGothic / LeagueSpartan",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/spy-titles/demo/main.js",
+          "line": 12,
+          "role": "fetch lines.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "l1",
+          "l2",
+          "l3",
+          "l4",
+          "l5",
+          "l6"
+        ],
+        "count": 6,
+        "maxTextChars": 29,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "setter",
+        "setters": [
+          "setLines(l,d)"
+        ],
+        "evidence": "styles/spy-titles/demo/film.js:20",
+        "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/spy-titles/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "B",
+      "subtitleStyle": {
+        "fn": "subStrip / drawSubs",
+        "file": "styles/spy-titles/demo/film.js",
+        "line": 25,
+        "textColor": null,
+        "band": null,
+        "bandStops": null,
+        "font": null,
+        "size": null,
+        "pos": "(1-u)*-60 从左侧滑入",
+        "reveal": "eo(seg(t,t0,t0+.18)) 缓出滑入",
+        "note": "实际绘制在 frames.js:9 的 subStrip(text, opt)（本次未读函数体）→ textColor/band/font 填 null；已知有 DARK_SUB={l2,l6} 的暗色变体（film.js:24）",
+        "plate": "box",
+        "plateColor": "#19D9CCAE",
+        "plateEvidence": "STYLE.md §4「Subtitles on a narrow paper strip (scissor-cut ends, slightly tilted)」；demo 函数名即 subStrip（film.js:25），band 未读函数体，沿用 palette.subtitleBack ｜ 底衬色取自 palette.bg2 #d9ccae @0.90，与字色 #1B1714 的 WCAG 对比度 11.43",
+        "plateContrast": 11.43,
+        "plateSource": "palette.bg2 #d9ccae @0.90"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "slit",
+        "file": "styles/spy-titles/demo/paper.js",
+        "line": 153,
+        "cutSource": null,
+        "chapterCard": "titleScene @ styles/spy-titles/demo/frames.js:144 / titleLayout @ styles/spy-titles/demo/title.js:23",
+        "note": "**纸缝 slit** 式转场；片名段有独立相机推近钥匙孔的时间线（film.js:350 sTitle）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "stained-glass": {
+      "slug": "stained-glass",
+      "cn": "彩色玻璃窗",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/stained-glass/demo/glass.js",
+        "styles/stained-glass/demo/test.js"
+      ],
+      "evidence": "glass.js:6 `export const COL = { cobalt:'#1d3a9c', deepblue:'#142a70', blue2:'#2a52b0', ruby:'#a8101c', ruby2:'#860c18', gold:'#dc9a22', gold2:'#eab640', green:'#2f7f36', green2:'#22602e', olive:'#6b7a22', purple:'#632a63', ... }`（具名调色板 22 hex）；test.js:9 背景 `S.fillStyle = '#2a2a2e'`；glass.js:161 投影模式 `this.mode === 'proj' ? '#000' : '#26282d'`；★自我更正（2026-10 回查）：原填 fg='#000000' 系误读——`#000` 在 glass.js:114/156/161/165 与 window.js:143 是 `globalCompositeOperation='destination-out'` 的**遮罩填充**，不是文字色。该风格真实字幕画法见 subs.js:3 `drawBanderole(O, subs, t)`：羊皮纸绶带，底色渐变 subs.js:18 `#f3e6c6 → #ecdcb6 → #d9c497`，**文字色 subs.js:26 `O.fillStyle='#3a2412'`**，字体 `44px \"IM Fell English\"`，居中于 (960, 968)，带宽 64。对比度 #3a2412 on #f3e6c6 ≈ 11.8:1。",
+      "palette": {
+        "bg": "#2a2a2e",
+        "bg2": "#f3e6c6",
+        "fg": "#3a2412",
+        "accent": "#dc9a22"
+      },
+      "texture": {
+        "type": "glass",
+        "params": {
+          "note": "铅条分隔 + 透光"
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Cinzel / Uncial Antiqua / IM Fell English / Cormorant Garamond",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/stained-glass/demo/story.js",
+          "line": 15,
+          "role": "inline LINES"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4",
+          "L5",
+          "L6",
+          "L7",
+          "L8"
+        ],
+        "count": 8,
+        "maxTextChars": 65,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/stained-glass/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "drawBanderole",
+        "file": "styles/stained-glass/demo/subs.js",
+        "line": 3,
+        "textColor": "#3a2412",
+        "band": "#f3e6c6 → #ecdcb6 → #d9c497（羊皮纸绶带渐变）",
+        "bandStops": [
+          "#f3e6c6",
+          "#ecdcb6",
+          "#d9c497"
+        ],
+        "font": "IM Fell English 44px",
+        "size": 44,
+        "pos": "居中 cx=960, cy=968，带宽 64，sag=7（中间下垂）",
+        "reveal": "**绶带从中心展开**（W=(tw+150)*(.25+.75k)），文字在 k>0.75 才淡入",
+        "note": "两端有卷起的深色折角（#b39a6c / #8c7348）+ 上下两条红棕压线；带 rgba(0,0,0,.45) 14px 投影",
+        "plate": "box",
+        "plateColor": "#00F3E6C6",
+        "plateEvidence": "STYLE.md §4「a parchment banderole near the bottom (curled ends)」；demo band #f3e6c6→#ecdcb6→#d9c497 羊皮纸渐变 ｜ 底衬色取自 palette.bg2 #142a70 @0.90，与字色 #F3E6C6 的 WCAG 对比度 10.80 ｜ STYLE.md §4「a parchment banderole … IM Fell English ~44 px **in dark ink**」；demo subs.js:25,28 band #f3e6c6 + 字 #3a2412。原配置为浅字#F3E6C6/深底#142A70，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。",
+        "plateContrast": 11.76,
+        "plateSource": "demo 真值（demo subs.js:25,28 band #f3e6c6 + 字 #3a2412。原配置为浅字#F3E6C6/深底#142A70，与声明相反 ⇒ 2026-10-03 换成 demo 那一对。）"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "beat（story.js:70）",
+        "file": "styles/stained-glass/demo/story.js",
+        "line": 70,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "story.js:70 有 beat 定义；**具体转场绘制未读**，故只记证据行"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "swiss-motion": {
+      "slug": "swiss-motion",
+      "cn": "瑞士动态排版",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/swiss-motion/demo/film.js",
+        "styles/swiss-motion/demo/ease.js"
+      ],
+      "evidence": "film.js:6-9 `export const C = { page:'#EAE9E5', paper:'#FFFFFF', ink:'#111111', red:'#E30613', grid:'#CFCEC9', pgrid:'#E2E1DC', bass:'#CFCEC9', mute:'#77766F', col:'#E2E1DC', wall:'#DFDED9' }`（具名调色板，瑞士红 #E30613）；film.js:3 缓动来自自建 ease.js `{ clamp, lerp, seg, E, snap, lin, steps, track, E8, E16, BEAT, BAR }`；film.js:40 `font(g, weight, size, fam='Archivo')`，:42 大字号自动负字距",
+      "palette": {
+        "bg": "#EAE9E5",
+        "bg2": "#FFFFFF",
+        "fg": "#111111",
+        "accent": "#E30613"
+      },
+      "texture": {
+        "type": "none",
+        "params": {
+          "note": "零纹理，纯排版"
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "lerp",
+          "seg",
+          "E",
+          "snap",
+          "lin",
+          "steps",
+          "track",
+          "E8",
+          "E16"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Archivo / DMSerifDisplay / UnifrakturMaguntia",
+        "weight": "300–900",
+        "case": "mixed (A 乱 → E 统一)"
+      },
+      "copySources": [
+        {
+          "file": "styles/swiss-motion/demo/main.js",
+          "line": 5,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/swiss-motion/demo/film.js",
+          "line": 71,
+          "role": "inline TX 海报文字"
+        }
+      ],
+      "copyContract": {
+        "splitter": "indexOf('. '), split(' ')",
+        "lineIds": [
+          "l1",
+          "l2",
+          "l3",
+          "l4",
+          "l4b",
+          "l5",
+          "l5b",
+          "l6"
+        ],
+        "count": 8,
+        "maxTextChars": 45,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "setter",
+        "setters": [
+          "setLines(lines,dur)",
+          "setWords(w)"
+        ],
+        "evidence": "styles/swiss-motion/demo/film.js:30,27",
+        "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/swiss-motion/demo/fonts",
+        "fontFiles": 3,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "B",
+      "subtitleStyle": {
+        "fn": "revealText / drawLine",
+        "file": "styles/swiss-motion/demo/film.js",
+        "line": 46,
+        "textColor": "#111111（小字导语 #77766F）",
+        "band": null,
+        "bandStops": null,
+        "font": "Archivo 500(小字30px) / 700(大字76px)",
+        "size": "30 / 76",
+        "pos": "按 LAYOUT 表：l1–l4 在页面区 y=7.8/11.8/15.8/19.85 行，l5b 居中，l6 在墙上",
+        "reveal": "**从基线下方吸附出现**：rect 裁剪 + fillText 偏移 (1-p)*size*1.05，每词按 words 时间逐个上推；退场 q 向上翻走",
+        "note": "字幕即「版面里的一行排版」：第一句做小字导语（30px mute 色），其余做大字陈述（76px ink）。setLines 用 text.indexOf(\". \") 切分 → **文案必须含 \". \"**"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "(T 表时刻)",
+        "file": "styles/swiss-motion/demo/film.js",
+        "line": 19,
+        "cutSource": "styles/swiss-motion/demo/film.js:19-23 `T = { …, pageOut:24.5, cut:39.0, wall:37.0, … }`",
+        "chapterCard": "drawWallLabels @ styles/swiss-motion/demo/film.js:361",
+        "note": "**硬切 + 精确吸附**：T 表给定时点（pageOut 24.5 / wall 37.0 / cut 39.0），画面按 snap 吸附到网格，没有渐变转场。海报本身经历 A乱→B统一→C压缩→D齐左→E最终 五阶段重排"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "tilt-shift": {
+      "slug": "tilt-shift",
+      "cn": "移轴微缩",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/tilt-shift/demo/city.js",
+        "styles/tilt-shift/demo/sky.js"
+      ],
+      "evidence": "city.js:18 `THREE.Color('#8fb4d8')`（天空）；city.js:245 车色 `'#f2b705'` / `'#e8e4dc'`；city.js:247 `building(..., { wall:'#e8c872', roof:'#8a8c8e' })`（THREE 材质，色值分散）",
+      "palette": {
+        "bg": "#8fb4d8",
+        "bg2": "#e8e4dc",
+        "fg": "#8a8c8e",
+        "accent": "#f2b705"
+      },
+      "texture": {
+        "type": "tilt-shift-blur",
+        "params": {
+          "note": "移轴景深（后期 blur 带）"
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "monotone",
+          "mulberry",
+          "seg",
+          "ss",
+          "track"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Overpass / Overpass Mono",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/tilt-shift/demo/story.js",
+          "line": 51,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(',')",
+        "lineIds": [
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "v5",
+          "v6"
+        ],
+        "count": 6,
+        "maxTextChars": 36,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/tilt-shift/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "(SUBS 渲染块)",
+        "file": "styles/tilt-shift/demo/main.js",
+        "line": 364,
+        "textColor": "#fff",
+        "band": "SIGN_GREEN（路牌绿）",
+        "bandStops": null,
+        "font": "Overpass 600 44px",
+        "size": 44,
+        "pos": "底部居中 y=H-118-76，宽=tw+124，圆角 12",
+        "reveal": "seg 淡入淡出 .15s",
+        "note": "**做成路牌**：绿底 + 内缩 6px 的 3px 白描边 + 左侧一个 tilt-shift 图标 tlIcon()",
+        "plate": "box",
+        "plateColor": "#000F5E3C",
+        "plateEvidence": "STYLE.md §4「a panel in the graphic language of the place’s signs」；demo band SIGN_GREEN #0f5e3c ｜ 底衬色取自 demo band rgba(15,94,60,1)，与字色 #FFFFFF 的 WCAG 对比度 7.82（直接用 demo 真值）",
+        "plateContrast": 7.82,
+        "plateSource": "demo band rgba(15,94,60,1)"
+      },
+      "transition": {
+        "type": "hard-cut",
+        "fn": "shotAt",
+        "file": "styles/tilt-shift/demo/story.js",
+        "line": 20,
+        "cutSource": "styles/tilt-shift/demo/story.js:17 `export const SHOTS = [`",
+        "chapterCard": "TITLE（story.js 导出）",
+        "note": "SHOTS 表硬切；画面是连续的城市沙盘 + 时钟推进"
+      },
+      "cameraMotion": {
+        "evidence": "camera @ styles/tilt-shift/demo/main.js:441 window.DBG = { camera, post, city, SIMS, scene, ducks }",
+        "note": "城市沙盘相机"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "ukiyoe": {
+      "slug": "ukiyoe",
+      "cn": "浮世绘",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/ukiyoe/demo/print.js",
+        "styles/ukiyoe/demo/main.js"
+      ],
+      "evidence": "print.js:6 `export const PAL = { paper:'#eee2c6', paperD:'#e2d3b0', mount:'#c9b690', mountD:'#b19d74', prus:'#1d3a66', prusD:'#13284a', prusL:'#4d6f98', ai:'#2f4f73', sky:'#8db0c6', skyL:'#bcd0d6', sumi:'#231f1c', ... }`（具名调色板 31 hex）；main.js:95 题签底 `'#f3e7c6'`",
+      "palette": {
+        "bg": "#eee2c6",
+        "bg2": "#e2d3b0",
+        "fg": "#231f1c",
+        "accent": "#1d3a66"
+      },
+      "texture": {
+        "type": "woodblock",
+        "params": {
+          "keywords": [
+            "grain",
+            "noise",
+            "mottle"
+          ],
+          "hits": 39
+        }
+      },
+      "motion": {
+        "easing": [
+          "TAU",
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Shippori / ShipporiK / Yuji",
+        "weight": "500/700",
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/ukiyoe/demo/main.js",
+          "line": 13,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/ukiyoe/demo/story.js",
+          "line": 33,
+          "role": "inline VO 时间表"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4",
+          "L5"
+        ],
+        "count": 5,
+        "maxTextChars": 59,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/ukiyoe/demo/fonts",
+        "fontFiles": 4,
+        "cjkFonts": [
+          "shippori-500.woff2",
+          "shippori-700.woff2",
+          "shippori-kanji.woff2",
+          "yuji-kanji.woff2"
+        ],
+        "cjkCodepoints": 49300,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "subtitle",
+        "file": "styles/ukiyoe/demo/main.js",
+        "line": 162,
+        "textColor": "#231f1c（PAL.sumi）",
+        "band": "rgba(243,231,198,0.96)",
+        "bandStops": null,
+        "font": "Shippori 500 42px",
+        "size": 42,
+        "pos": "底部居中 y0=H-72-74，宽=tw+150，高 74",
+        "reveal": "0.22s 淡入 / 0.25s 淡出；文字经 stampFn 做**木版压印**质感",
+        "note": "**双层描边框**（2.6px + 1px）+ 左侧一枚 40px 朱印（sealCanvas('旅')，globalCompositeOperation='multiply'）；文字左边距 96",
+        "plate": "box",
+        "plateColor": "#0AF3E7C6",
+        "plateEvidence": "STYLE.md §4「Subtitle = a horizontal cartouche: a cream slip with a thick + thin ink border」；demo band rgba(243,231,198,0.96) ｜ 底衬色取自 demo band rgba(243,231,198,0.96)，与字色 #231f1c 的 WCAG 对比度 13.28（直接用 demo 真值）",
+        "plateContrast": 13.28,
+        "plateSource": "demo band rgba(243,231,198,0.96)"
+      },
+      "transition": {
+        "type": "camera-continuous",
+        "fn": "pan（连续横移）",
+        "file": "styles/ukiyoe/demo/main.js",
+        "line": 115,
+        "cutSource": "styles/ukiyoe/demo/main.js:115-119 T.pan12 / pan23 / pan34 区间",
+        "chapterCard": "titleCard @ styles/ukiyoe/demo/main.js:90 / cartouche @ styles/ukiyoe/demo/print.js:262",
+        "note": "**不是切镜而是连续摇镜**：五景之间用 pan 横移 + 轻微推近（z 1→1.065）连起来，像画卷展开"
+      },
+      "cameraMotion": {
+        "evidence": "pan @ styles/ukiyoe/demo/main.js:115-119",
+        "note": "画卷式连续横移 + 轻推近"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "urban-sketch": {
+      "slug": "urban-sketch",
+      "cn": "钢笔淡彩",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/urban-sketch/demo/world.js",
+        "styles/urban-sketch/demo/engine.js"
+      ],
+      "evidence": "world.js:17 `const C = { sky: hex('#9fbcd6'), skyDeep: hex('#86a6c8'), cloud: hex('#b7b3c9'), lime: hex('#d8c6a0'), ochre: hex('#cfaa72'), glass: hex('#98b1c8'), stone: hex('#c7b396'), haze: hex('#b9c0cc'), ... }`（hex() 包装）；engine.js:163 `LEAF = { sun: hex('#d6d56f'), light: hex('#aabf57'), mid: hex('#7fa04a'), dark: hex('#56793c'), deep: hex('#3f5d36') }`",
+      "palette": {
+        "bg": "#f5eede",
+        "bg2": "#9fbcd6",
+        "fg": "#231c1a",
+        "accent": "#d97757"
+      },
+      "texture": {
+        "type": "pen-wash",
+        "params": {
+          "note": "钢笔线 + 水彩晕"
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Caveat / Reenie Beanie",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/urban-sketch/demo/subs.json",
+          "line": 1,
+          "role": "subs.json（3 条）"
+        },
+        {
+          "file": "styles/urban-sketch/demo/film.js",
+          "line": 297,
+          "role": "inline 片尾字"
+        }
+      ],
+      "copyContract": {
+        "splitter": "subs.json [{t0,t1,text}] 3 条",
+        "lineIds": null,
+        "count": 3,
+        "maxTextChars": 71,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/urban-sketch/demo/fonts",
+        "fontFiles": 2,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "handwrite",
+        "file": "styles/urban-sketch/demo/engine.js",
+        "line": 570,
+        "textColor": "INK（rgba，可 alpha）",
+        "band": null,
+        "bandStops": null,
+        "font": "Caveat 400（可选 Reenie Beanie）",
+        "size": "调用处给 46–190",
+        "pos": "(x,y) 逐条指定（画面坐标，随镜头）",
+        "reveal": "rect 裁剪按 p 从左往右写字；可选 rot 倾斜",
+        "note": "**字幕写在画面里而不是压在底部**：film.js:294 写在场景内 (2640,2010)，:295 的 \"Where the wind went.\" 用 190px 大字，:297-299 是片尾字。没有统一字幕条"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "未查清：film.js 是连续镜头调度（t<6.45 / t<13.3 …），未发现切镜或转场函数"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "watercolor": {
+      "slug": "watercolor",
+      "cn": "水彩笔刷",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/watercolor/demo/engine.js",
+        "styles/watercolor/demo/plants.js",
+        "styles/watercolor/demo/main.js"
+      ],
+      "evidence": "engine.js:40 `const PAPER = '#f1e9da', INK = '#2b2520', INK2 = '#3d3129'`；plants.js:12 `palm: ['#3f7a55','#4e8a5e','#357050']`（每种植物的多色阶）；main.js:12 地貌色带 `MSTOP = [[150,'#cf7c4f'], [300,'#cda35f'], ...]`",
+      "palette": {
+        "bg": "#f1e9da",
+        "bg2": "#cfc6b3",
+        "fg": "#2b2520",
+        "accent": "#cf7c4f"
+      },
+      "texture": {
+        "type": "watercolor",
+        "params": {
+          "keywords": [
+            "grain",
+            "noise"
+          ],
+          "hits": 7
+        }
+      },
+      "motion": {
+        "easing": null,
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Caveat / Cormorant Garamond / IBM Plex Mono / Noto Serif SC",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/watercolor/demo/scene.js",
+          "line": 3,
+          "role": "inline VO（id,t,dur,en,zh）"
+        }
+      ],
+      "copyContract": {
+        "splitter": "scene.js VO: [id,t,dur,en,zh]",
+        "lineIds": null,
+        "count": 13,
+        "maxTextChars": null,
+        "source": "inline",
+        "note": "无 lines.json；条数为源码内可数项，未见显式字数上限"
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/watercolor/demo/fonts",
+        "fontFiles": 20,
+        "cjkFonts": [
+          "f0.woff2"
+        ],
+        "cjkCodepoints": 2493,
+        "hasCJK": true,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "drawSubs",
+        "file": "styles/watercolor/demo/main.js",
+        "line": 175,
+        "textColor": "#2b2520（中文 rgba(INK,.78)）",
+        "band": null,
+        "bandStops": null,
+        "font": "Cormorant Garamond italic 500 36px（中文 Noto Serif SC 24px）",
+        "size": "36 / 24",
+        "pos": "底部居中 960；英文 y0=1000（两行时 962），中文固定 y=1042",
+        "reveal": "fade2 淡入淡出（.25 进 / .35 出）",
+        "note": "**中英双行**；无底盒，靠 shadowColor=PAPER(#f1e9da) 18px 光晕把字从水彩背景里\"托\"出来；英文与中文各画两遍加强"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": "titleBlock @ styles/watercolor/demo/main.js:190 / drawTitle @ :201",
+        "note": "未查清转场：scene.js:143/156/200 mkStrip/buildStrips/drawStripAt 是画面分条（湿画法），不确定是否为转场"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "whiteboard": {
+      "slug": "whiteboard",
+      "cn": "白板讲解",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/whiteboard/demo/engine/wb.js",
+        "styles/whiteboard/demo/film.js"
+      ],
+      "evidence": "wb.js:8 `export const INK = { black:'#23262c', blue:'#2a5cb3', orange:'#d97757', red:'#c8413a', green:'#2e7a4d' }`（具名调色板）；film.js `font = '44px AD'`（Architects Daughter）",
+      "palette": {
+        "bg": "#e9ebee",
+        "bg2": "#9aa0a8",
+        "fg": "#23262c",
+        "accent": "#d97757"
+      },
+      "texture": {
+        "type": "whiteboard",
+        "params": {
+          "note": "白板笔触 + 手写字体"
+        }
+      },
+      "motion": {
+        "easing": [
+          "TAU",
+          "clamp",
+          "hash",
+          "lerp",
+          "mulberry",
+          "vnoise"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "Architects Daughter（+ demo/fonts/*.json 手写笔迹）",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/whiteboard/demo/film.js",
+          "line": 18,
+          "role": "fetch lines.json"
+        },
+        {
+          "file": "styles/whiteboard/demo/film.js",
+          "line": 17,
+          "role": "fetch voices/words.json"
+        }
+      ],
+      "copyContract": {
+        "splitter": "split(' ')",
+        "lineIds": [
+          "v01",
+          "v02a",
+          "v02b",
+          "v03",
+          "v04",
+          "v05",
+          "v06",
+          "v07",
+          "v08",
+          "v09a",
+          "v09b",
+          "v10",
+          "v11",
+          "v12",
+          "v13",
+          "v14",
+          "v15",
+          "v16",
+          "v17",
+          "v18",
+          "v19"
+        ],
+        "count": 21,
+        "maxTextChars": 84,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "data-file",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter；运行时 fetch 文案 JSON，替换数据文件即可（不用改代码）"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/whiteboard/demo/fonts",
+        "fontFiles": 1,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "(overlays.draw 闭包)",
+        "file": "styles/whiteboard/demo/film.js",
+        "line": 359,
+        "textColor": "#23262c",
+        "band": "#fdfcf8（白板纸色圆角 14）",
+        "bandStops": null,
+        "font": "AD 44px",
+        "size": 44,
+        "pos": "底部居中 y0=1038-h；宽=max行宽+64，高=70+(n-1)*52",
+        "reveal": "透明度 a 在 0.12s 内进出（无位移）",
+        "note": "**按逗号切句、逐句显示**（film.js:346 用 match(/[^,.]+[,.…]*\\s*/g) 切分并按 44 字合并），每句至少停 1.4s；超 1250px 自动折成两行（按宽度差最小切）；底盒左下有一条 36×4 的 INK.orange 标记条",
+        "plate": "box",
+        "plateColor": "#00FDFCF8",
+        "plateEvidence": "STYLE.md §4「Burned subtitles: an off-white rounded label (~90 %)」；demo band #fdfcf8 圆角 14 ｜ 底衬色取自 demo band rgba(253,252,248,1)，与字色 #141414 的 WCAG 对比度 17.95（直接用 demo 真值）",
+        "plateContrast": 17.95,
+        "plateSource": "demo band rgba(253,252,248,1)"
+      },
+      "transition": {
+        "type": null,
+        "fn": null,
+        "file": null,
+        "line": null,
+        "cutSource": null,
+        "chapterCard": null,
+        "note": "未查清：本风格是**一笔到底**的白板连续书写（timeline 用 BEAT 推进），未发现切镜"
+      },
+      "cameraMotion": {
+        "evidence": "applyCam @ styles/whiteboard/demo/engine/wb.js",
+        "note": "白板相机"
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    },
+    "woodcut": {
+      "slug": "woodcut",
+      "cn": "木刻版画",
+      "hasVisual": true,
+      "sourceFiles": [
+        "styles/woodcut/demo/engine/index.js",
+        "styles/woodcut/demo/engine/print.js",
+        "styles/woodcut/demo/sheet.js"
+      ],
+      "evidence": "engine/index.js:16 `export const INK = '#111111', PAPER = '#EFE8D8', COPPER = '#C8502A', WOOD = '#D8C29C'`；print.js:95 `gl.uniform3f(U('paperC'), ...hex(o.paper || '#EFE8D8')); gl.uniform3f(U('inkC'), ...hex(o.ink || '#111111'))`（WebGL 打印）",
+      "palette": {
+        "bg": "#EFE8D8",
+        "bg2": "#D8C29C",
+        "fg": "#111111",
+        "accent": "#C8502A"
+      },
+      "texture": {
+        "type": "woodgrain",
+        "params": {
+          "keywords": [
+            "grain",
+            "noise"
+          ],
+          "hits": 15
+        }
+      },
+      "motion": {
+        "easing": [
+          "clamp",
+          "ei",
+          "eio",
+          "eo",
+          "hash",
+          "lerp",
+          "mulberry",
+          "seg",
+          "ss"
+        ],
+        "chapterTransition": null
+      },
+      "typography": {
+        "family": "IM Fell English / IM Fell English SC",
+        "weight": null,
+        "case": null
+      },
+      "copySources": [
+        {
+          "file": "styles/woodcut/demo/film.js",
+          "line": 21,
+          "role": "inline VO"
+        }
+      ],
+      "copyContract": {
+        "splitter": null,
+        "lineIds": [
+          "L1",
+          "L2",
+          "L3",
+          "L4"
+        ],
+        "count": 4,
+        "maxTextChars": 68,
+        "source": "lines.json",
+        "note": null
+      },
+      "copyInjection": {
+        "mode": "inline-code",
+        "setters": [],
+        "evidence": null,
+        "note": "无 setter 且无 fetch：文案写死在源码常量里，只能改文件或加注入钩子"
+      },
+      "fontCoverage": {
+        "fontsDir": "styles/woodcut/demo/fonts",
+        "fontFiles": 3,
+        "cjkFonts": [],
+        "cjkCodepoints": 0,
+        "hasCJK": false,
+        "method": "fc-query %{charset} 与 [(0x3400,0x4DBF),(0x4E00,0x9FFF),(0xF900,0xFAFF)] 求交",
+        "note": null
+      },
+      "routeClass": "C",
+      "subtitleStyle": {
+        "fn": "caption / captionAt",
+        "file": "styles/woodcut/demo/stage.js",
+        "line": 35,
+        "textColor": "rgba(0,0,0,a)",
+        "band": null,
+        "bandStops": null,
+        "font": "IM Fell English 400 44px",
+        "size": 44,
+        "pos": "居中 W/2；y = 画面底边 IMG.y+IMG.h 与画布底 H 的中线",
+        "reveal": "透明度 a 淡入（由 captionAt(t) 驱动）",
+        "note": "**字幕在版画下方的留白里**（不在画面上），像书页图注；无底盒无描边"
+      },
+      "transition": {
+        "type": "named-fn",
+        "fn": "drawStrip / peelState",
+        "file": "styles/woodcut/demo/trans.js",
+        "line": 33,
+        "cutSource": "styles/woodcut/demo/film.js:27 `for (const s of SHOTS) if (s.events) …`",
+        "chapterCard": "titleSolid @ styles/woodcut/demo/shots.js:88",
+        "note": "**压印条带**：trans.js:33 drawStrip + :61 peelState（另 shots2.js:326 revealScene）"
+      },
+      "cameraMotion": {
+        "evidence": null,
+        "note": null
+      },
+      "assets": {
+        "evidence": null,
+        "note": "未抽（本次优先级低，按 team-lead 指示只留位）"
+      }
+    }
+  },
+  "coverage": {
+    "totalStyles": 43,
+    "hasVisualTrue": 43,
+    "hasVisualFalse": 0,
+    "paletteWithHex": 39,
+    "paletteProgrammaticOnly": [
+      "hologram-hud",
+      "risograph",
+      "blueprint"
+    ],
+    "palettePartialNull": [
+      "backrooms",
+      "living-screencast",
+      "microgame",
+      "one-line"
+    ],
+    "note": "43 个风格全部找到绘图代码与至少一处可核对的视觉参数，故 hasVisual 全为 true；其中 2 个（hologram-hud / risograph）颜色是程序化参数而非 hex，4 个（backrooms / living-screencast / microgame / one-line）颜色分散内联、未形成具名调色板，故部分字段为 null。",
+    "copyFieldCoverage": {
+      "copySources": {
+        "covered": 43,
+        "total": 43,
+        "note": "每风格至少 1 处运行时文案源（grep 实测 file:line）"
+      },
+      "copyContract": {
+        "fromLinesJson": 33,
+        "fromInline": 10,
+        "unknown": 0
+      },
+      "copyInjection": {
+        "setter": 7,
+        "data-file": 12,
+        "inline-code": 24
+      },
+      "fontCoverage": {
+        "hasCJK": 11,
+        "noCJK": 32,
+        "measuredBy": "fc-query（WSL /usr/bin/fc-query），非文件名猜测"
+      }
+    },
+    "routeClass": {
+      "A": {
+        "count": 0,
+        "styles": [],
+        "def": "有文案注入 API + 字体含 CJK 字面 → 路 B 可完整复刻（含中文）"
+      },
+      "B": {
+        "count": 7,
+        "styles": [
+          "blueprint",
+          "dark-keynote",
+          "dataviz",
+          "microgame",
+          "risograph",
+          "spy-titles",
+          "swiss-motion"
+        ],
+        "def": "有注入 API + 字体无 CJK 字面 → 编排/视觉可复用，中文字形需另补字面"
+      },
+      "C": {
+        "count": 36,
+        "styles": [
+          "art-deco",
+          "ascii-crt",
+          "backrooms",
+          "brick-toy",
+          "cel-anime-80s",
+          "crayon-book",
+          "engraving",
+          "game-show",
+          "glass-product",
+          "halftone-dossier",
+          "hd-2d",
+          "hologram-hud",
+          "impasto",
+          "ink-wash",
+          "iso-infographic",
+          "living-screencast",
+          "lowpoly-island",
+          "midcentury-toon",
+          "one-line",
+          "paper-lantern",
+          "paper-popup",
+          "papercut-red",
+          "pictogram-motion",
+          "pixel-rpg",
+          "rubber-hose",
+          "scifi-toon",
+          "shadow-puppet",
+          "silent-film",
+          "silkscreen-poster",
+          "stained-glass",
+          "tilt-shift",
+          "ukiyoe",
+          "urban-sketch",
+          "watercolor",
+          "whiteboard",
+          "woodcut"
+        ],
+        "def": "无注入 API（无 setter）→ 只能改文件；或按 data-file/inline-code 细分"
+      },
+      "C_subdivide": {
+        "data-file": [
+          "art-deco",
+          "ascii-crt",
+          "engraving",
+          "hologram-hud",
+          "living-screencast",
+          "midcentury-toon",
+          "paper-lantern",
+          "pixel-rpg",
+          "scifi-toon",
+          "silkscreen-poster",
+          "ukiyoe",
+          "whiteboard"
+        ],
+        "inline-code": [
+          "backrooms",
+          "brick-toy",
+          "cel-anime-80s",
+          "crayon-book",
+          "game-show",
+          "glass-product",
+          "halftone-dossier",
+          "hd-2d",
+          "impasto",
+          "ink-wash",
+          "iso-infographic",
+          "lowpoly-island",
+          "one-line",
+          "paper-popup",
+          "papercut-red",
+          "pictogram-motion",
+          "rubber-hose",
+          "shadow-puppet",
+          "silent-film",
+          "stained-glass",
+          "tilt-shift",
+          "urban-sketch",
+          "watercolor",
+          "woodcut"
+        ]
+      },
+      "note": "A∩B∩C 按「有无 setter」与「字体有无 CJK 字面」交叉得出；A 为空集：7 个有 setter 的风格字体全无 CJK，11 个有 CJK 的风格全无 setter。"
+    },
+    "subtitleStyle": {
+      "covered": 42,
+      "null": [
+        "impasto"
+      ],
+      "partialNull": [
+        "living-screencast",
+        "rubber-hose",
+        "spy-titles"
+      ],
+      "note": "43/43 都记录了字幕机制与证据行；fn 为 null 的是「根本没有字幕系统」或「绘制函数未定位」。textColor 为 null 的是「实际绘制在未读到的函数里」或「颜色来自外部 CSS」。"
+    },
+    "transition": {
+      "namedFn": [
+        "backrooms",
+        "dark-keynote",
+        "engraving",
+        "hologram-hud",
+        "ink-wash",
+        "iso-infographic",
+        "living-screencast",
+        "midcentury-toon",
+        "paper-lantern",
+        "papercut-red",
+        "pixel-rpg",
+        "rubber-hose",
+        "scifi-toon",
+        "shadow-puppet",
+        "silent-film",
+        "silkscreen-poster",
+        "spy-titles",
+        "stained-glass",
+        "woodcut"
+      ],
+      "hardCut": [
+        "art-deco",
+        "brick-toy",
+        "cel-anime-80s",
+        "dataviz",
+        "game-show",
+        "glass-product",
+        "hd-2d",
+        "lowpoly-island",
+        "microgame",
+        "paper-popup",
+        "pictogram-motion",
+        "risograph",
+        "swiss-motion",
+        "tilt-shift"
+      ],
+      "cameraContinuous": [
+        "ukiyoe"
+      ],
+      "unknown": [
+        "ascii-crt",
+        "blueprint",
+        "crayon-book",
+        "halftone-dossier",
+        "impasto",
+        "one-line",
+        "urban-sketch",
+        "watercolor",
+        "whiteboard"
+      ],
+      "withChapterCard": [
+        "art-deco",
+        "cel-anime-80s",
+        "engraving",
+        "game-show",
+        "hd-2d",
+        "hologram-hud",
+        "impasto",
+        "iso-infographic",
+        "lowpoly-island",
+        "one-line",
+        "paper-popup",
+        "papercut-red",
+        "pictogram-motion",
+        "pixel-rpg",
+        "rubber-hose",
+        "scifi-toon",
+        "silent-film",
+        "silkscreen-poster",
+        "spy-titles",
+        "swiss-motion",
+        "tilt-shift",
+        "ukiyoe",
+        "watercolor",
+        "woodcut"
+      ],
+      "note": "type 为 null 的是「本次未定位到切镜点」，不是「没有转场」——见各条 note。"
+    }
+  },
+  "routeB": {
+    "entry": "core/render/page.mjs:openDemo(dir,{w,h,q}) + core/render/video.mjs",
+    "contract": "demo 目录需有 index.html；页面暴露 window.render(t) / window.DUR / window.READY",
+    "pipeline": "playwright-core chromium → page.evaluate(t=>window.render(t)) → page.screenshot({type:'jpeg'}) → ffmpeg image2pipe → concat",
+    "evidence": [
+      "core/render/video.mjs:66-67 `await page.evaluate(t => window.render(t), f / FPS); const buf = await page.screenshot({type:'jpeg', quality:95})`",
+      "core/render/page.mjs:60-64 `chromium.launch(...); browser.newPage({viewport:{width:w,height:h}})`",
+      "styles/engraving/demo/index.html:6-7 `<canvas id=\"c\" width=\"1920\" height=\"1080\">` + `<script type=\"module\" src=\"main.js\">`"
+    ],
+    "optionalInjectionHook": {
+      "proposal": "把 film.js 的 `const TX = [...]` 改成 `const TX0 = [...]` 并在其后加一行 `const TX = (typeof window !== 'undefined' && window.__COPY__) || TX0;`（TXC 不动）。",
+      "styleTested": "swiss-motion",
+      "edits": {
+        "linesChanged": 2,
+        "linesAdded": 1,
+        "detail": [
+          "film.js:71 `const TX = [` → `const TX0 = [`",
+          "film.js:83 插入 `const TX = (window.__COPY__) || TX0;`",
+          "import 路径 './ease.js' → 绝对路径（仅实验副本需要；就地改则不必）"
+        ]
+      },
+      "harness": {
+        "dir": "creative/dub-probe/hook/",
+        "hookedCopy": "creative/dub-probe/film-hooked.js（原件的副本，styles/ 未改动）",
+        "frames": [
+          9,
+          13,
+          21,
+          27.5,
+          41
+        ],
+        "cmd": "node core/render/still.mjs creative/dub-probe/hook <t...> --q 'hook=0|1&copy=0|1' --out creative/dub-probe/hookout-<TAG>"
+      },
+      "result": {
+        "A(hook=0,copy=0)": "基线",
+        "B(hook=1,copy=0)": "与 A 逐字节相同（5/5 帧 md5 一致）→ 钩子存在但不触发 = 零回归",
+        "C(hook=0,copy=1)": "与 A 逐字节相同（5/5）→ 证明差异来自钩子而非全局变量本身",
+        "D(hook=1,copy=1)": "与 A 不同（5/5）→ 海报文字 \"neue musik\" → \"neue form\"，其余画面逐像素一致",
+        "md5": {
+          "t=9.0": "A=B=C=21f35a9862 / D=1600ac5941",
+          "t=13.0": "A=B=C=536802333a / D=98abf83c00",
+          "t=21.0": "A=B=C=a04fb6890c / D=8fee172813",
+          "t=27.5": "A=B=C=efa8a86a48 / D=09c1180294",
+          "t=41.0": "A=B=C=3a58af3f26 / D=61b71d392d"
+        }
+      },
+      "verdict": {
+        "frameIdentity": "成立：未给 window.__COPY__ 时输出逐字节不变（实测 5 帧 md5 相同）",
+        "cost": "2 行改动；对 swiss-motion 可行",
+        "caveat": "真正的代价不在行数，而在**载荷契约**：__COPY__ 必须是 TX 形状（10 条 × A/B/C/E/split/cut，含字体族/字重/字号/y 坐标/拆分点/刀线时刻）。通用「纯文案数组」无法直接灌入，调用方需另做「按既有版式自动缩放/换行」的适配层（PW=706 海报宽）。另：swiss-motion 本身属 B 类（已有 setLines/setWords 可换字幕），海报 TX 只是第二条文字通道。",
+        "notTested": "其余 C 类风格未逐一验证；halftone-dossier/game-show 的文案在 index.html 内联、impasto 无字幕系统，钩子形态需各自另议。"
+      },
+      "method": "真跑（headless chromium via core/render/still.mjs，A/B/C/D 2×2 对照，md5 + 逐字节 cmp）"
+    }
+  }
+}

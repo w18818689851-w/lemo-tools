@@ -1,0 +1,144 @@
+{
+  "slug": "halftone-dossier",
+  "name_zh": "复古半调案卷（Halftone Dossier）",
+  "essence": "一部复古印刷的案卷片：米色档案纸、几种平涂油墨套印的半调网点、带错位阴影的巨型粗体标题、会「啪」地砸下的橡皮图章、以及粗描边的角色；片子本身就是一份**一件件被读出来的证据**的卷宗。它不是 Risograph（整个观感不是颗粒双色 riso 质感、不是 zine 拼贴）、不是 Swiss motion（不是白底上网格驱动的动态字体）、不是 Game Show Flat（不是糖果布景、不是节奏游戏回合）；**每一帧都必须看得见网点、纸和图章**。",
+  "materials_and_rendering": [
+    "纸层（canvas，乘在所有东西之上，只建一次）：放大过的随机小图做斑驳 + 逐像素噪声（略偏暖）+ 径向暗角 + 一条淡的中央折痕；**暗场也印在纸上，绝不发光**。",
+    "颗粒层（每帧）：几百个纸色小点和更少的墨色小点，每 2 帧重新播种——这是印张上的灰，不是胶片颗粒。",
+    "半调：一个旋转的圆点网格画成**一条 path**；step 20–26px；每层不同的网角；半径 = 密度 × step × k，k 0.6–0.72（~0.7 时点在满密度处并成实墨）。密度场：径向（光晕、绽放、角光）、边缘（点向画框边框挤）、线性渐变（「从上打光」）。第二层用 multiply 套印。",
+    "半调填充的数字与形状：平涂 + 一个裁到字形里的更暗半调套印；巨型数字可以出血到画框外。",
+    "线条沸腾：湍流位移（小，~5px）以 ~10 次/秒重新播种，外加一个细墨粒遮罩吃掉每块填色的一点点。**只用在角色和手绘道具上**；绝不用于文字、半调、HUD 或字幕。",
+    "角色：敦实的形状 + 粗墨描边（~7px）、平涂、更浅的肚子/脸、有光泽的眼睛（墨椭圆 + 两个高光）会眯、会眨、会闭成开心的弧；所有身体姿势共用一个头部装置。",
+    "图章：双层圆角矩形 + 粗体文字，过一遍粗墨粒 + 位移滤镜让边缘粗糙、墨色斑驳；~93% 不透明度，倾斜 ±10°。",
+    "道具：星爆、对话气泡、彩带、放射线、便签、文件夹、时钟——全部平涂 + 墨描边。"
+  ],
+  "sentence_patterns": {
+    "length": "**没有旁白，卡片就是字幕**：每拍一个标题（serif 900、逐字弹出）+（罪状类）一条**字幕条**。实测卡片极短：中文标题/字幕 2–20 个 CJK 字（最短 \"喵。\" / \"结案\" 2 字，最长一句约 17–20 字），拉丁文约 2–3× 长。字幕条是深墨色圆角胶囊 + 错位墨影 + 纸色文字（关键词用高亮墨），在标题后约 1s 弹出并停到该场结束（≥1.8s）。",
+    "person_and_tense": "公文/案卷口吻，现在时为主：标题是名词短语（\"罪状 01 · 测试重力\"），字幕条是一句判决式陈述（\"每天测试 17 次重力，结论永远一样。\"）。没有第一人称抒情；如果加旁白，是一位干巴巴、面无表情的报告声音，绝不喘气。",
+    "typical_openers": [
+      "案卷式标题（案号 + 起诉书）",
+      "罪名编号式标题（\"罪状 01 · 测试重力\"）",
+      "一句陈述事实的字幕条（\"每天测试 17 次重力，结论永远一样。\"）",
+      "一个图章词（惯犯 / 无罪释放 / 结案）",
+      "一个感叹式插入词（\"啪！\" / \"太可爱了\"）"
+    ],
+    "forbidden": [
+      "长句、从句、书面长段（一个 2–4s 卡片只装一个想法）",
+      "第一人称抒情与评论（案卷腔是名词短语 + 判决式陈述）",
+      "把字幕做成细的通用 caption（字幕就是卡片 + 字幕条）",
+      "喘气式、煽情式旁白"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一份案卷被一件件读出来）：标题 → 指控 → 嫌疑人档案（mugshot 正面照 + 身高尺 + 名牌 + 闪光） → Count 01 / 02 / 03（每拍一个大半调数字在背后） → \"综上所述\"（证据卡） → 判决图章 → 理由 → 结案。角落一个案号 HUD 和一个章节 chip 让观众保持方向。喜剧来自「官僚的严肃」（案号、身高尺、图章、\"Count 01\"）与一个琐碎可爱的对象之间的落差。",
+    "beat_durations": "时间挂在 120 BPM 网格上（1 小节 = 2s，`DEMO.md:29`）。demo 总长 30.0s（style.json dur=30.0，`render.mjs:17` FPS=30/DUR=30）。demo 弧（30s）：标题(1 小节) → 指控 + 第一个图章(1) → mugshot(2) → Count 01(2) → Count 02(2，夜里换调色板) → Count 03(2) → 总结 + build(1) → drop 上的判决图章(1) → 理由(1) → 结案 + 版权(2)。**每一次剪辑都落在小节线上**。进入用 back ease 过冲 0.3–0.45s；标题逐字掉落 30–100px、错开 0.05–0.08s（小字 0.02s）；图章 0.09s 从 2.6× 到 1×（ease-in）+ 5% 阻尼回弹，同一帧相机抖 + 白闪（判决 23.0s 闪 0.5）+ 图章音效；点状擦除 0.44s（80px 网格、r→62）居中在每个切点上。",
+    "total_length_range": "主 demo 30.0s（style.json dur=30.0，frame_sec=9.0）。STYLE 明确长度：三个展品约 30s，五个约 60s。",
+    "silence_policy": "静默是工具，且有一处签名用法：**判决图章之前把音乐清空**，让图章独自落下（demo：drop 把第 11 小节前半留空，判决图章在 23.0 单独落地）。其他选项：揭示前一段军鼓滚 + 上升扫；秘密场景只剩 bass 与指响；一声铃的琶音当尾签；一个悲伤展品下一条持续 pad。"
+  },
+  "tone": "一位面无表情的书记员在读一份案卷：名词短语标题、判决式字幕条、图章当标点；不煽情、不解释。对象可以很严肃也可以很琐碎，喜剧来自这种落差。",
+  "shot_logic": {
+    "camera_is": "一台架在扁平、正面的一页纸上的 2D 摄影机（一个 `#cam` 组，没有 3D）。它表达的是一种「像印刷页一样被排版、被阅读」的世界。",
+    "vocabulary": [
+      { "move": "锁死正面 + 小拍脉冲（~0.6%）", "expresses": "这页是一张海报、在律动", "serves": "标题；一个清单；一次指控" },
+      { "move": "缓慢推进（1 → 1.05–1.08）", "expresses": "审视、张力上升", "serves": "档案；判决前的总结" },
+      { "move": "二次衰减的抖动（5–26px）", "expresses": "冲击", "serves": "一个图章；一次碰撞；一次落地" },
+      { "move": "闪帧（白覆盖 ≤0.95→0，大击封顶 0.5）", "expresses": "被拍照、一次揭示", "serves": "mugshot；判决；找到证据" },
+      { "move": "平移过一块钉住的板", "expresses": "展品之间的联系", "serves": "时间线；嫌疑人；事件链" },
+      { "move": "啪地推近半调细节直到点变得巨大", "expresses": "\"再靠近看\"", "serves": "指纹；签名；一个数字" },
+      { "move": "翻页 / 文件夹滑过", "expresses": "下一份文件、下一章", "serves": "第二个案子；一次闪回" },
+      { "move": "拉远露出整张桌子", "expresses": "这份文件只是众多之一", "serves": "尺度；\"这每天都在发生\"" }
+    ],
+    "transitions": [
+      "点状擦除（dot wipe）：粗网格的圆长满全屏再缩回（~0.44s），带对角延迟；画面被盖住时切场；每个切点可有自己的擦除颜色",
+      "硬切（对比手段，用在大击上）"
+    ],
+    "forbidden": [
+      "溶解（dissolve）",
+      "在非拍点剪辑（每次剪辑落在小节线上）",
+      "在角色/道具之外的文字、半调、HUD、字幕上加线条沸腾",
+      "100% 白闪（读成掉帧；封顶 ~0.5）"
+    ]
+  },
+  "idioms": [
+    "指控框架（the accusation frame）：一个主题变成「X 的案子」——列出它的罪状。",
+    "编号展品（numbered exhibits）：每一拍背后有一个巨型半调数字。",
+    "图章（the stamp）：一个判决是一次物理猛砸。",
+    "Mugshot：正面对象 + 身高尺 + 名牌 + 闪光。",
+    "证据板（evidence board）：展品被钉住、用线连起来，然后被摇。",
+    "点密度 = 情绪：点膨胀成光晕、向边缘挤表示张力、径向绽放表示喜悦。",
+    "涂黑（redaction）：黑条印在词上，再一条条抬起来。"
+  ],
+  "atmosphere": "一间档案室 / 一张印刷台：米色档案纸、几种平涂油墨、错位的套印、砸下来的图章；有纸和墨的味道。整体是「官僚式严肃 vs 可爱对象」的喜剧气质，而不是温暖或精致的。",
+  "sound_palette": {
+    "instruments": [
+      "合成流行-印刷工具箱：synth kick、snare、clap、hat；方波式八分 bass；三角波 pad；一个**马林巴式拨弦**（基频 + ~4× 泛音）做主旋律；pizzicato 与指响做潜行；音乐盒铃做温柔（demo：120 BPM、C 大调、每小节一个和弦 `PLAN`、15 小节）"
+    ],
+    "foley": "按印刷与笑点分层：图章 = 音高下坠的 boom + click（大图章加一层 crackle）；相机快门；纸滑与文件夹扑动；打字机/键盘键击；进擦除前的呼啸；每个字形一个 pop；角色用 boing 与 plop；易碎品用玻璃/陶瓷；合成的动物/生物声（共振峰扫描，如 meow）。",
+    "mix_rules": "冲击时音效走在音乐前面；主输出软削波；−14 LUFS、真峰 ≤ −1 dB。demo：峰值归一 ×1.6 → `tanh` 软削波 ×0.9 → 1.2s 淡出；封装时 −1.6dB 与 AAC 256k/48kHz，实测 −14.5 LUFS 积分、−1.2 dBTP。"
+  },
+  "variation_space": "可自由决定：这份文件关于什么、它的罪状或展品、角色（或没有）、颜色逻辑之内的油墨、语气（闹剧还是严肃）、开场、结尾与长度（三个展品约 30s，五个约 60s）。远离 demo 的方向——结构：一份**解密报告**，一页页被揭去涂黑直到真相露出来；一份**失踪人口档案**，从最后一次目击倒着讲；一份**保险索赔**，每个展品都与索赔人的说法矛盾。开场：证据袋（暗墨底上一个物件，文件在它周围拼起来）；一个巨大网点里的指纹，拉远时解成一张脸；一通电话（纸上只有一条字幕条，文件随后落下）。结尾：文件被放进装满同样文件的抽屉；一页涂黑的最终页（答案留在黑条下）；图章砸偏了（落在桌上，对象自由地走出画面）。",
+  "taboos": [
+    "Risograph（整个观感不是颗粒双色 riso 质感、不是 zine 拼贴）",
+    "Swiss motion（不是白底上网格驱动的动态字体）",
+    "Game Show Flat（不是糖果布景、不是节奏游戏回合）",
+    "渐变（明暗只能来自点的大小与套印）",
+    "在文字、半调、HUD、字幕上加线条沸腾",
+    "溶解转场",
+    "超过五种油墨加纸（会失去印刷感）",
+    "照抄任何真实印刷品、版式或字体"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一句话与每一个图章。要素：`index.html` 的 `C` 调色板与 `F` 字体；10 个 `scene(t0,t1,build)` 的字符串字面量（标题、字幕条、图章词、名牌/档案/文件夹文本）；HUD 的 `chips` 表 `[t0,t1,section,title]`；`WIPES`（每个切点的颜色）；`SHAKES`（冲击时刻）；`music.py` 的 `PLAN`（每小节和弦/旋律/模式）与 SFX 表（时间从 `index.html` 抄来）；`fetch_fonts.mjs` 的 `fams` 与 `init()` 的预加载表。",
+    "new_subject_contract": "新画面元素用 `index.html` 里的助手画：`el/txt/tf/op/show`、`chars(parent,str,{x,y,size,family,weight,fill,anchor,ls,shadow:{fill,dx,dy},stroke,sw})` + `charsPop(c,t,t0,stagger,d,from)` 逐字弹出、`halftone(parent,{x0,y0,w,h,step,angle,color,f,maxK})`（密度场 `radial(cx,cy,R,pw)` / `edge(R,pw)`，套印加 `class='mul'`）、`caption` + `captionAnim`、`stampEl` + `stampAnim`、`bg`。角色用 `catHead` + `setFace(cat,{...})` + `blinkAt` + 身体 `catSit/catRun/catLoaf/catCurl` + `runCycle`。**`scene(t0,t1,build)`：`build` 建一次节点、返回 `update(t)`，`update` 用绝对时间。**",
+    "timeline_contract": "全部在 `demo/index.html` 一个文件里：`scene(t0,t1,build)`（349）、`render(t)`（1039）、`init()`（1066，两遍字体预加载 → `buildPaper()` → `buildAll()` → `window.READY=true`）。`render.mjs` 只依赖 `window.READY` 与 `window.render(t)`；改长度就同时改两个文件的 `FPS`/`DUR`。",
+    "event_vocabulary": "事件由 `music.py` 末尾的 SFX 表声明（时间从 `index.html` 抄来）：每个标题字一个 pop、头探出来的 boing、每个图章的 `stamp()`（音高下坠 boom + click，`big=True` 加 crackle）、mugshot 闪光的 `shutter()`、合成的 `meow()`（共振峰 /i/→/a/→/u/）、杯子的 `clink`、破碎的 `crash_glass()`、每次擦除前的 whoosh、猫躺键盘的 `plop` + 一串 `key_click`、\"太可爱了\" 的 `sparkle`。"
+  },
+  "evidence": [
+    "styles/halftone-dossier/STYLE.md:8-11 —— 本质四条（整片是纸 / 明暗不是渐变是半调 / 官僚装置 / 响但可读）",
+    "styles/halftone-dossier/STYLE.md:13 —— 不是什么（非 Risograph/非 Swiss motion/非 Game Show Flat）",
+    "styles/halftone-dossier/STYLE.md:17-24 —— 材料与渲染（纸层/颗粒层/半调/半调数字/线条沸腾/角色/图章/道具）",
+    "styles/halftone-dossier/STYLE.md:28-33 —— 颜色逻辑（纸 + 一种深墨 + 四五种平涂专色、暗场换底）",
+    "styles/halftone-dossier/STYLE.md:37-44 —— 字体与字幕（粗衬线标题 + 错位阴影、显示体、插入语、等宽、卡片即字幕、HUD）",
+    "styles/halftone-dossier/STYLE.md:48-54 —— 运动质量（30fps 变换 + 10fps 线条沸腾、过冲进入、逐字弹出、图章猛砸、压扁落地、闲置生命、点状擦除）",
+    "styles/halftone-dossier/STYLE.md:58-71 —— 镜头语法表 + 排版式构图",
+    "styles/halftone-dossier/STYLE.md:75-79 —— 声音（合成流行-印刷工具箱、拟音按印刷与笑点、图章前静默、混音）",
+    "styles/halftone-dossier/STYLE.md:85-91 —— native moves（指控框架/编号展品/图章/mugshot/证据板/点密度=情绪/涂黑）",
+    "styles/halftone-dossier/STYLE.md:110 —— 变化空间（长度：三展品 30s、五展品 60s）",
+    "styles/halftone-dossier/STYLE.md:114-116 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/halftone-dossier/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/halftone-dossier/DEMO.md:5 —— 一个自包含的 index.html（SVG 场景图 + 两个 Canvas 覆盖层），Playwright 30fps 逐帧",
+    "styles/halftone-dossier/DEMO.md:8 —— 屏上全中文、无旁白",
+    "styles/halftone-dossier/DEMO.md:12 —— 故事结构（案卷）",
+    "styles/halftone-dossier/DEMO.md:14 —— 响但可读：一个想法/2–4s 卡片",
+    "styles/halftone-dossier/DEMO.md:20-25 —— 六个 native moves 的用法",
+    "styles/halftone-dossier/DEMO.md:29 —— demo 弧 30s / 120 BPM / 一小节 2s / 每次剪辑在小节线上",
+    "styles/halftone-dossier/DEMO.md:37-43 —— 逐拍镜头表",
+    "styles/halftone-dossier/DEMO.md:45-55 —— 运动数值（标题掉落、图章、压扁、跑动循环、线条沸腾、点状擦除）",
+    "styles/halftone-dossier/DEMO.md:59-63 —— 配乐（无旁白、120 BPM C 大调 PLAN、SFX、图章前静默、母带）",
+    "styles/halftone-dossier/DEMO.md:67-103 —— 调色板 C / 半调 / 纸 / 颗粒 / 线条沸腾 / 角色 / 字体 / 图章 / 道具",
+    "styles/halftone-dossier/demo/index.html:56-60 —— 调色板 C",
+    "styles/halftone-dossier/demo/index.html:61-64 —— 字体 F",
+    "styles/halftone-dossier/demo/index.html:94 —— measure",
+    "styles/halftone-dossier/demo/index.html:97-118 —— chars / charsPop 逐字弹出",
+    "styles/halftone-dossier/demo/index.html:135-150 —— halftone + radial/edge 密度场",
+    "styles/halftone-dossier/demo/index.html:155 —— caption 字幕条",
+    "styles/halftone-dossier/demo/index.html:174-190 —— stampEl / stampAnim",
+    "styles/halftone-dossier/demo/index.html:200-251 —— catHead / setFace / blinkAt",
+    "styles/halftone-dossier/demo/index.html:264-326 —— catSit/catRun/runCycle/catLoaf/catCurl",
+    "styles/halftone-dossier/demo/index.html:349 —— scene(t0,t1,build)",
+    "styles/halftone-dossier/demo/index.html:975 —— WIPES 点状擦除表",
+    "styles/halftone-dossier/demo/index.html:995 —— buildPaper",
+    "styles/halftone-dossier/demo/index.html:1021 —— drawFx（颗粒）",
+    "styles/halftone-dossier/demo/index.html:1037 —— SHAKES 抖动表",
+    "styles/halftone-dossier/demo/index.html:1039 —— render(t)",
+    "styles/halftone-dossier/demo/index.html:1066 —— init（两遍字体预加载）",
+    "styles/halftone-dossier/demo/render.mjs:17 —— FPS 30 / DUR 30",
+    "styles/halftone-dossier/demo/render.mjs:23-25 —— mux（CRF 16 + music −1.6dB + AAC 256k/48k）",
+    "styles/halftone-dossier/demo/music.py:1 —— 纯代码合成、120 BPM、一小节 2s",
+    "styles/halftone-dossier/demo/music.py:71-79 —— pluck / bell",
+    "styles/halftone-dossier/demo/music.py:111-122 —— stamp / shutter",
+    "styles/halftone-dossier/demo/music.py:178 —— meow（共振峰扫描）",
+    "styles/halftone-dossier/demo/music.py:214-225 —— PLAN（每小节和弦/旋律/模式）",
+    "styles/halftone-dossier/style.json:16-17 —— frame_sec 9.0 / dur 30.0"
+  ]
+}

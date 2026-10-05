@@ -1,0 +1,3580 @@
+{
+  "version": 1,
+  "default": "plain-dark",
+  "_notes": [
+    "色值格式：#RRGGBB 或 #AARRGGBB（8 位为 alpha 前置，与 ASS 的 &HAABBGGRR 不是同一序，下游转换时注意）。",
+    "hex 的抽取规则：只填 STYLE.md / lib/style-dna/*.json 里真实出现的值；源文件没给固定色就填 null，由下游回退 plain-dark 的色。",
+    "bgRecipe.type 取值：gradient | solid | bands | grid。bands = 阶梯色带（禁止渐变，见 silkscreen-poster §1）。",
+    "数值型参数（vignette / seed / *Factor / *FadeIn）是给渲染侧的构图参数，可由 §2/§5/§6 推导；notes 里逐条标明「抽取」与「推导」。",
+    "fontFamily 一律填本机 C:\\Windows\\Fonts 真实存在的字体（已验证：Microsoft YaHei / SimHei / SimSun / KaiTi / DengXian / Consolas）；STYLE.md 原本点名的 OFL 字体写在 notes 里。",
+    "seed 一律 0：对齐 dub.mjs:390-393 的教训（gradients 默认 seed=-1 随机，同文案两次出片画面不一致）。",
+    "hex 的第二个来源：lib/dub-visual.json（队友 style-recon 从 styles/<slug>/demo 的绘图代码逐行抽取，每条都带 file:line 证据）。STYLE.md 只给散文与示例值时，以 demo 代码里的实值为准并在此注明。",
+    "★ 单一事实源分工（与 style-recon 约定）：本文件是**唯一可渲染消费入口**（渲染/控制台/语义三侧都只读它），lib/dub-visual.json（style-recon 产出，43 个真实风格）只做**证据与技法层**（sourceFiles / evidence / texture / typography / routeB），不复制渲染数值；每条用 visualRef 指向它的证据条目。本文件收录全部 43 个真实风格 + 1 个合成基线 plain-dark（synthetic:true / hasVisual:false，它不是 styles/<slug>/ 里的真实风格）。",
+    "★ `slug` 是 `id` 的**别名**（两者取值恒等），只为方便按 styles/<slug>/ 目录名反查。**下游一律按 `id` 索引**：dub.mjs:407（CLI `--style <id>` 校验）、lib/dub.mjs:242（控制台侧按 id 读表）、lib/dub-core.mjs:94（渲染侧 resolveStyle）、lib/dub-semantic.mjs:46（语义层校验 default）—— 四处都硬绑 `s.id`，改 id 会同时打断出片链路、控制台 API 与语义匹配，故**不改名**，只加 slug 别名。",
+    "★ 2026-10 抽帧复核后的修正（全部已用 ffmpeg 单帧实测复核）：① `palette.bg` 与实际画出的底色对齐（papercut-red 改 palette 去迁就 bgRecipe 的红、risograph 改 bgRecipe 去迁就 palette）；② 叠加层用色：Role/Lower/CardSub 文字用 `accent` 压在 `bg` 底盒上，`accent/bg` 一律提到 ≥4.5（原 8 条低至 1.21，肉眼看不见），Card 大字用 `fg`，`fg/bg` ≥3.0；③ **`subtitleBack` 是阴影色、不是底衬**（dub-core 的 Sub 样式是 BorderStyle=1），字幕可见性只取决于 `subtitle` 与底色的对比或描边 —— 11 条字幕原本看不见，已按「直接对比 ≥4.5 或 有效描边（ov≥4 且描边与底/与字 ≥3）」修正；④ `chapterCards:true` 的风格一律 `motion.chapterTransition:\"cut\"`，规避 dub-core:564 把 `cardFade` 落在 `{}` 外、导致画面上渲染出字面量 `\\fad(300, 300)`；⑤ 强暗角（vignette≥0.5）风格按「描边可靠」判定，因为暗角会改变边缘实际底色。",
+    "★ 覆盖与派生口径（team-lead 2026-10 决定）：注册表收录**全部 43 个项目内置风格**，另加合成基线 plain-dark。其中 11 条是逐行从 STYLE.md 真抽的（derived:false），32 条是**派生**的（derived:true）——配色取 lib/dub-visual.json（demo 代码抽取、带 file:line 证据），字幕字号/边距按「STYLE.md §4 能给 px 就用 px，给不出就落 9 大类分类别默认」，字幕颜色由 WCAG 对比度规则从底色推得。**derivedFrom 字段逐条标明每个值来自哪一路**，知识库更新时派生值应被优先替换。★ 所有 *Factor 以「短边 1080」为基准（参考画幅 1920×1080 的短边）：渲染侧按 W 计算，只在竖屏 W=1080 时精确；横屏（--size 1920x1080 或 16:9 比例）会把字号放大 1.78×，建议渲染侧改用 min(W,H) 归一。",
+    "★ 派生条目的类别（category-default）共 9 类：paper-ink / paper-card / dark-glow / dark-plate / dark-box / light-strip / light-card / caption-row / pixel / intertitle（实际 10 个枚举值，其中 paper-card 与 light-card 是浅底的两个变体）。light-card 是复核时新增的：最初把 iso-infographic / stained-glass / whiteboard 归到 light-strip，但它们的 STYLE.md §4 明确写的是「浅色卡 + 深墨字」，已修正。",
+    "★ bgSameAsDefault:true 的条目，dub-visual 未能从 demo 抽到底色 hex（demo 里底色是程序化实时算的），已按 plain-dark 底色兜底 —— 它们的观感差异只来自暗角/纹理/字幕样式/字体/转场，**抽帧复核时必须重点看这几条**；若仍看不出差别，应标为「暂不支持」而不是硬上。",
+    "★ `bgRecipe.textureRaw`（细粒度纹理名）的渲染口径（2026-10-05 核对，31 个取值逐一有归宿）：渲染侧 `lib/dub-core.mjs` 的 `bgFilters()` **只把粗粒度 `bgRecipe.texture` 当主权威源**；`textureRaw` **仅**在粗粒度落空（`texture` 为 `none`）时、**且名字在 `TEXTURE_RAW_FALLBACK` 点名的少数几个之内**才回退到已有分支（见 `lib/dub-core.mjs` 的 `resolveTextureName`）。粗粒度一旦有声明就一律听粗粒度 ⇒ 既有 44 个风格的粗粒度行为**逐字节不变**。**没有任何一个 `textureRaw` 取值是静默落空的** —— 31 个取值的归宿见下面 4 条。",
+    "★ textureRaw 已生效（8 名，与粗粒度同名 / 本就是正确的空操作，改动前就画得出来）：`none`（plain-dark / brick-toy / game-show / living-screencast / swiss-motion，正确的不叠纹理）、`paper`（engraving / silkscreen-poster / midcentury-toon / papercut-red / blueprint / paper-popup / spy-titles）、`rice-paper`（ink-wash）、`washi`（ukiyoe）、`dot-grid`（hologram-hud）、`hairline-grid`（dark-keynote）、`halftone`（risograph / halftone-dossier）、`scanlines`（ascii-crt）。另有 1 名是**同义归一**：`dotgrid`（dataviz）→ `dot-grid`，靠 `lib/dub-core.mjs` 的 `TEXTURE_SYNONYMS`。",
+    "★ textureRaw 已由**别的字段**覆盖（2 名，渲染侧不改也对得上）：`vignette`（art-deco —— 该风格 `bgRecipe.vignette: 0.35` 已经把暗角画出来了，见 `lib/dub-core.mjs` 的 `if (vig > 0.001)` 分支）、`paper-grain`（paper-lantern —— 粗粒度 `texture: paper` 的 `noise=alls=9:allf=t+u` 就是纸纹颗粒）。⇒ 这两条**不列入**未实现清单。",
+    "★ textureRaw 已**映射到已有分支**（2 名 / 3 风格，2026-10-05 新增回退，判据见 `lib/dub-core.mjs` 的 `TEXTURE_RAW_FALLBACK`）：`film-grain` → `grain`（rubber-hose、silent-film）、`vhs-grain` → `grain`（backrooms）。`vhs-grain` **不叠** `scanlines` —— `scanlines` 分支是 4px 横线（是扫描线、不是颗粒），而 backrooms 的 `STYLE.md:25` 明确写「No scanlines, no RGB mask」。",
+    "★ textureRaw **声明但未实现**（18 名 / 19 风格，2026-10-05 如实标注、**只标注不实现**）：`cel`（cel-anime-80s）、`crayon`（crayon-book）、`pbr-glass`（glass-product）、`pixel-post`（hd-2d）、`impasto`（impasto）、`flat-iso`（iso-infographic）、`flat-shaded-3d`（lowpoly-island）、`toon`（microgame、scifi-toon）、`ink`（one-line）、`flat`（pictogram-motion）、`pixel`（pixel-rpg）、`backlit-leather`（shadow-puppet）、`glass`（stained-glass）、`tilt-shift-blur`（tilt-shift）、`pen-wash`（urban-sketch）、`watercolor`（watercolor）、`whiteboard`（whiteboard）、`woodgrain`（woodcut）。**为什么未实现**：它们是各风格**专属的细质感名**（如 `pbr-glass` / `impasto` / `pen-wash`），`bgFilters()` 里没有对应分支；按「只复用已有分支、不发明无数据依据的参数」的口径**不猜参数**，故渲染侧保持落空。每个受影响风格自己的 `lib/style-skills/<slug>/SKILL.md` 第 11 节「已知缺陷」里都有一条对应说明（只读风格文档的人也能看到，不会被误导）。"
+  ],
+  "styles": [
+    {
+      "id": "plain-dark",
+      "cn": "深色纯净",
+      "slug": "plain-dark",
+      "visualRef": null,
+      "synthetic": true,
+      "hasVisual": false,
+      "source": "现网硬编码：dub.mjs:390-393（背景）+ lib/dub-core.mjs:28,240,254-259,275,277（字体/字幕/标题/换行）",
+      "desc": "近黑底 + 极缓线性渐变，白字黑描边、底部居中——现有出片的默认观感，克制、不抢戏。",
+      "tags": {
+        "theme": [
+          "通用",
+          "日常",
+          "随笔"
+        ],
+        "emotion": [
+          "平静",
+          "中性"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "口播",
+          "干货"
+        ]
+      },
+      "palette": {
+        "bg": "#0C1016",
+        "bg2": "#18222D",
+        "fg": "#FFFFFF",
+        "accent": null,
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#101010",
+        "subtitleBack": "#80000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#0C1016",
+          "#18222D",
+          "#101720"
+        ],
+        "texture": "none",
+        "vignette": 0,
+        "seed": 0,
+        "textureRaw": "none"
+      },
+      "subtitle": {
+        "fontFamily": "Microsoft YaHei",
+        "fontSizeFactor": 0.045,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0.00333,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "抽取：bg/bg2 及第三个色标 = dub.mjs:390 的 gradients c0=0x0C1016 / c1=0x18222D / c2=0x101720；fontFamily = dub-core.mjs:28 'Microsoft YaHei'；fontSizeFactor = :254 W*0.045；outlineFactor = :255 W/300（1080→4，round(1080*0.00333)=4 一致）；marginVFactor = :256 H*0.145；marginLFactor = :257 W*0.06；title.fontSizeFactor = :258 W*0.082；subtitle/subtitleOutline/subtitleBack = :275 的 &H00FFFFFF / &H00101010 / &H80000000。推导：accent=null（现网无强调色）；texture/vignette/seed=0；motion 全为「无」（现网字幕无淡入、章节无转场）。★ 本风格的字段值必须与现网硬编码逐项相等，不选风格时行为完全不变。",
+      "derived": false,
+      "derivedFrom": [
+        "hardcoded-baseline"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "engraving",
+      "cn": "铜版画",
+      "slug": "engraving",
+      "visualRef": "lib/dub-visual.json#engraving",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/engraving/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "米黄手工纸上的铜版雕刻：线条排线成调子、手工淡彩、圆窗与引线标注——像一页 19 世纪博物图谱。",
+      "tags": {
+        "theme": [
+          "自然",
+          "科学",
+          "历史",
+          "博物",
+          "人文"
+        ],
+        "emotion": [
+          "理性",
+          "庄重",
+          "好奇"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "图谱",
+          "纸张",
+          "考据"
+        ]
+      },
+      "palette": {
+        "bg": "#f1e8d2",
+        "bg2": "#e8ddc2",
+        "fg": "#1c1510",
+        "accent": "#7F582B",
+        "subtitle": "#1c1510",
+        "subtitleOutline": "#f1e8d2",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#f1e8d2"
+        ],
+        "texture": "paper",
+        "vignette": 0.12,
+        "seed": 53,
+        "textureRaw": "paper"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.042,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.08,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.046,
+        "showRole": true
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "抽取：bg = STYLE.md:18「laid paper (cream, ~#f1e8d2)」（style-dna/engraving.md:24 同值）；fg = :19「Ink is one warm near-black (~#1c1510)」（engraving.md:25 同值）；accent = style-dna/engraving.md:24 的纸纹霉斑色 #9a6a34（engraving.json:6 同值）——§3 只写「透明水彩、赭石与矿物色」未给 hex，故此值仅为土色强调代理，非 §3 原文色；bg2 = null（源文件只给一个纸色）。推导：subtitleOutline/subtitleBack 用纸色/全透明（§4:37「script on a deckled paper slip」，是纸签不是暗底框）；fontFamily 用 KaiTi（§4:35 点名 Pinyon Script，本机无，楷体最接近手写）；fontSizeFactor 0.042≈45px、title 0.046≈50px（§4:35 标题 44-56px）；outlineFactor 0（§1:2 线条是刻出来的，不做描边）；subtitleFadeIn 0（§4:36「Nothing fades in」）；chapterCards/accentRule 由 §2 圆窗与引线推导；title.showRole 由 §2「roundels + leaders」推导。 ★ 交叉核对 lib/dub-visual.json：bg2 #e8ddc2 = demo plate.js:7-10 PAL.plateTone；accent #9a6a34 = PAL.foxing（与 style-dna/engraving.md:24 一致）；bgRecipe.seed 53 = plate.js paperTexture 的 seed。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "silkscreen-poster",
+      "cn": "丝网印海报",
+      "slug": "silkscreen-poster",
+      "visualRef": "lib/dub-visual.json#silkscreen-poster",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/silkscreen-poster/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "不透明平版油墨一层层刮印：阶梯色带天空、纸白缝隙、套印错位——硬边、无渐变、像一张 WPA 旅行海报。",
+      "tags": {
+        "theme": [
+          "旅行",
+          "城市",
+          "户外",
+          "活动"
+        ],
+        "emotion": [
+          "向往",
+          "开阔"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "海报",
+          "指南",
+          "攻略"
+        ]
+      },
+      "palette": {
+        "bg": "#F6CD98",
+        "bg2": "#1E3B3F",
+        "fg": "#1E3B3F",
+        "accent": "#6D4E06",
+        "subtitle": "#1E3B3F",
+        "subtitleOutline": "#1E3B3F",
+        "subtitleBack": "#1E3B3F"
+      },
+      "bgRecipe": {
+        "type": "bands",
+        "stops": [
+          "#F6CD98",
+          "#EE9A73",
+          "#9A7FA8",
+          "#3E7079",
+          "#1E3B3F"
+        ],
+        "texture": "paper",
+        "vignette": 0,
+        "seed": 0,
+        "textureRaw": "paper"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.038,
+        "marginVFactor": 0.1,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#19F6CD98"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": true,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "抽取：§3:43 三套示例色板的 dawn 一套——sky1 #F6CD98 → bands #EE9A73 #9A7FA8 #3E7079 → near #1E3B3F，accent #FBE6B4，全部逐字取自该行（未跨套混用）。推导：subtitle/subtitleOutline/subtitleBack 复用 dawn 的 accent/near（§4:49「poster text is the subtitle…a printed strip (a band pull)」→ 印在深色 info band 上的米色字）；bgRecipe.type = bands（§1:22「Gradients are forbidden: skies and haze are stepped bands」）；fontFamily 用 SimHei（§4:47 点名 Big Shoulders Display / League Gothic 压缩体，本机无）；fontSizeFactor 0.038≈41px（§4:51「labels ≥18px / values ≥30px」，字幕取中间偏上）；outlineFactor 0（§1:22 硬边平墨，无描边）；subtitleFadeIn 0（§5:57「There is no fade anywhere」）；chapterTransition = wipe（§5 的 squeegee pull）；lowerThird = info band（§2:39）；vignette 0（平版印刷无暗角）。 ★ 交叉核对 lib/dub-visual.json：demo 的配色是**内容驱动**的（film.js:26 `C.palette[key] || C.palette.noon`，每组含 sky/sky2/…/accent），代码里唯一硬编码默认是 film.js:280 的 wall `{board:'#5E4432', groove:'#3F2C21', rail:'#8A6547'}`，那是「墙面」不是色板。本条目取的是 §3:43 的 dawn 示例色板（sky1 #F6CD98 → #EE9A73 #9A7FA8 #3E7079 → near #1E3B3F，accent #FBE6B4），因为它是一条完整、可直出的五级色带；下游若要别的时刻可换 §3:43 的 harbour noon / winter 两套。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "hologram-hud",
+      "cn": "科幻全息 HUD",
+      "slug": "hologram-hud",
+      "visualRef": "lib/dub-visual.json#hologram-hud",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/hologram-hud/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "近黑舞台上扫出一具发光线框：目标框锁定、零件沿轴炸开、数字从乱码滚成真值——像一段被扫描出来的参数。",
+      "tags": {
+        "theme": [
+          "科技",
+          "数码",
+          "硬件",
+          "AI",
+          "汽车"
+        ],
+        "emotion": [
+          "冷静",
+          "专业",
+          "好奇"
+        ],
+        "pace": [
+          "中",
+          "快"
+        ],
+        "scene": [
+          "拆解",
+          "参数",
+          "评测"
+        ]
+      },
+      "palette": {
+        "bg": null,
+        "bg2": null,
+        "fg": null,
+        "accent": null,
+        "subtitle": null,
+        "subtitleOutline": null,
+        "subtitleBack": null
+      },
+      "bgRecipe": {
+        "type": "grid",
+        "stops": [],
+        "texture": "dot-grid",
+        "vignette": 0.5,
+        "seed": 0,
+        "textureRaw": "dot-grid"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.045,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0.00333,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#6101080C"
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0.08,
+        "chapterTransition": "iris"
+      },
+      "notes": "★ palette 全为 null：§3:27-30 把颜色写成参数——「One cold hue plus one warm accent, both parameters (e.g. mint/orange, violet/lime, ice-blue/red)」+「White is heat」，全篇未给任何固定 hex（style-dna/hologram-hud.json 里也 grep 不到 hex）。下游需按主题选冷色相，缺省回退 plain-dark 的色。推导：bgRecipe.type = grid（§2:21「fading dot grid」+「radial lift」）、texture = dot-grid、vignette 0.5（§2:21「a strong vignette」）；fontFamily 用 DengXian（§4:36 点名 Rajdhani + Share Tech Mono，本机无，等线是几何无衬线最接近）；字号因子沿用 plain-dark（§4 未给 px）；chapterTransition = iris（§5「a loupe iris」，§5:53「No cuts or fades inside the scene」）；progressBar = true（§2:25「a live status line」/telemetry 推得）；accentRule = true（§2:23 corner brackets）；subtitleFadeIn 0.08（§4:38「in just before the voice」推得）。 ★ 交叉核对 lib/dub-visual.json（已同步修正）：#D97757 是 demo frames.js:18 的保留色 keep:{star:'#D97757'}，对应 §3:29「One object may keep its own colour…for a brand mark，never for decoration」——它是**单个物体的例外保留色，不是装饰用 accent**，故 palette.accent 已由 #D97757 改为 null；真正的 accent 由参数派生（content.json:7-8 {hue:188, accent:38}、hud.js:11 theme(hue,accent)）。因此 palette 全部保持 null，下游回退 plain-dark 并自行按 hue/accent 生成。 ★ 抽帧实测（1080x1920，见 _semantic-check/hologram-hud-long.png）：底色与 plain-dark 同为 #0C1016，但叠加了 vignette=1.57 的强暗角 + 橙色 accentRule/progressBar，**能看出区别**；24px 黑色网格压在 #0C1016 上对比过低，肉眼几乎不可见。差异强度：弱。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": true
+    },
+    {
+      "id": "midcentury-toon",
+      "cn": "复古教学卡通",
+      "slug": "midcentury-toon",
+      "visualRef": "lib/dub-visual.json#midcentury-toon",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/midcentury-toon/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "1950s 平涂色块与套色偏移的墨线：身体不动、只有手在做事，圆角纸牌字幕配冷爵士——像一页会动的说明书。",
+      "tags": {
+        "theme": [
+          "教育",
+          "生活",
+          "教程",
+          "科普",
+          "家居"
+        ],
+        "emotion": [
+          "轻松",
+          "亲切"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "步骤",
+          "教学",
+          "入门"
+        ]
+      },
+      "palette": {
+        "bg": "#F4EAD5",
+        "bg2": "#E6D8BC",
+        "fg": "#2B2420",
+        "accent": "#AF3719",
+        "subtitle": "#2B2420",
+        "subtitleOutline": "#2B2420",
+        "subtitleBack": "#F4EAD5"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [],
+        "texture": "paper",
+        "vignette": 0.12,
+        "seed": 0,
+        "textureRaw": "paper"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.037,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0.0022,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#00F4EAD5"
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.15,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ palette 全为 null：§3:29-31 只给颜色名（「a warm paper ground, a warm near-black ink, soft atomic-age complements」；示例 coral/mustard/turquoise on cream、tomato/olive/powder blue on oatmeal、plum/lime/sand on off-white），一个 hex 都没有；且「One ground colour per scene」意味着配色按场景轮换、本就没有单一固定值。下游回退 plain-dark 色。推导：fontFamily 用 DengXian（§4:33 点名 Oleo Script / Alfa Slab One / Jost，本机无）；fontSizeFactor 0.037≈40px（§4:34「~40 px sans」）；outlineFactor 0.0022≈2.4px（§2:20「Line: 3–5 px ink ribbons」取下限）；subtitleFadeIn 0.15（§4:34「Fades in quickly with a small rise」）；chapterTransition = iris（§6「Iris through a medallion」）；chapterCards = true（§2/§11「numbered medallions / numbered cards」）；vignette 0.12（§1「warm vignette」）；texture = paper（§2:24「light print grain」）。 ★ 交叉核对 lib/dub-visual.json：四个色全部来自 demo toon.js:10-17 的具名调色板 PAL——paper #F4EAD5、paperD #E6D8BC、ink #2B2420、coral #E4613F。subtitle/subtitleOutline 用 ink、subtitleBack 用 paper，对应 §4:34「a paper-coloured rounded slab with a thin ink border」。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette` = {\"bg\":\"#F4EAD5\",\"bg2\":\"#E6D8BC\",\"fg\":\"#2B2420\",\"accent\":\"#AF3719\",\"subtitle\":\"#2B2420\",\"subtitleOutline\":\"#2B2420\",\"subt。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "ink-wash",
+      "cn": "水墨",
+      "slug": "ink-wash",
+      "visualRef": "lib/dub-visual.json#ink-wash",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/ink-wash/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "暖白宣纸上的写意水墨：墨分五色、飞白与晕染，题跋式字幕配一方朱印——大留白，安静。",
+      "tags": {
+        "theme": [
+          "文化",
+          "情感",
+          "人生",
+          "自然",
+          "哲思"
+        ],
+        "emotion": [
+          "宁静",
+          "惆怅",
+          "深沉",
+          "治愈"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "散文",
+          "意境",
+          "留白"
+        ]
+      },
+      "palette": {
+        "bg": "#F2ECDE",
+        "bg2": null,
+        "fg": "#2f2b27",
+        "accent": "#B02E22",
+        "subtitle": "#2f2b27",
+        "subtitleOutline": null,
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#F2ECDE"
+        ],
+        "texture": "rice-paper",
+        "vignette": 0.1,
+        "seed": 0,
+        "textureRaw": "rice-paper"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.042,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.08,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.055,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "bloom"
+      },
+      "notes": "抽取：bg = §2:16「warm rice paper (around #F2ECDE)」；accent = §3:39「One vermilion (around #B02E22), for the seal」。fg/subtitle = null：§2:18-24 的墨只有五档「Opacity」（.96/.82/.60/.34/.16），全篇不给墨色 hex，故不编造，下游回退 plain-dark 的白字——★注意：这意味着 ink-wash 在浅纸底上会沿用白字，渲染侧若不补一个近黑 fg 会看不见，已在 lib/dub-semantic.mjs 的 notes 字段里标注。subtitleOutline = null 同理；subtitleBack = #00000000（§4:44「no box」）。推导：fontFamily 用 KaiTi（§4:44 点名 Cormorant Garamond italic，本机无，楷体最接近题跋手写）；title.fontSizeFactor 0.055（§4:44「Titles are written on the painting itself, in vertical columns」，比正文大一档）；outlineFactor 0（水墨无描边）；subtitleFadeIn 0（§4:44「appear wet and dry in a fraction of a second」）；chapterTransition = bloom（§5「Painted into existence」/「ink blooms」）；vignette 0.1（§2:16「a light vignette」）。 ★ 交叉核对 lib/dub-visual.json：墨色 #2f2b27 = demo passage.js:135-137 的墨色常量；另一档墨 #5a4634 亦可。bg #F2ECDE 与 sheet.js:54 注释一致，accent #b02e22 与印章色一致。这解决了原先 fg/subtitle 为 null 会导致「浅纸底上白字看不见」的隐患。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`subtitle` = {\"fontFamily\":\"KaiTi\",\"fontSizeFactor\":0.042,\"marginVFactor\":0.145,\"marginLFactor\":0.08,\"outlineFactor\":0,\"bold\":false,\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "papercut-red",
+      "cn": "中国剪纸",
+      "slug": "papercut-red",
+      "visualRef": "lib/dub-visual.json#papercut-red",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/papercut-red/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "正红剪纸叠层：刀口带毛边、纸有厚度投影，横批纸带当字幕、团花团团圆圆——喜庆、年味重。",
+      "tags": {
+        "theme": [
+          "传统",
+          "节日",
+          "民俗",
+          "祝福",
+          "文化"
+        ],
+        "emotion": [
+          "喜庆",
+          "热烈",
+          "温暖"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "年味",
+          "剪纸",
+          "团圆"
+        ]
+      },
+      "palette": {
+        "bg": "#f2e8d0",
+        "bg2": "#1c2446",
+        "fg": "#d2201f",
+        "accent": "#d9a93f",
+        "subtitle": "#f2e8d0",
+        "subtitleOutline": "#101010",
+        "subtitleBack": "#b00f26"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#f2e8d0"
+        ],
+        "texture": "paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "paper"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.041,
+        "marginVFactor": 0.12,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0.0037,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#00A8111F"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": true,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "抽取：§3:27「China red (around #d2201f, range #c8102e–#d7261e) is the hero material」——bg 取中点 #d2201f，bg2 取 range 下界 #c8102e，fg 取 range 上界 #d7261e，三个值都逐字来自这一行。accent = null（§3:31 只说「Gold foil is an accent kept for one late moment」未给金箔 hex，故不编造）。推导：subtitle/subtitleOutline/subtitleBack = §4:34「a red banner（横批）darker than the picture's reds so cream text holds」→ 我取了 #F2ECDE 作米色字、#a01414 作更暗的横批底（★#F2ECDE 是 ink-wash §2:16 的宣纸色，此处仅作米色代理，非本风格原文色；#a01414 是按「比 #d2201f 更暗」推导，无原文 hex）；fontFamily 用 SimHei（§4:34 点名 Fraunces SemiBold，本机无）；fontSizeFactor 0.041≈44px（§4:34「around 44 px」）；outlineFactor 0（剪纸是叠层不是描边）；subtitleFadeIn 0（§4:34「drops in on two 12 fps steps」，是落不是淡入）；chapterCards/lowerThird = true（§2:29 团花 8× 镜像 + §4:34 横批）；texture = paper（§2:16 纸纹）。 ★ 交叉核对 lib/dub-visual.json（此处**修正**了先前的取值）：demo paper.js:3-9 PAL 里 rice #f2e8d0 才是纸底、red #d2201f 是主角、indigo #1c2446 是夜间另一族、gold #d9a93f 是金箔点缀。按 §3:27-31「Ground and hero must be different paper families / Gold foil is an accent kept for one late moment」，bg 改为米色纸底 #f2e8d0，fg 为红 #d2201f，accent 为金 #d9a93f。字幕横批按 §4:34「a red banner darker than the picture's reds so cream text holds」取底 #b00f26（PAL.nian）+ 字 #f2e8d0。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "risograph",
+      "cn": "孔版印刷",
+      "slug": "risograph",
+      "visualRef": "lib/dub-visual.json#risograph",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/risograph/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "两三个荧光专色孔版套印：网点、错位、纸白描边晕圈——文艺、便宜、有手感的独立小刊物气味。",
+      "tags": {
+        "theme": [
+          "文艺",
+          "青年",
+          "音乐",
+          "城市",
+          "独立"
+        ],
+        "emotion": [
+          "青春",
+          "随性",
+          "怀念"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "海报",
+          "小店",
+          "生活"
+        ]
+      },
+      "palette": {
+        "bg": "#F6F1E6",
+        "bg2": "#0078BF",
+        "fg": "#3D5588",
+        "accent": "#FF48B0",
+        "subtitle": "#3D5588",
+        "subtitleOutline": "#F4EEE2",
+        "subtitleBack": "#F4EEE2"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#F6F1E6"
+        ],
+        "texture": "halftone",
+        "halftone": {
+          "step": 7,
+          "angle": 15,
+          "k": 0.3,
+          "color": "#FF48B0"
+        },
+        "vignette": 0,
+        "seed": 0,
+        "textureRaw": "halftone"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.04,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#00F4EEE2"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "抽取：bg = §3:40「Paper is warm off-white (around #F4EEE2)」；bg2/fg/accent = §3:43 第一套 ink set「Blue #0078BF + Yellow #FFE800 + Fluorescent Pink #FF48B0」——bg2 取 Blue，accent 取 Fluorescent Pink，fg 取 §3:43 第三套的 Federal Blue #3D5588（★跨套取色：因为第一套只有蓝/黄/粉三色，做正文色对比不足，故 fg 借第三套的深蓝）。subtitle/subtitleOutline/subtitleBack = §4:49「a paper-white knockout strip (zero ink, small radius) with text on one plate」→ 底 #F4EEE2（纸白）、字 #0078BF（一个版）。推导：fontFamily 用 DengXian（§4:48 点名 Bricolage Grotesque 800 / Jost，本机无）；fontSizeFactor 0.040≈43px（§4:49「~40–46 px」取中）；outlineFactor 0（孔版是套印不是描边）；subtitleFadeIn 0（§4:49「Prints don't fade」）；texture = halftone（§2:20「halftone: cosine spot function…period ~6–8 px」）；vignette 0（无暗角描述）；accentRule = true（§2:22「a per-plate gate and a roller sweep」）。 ★ 交叉核对 lib/dub-visual.json：bg #F6F1E6 = demo riso.js:7-11 PAPER=[246,241,230]（§3:40 写「around #F4EEE2」，代码实值是 #F6F1E6，取代码值）；ink 三色 blue #0078BF / yellow #FFE800 / pink #FF48B0 与 §3:43 逐字一致。fg #3D5588 取自 §3:43 第三套 ink set 的 Federal Blue（跨套取色，已在原 notes 说明）。 ★ 修正：原字幕色 #0078BF 压 #F4EEE2 只有 4.2，低于 4.5；改用同风格 §3:43 第三套 ink set 的 Federal Blue #3D5588（对比度约 7）。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "dark-keynote",
+      "cn": "深色发布会",
+      "slug": "dark-keynote",
+      "visualRef": "lib/dub-visual.json#dark-keynote",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/dark-keynote/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "近黑舞台 + 发丝网格：UI 卡片从光里长出来、巨号数字独占一屏、字幕是底部小吐司——干净、专业、像产品发布会。",
+      "tags": {
+        "theme": [
+          "商业",
+          "产品",
+          "发布",
+          "增长",
+          "数据",
+          "效率"
+        ],
+        "emotion": [
+          "专业",
+          "克制",
+          "自信"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "发布会",
+          "干货",
+          "方法论"
+        ]
+      },
+      "palette": {
+        "bg": "#0A0B0F",
+        "bg2": "#151822",
+        "fg": "#E8EAF0",
+        "accent": "#B7F34A",
+        "subtitle": "#E8EAF0",
+        "subtitleOutline": null,
+        "subtitleBack": "#CC101216"
+      },
+      "bgRecipe": {
+        "type": "grid",
+        "stops": [],
+        "texture": "hairline-grid",
+        "vignette": 0.52,
+        "seed": 0,
+        "textureRaw": "hairline-grid"
+      },
+      "subtitle": {
+        "fontFamily": "Microsoft YaHei",
+        "fontSizeFactor": 0.037,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#330C0E13"
+      },
+      "title": {
+        "fontSizeFactor": 0.1,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.16,
+        "chapterTransition": "cut"
+      },
+      "notes": "抽取：accent = §3:28「Example accents, pick one per film: lime #B7F34A, electric violet #8B7CFF, signal orange #FF7A1A」——我取了 lime #B7F34A 作默认；另两个同值可用。bg/bg2/fg/subtitle = null：§3:25 只说「a cool neutral ladder only: near-black stage, three surface steps, text in three greys」，§2:16「a near-black base」，全篇不给这些的 hex，故不编造（#B7F34A 是唯一有 hex 的字段）。subtitleBack = #CC101216 是按 §4:34「a bottom-centre toast (dark translucent pill, 1 px light border)」推导的近黑 80% 胶囊，非原文值。推导：bgRecipe.type = grid、texture = hairline-grid、vignette 0.52（§2:16「a 50–55 % corner vignette」+「A hairline grid (white at ~3 %…)」）；fontFamily 用 Microsoft YaHei（§4:32 点名 Inter / Inter Tight / JetBrains Mono，本机无，雅黑是 UI 无衬线最接近）；fontSizeFactor 0.037≈40px（§4:34「Inter 500 around 40 px」）；title.fontSizeFactor 0.10（§4:32「The big number gets its own screen」——巨号）；outlineFactor 0（UI 卡片用 1px 边框不是描边）；subtitleFadeIn 0.16（§4:34「enters with a small rise + fade in ~0.16 s」）；chapterTransition = expand（§6「Transitions = UI expand / collapse」）；chapterCards = true（§2:19「rounded windows, notification cards」）。 ★ 交叉核对 lib/dub-visual.json：bg #0A0B0F / bg2 #151822 / fg #E8EAF0 全部来自 demo engine.js:7-9 的具名调色板 PAL（bg0/bg1/text）；accent #b7f34a 与 §3:28 的 lime 一致（demo 里出现 2 次）。subtitle 取 PAL.text，subtitleBack #CC12151C 是按 §4:34「dark translucent pill」给 PAL.surf #12151C 加的 80% 透明度（推导）。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "ascii-crt",
+      "cn": "字符终端",
+      "slug": "ascii-crt",
+      "visualRef": "lib/dub-visual.json#ascii-crt",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/ascii-crt/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "单色荧光屏上一切皆由字符网格拼成：扫描线、辉光、日志条字幕逐字敲出——像一台老终端的自白。",
+      "tags": {
+        "theme": [
+          "编程",
+          "极客",
+          "科技",
+          "复古",
+          "游戏"
+        ],
+        "emotion": [
+          "怀旧",
+          "冷感"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "终端",
+          "代码",
+          "日志"
+        ]
+      },
+      "palette": {
+        "bg": "#000000",
+        "bg2": null,
+        "fg": "#FFB000",
+        "accent": "#B8E0FF",
+        "subtitle": "#FFB000",
+        "subtitleOutline": "#000000",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [],
+        "texture": "scanlines",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "scanlines"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.042,
+        "marginVFactor": 0.1,
+        "marginLFactor": 0.05,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ palette 取值（已修正）：§3:30-32 只给「One phosphor…amber, green or white」（P3 amber / P1 green / P4 white）与示例（amber + ice blue-white、green + warm pink、white P4 + pale gold），STYLE.md 全篇无 hex，style-dna 里也无 ascii-crt.json。真实磷光色在 demo 的 CRT 后期参数 crt.js:92：`amber:[1.0,.69,.0], amberLo:[1.0,.40,.02], amberHi:[1.0,.92,.72], earth:[.72,.88,1.0]`。故 fg = amber #FFB000（[1.0,.69,.0]，§1:8「P3 amber」）、accent = earth 冰蓝白 #B8E0FF（[.72,.88,1.0]，§3:32「amber screen with an ice blue-white」的软第二色）、subtitle = amber #FFB000（§4:37 字幕=终端输出，与屏同磷光）；bg 沿用 #000000（§2:25 暗玻璃）。subtitleBack = #00000000（§4:37 的 LOG strip 在缩放网格之外，无底框）。推导：fontFamily 用 Consolas（§4:37「terminal output…uppercase」，本机 Consolas 存在；★Consolas 无 CJK 字形，中文字幕会走 fontconfig 回退，渲染侧需确认实际落地字体，未实测）；fontSizeFactor 0.042≈45px（§4:37「~45 px」）；marginVFactor 0.10（§4:37「A reserved LOG strip at the bottom」，贴底条带比普通字幕更低）；outlineFactor 0（荧光辉光不是描边，辉光应由 §2:23 的 glow 实现）；subtitleFadeIn 0（§4:37「typed word by word」，是逐字不是淡入）；chapterTransition = cut（§5「Characters never move off-grid」，无转场动效）；texture = scanlines（§1「scanlines」）；progressBar = true（§4:37「it can show system state (a progress bar…)」）。 ★ 交叉核对 lib/dub-visual.json（已同步修正）：bg #000000 / fg #FFB000 / accent #B8E0FF 取自 demo crt.js:92 的真实磷光与第二色参数。★ 修正记录：先前误取 term.js:68 `g.fillStyle = chan ? '#00ff00' : '#ff0000'` —— 那是 inverse()/cursor() 里的**离屏通道标记色**（chan 参数选通道，不是屏显调色板），已废弃；demo 实装的是 amber P3（crt.js:92），非绿色 P1。bg2 保持 null。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "blueprint",
+      "cn": "工程蓝图",
+      "slug": "blueprint",
+      "visualRef": "lib/dub-visual.json#blueprint",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/blueprint/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "蓝底白线的手绘工程图：发光笔尖写画、尺寸线与气球标注、字幕是图纸注记——严谨、有制造感。",
+      "tags": {
+        "theme": [
+          "工程",
+          "机械",
+          "技术",
+          "建筑",
+          "制造"
+        ],
+        "emotion": [
+          "严谨",
+          "理性",
+          "专业"
+        ],
+        "pace": [
+          "慢",
+          "中"
+        ],
+        "scene": [
+          "图纸",
+          "原理",
+          "结构"
+        ]
+      },
+      "palette": {
+        "bg": "#18336B",
+        "bg2": "#2A58A6",
+        "fg": "#E7F0F9",
+        "accent": null,
+        "subtitle": "#E7F0F9",
+        "subtitleOutline": "#18336B",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#18336B",
+          "#2A58A6"
+        ],
+        "texture": "paper",
+        "vignette": 0.2,
+        "seed": 0,
+        "textureRaw": "paper"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.038,
+        "marginVFactor": 0.145,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0.0022,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#6B0C1C3E"
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": true
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "抽取：§3:34「Example blues: #18336B → #2A58A6 with lines #E7F0F9 and table #0D1116」——bg 取 #18336B、bg2 取 #2A58A6、fg/subtitle 取 lines #E7F0F9，三个值逐字取自该行（table #0D1116 未用）。accent = null：§3:35「One non-blue colour, used exactly once: a rubber-stamp ink (red is classic; a green APPROVED or black VOID work too)」，未给红章 hex，故不编造（另两套色板 #3A6DA8→#5B8CC4、#0F2350→#1D3F80 可作备选）。推导：subtitleOutline = #18336B（§4:38「a light translucent box with double white rules」→ 蓝底白字）；subtitleBack = #00000000（注记框是半透明浅色，非暗底）；fontFamily 用 KaiTi（§4:38 点名 Architects Daughter 手写体，本机无）；fontSizeFactor 0.038（§4:38「Wrap at ~880 px」，按 1080 宽推 ~41px）；outlineFactor 0.0022（§4:38「double white rules」，细描边）；subtitleFadeIn 0（§4:38「lettered on in ~0.35 s」，是画出来不是淡入）；chapterTransition = cut（§5「hard cuts on downbeats between sections」）；title.showRole = true（§4:38「The title is the sheet header; the title block holds status and verdict fields」）；chapterCards/accentRule = true（§5「balloons / dimensions」）；texture = paper（§3:33「coating, stains, folds」）。 ★ 交叉核对 lib/dub-visual.json：demo draw.js:17 画布底色是 #000，main.js:101 手写体填色 #eaf1fa；#18336b / #2a58a6 在 demo 里各出现一次。本条目取 §3:34 的「#18336B → #2A58A6 with lines #E7F0F9」，因为 §3 把它作为该风格的标准色对（#E7F0F9 与 demo 的 #eaf1fa 仅差 3/255，属同一档白）。",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "ukiyoe",
+      "cn": "浮世绘",
+      "slug": "ukiyoe",
+      "visualRef": "lib/dub-visual.json#ukiyoe",
+      "synthetic": false,
+      "hasVisual": true,
+      "source": "styles/ukiyoe/STYLE.md §2-§6 + lib/dub-visual.json（demo 代码抽取）",
+      "desc": "和纸上的木版画：平涂分版、黑主版线、竖题签与朱印，字幕是一条横题签——层次靠叠版不靠透视。",
+      "tags": {
+        "theme": [
+          "日本",
+          "文化",
+          "历史",
+          "风景",
+          "旅行"
+        ],
+        "emotion": [
+          "恬静",
+          "怀旧",
+          "诗意"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "画册",
+          "游记",
+          "季节"
+        ]
+      },
+      "palette": {
+        "bg": "#eee2c6",
+        "bg2": "#e2d3b0",
+        "fg": "#231f1c",
+        "accent": "#1d3a66",
+        "subtitle": "#231f1c",
+        "subtitleOutline": "#231f1c",
+        "subtitleBack": "#f3e7c6"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [],
+        "texture": "washi",
+        "vignette": 0,
+        "seed": 0,
+        "textureRaw": "washi"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.042,
+        "marginVFactor": 0.078,
+        "marginLFactor": 0.06,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#0AF3E7C6"
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ palette 全为 null：§3:36-40 只给颜料名与套数（「A pigment set, not a colour wheel: 6–9 flat hues…One dominant hue family…Prussian blue…red is rare」+ 三套示例如「indigo-and-beni landscape」「bijin-ga interior」「autumn surimono」），全篇无 hex，style-dna 里也无 ukiyoe.json。下游回退 plain-dark 色。subtitleBack = #f3e7c6（demo main.js:95 的题签底色，对应 §4:38「a cream slip with a thick + thin ink border」；注意 subtitleBack 在 dub-core 里是**阴影色**、不是底衬）。推导：fontFamily 用 SimSun（§4:38 点名 Shippori Mincho 500，本机无，宋体是最接近的明体）；marginVFactor 0.078（§4:38「It covers the bottom ~150 px」→ 150/1920=0.078，题签贴底）；fontSizeFactor 0.042≈45px（§4 未给 px，按 150px 题签内 ≤2 行推得）；outlineFactor 0（§4:38 题签是「thick + thin ink border」外框，非字描边）；subtitleFadeIn 0.12（§4:38「prints in with the reveal mask and fades out」）；chapterTransition = wipe（§5「a diagonal baren sweep」印刷揭示）；chapterCards/accentRule = true（§4:39 竖题签与朱印）；texture = washi（§1「a sheet of washi」）；vignette 0（平版印刷无暗角）。 ★ 交叉核对 lib/dub-visual.json：四个色全部来自 demo print.js:6 的具名调色板 PAL——paper #eee2c6、paperD #e2d3b0、sumi #231f1c、prus #1d3a66（普鲁士蓝，正是 §3:36「One dominant hue family…Prussian blue」）；subtitleBack #f3e7c6 = demo main.js:95 的题签底色，对应 §4:38「a cream slip with a thick + thin ink border」。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette` = {\"bg\":\"#eee2c6\",\"bg2\":\"#e2d3b0\",\"fg\":\"#231f1c\",\"accent\":\"#1d3a66\",\"subtitle\":\"#231f1c\",\"subtitleOutline\":\"#231f1c\",\"subt。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
+      "derived": false,
+      "derivedFrom": [
+        "stylerule",
+        "demo-code"
+      ],
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "art-deco",
+      "cn": "装饰艺术",
+      "slug": "art-deco",
+      "visualRef": "lib/dub-visual.json#art-deco",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/art-deco/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "黑漆底上的描金线与喷枪几何：一切沿中轴展开，灯光一盏盏亮起——像一张会动的 1930 年代海报。",
+      "tags": {
+        "theme": [
+          "设计",
+          "建筑",
+          "历史",
+          "文化"
+        ],
+        "emotion": [
+          "庄重",
+          "高级"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "片头",
+          "品牌"
+        ]
+      },
+      "palette": {
+        "bg": "#0d0b09",
+        "bg2": "#0a0e16",
+        "fg": "#FFFFFF",
+        "accent": "#c9a24b",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#0d0b09",
+          "#0a0e16"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "vignette"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.03796,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#1F060504"
+      },
+      "title": {
+        "fontSizeFactor": 0.1,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "wipe"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0d0b09 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "backrooms",
+      "cn": "后室 / 新怪谈",
+      "slug": "backrooms",
+      "visualRef": "lib/dub-visual.json#backrooms",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/backrooms/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "像是从空荡荧光空间里捡回的掌中摄像机磁带：规则取代怪物，字幕是电视自带的那种黑框白字。",
+      "tags": {
+        "theme": [
+          "影视",
+          "游戏",
+          "哲思"
+        ],
+        "emotion": [
+          "冷感",
+          "紧张"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "纪录片",
+          "故事"
+        ]
+      },
+      "palette": {
+        "bg": "#0C1016",
+        "bg2": null,
+        "fg": "#FFFFFF",
+        "accent": "#6b6457",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#FF000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#0C1016"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "vhs-grain"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.03889,
+        "marginVFactor": 0.17037,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#00000000"
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0C1016 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 ⚠ palette.bg 缺失 → 用 plain-dark 底色兜底。 知识库更新时应优先用代码抽取值替换本条的派生值。 ⚠ 本条目 dub-visual 未抽到 palette.bg（demo 里底色是程序化生成的），已按 plain-dark 底色兜底 —— **底色与默认相同**，观感差异只来自暗角/纹理/字幕/字体/转场，抽帧复核时要特别盯这一条。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。 ★ 抽帧实测（backrooms-long.png）：纯色 #0C1016 + vignette=1.10 强暗角 + 4px 扫描线（黑压黑，肉眼不可见），且无任何叠加层 —— 与 plain-dark 的差异**只剩暗角**，观感最接近基线。若要求「一眼看出不同」，这条应标为暂不支持或另配底色。差异强度：最弱。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.bg` = \"#0C1016\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
+      "bgSameAsDefault": true
+    },
+    {
+      "id": "brick-toy",
+      "cn": "积木玩具",
+      "slug": "brick-toy",
+      "visualRef": "lib/dub-visual.json#brick-toy",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(dark-plate)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/brick-toy/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "在真实桌面上微距拍摄的积木定格片：圆凸点塑料世界，一帧摆一个姿势，字幕是颗小圆胶囊。",
+      "tags": {
+        "theme": [
+          "儿童",
+          "游戏",
+          "生活"
+        ],
+        "emotion": [
+          "轻松",
+          "童心"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "故事",
+          "教学"
+        ]
+      },
+      "palette": {
+        "bg": "#f4f4f1",
+        "bg2": null,
+        "fg": "#1b2a34",
+        "accent": "#c91a09",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#f4f4f1"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "none"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.03704,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#6112141A"
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4f4f1 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "cel-anime-80s",
+      "cn": "80 年代赛璐璐动画",
+      "slug": "cel-anime-80s",
+      "visualRef": "lib/dub-visual.json#cel-anime-80s",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/cel-anime-80s/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "黄金年代日式赛璐珞动画：平涂两色片叠在喷绘背景上，逆光霓虹，再当作 80 年代录像带在显像管上播放。",
+      "tags": {
+        "theme": [
+          "影视",
+          "青年",
+          "城市"
+        ],
+        "emotion": [
+          "怀旧",
+          "热烈"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "故事",
+          "片头"
+        ]
+      },
+      "palette": {
+        "bg": "#1f2446",
+        "bg2": "#34203f",
+        "fg": "#fff0a0",
+        "accent": "#ff4fa8",
+        "subtitle": "#fff0a0",
+        "subtitleOutline": "#120a1e",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#1f2446",
+          "#2a1f4a",
+          "#34203f"
+        ],
+        "texture": "scanlines",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "cel"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.04907,
+        "marginVFactor": 0.08889,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0.00593,
+        "bold": true,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fff0c0 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 ⚠ palette.fg 缺失 → 按底色明暗推前景。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.fg` = \"#141414\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。） ★ **2026-10-04 已修（配色）**：本条原是派生值（底色 #fff0c0 浅米黄 + 字幕 #141414 近黑），与「雨后霓虹都市之夜」的样片**不是一回事**（见 lib/style-skills/cel-anime-80s/SKILL.md 第 11 节）。现按该风格的**源码真值**改为：bg #1f2446 / bg2 #34203f / stops [#1f2446, #2a1f4a, #34203f]（夜景楼体与天空色，demo/bg.js:46）；accent #ff4fa8（霓虹洋红，demo/bg.js:4 NEON[0]）；subtitle #fff0a0 + outline #120a1e（奶黄字 + 9px 深描边，demo/hud.js:25,27 与 SKILL.md §3/§5）。原值保留作历史。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "crayon-book",
+      "cn": "蜡笔儿童绘本",
+      "slug": "crayon-book",
+      "visualRef": "lib/dub-visual.json#crayon-book",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/crayon-book/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "在粗纹纸上现画的蜡笔画：笔迹有颗粒，水彩晕染慢慢揭开蜡笔藏住的东西，字幕像绘本上的印刷字。",
+      "tags": {
+        "theme": [
+          "儿童",
+          "教育",
+          "情感"
+        ],
+        "emotion": [
+          "温暖",
+          "童心"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "故事",
+          "教学"
+        ]
+      },
+      "palette": {
+        "bg": "#f4efe3",
+        "bg2": null,
+        "fg": "#2d3263",
+        "accent": "#d4483c",
+        "subtitle": "#2d3263",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#f4efe3"
+        ],
+        "texture": "paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "crayon"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.04907,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.07037,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.086,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4efe3 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "dataviz",
+      "cn": "数据叙事",
+      "slug": "dataviz",
+      "visualRef": "lib/dub-visual.json#dataviz",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(caption-row)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/dataviz/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "一张会讲故事的图：真实数据被红蓝铅笔一笔笔画在米色纸上，手写便签钉在数字旁，字幕就是图注。",
+      "tags": {
+        "theme": [
+          "数据",
+          "商业",
+          "科普"
+        ],
+        "emotion": [
+          "理性",
+          "严谨"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "图表",
+          "方法论"
+        ]
+      },
+      "palette": {
+        "bg": "#F6F3EC",
+        "bg2": "#E4DDCF",
+        "fg": "#2B2723",
+        "accent": "#d97757",
+        "subtitle": "#2B2723",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#F6F3EC",
+          "#E4DDCF"
+        ],
+        "texture": "dot-grid",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "dotgrid"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.03333,
+        "marginVFactor": 0.16019,
+        "marginLFactor": 0.07963,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 1
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 caption-row：字号 36px、下边距 173px、左边距 86px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F6F3EC 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "game-show",
+      "cn": "综艺节奏扁平",
+      "slug": "game-show",
+      "visualRef": "lib/dub-visual.json#game-show",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(dark-glow)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/game-show/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "平面矢量做的节奏游戏综艺：厚墨线吉祥物踩在糖果色条纹和太阳纹上，每一击都落在固定节拍，字幕是粗描边花字。",
+      "tags": {
+        "theme": [
+          "游戏",
+          "音乐",
+          "活动"
+        ],
+        "emotion": [
+          "热烈",
+          "轻松"
+        ],
+        "pace": [
+          "快"
+        ],
+        "scene": [
+          "综艺",
+          "片头"
+        ]
+      },
+      "palette": {
+        "bg": "#FFF6E5",
+        "bg2": "#6B4FBB",
+        "fg": "#1B1B1B",
+        "accent": "#816300",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#141414",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#FFF6E5",
+          "#6B4FBB"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "none"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.04444,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0.0062,
+        "bold": true,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.1,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0.1,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #FFF6E5 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 dark-plate（深色胶囊）派生，STYLE.md §4 写的是「white or yellow fill with an ink stroke ≈ 14 % of the font size painted under the fill」，已改判 dark-glow + 厚描边。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "glass-product",
+      "cn": "玻璃质感产品",
+      "slug": "glass-product",
+      "visualRef": "lib/dub-visual.json#glass-product",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/glass-product/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "透明与磨砂玻璃的暗场产品片：条形光扫过轮廓、色散与焦散，慢速爆炸图在重拍上啪地合拢。",
+      "tags": {
+        "theme": [
+          "产品",
+          "科技",
+          "设计"
+        ],
+        "emotion": [
+          "高级",
+          "冷静"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "发布会",
+          "品牌"
+        ]
+      },
+      "palette": {
+        "bg": "#000000",
+        "bg2": null,
+        "fg": "#ffffff",
+        "accent": "#62dcff",
+        "subtitle": "#ffffff",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#000000"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "pbr-glass"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.03704,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#E6D2E1F0"
+      },
+      "title": {
+        "fontSizeFactor": 0.12,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.16,
+        "chapterTransition": "expand"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #000000 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "halftone-dossier",
+      "cn": "复古半调案卷",
+      "slug": "halftone-dossier",
+      "visualRef": "lib/dub-visual.json#halftone-dossier",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(dark-plate)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/halftone-dossier/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "复古印刷档案：米色档案纸、几个平版色的网点套印、巨大粗标题配错位阴影、盖章啪地砸下——影片是一份逐件宣读的卷宗。",
+      "tags": {
+        "theme": [
+          "商业",
+          "影视",
+          "历史"
+        ],
+        "emotion": [
+          "严谨",
+          "神秘"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "报表",
+          "故事"
+        ]
+      },
+      "palette": {
+        "bg": "#F4ECDD",
+        "bg2": "#1D2340",
+        "fg": "#1D2340",
+        "accent": "#CA0037",
+        "subtitle": "#F4ECDD",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#F4ECDD",
+          "#1D2340"
+        ],
+        "texture": "halftone",
+        "halftone": {
+          "step": 24,
+          "angle": 20,
+          "color": "#1D2340",
+          "field": {
+            "type": "edge",
+            "R": 820,
+            "pw": 1.4,
+            "maxK": 0.7
+          }
+        },
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "halftone"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.03704,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#001D2340"
+      },
+      "title": {
+        "fontSizeFactor": 0.11,
+        "showRole": true
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.1,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F4ECDD 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "hd-2d",
+      "cn": "HD-2D",
+      "slug": "hd-2d",
+      "visualRef": "lib/dub-visual.json#hd-2d",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/hd-2d/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "手绘像素小人像纸片一样站在会起雾的三维微缩景观里，高机位移轴镜头俯拍——每盏灯都投出真实的影子。",
+      "tags": {
+        "theme": [
+          "游戏",
+          "故事",
+          "旅行"
+        ],
+        "emotion": [
+          "怀旧",
+          "诗意"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "故事",
+          "画册"
+        ]
+      },
+      "palette": {
+        "bg": "#fff0c8",
+        "bg2": null,
+        "fg": "#2e0b14",
+        "accent": "#995500",
+        "subtitle": "#2E0B14",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#fff0c8"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "pixel-post"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.0463,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#9E000000"
+      },
+      "title": {
+        "fontSizeFactor": 0.086,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fff0c8 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "impasto",
+      "cn": "油画厚涂",
+      "slug": "impasto",
+      "visualRef": "lib/dub-visual.json#impasto",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(paper-ink)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/impasto/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "调色刀刮出的厚油彩：大块平直锐利的色面，被光斜扫出每一道笔脊——先结构后肌理，焦点处硬边。",
+      "tags": {
+        "theme": [
+          "文化",
+          "情感",
+          "自然"
+        ],
+        "emotion": [
+          "深沉",
+          "高级"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "画册",
+          "意境"
+        ]
+      },
+      "palette": {
+        "bg": "#34507e",
+        "bg2": "#d99a78",
+        "fg": "#FFFFFF",
+        "accent": "#f8c850",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#090402",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#34507e",
+          "#d99a78",
+          "#f7dca0"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "impasto"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.03519,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.07037,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.1,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 paper-ink：字号 40px、下边距 157px、左边距 76px、描边 3px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #1a0a06 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ **2026-10-04 已修（配色）**：本条原 palette.bg #1a0a06 / bg2 #2a2224（深棕）与 bgRecipe.stops 两段深棕，与成片的雨后黄昏**完全不是一回事**（见 lib/style-skills/impasto/SKILL.md 第 11 节）。现按该文档第 3 节的精确渐变改为 bg #34507e（钴蓝）/ bg2 #d99a78（桃）/ stops [#34507e, #d99a78, #f7dca0]（金）。原值保留作历史。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "iso-infographic",
+      "cn": "等距信息图",
+      "slug": "iso-infographic",
+      "visualRef": "lib/dub-visual.json#iso-infographic",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/iso-infographic/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "一张会动的系统图：三色平涂方块的等距微缩景观，细墨线标签配 Isotype 数字，东西会打开露出内部，数字是画出来的。",
+      "tags": {
+        "theme": [
+          "科普",
+          "工程",
+          "数据"
+        ],
+        "emotion": [
+          "理性",
+          "专业"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "图表",
+          "原理"
+        ]
+      },
+      "palette": {
+        "bg": "#F2E6D0",
+        "bg2": "#FBF4E6",
+        "fg": "#2E2522",
+        "accent": "#B3352B",
+        "subtitle": "#141414",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#E6F2E6D0"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#F2E6D0",
+          "#FBF4E6"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "flat-iso"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.03889,
+        "marginVFactor": 0.15741,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#0AFBF4E6"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": true
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F2E6D0 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「The subtitle is a map label: a pale card with a small radius and an ink border, ... sans ~42 px, bottom-centre」——是**浅色卡 + 墨字**，不是深色条 + 浅字。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "living-screencast",
+      "cn": "活体实机录屏",
+      "slug": "living-screencast",
+      "visualRef": "lib/dub-visual.json#living-screencast",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(dark-plate)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/living-screencast/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "看起来像真实录屏的产品走查：一个低分辨率吉祥物住在高清界面里，把软件正在做的事演出来。",
+      "tags": {
+        "theme": [
+          "产品",
+          "效率",
+          "科技"
+        ],
+        "emotion": [
+          "轻松",
+          "专业"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "教程",
+          "方法论"
+        ]
+      },
+      "palette": {
+        "bg": "#0C1016",
+        "bg2": null,
+        "fg": "#FFFFFF",
+        "accent": "#f2c14e",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#0C1016"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "none"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.03426,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#4C000000"
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.16,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0C1016 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 ⚠ palette.bg 缺失 → 用 plain-dark 底色兜底。 知识库更新时应优先用代码抽取值替换本条的派生值。 ⚠ 本条目 dub-visual 未抽到 palette.bg（demo 里底色是程序化生成的），已按 plain-dark 底色兜底 —— **底色与默认相同**，观感差异只来自暗角/纹理/字幕/字体/转场，抽帧复核时要特别盯这一条。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。 ★ 抽帧实测（living-screencast-long.png）：纯色 #0C1016 + vignette=1.10 强暗角，但有金色 accent 元素（章节卡副标题 + 字幕上方 accentRule 线），**能看出区别**。差异强度：弱。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.bg` = \"#0C1016\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
+      "bgSameAsDefault": true
+    },
+    {
+      "id": "lowpoly-island",
+      "cn": "低多边形等距",
+      "slug": "lowpoly-island",
+      "visualRef": "lib/dub-visual.json#lowpoly-island",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(dark-glow)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/lowpoly-island/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "正交等距镜头下的小小多面体世界：一切都是几何块，出现时都带着弹跳和一声音符。",
+      "tags": {
+        "theme": [
+          "游戏",
+          "儿童",
+          "旅行"
+        ],
+        "emotion": [
+          "轻松",
+          "童心"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "故事",
+          "教学"
+        ]
+      },
+      "palette": {
+        "bg": "#eef6fb",
+        "bg2": "#3aa3b8",
+        "fg": "#141414",
+        "accent": "#ffc676",
+        "subtitle": "#141414",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#eef6fb",
+          "#3aa3b8"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "flat-shaded-3d"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.03889,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.086,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-glow：字号 45px、下边距 157px、左边距 65px、描边 3.2px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #eef6fb 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "microgame",
+      "cn": "微游戏快闪",
+      "slug": "microgame",
+      "visualRef": "lib/dub-visual.json#microgame",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/microgame/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "快节奏派对游戏片：一个指令词、几秒钟、一个动作，每一关都换一套完全不同的画风，而且越来越快。",
+      "tags": {
+        "theme": [
+          "游戏",
+          "活动",
+          "教育"
+        ],
+        "emotion": [
+          "热烈",
+          "幽默"
+        ],
+        "pace": [
+          "快"
+        ],
+        "scene": [
+          "综艺",
+          "教学"
+        ]
+      },
+      "palette": {
+        "bg": "#3d168f",
+        "bg2": null,
+        "fg": "#FFFFFF",
+        "accent": "#cbb8ff",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#3d168f"
+        ],
+        "texture": "paper",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "toon"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.0463,
+        "marginVFactor": 0.16019,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#4C000000"
+      },
+      "title": {
+        "fontSizeFactor": 0.11,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0.08,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0C1016 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 ⚠ palette.bg 缺失 → 用 plain-dark 底色兜底。 知识库更新时应优先用代码抽取值替换本条的派生值。 ⚠ 本条目 dub-visual 未抽到 palette.bg（demo 里底色是程序化生成的），已按 plain-dark 底色兜底 —— **底色与默认相同**，观感差异只来自暗角/纹理/字幕/字体/转场，抽帧复核时要特别盯这一条。 ★ 修正：dub-visual 的 palette.bg 为 null、bg2=#3d168f（demo 里高频出现 3 次），已把 #3d168f 提为底色，避免落回 plain-dark 同色。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.bg` = \"#3d168f\"；`palette.bg` = \"#3d168f\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "one-line",
+      "cn": "一笔画",
+      "slug": "one-line",
+      "visualRef": "lib/dub-visual.json#one-line",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(paper-ink)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/one-line/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "一根永远不离开纸面的墨线：屏幕上的所有东西都是这根线画出来的，场景不切，直接变形。",
+      "tags": {
+        "theme": [
+          "哲思",
+          "文化",
+          "情感"
+        ],
+        "emotion": [
+          "宁静",
+          "幽默"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "意境",
+          "故事"
+        ]
+      },
+      "palette": {
+        "bg": "#F4EFE4",
+        "bg2": null,
+        "fg": "#1D1A17",
+        "accent": null,
+        "subtitle": "#1D1A17",
+        "subtitleOutline": "#101010",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "solid",
+        "stops": [
+          "#F4EFE4"
+        ],
+        "texture": "rice-paper",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "ink"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.03704,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.07037,
+        "outlineFactor": 0.003,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.086,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "bloom"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色已修正为 STYLE.md 明文——bg = 暖白纸 #F4EFE4（§2:17「Paper: warm white (around #F4EFE4)」）、fg = 暖黑墨 #1D1A17（§3:31「A warm black (around #1D1A17) on warm white」）；demo 侧佐证：subs.js:4 `rgba(244,239,228,0.9)`（纸色 halo = #F4EFE4）、ink.js:183 `rgba(29,26,23,…)` 与 subs.js:3（墨色 = #1D1A17）。字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 paper-ink：字号 40px、下边距 157px、左边距 76px、描边 3px）；章节卡等叠加层保守关闭，仅 accentRule=false。 ★ 修正记录（本条曾整体取错）：先前误把 bg 取成 plain-dark 兜底 #0C1016（近黑）、fg 取成 #000000、subtitle 取成 #FFFFFF，导致「暖白纸」被渲成深色片、且标题黑字压近黑底不可见；现已按 STYLE.md §2:17 / §3:31 改为纸白 #F4EFE4 + 墨黑 #1D1A17，subtitle 同步改为墨黑 #1D1A17（§4:37「Text is written…ink at ~84%」，白字压白纸不可见）。★ bgRecipe.stops 同步改为 [\"#F4EFE4\"]：bgRecipe.type=solid 时 bgSource 取 stops[0] 而非 palette.bg（见 dub-core.mjs:209），不改 stops 则底色仍是旧值。★ bgSameAsDefault 由 true 改为 false（底色不再等于 plain-dark）。★ 旧抽帧 one-line-long.png 为深底旧版，已失效，需重渲。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "paper-lantern",
+      "cn": "纸雕灯影",
+      "slug": "paper-lantern",
+      "visualRef": "lib/dub-visual.json#paper-lantern",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/paper-lantern/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "背后打光的层叠纸雕灯箱：6–9 层剪纸卡纸堆在浅盒里，暖光透过纸面，窗与月从孔洞中烧出来。",
+      "tags": {
+        "theme": [
+          "传统",
+          "文化",
+          "节日"
+        ],
+        "emotion": [
+          "温暖",
+          "宁静"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "意境",
+          "故事"
+        ]
+      },
+      "palette": {
+        "bg": "#0a0806",
+        "bg2": "#22325e",
+        "fg": "#FFFFFF",
+        "accent": "#e9b25c",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#040302",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#0a0806",
+          "#22325e"
+        ],
+        "texture": "paper",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "paper-grain"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.03704,
+        "marginVFactor": 0.06852,
+        "marginLFactor": 0.07037,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.086,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0a0806 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "paper-popup",
+      "cn": "纸片立体书",
+      "slug": "paper-popup",
+      "visualRef": "lib/dub-visual.json#paper-popup",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/paper-popup/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "真实桌面上的立体书变成舞台：带白边的平面剪纸演员在弹起的纸景前演出，真实台灯加微距镜头。",
+      "tags": {
+        "theme": [
+          "儿童",
+          "教育",
+          "故事"
+        ],
+        "emotion": [
+          "轻松",
+          "童心"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "故事",
+          "教学"
+        ]
+      },
+      "palette": {
+        "bg": "#fffaf0",
+        "bg2": "#cfc8ba",
+        "fg": "#3a2a24",
+        "accent": "#866700",
+        "subtitle": "#3a2a24",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#fffaf0",
+          "#cfc8ba"
+        ],
+        "texture": "paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "paper"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.03704,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0.00546,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fffaf0 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "pictogram-motion",
+      "cn": "象形运动图形",
+      "slug": "pictogram-motion",
+      "visualRef": "lib/dub-visual.json#pictogram-motion",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(dark-plate)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/pictogram-motion/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "只用三样东西搭的卡点闪卡片：方形格阵的核心图形、圆头杆加圆盘头拼的几何图标、从遮罩里滑出的粗体双语大字。",
+      "tags": {
+        "theme": [
+          "活动",
+          "体育",
+          "设计"
+        ],
+        "emotion": [
+          "专业",
+          "自信"
+        ],
+        "pace": [
+          "快"
+        ],
+        "scene": [
+          "片头",
+          "图表"
+        ]
+      },
+      "palette": {
+        "bg": "#fbf6ec",
+        "bg2": "#15111c",
+        "fg": "#15111c",
+        "accent": "#c21d15",
+        "subtitle": "#15111C",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#fbf6ec",
+          "#15111c"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "flat"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.03148,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#19FBF6EC"
+      },
+      "title": {
+        "fontSizeFactor": 0.13,
+        "showRole": true
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0.08,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fbf6ec 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "pixel-rpg",
+      "cn": "16-bit 像素 RPG",
+      "slug": "pixel-rpg",
+      "visualRef": "lib/dub-visual.json#pixel-rpg",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(pixel)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/pixel-rpg/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "看起来、听起来、玩起来都像 90 年代中期主机 RPG：320×180 像素、受限调色板、会逐字打的对话框、菜单与存档。",
+      "tags": {
+        "theme": [
+          "游戏",
+          "复古",
+          "编程"
+        ],
+        "emotion": [
+          "怀旧",
+          "童心"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "故事",
+          "教学"
+        ]
+      },
+      "palette": {
+        "bg": "#3a4466",
+        "bg2": "#262b44",
+        "fg": "#FFFFFF",
+        "accent": "#e43b44",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#FF000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#3a4466",
+          "#262b44"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "pixel"
+      },
+      "subtitle": {
+        "fontFamily": "Microsoft YaHei",
+        "fontSizeFactor": 0.02963,
+        "marginVFactor": 0.13981,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#00000000"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 pixel：字号 32px、下边距 151px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #3a4466 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "rubber-hose",
+      "cn": "1930s 橡皮管卡通",
+      "slug": "rubber-hose",
+      "visualRef": "lib/dub-visual.json#rubber-hose",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/rubber-hose/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "黑白手绘卡通：所有东西都是活的，跟着热爵士一起摇摆，字幕是那个年代的小字卡。",
+      "tags": {
+        "theme": [
+          "影视",
+          "音乐",
+          "复古"
+        ],
+        "emotion": [
+          "幽默",
+          "怀旧"
+        ],
+        "pace": [
+          "快"
+        ],
+        "scene": [
+          "片头",
+          "故事"
+        ]
+      },
+      "palette": {
+        "bg": "#F1EEE6",
+        "bg2": "#C8C5BC",
+        "fg": "#0E0D0C",
+        "accent": null,
+        "subtitle": "#F1EEE6",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#F1EEE6",
+          "#C8C5BC"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "film-grain"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.03333,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#140C0B0A"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F1EEE6 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "scifi-toon",
+      "cn": "科幻情景喜剧卡通",
+      "slug": "scifi-toon",
+      "visualRef": "lib/dub-visual.json#scifi-toon",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/scifi-toon/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "成人向科幻情景动画：滚动的粗轮廓线、平涂色、一对反应总对不上的搭档、发光的传送门，一个世界一套配色。",
+      "tags": {
+        "theme": [
+          "影视",
+          "科技",
+          "哲思"
+        ],
+        "emotion": [
+          "幽默",
+          "冷感"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "故事",
+          "片头"
+        ]
+      },
+      "palette": {
+        "bg": "#f4f1ea",
+        "bg2": "#e8f0e0",
+        "fg": "#3a3340",
+        "accent": "#e8392b",
+        "subtitle": "#3a3340",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#f4f1ea",
+          "#e8f0e0"
+        ],
+        "texture": "paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "toon"
+      },
+      "subtitle": {
+        "fontFamily": "DengXian",
+        "fontSizeFactor": 0.0463,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0.01019,
+        "bold": true,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4f1ea 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "shadow-puppet",
+      "cn": "皮影戏",
+      "slug": "shadow-puppet",
+      "visualRef": "lib/dub-visual.json#shadow-puppet",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/shadow-puppet/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "中国皮影戏：透光的染色牛皮偶，镂空得像蕾丝，贴在棉布幕上，背后一盏油灯打光。",
+      "tags": {
+        "theme": [
+          "传统",
+          "文化",
+          "历史"
+        ],
+        "emotion": [
+          "庄重",
+          "神秘"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "故事",
+          "意境"
+        ]
+      },
+      "palette": {
+        "bg": "#f4ead2",
+        "bg2": "#2b170d",
+        "fg": "#1a100a",
+        "accent": "#b3261b",
+        "subtitle": "#f3e2bf",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#B3000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#f4ead2",
+          "#2b170d"
+        ],
+        "texture": "paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "backlit-leather"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.04167,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#122E160E"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.1,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4ead2 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "silent-film",
+      "cn": "1920s 默片",
+      "slug": "silent-film",
+      "visualRef": "lib/dub-visual.json#silent-film",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(intertitle)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/silent-film/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "在影院里放映的铜版插画默片：墨线与银灰淡彩、会抖会晃的 4:3 拷贝、用字幕卡代替人声，钢琴师弹满每一拍。",
+      "tags": {
+        "theme": [
+          "影视",
+          "历史",
+          "文化"
+        ],
+        "emotion": [
+          "怀旧",
+          "幽默"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "片头",
+          "故事"
+        ]
+      },
+      "palette": {
+        "bg": "#0e0d0b",
+        "bg2": "#050404",
+        "fg": "#ece5d5",
+        "accent": "#d97757",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#FF000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#0e0d0b",
+          "#050404"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "film-grain"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.05185,
+        "marginVFactor": 0,
+        "marginLFactor": 0.07963,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 5
+      },
+      "title": {
+        "fontSizeFactor": 0.11,
+        "showRole": true
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 intertitle：字号 56px、下边距 0px、左边距 86px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0e0d0b 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "spy-titles",
+      "cn": "60s 间谍片头",
+      "slug": "spy-titles",
+      "visualRef": "lib/dub-visual.json#spy-titles",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/spy-titles/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "一部并不存在的电影的剪纸四色片头：剪影在由字幕本身搭成的布景里穿行，每一下铜管刺音就是一次切。",
+      "tags": {
+        "theme": [
+          "影视",
+          "设计",
+          "音乐"
+        ],
+        "emotion": [
+          "冷静",
+          "高级"
+        ],
+        "pace": [
+          "快"
+        ],
+        "scene": [
+          "片头",
+          "品牌"
+        ]
+      },
+      "palette": {
+        "bg": "#efe4c9",
+        "bg2": "#d9ccae",
+        "fg": "#1b1714",
+        "accent": "#AF301C",
+        "subtitle": "#1B1714",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#E6141414"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#efe4c9",
+          "#d9ccae"
+        ],
+        "texture": "paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "paper"
+      },
+      "subtitle": {
+        "fontFamily": "Microsoft YaHei",
+        "fontSizeFactor": 0.04074,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.07963,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 1,
+        "plate": "box",
+        "plateColor": "#19D9CCAE"
+      },
+      "title": {
+        "fontSizeFactor": 0.11,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.18,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #efe4c9 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "stained-glass",
+      "cn": "彩色玻璃窗",
+      "slug": "stained-glass",
+      "visualRef": "lib/dub-visual.json#stained-glass",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/stained-glass/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "从昏暗石厅里看中世纪的彩色玻璃窗：只在阳光照到的地方活着，光是时钟、是镜头、也是故事。",
+      "tags": {
+        "theme": [
+          "文化",
+          "历史",
+          "哲思"
+        ],
+        "emotion": [
+          "庄重",
+          "诗意"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "故事",
+          "画册"
+        ]
+      },
+      "palette": {
+        "bg": "#2a2a2e",
+        "bg2": "#142a70",
+        "fg": "#F3E6C6",
+        "accent": "#dc9a22",
+        "subtitle": "#3a2412",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#E6F3E7C6"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#2a2a2e",
+          "#142a70"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "glass"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.04074,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#00F3E6C6"
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": true,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.14,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #2a2a2e 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「a parchment banderole near the bottom (curled ends, gentle sag, thin rule), IM Fell English ~44 px in dark ink」——是**羊皮纸带 + 深墨字**。 ★ 字幕配色更正（style-recon 提供硬证据）：demo 的字幕是「米白绶带 + 深棕字」（styles/stained-glass/demo/subs.js:18 底带渐变 #f3e6c6→#ecdcb6→#d9c497，subs.js:26 文字色 #3a2412，44px IM Fell English，中心 (960,968)，带宽 64）。**但 ASS 的 Sub 样式是 BorderStyle=1（只有描边+阴影，没有底带）**，字幕直接压在画面底色上 —— 所以不能照搬 demo 的「深棕字」（深棕 #3a2412 压画面深底 #2a2a2e 只有 1.5:1，会看不见）。本条目取**绶带底色 #f3e6c6** 作字色，压在画面深底上对比度 11.4:1，可读；颜色本身是代码原值（此前误填 #f3e7c6，那是 ukiyoe 的题签色 main.js:95，已更正）。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "swiss-motion",
+      "cn": "瑞士动态排版",
+      "slug": "swiss-motion",
+      "visualRef": "lib/dub-visual.json#swiss-motion",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(caption-row)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/swiss-motion/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "会动的国际主义排版：模块化网格、一款字体、一个信号色，运动的精确度像印刷机。",
+      "tags": {
+        "theme": [
+          "设计",
+          "商业",
+          "教育"
+        ],
+        "emotion": [
+          "理性",
+          "克制"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "图表",
+          "方法论"
+        ]
+      },
+      "palette": {
+        "bg": "#EAE9E5",
+        "bg2": "#FFFFFF",
+        "fg": "#111111",
+        "accent": "#E30613",
+        "subtitle": "#111111",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#EAE9E5",
+          "#FFFFFF"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "none"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.03148,
+        "marginVFactor": 0.16019,
+        "marginLFactor": 0.07037,
+        "outlineFactor": 0,
+        "bold": true,
+        "align": 1
+      },
+      "title": {
+        "fontSizeFactor": 0.12,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": true
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 caption-row：字号 36px、下边距 173px、左边距 86px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #EAE9E5 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "tilt-shift",
+      "cn": "移轴微缩",
+      "slug": "tilt-shift",
+      "visualRef": "lib/dub-visual.json#tilt-shift",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(light-strip)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/tilt-shift/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "从高处用移轴镜头加延时拍的真实地方，于是整个世界看起来像桌面模型；字幕用的是这个地方自己的标牌语言。",
+      "tags": {
+        "theme": [
+          "旅行",
+          "城市",
+          "户外"
+        ],
+        "emotion": [
+          "开阔",
+          "宁静"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "游记",
+          "纪录片"
+        ]
+      },
+      "palette": {
+        "bg": "#8fb4d8",
+        "bg2": "#e8e4dc",
+        "fg": "#1B2A34",
+        "accent": "#f2b705",
+        "subtitle": "#FFFFFF",
+        "subtitleOutline": "#101010",
+        "subtitleBack": "#E6141414"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#8fb4d8",
+          "#e8e4dc"
+        ],
+        "texture": "none",
+        "vignette": 0.35,
+        "seed": 0,
+        "textureRaw": "tilt-shift-blur"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.03519,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0.0037,
+        "bold": true,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#000F5E3C"
+      },
+      "title": {
+        "fontSizeFactor": 0.086,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 light-strip：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #8fb4d8 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。 ★ 字幕色更正：此前误填 #F3E7C6（那是 ukiyoe 的题签色），改为 demo palette 原值 #FFFFFF —— 该风格有 vignette=1.10 强暗角，字幕所在的底部被压暗，浅字直接可读，另有 4px 深描边兜底。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "urban-sketch",
+      "cn": "钢笔淡彩",
+      "slug": "urban-sketch",
+      "visualRef": "lib/dub-visual.json#urban-sketch",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "category-default(paper-ink)",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/urban-sketch/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "现场写生的速写本一页：细棕针管笔的线会抖、会出头、从不闭合，松散的透明水彩落在上面，颜色略微偏离线。",
+      "tags": {
+        "theme": [
+          "旅行",
+          "城市",
+          "生活"
+        ],
+        "emotion": [
+          "随性",
+          "温暖"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "游记",
+          "手账"
+        ]
+      },
+      "palette": {
+        "bg": "#f5eede",
+        "bg2": "#9fbcd6",
+        "fg": "#231c1a",
+        "accent": "#d97757",
+        "subtitle": "#231c1a",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#f5eede",
+          "#9fbcd6"
+        ],
+        "texture": "paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "pen-wash"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.03704,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.07963,
+        "outlineFactor": 0.00278,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.086,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 paper-ink：字号 40px、下边距 157px、左边距 76px、描边 3px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f5eede 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "watercolor",
+      "cn": "水彩笔刷",
+      "slug": "watercolor",
+      "visualRef": "lib/dub-visual.json#watercolor",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/watercolor/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "一页会自己画出来的手绘日记：暖白棉纸上的透明笔触与飞白，画旁边是手写注记，没有一根矢量线。",
+      "tags": {
+        "theme": [
+          "自然",
+          "科普",
+          "旅行"
+        ],
+        "emotion": [
+          "宁静",
+          "诗意"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "画册",
+          "手账"
+        ]
+      },
+      "palette": {
+        "bg": "#f1e9da",
+        "bg2": "#cfc6b3",
+        "fg": "#2b2520",
+        "accent": "#cf7c4f",
+        "subtitle": "#2b2520",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#f1e9da",
+          "#cfc6b3"
+        ],
+        "texture": "rice-paper",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "watercolor"
+      },
+      "subtitle": {
+        "fontFamily": "SimHei",
+        "fontSizeFactor": 0.03333,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.07037,
+        "outlineFactor": 0.00278,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.082,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0,
+        "chapterTransition": "bloom"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f1e9da 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "whiteboard",
+      "cn": "白板讲解",
+      "slug": "whiteboard",
+      "visualRef": "lib/dub-visual.json#whiteboard",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/whiteboard/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "在一块光面白板上现画出来的讲解片：单线手写字真的是一笔笔写出来的，马克笔悬浮着没有手，镜头是横移不是切。",
+      "tags": {
+        "theme": [
+          "教育",
+          "商业",
+          "科普"
+        ],
+        "emotion": [
+          "轻松",
+          "专业"
+        ],
+        "pace": [
+          "中"
+        ],
+        "scene": [
+          "教学",
+          "方法论"
+        ]
+      },
+      "palette": {
+        "bg": "#e9ebee",
+        "bg2": "#9aa0a8",
+        "fg": "#23262c",
+        "accent": "#d97757",
+        "subtitle": "#141414",
+        "subtitleOutline": "#00000000",
+        "subtitleBack": "#E6F5F2EC"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#e9ebee",
+          "#9aa0a8"
+        ],
+        "texture": "none",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "whiteboard"
+      },
+      "subtitle": {
+        "fontFamily": "KaiTi",
+        "fontSizeFactor": 0.04074,
+        "marginVFactor": 0.14537,
+        "marginLFactor": 0.06019,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2,
+        "plate": "box",
+        "plateColor": "#00FDFCF8"
+      },
+      "title": {
+        "fontSizeFactor": 0.11,
+        "showRole": false
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": true,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.12,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #e9ebee 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「an off-white rounded label (~90 %), a handwriting-like face, dark text, a short accent-colour marker dash」——是**米白标签 + 深字**，不是深底衬。",
+      "bgSameAsDefault": false
+    },
+    {
+      "id": "woodcut",
+      "cn": "木刻版画",
+      "slug": "woodcut",
+      "visualRef": "lib/dub-visual.json#woodcut",
+      "synthetic": false,
+      "hasVisual": true,
+      "derived": true,
+      "derivedFrom": [
+        "palette@lib/dub-visual.json",
+        "subtitle-px@STYLE.md §4",
+        "contrast-rule(WCAG)"
+      ],
+      "source": "styles/woodcut/STYLE.md §4（字幕形态）+ lib/dub-visual.json（配色/字体证据）",
+      "desc": "一块自己刻自己的凸版：每一帧都是黑木版，光只存在于刀刻掉的地方；最多一个颜色，只给燃烧的那个东西。",
+      "tags": {
+        "theme": [
+          "历史",
+          "文化",
+          "哲思"
+        ],
+        "emotion": [
+          "庄重",
+          "深沉"
+        ],
+        "pace": [
+          "慢"
+        ],
+        "scene": [
+          "画册",
+          "故事"
+        ]
+      },
+      "palette": {
+        "bg": "#EFE8D8",
+        "bg2": "#D8C29C",
+        "fg": "#111111",
+        "accent": "#A24122",
+        "subtitle": "#111111",
+        "subtitleOutline": "#FFFFFF",
+        "subtitleBack": "#00000000"
+      },
+      "bgRecipe": {
+        "type": "gradient",
+        "stops": [
+          "#EFE8D8",
+          "#D8C29C"
+        ],
+        "texture": "grain",
+        "vignette": 0.08,
+        "seed": 0,
+        "textureRaw": "woodgrain"
+      },
+      "subtitle": {
+        "fontFamily": "SimSun",
+        "fontSizeFactor": 0.03889,
+        "marginVFactor": 0.12037,
+        "marginLFactor": 0.07037,
+        "outlineFactor": 0,
+        "bold": false,
+        "align": 2
+      },
+      "title": {
+        "fontSizeFactor": 0.09,
+        "showRole": true
+      },
+      "overlay": {
+        "chapterCards": false,
+        "lowerThird": false,
+        "accentRule": false,
+        "progressBar": false
+      },
+      "motion": {
+        "subtitleFadeIn": 0.1,
+        "chapterTransition": "cut"
+      },
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #EFE8D8 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "bgSameAsDefault": false
+    }
+  ]
+}

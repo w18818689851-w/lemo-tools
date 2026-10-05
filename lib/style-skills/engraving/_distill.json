@@ -1,0 +1,106 @@
+{
+  "slug": "engraving",
+  "nameZh": "铜版画",
+  "distilledAt": "2026-10-03T23:20:00Z",
+  "matchScore": 93,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 20,
+    "typography": 18,
+    "rhythm": 20,
+    "audio": 16
+  },
+  "defects": [
+    "ASR 校对未通过 1 条：标题行 Apis mellifera 被 whisper 转成 a piece mellafura，日志 STEP_WARN asr_check 未通过（继续）（logs/engraving.log:72,79-80，audio 相关）。",
+    "配乐限幅前峰值超过 0 dBFS：7.538s +1.1 dBFS、2.585s +0.6 dBFS、15.955s +0.1 dBFS，靠 limiter 压回；最终 mix peak -1.20 dBFS、mix integrated -18.0 LUFS，mux 后 -14.4 LUFS（logs/engraving.log:85-87,154,170，audio 相关）。",
+    "dub-styles.json#engraving 为派生条目：accent #7F582B 只是 §3 透明水彩/赭石的土色代理值、非原文 hex（且 dub-visual.json#engraving.palette.accent 记的是 #9a6a34，两处不一致）；字幕字体用 KaiTi 顶替 Pinyon Script（typography −2）。★ **2026-10-04 更正**：本条原写「bg2 为 null（源只给一个纸色）」，与当前配置不符 —— palette.bg2 现为 #e8ddc2（= demo engine/plate.js:8 的 PAL.plateTone）；原记录保留作历史。",
+    "accent 与 §3 的 wash 色系无原文 hex，跨实现复现时存在色值漂移风险（palette −1）。"
+  ],
+  "assetGaps": [
+    "依赖一个画好的主体模块（导出 {ink, regions, focus}，ink 必须以 ol0 首笔画打头）；demo 内置 bee / scallop / coffee / chart 四个主体 + details.js / details_coffee.js 两套放大图，新主题仍须自备主体几何。",
+    "★ **2026-10-04 更正**（原记录保留作历史）：本条原写「demo 自带 OFL 字体（Bodoni Moda / Pinyon Script），但无含 CJK 的手写/衬线字体，中文题材需自备近似字体」—— 与现状不符。引擎已支持字体栈与 CJK：plate.js:15 `setFonts()` / plate.js:70 `fontSpec()`，CJK 断行 `wrapCJK`（plate.js:149-229，含行首/行尾禁则 + Intl.Segmenter 分词）；共享层 core/lang/lang.mjs:40-55 提供 zh 字族（roman `\"Bodoni Moda\", \"Noto Serif SC\"` + script `\"LXGW WenKai\"`），core/lang/fonts-zh.css 提供两张 OFL 子集，index.html:4 与 main.js:5,12,15 已接线。**真正保留的缺口**：本样片用的 film.js（蜜蜂）未调用 setFonts，仍是拉丁默认字族；已接线的是 film_coffee.js:281（plate.setFonts(L.fonts)）。中文题材请走 film_coffee.js，或给 film.js 补同一行。"
+  ],
+  "limits": [
+    "慢风格，20–60s 区间，一次只讲一个主体 + 1–4 条细节；不适合快节奏与并列多观点。",
+    "色调由线构成、不能填灰，不适合需要大面积平色块的内容。",
+    "换 content.json 只是验证引擎能重排的技术检查，不是做片子的方式（STYLE.md:117、DEMO.md:136）。",
+    "★ **2026-10-04 更正**（原记录保留作历史）：原写「9:16 竖屏需重排（四个槽位改上下排列、版痕改竖版），不能直接套 16:9 参数」—— 与现状不符。9:16 是本项目的产品默认输出比例，且本风格已由 film.js:22-33 的 layout(W,H) 正确重排（aspects 见 film.js:43）；2026-10-04 成片为 1920×1080（16:9），抽帧 24 张（360×202）构图完整、无裁切，无需人工重排。"
+  ],
+  "resolvedDefects": [
+    "composition −1（原缺陷）：无 aspects 声明，版痕/边框/四个圆形图槽位均为硬坐标；产品默认 9:16 硬渲会裁掉右列圆形图与右侧引线。★ **2026-10-04 已修**：新源 film.js:43 已声明 `aspects: ['16:9','9:16','3:4','4:3','1:1']`，并有 layout(W,H)（film.js:22-33）做多比例重排（fx/fy 拉伸位置、S = min(fx,fy) 缩放尺寸），1920×1080 时 fx=fy=S=1 逐字节退化成设计帧；2026-10-04 成片以 1920×1080（16:9）渲出（原记：当日 07:20 版曾为 1080×1920 / 9:16，08:21 全量重渲后为 16:9）、构图完整。composition 19→20，matchScore 92→93。原记录保留作历史。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f03.jpg",
+    "f05.jpg",
+    "f07.jpg",
+    "f13.jpg",
+    "f16.jpg",
+    "f17.jpg",
+    "f20.jpg",
+    "f22.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/engraving/STYLE.md",
+    "styles/engraving/DEMO.md",
+    "styles/engraving/style.json",
+    "styles/engraving/demo/build.sh",
+    "styles/engraving/demo/content.json",
+    "styles/engraving/demo/content_coffee.zh.json",
+    "styles/engraving/demo/lines.json",
+    "styles/engraving/demo/film.js",
+    "styles/engraving/demo/film_coffee.js",
+    "styles/engraving/demo/main.js",
+    "styles/engraving/demo/index.html",
+    "styles/engraving/demo/engine/plate.js",
+    "styles/engraving/demo/engine/burin.js",
+    "styles/engraving/demo/subjects/bee.js",
+    "styles/engraving/demo/subjects/coffee.js",
+    "styles/engraving/demo/subjects/chart.js",
+    "core/lang/lang.mjs",
+    "core/lang/fonts-zh.css",
+    "lib/style-dna/engraving.md",
+    "lib/style-dna/engraving.json",
+    "lib/dub-styles.json#engraving",
+    "lib/dub-visual.json#engraving",
+    "_distill/logs/engraving.log",
+    "_distill/frames/engraving/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/engraving/engraving.mp4",
+    "durSec": 40,
+    "bytes": 39327708,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 960
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14.41,
+      "lra": 5.2,
+      "truePeakDbtp": -3.27,
+      "samplePeakDbfs": -3.332701,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−3.27 dBTP，在 −1.2 dBTP 交付线内（余量 2.07 dB）、未削波。logs/engraving.log:170-173 的 ebur128 `Peak -3.3 dBFS`（1 位小数）与 astats `Peak level dB: -3.332701` 都是采样峰值/下界，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
+    },
+    "warnings": [
+      "★【原记·2026-10-04 07:20 9:16 版；同日 08:21 全量重渲后当前成片为 1920×1080（16:9），见 generatedVideo】本次成片曾按 9:16 渲出：输出 1080×1920（logs/engraving.log:2,52，`--size 1080x1920`）；本风格 aspects 已声明 5 种比例（film.js:43），9:16 构图正确。",
+      "成片日志中文为 GBK 乱码，参数已按可辨识字段提取（原记 1080x1920；当前成片 1920x1080 / nvenc / fps 24 / workers 6 / grain 4）。",
+      "ASR 校对 mismatches 1（title 行 Apis mellifera），STEP_WARN asr_check 未通过（继续）。",
+      "混流实测 -14.4 LUFS / LRA 5.2 LU / Peak -3.3 dBFS，目标 -14 LUFS；本风格 grain 4（不同于 dark-keynote/dataviz 的 grain 0）。",
+      "cuecheck ALL CUES WITHIN TOLERANCE；两处静默 0.0-1.87s 与 25.00-26.25s 均 peak -240.0 dBFS。",
+      "★ demo/lines.json 是 build.sh 第 1 步从 content.json 派生的生成物；曾被一次 --voice zh_kepu9 覆盖污染（本 demo 配音引擎 Kokoro 只认 bm_fable；zh_kepu9 是中文 Index-TTS 通路的音色，见 content_coffee.zh.json），现已按 build.sh 第 1 步重建为 5 行、voice=bm_fable。此坑已写入 SKILL.md 第 11 节。",
+      "★ WSL 副本曾长期过期（2026-10-02 的 WIN 侧更新未同步），导致 2026-10-03 成片实际来自旧源、文档也按旧源写。2026-10-04 已同步 9 个源文件 + core/README.md + MAINTAINING.md 到 WSL（两侧逐字节一致）并用新源重渲；本文件的旧错误结论已全部更正（见 defects / assetGaps / limits / resolvedDefects）。"
+    ]
+  }
+}

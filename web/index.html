@@ -149,6 +149,344 @@
       <div class="lock-warn" id="lockWarn" hidden></div>
     </section>
 
+      <!-- 主题出片：主题 + 风格 → 落一张工单。内容由外部 LLM（WorkBuddy）按该风格的
+           STYLE.md 生成，就绪后回到这里点「出片」。
+           ★ 只列 4 个「内容驱动」风格（画面主体写死、内容可数据化）；其余 39 个 demo 改不动主题。
+           ★ 工单里的主题是用户输入，前端一律走 textContent，绝不 innerHTML。 -->
+    <section class="card brief-card" id="briefCard">
+      <div class="card-head">
+        <h2 class="card-title">主题出片 <span class="count" id="briefCount"></span></h2>
+        <div class="card-tools">
+          <button class="btn ghost" id="btnRefreshBriefs" title="重新读工单目录（D:\lemo-films\.briefs）">刷新</button>
+        </div>
+      </div>
+      <div class="brief-intro">
+        输入主题 → 选风格 → 生成工单。内容是外部 LLM（WorkBuddy）按该风格的 STYLE.md 生成的：
+        在对话里说「处理工单」，它会把工单改成就绪；回到这里点「出片」即可。
+        画面主体沿用库内已有的那个（能改「讲什么」，不能改「画什么」），所以只有这 4 个风格可选。
+      </div>
+      <div class="form-grid">
+        <label class="field wide">
+          <span class="lbl">主题 <b class="req">*</b></span>
+          <input id="briefTopic" class="input" maxlength="500" autocomplete="off"
+                 placeholder="如：咖啡的历史 / 城市夜骑的乐趣 / 春天该去哪条步道">
+        </label>
+        <label class="field">
+          <span class="lbl">风格（4 个内容驱动风格）</span>
+          <select id="briefSlug" class="input"></select>
+        </label>
+        <!-- 语言版本：选项由服务端 /api/langs?slug= 给（清单来自库侧 core/lang/lang.mjs，
+             「有没有这个语言版本」按编排器 --lang 的换名规则探测）。前端不硬编码 en/zh。
+             ★ 默认选中文版；该风格没有中文内容文件时只列英文版并给出提示。 -->
+        <label class="field">
+          <span class="lbl">语言版本</span>
+          <select id="briefLang" class="input" title="出片语言：中文版 / 英文版"></select>
+          <span class="hint" id="briefLangHint"></span>
+        </label>
+        <!-- 输出尺寸：选项由服务端 /api/sizes 给（清单来自库侧 core/render/size.mjs 的 RATIOS）。
+             前端不硬编码比例表。默认选中 9:16；选「自定义」时出现宽高输入框（偶数、MIN_SIZE–MAX_SIZE）。
+             ★ 下面 min/max 只是 HTML 层的初始值，app.js 会用 /api/sizes 的 custom.min/max 覆盖它们
+             （那一路来自库侧 size.mjs）—— 改下限只需改库，别只改这里。
+             出片时控制台会**显式**传 --ratio <比例>（或 --size <WxH>）。 -->
+        <label class="field">
+          <span class="lbl">输出尺寸</span>
+          <select id="briefRatio" class="input" title="出片尺寸：默认 9:16 竖屏"></select>
+          <span class="hint" id="briefRatioHint"></span>
+        </label>
+        <label class="field" id="briefSizeField" hidden>
+          <span class="lbl">自定义像素（宽 × 高）</span>
+          <span class="size-row">
+            <input id="briefSizeW" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1080" autocomplete="off">
+            <span class="size-x">×</span>
+            <input id="briefSizeH" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1920" autocomplete="off">
+          </span>
+          <span class="hint" id="briefSizeHint"></span>
+        </label>
+      </div>
+      <!-- 影片构图能力警告（防呆）：选的尺寸不落在这个风格影片**真的能正确构图**的比例上时出现。
+           判据是影片源码里的 FILM_META.aspects 声明（服务端读源码文本探测，见 lib/aspects.mjs）；
+           没声明 = 只支持 16:9。★ 只警告、**不禁用**出片 —— 用户有权坚持出，只是要知情。
+           容器内容由 app.js 的 syncBriefAspectWarn() 动态渲染：一句说明 + 一个「改用 X」按钮
+           （点了只把 #briefRatio 设成建议比例并派发 change，不触发任何出片）。 -->
+      <div class="brief-aspect-warn" id="briefAspectWarn" hidden></div>
+      <div class="form-foot">
+        <button class="btn primary" id="btnBriefCreate">生成工单</button>
+        <span class="hint" id="briefHint"></span>
+      </div>
+      <div class="brief-list" id="briefs"></div>
+    </section>
+
+    <!-- 声音（配音音色）：本机 Index-TTS 零样本克隆。
+         ★ 音色 = 一条**参考音频**，所以「换音色」＝换一条参考音，不需要训练。
+         ★ 选中的音色 / 语速只作用于**下一次出片**（已经在跑的任务不受影响）。
+         ★ 音色清单、分组、默认值、告警阈值全部来自服务端 /api/voices —— 前端不硬编码音色名。
+         ★ 参考音太响会让克隆输出整体削波（项目里真发生过），所以列表里对超阈值的条目给显眼警示。 -->
+    <section class="card" id="voiceCard">
+      <div class="card-head">
+        <h2 class="card-title">声音 <span class="count" id="voiceCount"></span></h2>
+        <div class="card-tools">
+          <button class="btn ghost" id="btnRefreshVoices" title="重新读参考音目录与音色库">刷新</button>
+        </div>
+      </div>
+      <div class="voice-intro">
+        这里是<b>配音音色</b>：用的是本机部署的 Index-TTS 零样本克隆，音色就是一条参考音频 ——
+        所以「换音色」＝换一条参考音，不用训练。选中的音色与语速会用在<b>下一次出片</b>上，已经在跑的任务不受影响。
+      </div>
+      <div class="voice-current" id="voiceCurrent"></div>
+      <div class="voice-list" id="voiceList"></div>
+      <div class="form-grid voice-speed-row">
+        <label class="field">
+          <span class="lbl">语速 --speed</span>
+          <input type="number" id="fVoiceSpeed" class="input" step="0.05" min="0.5" max="2"
+                 value="1.0" inputmode="decimal" autocomplete="off">
+          <span class="hint" id="voiceSpeedHint"></span>
+        </label>
+      </div>
+
+      <!-- 试合成一句：用「当前音色 + 当前语速」真跑一次 Index-TTS，先听克隆效果再决定。
+           ★ 服务端是**异步任务**（单条约 30 秒，首次加载模型 1~2 分钟），所以这里只负责
+             提交 → 轮询任务状态 → 完成后才把产物 URL 喂给 <audio>（done 之前那个 URL 是 404）。
+           ★ 它和出片共用同一条串行队列（GPU 只有一块），所以排队时慢是正常的，
+             而且这条任务也会出现在下面的「任务列表」里（kind=setup），别当成出片任务。 -->
+      <div class="voice-test">
+        <div class="vt-row">
+          <input id="vtText" class="input" maxlength="300" autocomplete="off"
+                 placeholder="试听文本（留空用默认示例句，最多 300 字）">
+          <button class="btn primary" id="btnVoiceTest" title="用当前音色 + 当前语速真的合成一句">试合成一句</button>
+        </div>
+        <div class="vt-state" id="vtState"></div>
+        <audio id="vtAudio" class="vt-audio" controls preload="metadata" hidden></audio>
+      </div>
+
+      <!-- 导入新音色：把源目录里的音频文件量电平、降到健康水位、裁出 6~15 秒干净人声、
+           转成 44100 单声道 wav，落到参考音目录 —— 之后就会出现在上面的音色列表里。
+           ★ 默认**收起**：这个版块的主用途是「选音色」，导入是低频操作，不能喧宾夺主。
+           ★ 说明里的源目录来自服务端 /api/voices/sources 的 dir，前端不写死路径。
+           ★ 为什么要降电平（项目里真实踩过的坑）：Index-TTS 按参考音的电平出音，
+             参考音顶到满刻度 → 克隆输出也顶到满刻度 → 削波**不可逆**（官方 voice_05 就这么废的）。 -->
+      <details class="voice-import" id="voiceImport">
+        <summary>导入新音色<span class="vi-sum" id="viSum"></span></summary>
+        <div class="vi-body">
+          <div class="vi-intro" id="viIntro"></div>
+          <div class="vi-tools">
+            <button class="btn ghost small" id="btnVoiceSrcRefresh" title="重新读源目录（GET /api/voices/sources）">刷新</button>
+            <span class="vi-hint" id="viHint"></span>
+          </div>
+          <div class="vi-list" id="viList"></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- 文案出片：**你给什么文案，就念什么**（与「主题出片」正相反 —— 那边内容由外部 LLM 按风格生成）。
+         ★ 两种形态（卡片顶部的二选一，切换会改表单）：
+           ① 仅自定义文案 —— 画面用工具生成的背景，配音走本机 Index-TTS；
+           ② 文案 + 口播视频 —— 用户素材的**画面与声音固定、不做任何修改**，成片时长 = 素材时长，
+              我们只在上面做风格化的字幕与叠加层（对应核心工具 --keep-original；不跑 TTS，所以快得多）。
+         ★ 风格：两形态共用。下拉第一项是「自动匹配」（那套语义解析），第二项是 plain-dark =
+           不指定（保持现在的外观）；清单来自 GET /api/dub/styles，前端**不写死一份风格表**。
+         ★ 音色**默认跟随「声音」版块当前选中的那条**（读同一个
+           localStorage 键 lemo.voice），也可以在本卡片里单独覆盖 —— 覆盖只作用于本卡片，
+           不回写「声音」版块（用户在这里试一个音色，不该悄悄改掉全局选择）。
+         ★ 断句规则只有一处（核心工具 dub.mjs）：前端只**展示**服务端给的断句，不自己切句子。
+         ★ 异步走既有那套：提交拿 job.id → 轮询 /api/jobs → done 后取产物（与「试合成一句」一致）。
+         ★ 接口 404 / 503 = 后端或核心工具还没就绪，界面**如实说**，不假装成功。 -->
+    <section class="card dub-card mode-script" id="dubCard">
+      <div class="card-head">
+        <h2 class="card-title">文案出片 <span class="count" id="dubCount"></span></h2>
+        <div class="card-tools">
+          <button class="btn ghost" id="btnDubRefresh" title="重新读已上传的素材（GET /api/dub/sources）">刷新素材</button>
+        </div>
+      </div>
+
+      <!-- 形态切换：两种形态的**输入与产物完全不同**，所以放在最前面、二选一，别让用户去猜。
+           ★ 形态 1 = 仅自定义文案（画面由工具生成）；
+           ★ 形态 2 = 文案 + 口播视频（★ 用户的画面与声音**原样不动**，我们只叠字幕与叠加层）。
+           切换会改变下面的表单（见 style.css 的 .dub-card.mode-* 规则），不是纯装饰。 -->
+      <div class="dub-mode" id="dubMode" role="tablist" aria-label="出片形态">
+        <button class="dub-mode-btn is-on" type="button" role="tab" aria-selected="true"
+                data-mode="script" id="dubModeScript">仅文案出片</button>
+        <button class="dub-mode-btn" type="button" role="tab" aria-selected="false"
+                data-mode="keep" id="dubModeKeep">文案 + 口播视频</button>
+      </div>
+
+      <div class="dub-mode-note dub-keep-only" id="dubKeepNote">
+        <b>你上传的口播视频，画面与声音不会被修改。</b>成片时长与素材一致；
+        我们只在它上面加<b>风格化的字幕与叠加层</b>。请确保口播内容与你填的文案一致
+        —— 文案不对齐时字幕会跟着跑偏。
+      </div>
+
+      <div class="dub-intro">
+        <b>你给什么文案，就念什么。</b>这里是「照着稿子出片」，和上面的「主题出片」正相反 ——
+        那边的内容由外部 LLM 按风格的 STYLE.md 生成，这边<b>一个字都不改</b>，只负责断句、配音、配画面、出字幕。
+        <b>仅文案出片</b>：画面用工具生成的背景，配音走本机 Index-TTS（音色默认跟随「声音」版块）。
+        <b>文案 + 口播视频</b>：你的画面与声音原样保留，只叠字幕与风格化叠加层。
+        两种形态都可以选风格，或交给「自动匹配」按语义挑一个。
+      </div>
+
+      <div class="form-grid">
+        <label class="field wide">
+          <span class="lbl">文案 <b class="req">*</b></span>
+          <textarea id="dubScript" class="input dub-script" rows="8" maxlength="20000"
+                    autocomplete="off" spellcheck="false"
+                    placeholder="在这里粘贴文案（最多 20000 字）。&#10;&#10;例：&#10;春天一到，城市里最先醒的是树。&#10;你有多久没抬头看过它们了？&#10;这个周末，去走一条没走过的路吧。"></textarea>
+          <span class="hint" id="dubScriptHint"></span>
+        </label>
+      </div>
+      <div class="dub-row">
+        <button class="btn ghost" id="btnDubPreview">断句预览</button>
+        <span class="hint" id="dubPreviewHint"></span>
+      </div>
+      <!-- 断句结果：编号 + 文本 + 字数，让用户在出片前核对（出片后再改就要重跑一遍配音） -->
+      <div class="dub-lines" id="dubLines" hidden></div>
+
+      <!-- 风格：两形态共用。第一项「自动匹配」= 交给语义解析按文案（形态 2 还会看口播表达）挑；
+           第二项 = 不指定（plain-dark，保持现在的外观）；之后是风格表里的各个风格。
+           ★ 风格表来自 GET /api/dub/styles（服务端从 lib/dub-semantic.mjs 取），前端**不写死一份**。
+           ★ 「分析文案」= POST /api/dub/analyze：断段 + 语义标签 + 风格匹配（默认走规则，即时返回）。
+             它的价值是让用户**核对「系统理解得对不对」**——理解错了，出片再好看也是跑偏。 -->
+      <div class="dub-style" id="dubStyleRow">
+        <div class="dub-style-line">
+          <span class="lbl">风格 --style</span>
+          <select id="dubStyle" class="input dub-style-sel" title="自动匹配 = 按文案语义挑风格；不指定 = 保持现有外观"></select>
+          <button class="btn ghost" id="btnDubAnalyze"
+                  title="POST /api/dub/analyze：段落拆分 + 语义标签 + 风格匹配（默认走规则，即时返回；也可注入外部结果）">分析文案</button>
+        </div>
+        <span class="hint" id="dubStyleHint"></span>
+      </div>
+
+      <!-- 分析结果：可折叠（别把卡片撑长）。展开后是「段落拆分 / 语义标签 / 匹配结果」三块。 -->
+      <details class="dub-analysis" id="dubAnalysis" hidden>
+        <summary id="dubAnalysisSum">分析结果</summary>
+        <div class="dub-analysis-body" id="dubAnalysisBody"></div>
+      </details>
+
+      <div class="dub-block dub-keep-only" id="dubVideoBlock">
+        <div class="dub-block-head">
+          口播视频 <b class="req">*</b>
+          <span class="hint" id="dubVideoHint"></span>
+        </div>
+        <div class="dub-drop" id="dubDrop">
+          <input type="file" id="dubFile" accept="video/*" hidden>
+          <div class="dub-drop-main">
+            把视频拖到这里，或
+            <button class="btn small" type="button" id="btnDubPick">选择文件</button>
+          </div>
+          <div class="dub-drop-sub">支持 .mp4 / .mov / .m4v / .webm，单个上限 200MB（存在 D:\lemo-films\dub\_uploads）</div>
+        </div>
+        <div class="dub-upload" id="dubUploadState" hidden></div>
+        <div class="dub-src-row">
+          <span class="lbl">用已上传的</span>
+          <select id="dubSrcSel" class="input dub-src-sel" title="复用之前上传过的口播素材，不必重传"></select>
+          <button class="btn ghost small" id="btnDubClear" title="清除已选的口播素材">清除</button>
+        </div>
+      </div>
+
+      <!-- 形态 2 专属：可选 SRT。不给就走工具自己的对齐（优先 ASR）。 -->
+      <div class="dub-block dub-keep-only" id="dubSrtBlock">
+        <div class="dub-block-head">
+          字幕时间轴 SRT（可选）
+          <span class="hint" id="dubSrtHint"></span>
+        </div>
+        <div class="dub-drop" id="dubSrtDrop">
+          <input type="file" id="dubSrtFile" accept=".srt,application/x-subrip" hidden>
+          <div class="dub-drop-main">
+            把 .srt 拖到这里，或
+            <button class="btn small" type="button" id="btnDubSrtPick">选择文件</button>
+          </div>
+          <div class="dub-drop-sub">只收 .srt，单个上限 200MB</div>
+        </div>
+        <div class="dub-upload" id="dubSrtState" hidden></div>
+        <div class="dub-src-row">
+          <span class="lbl">用已上传的</span>
+          <select id="dubSrtSel" class="input dub-src-sel" title="复用之前上传过的 SRT"></select>
+          <button class="btn ghost small" id="btnDubSrtClear" title="不给 SRT，让工具自己对齐（优先 ASR）">清除</button>
+        </div>
+        <div class="dub-srt-note">不给 SRT 会自动对齐（优先 ASR）—— 口播里念的和文案一致时，自动对齐通常够用。</div>
+      </div>
+
+      <!-- 形态 2 专属：可选「限幅到交付线」。★ 默认**不勾** = 音轨 -c:a copy、与素材逐字节相同
+           （与加这个开关之前完全一致）。勾选才会把音轨重编码 + 限幅 —— 所以文案必须**诚实**说明代价。 -->
+      <div class="dub-block dub-keep-only" id="dubLimitBlock">
+        <div class="checks">
+          <label class="chk"><input type="checkbox" id="dubKeepLimit"> --keep-original-limit 把音轨限幅到交付线（只压峰、不动时长/画面）　★ 音频会被<b>重新编码</b>，不再是逐字节原声</label>
+        </div>
+        <span class="hint" id="dubLimitHint">默认关：成片音轨与素材**逐字节相同**（素材自身真峰值超标时才用得到这个开关）。</span>
+      </div>
+
+      <div class="form-grid dub-params">
+        <label class="field dub-script-only">
+          <span class="lbl">音色 --voice</span>
+          <select id="dubVoice" class="input"></select>
+          <span class="hint" id="dubVoiceHint"></span>
+        </label>
+        <label class="field dub-script-only">
+          <span class="lbl">语速 --speed</span>
+          <input type="number" id="dubSpeed" class="input" step="0.05" min="0.5" max="2"
+                 value="1.1" inputmode="decimal" autocomplete="off">
+        </label>
+        <!-- 输出尺寸：与「主题出片」同一条纪律 —— 选项由服务端 /api/sizes 给（清单来自库侧
+             core/render/size.mjs 的 RATIOS），前端**不硬编码**比例表。默认选中 9:16；
+             选「自定义尺寸…」时出现宽高输入框（偶数、MIN_SIZE–MAX_SIZE）。
+             出片时控制台会**显式**传 --ratio <比例>（或 --size <WxH>，size 优先于 ratio）。
+             ★ 下面 min/max 只是 HTML 层初始值，app.js 会用 /api/sizes 的 custom.min/max 覆盖它们
+             （那一路来自库侧 size.mjs）—— 改下限只需改库，别只改这里。 -->
+        <label class="field dub-script-only">
+          <span class="lbl">输出比例 --ratio</span>
+          <select id="dubRatio" class="input" title="出片比例：默认 9:16 竖屏"></select>
+          <span class="hint" id="dubRatioHint"></span>
+        </label>
+        <label class="field dub-script-only" id="dubSizeField" hidden>
+          <span class="lbl">自定义尺寸 --size（宽 × 高）</span>
+          <span class="size-row">
+            <input id="dubSizeW" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1080" autocomplete="off">
+            <span class="size-x">×</span>
+            <input id="dubSizeH" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1920" autocomplete="off">
+          </span>
+          <span class="hint" id="dubSizeHint"></span>
+        </label>
+        <label class="field dub-script-only">
+          <span class="lbl">句间停顿 --gap</span>
+          <input type="number" id="dubGap" class="input" step="0.05" min="0" max="3"
+                 value="0.25" inputmode="decimal" autocomplete="off">
+        </label>
+        <label class="field dub-script-only">
+          <span class="lbl">素材适配 --fit</span>
+          <select id="dubFit" class="input" title="口播视频比配音长/短时怎么处理">
+            <option value="loop">loop（循环，默认）</option>
+            <option value="trim">trim（裁掉）</option>
+            <option value="slow">slow（放慢）</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="lbl">片头标题 --title（可选）</span>
+          <input id="dubTitle" class="input" maxlength="120" autocomplete="off"
+                 placeholder="留空 = 不加片头标题">
+        </label>
+      </div>
+      <!-- 素材比例 × 输出比例的**防呆提示**：口播素材会被「铺满 + 居中裁切」到输出尺寸，
+           比例差得多就会切掉画面（实测 576×1024 → 16:9 只剩中间约 31.6% 的高度）。
+           ★ 只提示，不改渲染行为、不禁用出片 —— 判断权交回用户（见 app.js 的 syncDubCropWarn）。
+           ★ 文案与显隐全部由 app.js 算，这里只留一个空壳（默认 hidden，避免闪一下）。 -->
+      <div class="dub-crop-warn" id="dubCropWarn" hidden></div>
+      <div class="checks dub-script-only">
+        <label class="chk"><input type="checkbox" id="dubKeepAudio"> --keep-original-audio 保留原声作背景</label>
+      </div>
+      <div class="dub-keep-only dub-keep-params-note">
+        形态 2 不跑 TTS、也不改素材：音色 / 语速 / 句间停顿 / 尺寸 / 素材适配都不适用，已隐藏。
+      </div>
+
+      <div class="form-foot">
+        <button class="btn primary" id="btnDubRun">出片</button>
+        <span class="hint" id="dubRunHint"></span>
+      </div>
+      <!-- 出片任务的实时状态 + 完成后的成片路径与播放按钮 -->
+      <div class="dub-state" id="dubState" hidden></div>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <h2 class="card-title">实时日志 <span class="log-job" id="logJob"></span></h2>

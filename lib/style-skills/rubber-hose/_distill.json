@@ -1,0 +1,90 @@
+{
+  "slug": "rubber-hose",
+  "nameZh": "1930s 橡皮管卡通",
+  "distilledAt": "2026-10-03T13:41:55+08:00",
+  "matchScore": 94,
+  "scoreBreakdown": {
+    "palette": 20,
+    "composition": 17,
+    "typography": 18,
+    "rhythm": 20,
+    "audio": 19
+  },
+  "defects": [
+    "composition −3：f14（≈29.2s，sink 镜）是一大片中灰椭圆水槽 + 几道细螺旋线，对比明显低于其余镜头，最接近 STYLE.md:88 点名的「flat grey frames」坑；同帧主角贴在片门左缘、脸占比偏小，也擦到 STYLE.md:89「远景杀笑点」的边",
+    "typography −1：STYLE.md:34 声明字卡是「a small near-black plate」，但第一张卡 51 字符在 36px IM Fell English SC 下牌宽约 1136px，占 1440 片门宽的 79%，不算 small",
+    "typography −1：dub 通路 subtitleOutline 为 #00000000（全透明）、fontFamily 回退 SimSun，而 demo 字卡是白双线框 + 四角圆点圆环花饰 + 丝带话筒图标 + IM Fell English SC，模板通路只剩黑底牌",
+    "audio −1：实测 −13.9 LUFS（目标 −14，偏 0.1 LU，可接受），但 LRA 9.5 LU 低于 loudnorm 目标 11 LU；Peak −2.9 dBFS 比真峰值上限 −1.2 dBTP 还低 1.7 dB，线性增益留了余量",
+    "文档不一致：DEMO.md Score structure 写 28 bars，但 story.js:5 是 NBARS=30，logs/rubber-hose.log:80 的 rms_per_bar_db 正好 30 项，1200 帧 ÷ 24fps = 50.0s = 30 小节 × 5/3s。以 30 小节为准"
+  ],
+  "assetGaps": [
+    "demo/fonts/ 自带 IM Fell English SC / Shrikhand / Limelight 三套字体（均 OFL），但 dub 通路未接，模板化时回退 SimSun，片名的胖 retro script 气质会掉",
+    "大乐队音色依赖外部采样库（VSCO 2 CE / VCSL / MuldjordKit），不在仓库里；换机器或断网重跑 music/score.py 有失败风险",
+    "没有任何可复用的角色库：主角与 5–8 个活道具全是代码画的 rig（chars.js / cast.js），换主题必须重画",
+    "没有真实 35mm 拷贝的扫描素材：划痕、灰尘、毛发全是程序化生成（film.js:31-51），密集观看时比真拷贝更规律"
+  ],
+  "limits": [
+    "4:3 片门 + 1920×1080 母版：内容锁在居中 1440×1080 里（film.js:4 GATE{x:240,w:1440,r:28}），9:16 导出会把母版 1:1 塞左上角、右侧约 43.75% 丢失、下方整片黑；字卡位于 y≈986（画面高 91.3%）会落进黑区完全看不见，片门圆角与内阴影被裁掉一半（未实渲复核，按既有 1:1 左上角塞入口径推导）（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "无色彩能力：风格定义就是严格灰阶（约 6 级灰 + 一个角色白），任何彩色诉求都不该选本风格",
+    "GPU 与 Index-TTS 都是独占资源，不能并发起两个风格的渲染",
+    "dub 通路拿不到 4:3 片门、片门抖动、划痕、灰尘、毛发与 line boil，只能用 scanlines + film-grain 近似（lib/dub-styles.json#rubber-hose 是 derived:true 的派生条目）",
+    "whisper 校对的已知误听：Kokoro 曾把省略号后的 is... bitter! 听成 is... better!；v1a 的 Seven a.m., folks! 在 ASR 里写成 7 a.m. Folks.（日志实测）。每条旁白都要过 whisper，且要归一化数字与缩略形式后再比对",
+    "最高可达分说明：palette/rhythm 已满分；composition 受 sink 镜平灰扣 3；typography 受长句牌宽与 dub 通路字卡形态扣 2；audio 受 LRA 偏窄与峰值余量扣 1。不改 sink 镜、不接字体与字卡叠加层，94 即为当前上限"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f03.jpg",
+    "f06.jpg",
+    "f11.jpg",
+    "f14.jpg",
+    "f16.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/rubber-hose/STYLE.md",
+    "styles/rubber-hose/DEMO.md",
+    "styles/rubber-hose/style.json",
+    "styles/rubber-hose/rubber-hose.srt",
+    "styles/rubber-hose/demo/build.sh",
+    "styles/rubber-hose/demo/story.js",
+    "styles/rubber-hose/demo/film.js",
+    "styles/rubber-hose/demo/ui.js",
+    "styles/rubber-hose/demo/main.js",
+    "styles/rubber-hose/demo/fonts/",
+    "lib/style-dna/rubber-hose.md",
+    "lib/style-dna/rubber-hose.json",
+    "lib/dub-styles.json#rubber-hose",
+    "_distill/logs/rubber-hose.log",
+    "scripts/patch-style-mux.mjs"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/rubber-hose/rubber-hose.mp4",
+    "durSec": 50,
+    "bytes": 40095404,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1200
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [],
+    "loudness": {
+      "truePeakDbtp": -2.94,
+      "integratedLufs": -14.02,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= -2.94 dBTP，见 selfCheck.loudness.truePeakDbtp。",
+      "lra": 9.5,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -2.94
+    }
+  },
+  "resolvedDefects": []
+}

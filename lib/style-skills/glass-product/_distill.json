@@ -1,0 +1,91 @@
+{
+  "slug": "glass-product",
+  "nameZh": "玻璃质感产品",
+  "distilledAt": "2026-10-03T00:00:00Z",
+  "matchScore": 91,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 19,
+    "typography": 18,
+    "rhythm": 19,
+    "audio": 17
+  },
+  "defects": [
+    "palette −1：全片中性色（黑/灰/白）+ 单一强调色族（冰蓝 #62DCFF → 淡紫 #A98BFF）严格守住 STYLE.md:26-29「只有一个强调色族且保留给光」，但帧 f19/f21 的磨砂底座自发光偏亮偏白，读起来接近浅灰塑料而非「内部有东西在亮」，与 STYLE.md:18「磨砂玻璃在黑上会读成深灰塑料，除非背后或内部有亮的东西」的意图只差半步。",
+    "composition −1：帧 f11 爆炸视图零件跨度约 80% 画幅、轴约 40° 于视线，符合 STYLE.md:55/89；但最右端的零件已逼近画框右缘，接近 STYLE.md:62「宽景里英雄物件绝不被画框边缘切掉」的边界。",
+    "typography −2：STYLE.md:33 点名 Inter Tight（light 300 字幕 / 200 标题），本机无此字体，dub-styles.json#glass-product 回退 DengXian（等线）；标题的 200 字重与 56–64px 宽字距在等线下明显失真，字幕的 grotesk 气质也偏弱。字幕字号/位置本身与声明一致（40px @1080 = fontSizeFactor 0.03704，marginV 0.14537）。",
+    "rhythm −1：全片 32.0s 落在 DEMO.md:14 声明的 30–40s 弧内，切点全部落在 120 BPM 小节线上；但爆炸视图单镜被拉长到 17.0s（DEMO.md:35），单镜时长分布极不均匀，节奏上有一段约 5s 的「悬浮 hover」对不熟悉本风格的观众偏慢。",
+    "audio −3：实测整片 −13.7 LUFS、真峰值 −1.62 dBTP（`loudnorm` `input_tp`，4× 过采样；`ebur128` `Peak` −1.6 dBFS 仅作参考），与 mux 目标 −14 LUFS 差 0.3 LU；真峰值 −1.62 dBTP 在项目交付线 −1.2 dBTP 内（余量 0.42 dB），但留白仍偏紧。根因是 808 drop 峰值留白不足——DEMO.md:45 自己承认同类问题（808 峰值让 loudnorm 掉进 dynamic 模式 −13.7 LUFS），本次实测复现了同一数值。",
+    "【palette −1】细纹理 `textureRaw: pbr-glass` 声明了但渲染未实现：`lib/dub-styles.json#glass-product.bgRecipe.textureRaw` 是 `pbr-glass`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `pbr-glass` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `pbr-glass` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "无外部图像/视频素材缺口：影棚（灯条、地板镜面、焦散）、物件几何、材质、配乐、拟音全部由 demo 引擎程序化生成（studio.js / product.js / music/score.py / mix.py）。",
+    "字体缺口：STYLE.md:33 声明的 Inter Tight 本机不存在，dub 通路回退 DengXian（等线），无法还原 ultra-thin 标题字重与宽字距。demo 自带 demo/fonts 与 demo/CREDITS（DEMO.md:65），换机器需确认随行。",
+    "旁白处理缺口：本 demo 无 voice_fx.py / voice.py，出片日志 [配音 1/1] 明确「该 demo 无 voice_fx.py/voice.py，按它自己 build.sh 的写法直接输出」——旁白为 Kokoro TTS 直出，无 EQ / 压缩 / 空间化。"
+  ],
+  "limits": [
+    "只有 16:9：style.json 无 aspects 声明，产品默认 9:16（1080×1920）下画面会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑；居中偏上的 AURA 标题会被裁到只剩左半，居中字幕的锚点随之跑偏。本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "铁律：物件必须虚构，绝不复制真实产品剪影 / 品牌名 / logo / 字体 / UI（STYLE.md:10）——本风格不能用于真实品牌产品。",
+    "只适合 30–40s 单物件短片；信息密度撑不起数据表、多栏文字、清单式讲解、多角色对话。",
+    "算力受限：768 帧含 2× SSAA + transmission + 每帧 PMREM + 地板镜像，DEMO.md:84 给的是 M 系列 Mac 30–45 s/帧；本机实测 333s 渲完 768 帧（Windows GPU 路径 + 6 workers + nvenc）。GPU 独占，不可并发。",
+    "matchScore 上限说明：成片即本风格自身的 demo，客观上限 100；扣掉的 8 分全部来自可复现的具体缺陷（强调色外溢半步、爆炸段贴边、字体回退、单镜时长不均、响度偏 0.3 LU），无「不可达分」。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f03.jpg",
+    "f05.jpg",
+    "f07.jpg",
+    "f09.jpg",
+    "f11.jpg",
+    "f13.jpg",
+    "f15.jpg",
+    "f17.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/glass-product/STYLE.md",
+    "styles/glass-product/DEMO.md",
+    "styles/glass-product/demo/build.sh",
+    "styles/glass-product/style.json",
+    "lib/style-dna/glass-product.md",
+    "lib/style-dna/glass-product.json",
+    "lib/dub-styles.json#glass-product",
+    "_distill/logs/glass-product.log",
+    "_distill/frames/glass-product/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/glass-product/glass-product.mp4",
+    "durSec": 32,
+    "bytes": 20512116,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 768
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "warnings": [
+      "出片命令为 node lemo-make.mjs glass-product --skip-sync --no-preflight --ratio 16:9（跳过两份库同步与预检，16:9 是手动补的参数）",
+      "本 demo 无 voice_fx.py / voice.py，旁白为 TTS 直出（日志 [配音 1/1] 行）",
+      "ASR 校对 4 行全部 OK，mismatches 0（lang=en, model=base.en）；其中 'Every part, in plain sight.' 被回读成 'Every part in plain sight.'（丢逗号）仍判 OK",
+      "混流实测 −13.7 LUFS / LRA 6.6（`ebur128`）、真峰值 −1.62 dBTP（`loudnorm` `input_tp`），与目标 −14 LUFS 差 0.3 LU",
+      "音频与渲染并行完成，总耗时 355.4s"
+    ],
+    "loudness": {
+      "truePeakDbtp": -1.62,
+      "integratedLufs": -13.82,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lra": 6.6,
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "samplePeakDbfs": -1.628696
+    }
+  },
+  "resolvedDefects": []
+}

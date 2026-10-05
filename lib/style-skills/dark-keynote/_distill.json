@@ -1,0 +1,95 @@
+{
+  "slug": "dark-keynote",
+  "nameZh": "暗色科技发布",
+  "distilledAt": "2026-10-03T13:45:00Z",
+  "matchScore": 92,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 20,
+    "typography": 16,
+    "rhythm": 19,
+    "audio": 18
+  },
+  "defects": [
+    "字体回退：STYLE.md:32 点名 Inter / Inter Tight 600 / JetBrains Mono，本机无，通路由 dub-styles.json 回退 Microsoft YaHei，字重/字宽与设计意图不一致（typography −4）。",
+    "bg #0A0B0F / bg2 #151822 / fg #E8EAF0 非 STYLE.md 明文（§3:25 只说 cool neutral ladder），来自 demo 代码 PAL，跨实现复现时存在色值漂移风险（palette −1）。",
+    "字幕底胶囊色 rgba(12,14,19,.72) 与 dub-styles 推导值 #CC101216 不完全同源，属推导而非原文值（palette 相关）。"
+  ],
+  "assetGaps": [
+    "缺 Inter / Inter Tight / JetBrains Mono 字体文件（demo/fonts/ 未含 OFL 三件套）。",
+    "无外部图片/视频素材依赖——全部由代码生成；新主题需自备品牌标记与字标，不能沿用 Tidy。"
+  ],
+  "limits": [
+    "全片只允许一种品牌强调色，天然不支持多品类并列用色的内容。",
+    "节奏受 120 BPM 网格约束，不适合自由节拍的长镜头表达。",
+    "9:16 竖屏需重排构图（拉远改拉近、横向网格改纵向），不能直接套用 16:9 参数。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f03.jpg",
+    "f05.jpg",
+    "f07.jpg",
+    "f08.jpg",
+    "f09.jpg",
+    "f10.jpg",
+    "f11.jpg",
+    "f12.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f15.jpg",
+    "f16.jpg",
+    "f17.jpg",
+    "f18.jpg",
+    "f19.jpg",
+    "f20.jpg",
+    "f21.jpg",
+    "f22.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/dark-keynote/STYLE.md",
+    "styles/dark-keynote/DEMO.md",
+    "styles/dark-keynote/style.json",
+    "styles/dark-keynote/demo/build.sh",
+    "lib/style-dna/dark-keynote.md",
+    "lib/style-dna/dark-keynote.json",
+    "lib/dub-styles.json#dark-keynote",
+    "_distill/logs/dark-keynote.log",
+    "_distill/frames/dark-keynote/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/dark-keynote/dark-keynote.mp4",
+    "durSec": 42,
+    "bytes": 20819212,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1008
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14.3,
+      "lra": 6,
+      "truePeakDbtp": -1.5,
+      "samplePeakDbfs": -1.502179,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.50 dBTP，在 −1.2 dBTP 交付线内（余量 0.30 dB）、未削波。astats 采样峰值 −1.502179 是下界、ebur128 的 Peak −1.5 只有 1 位小数，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
+    },
+    "warnings": [
+      "成片日志中文为 GBK 乱码，参数已按可辨识字段提取（1920x1080 / nvenc / fps 24 / workers 6 / grain 0）。",
+      "ASR 校对 mismatches 0（lang=en, model=base.en）。",
+      "混流实测 -14.3 LUFS / Peak -1.5 dBFS，目标 -14 LUFS。"
+    ]
+  },
+  "resolvedDefects": [
+    "composition −1（原缺陷）：无 aspects 声明，只按 1920×1080 绝对像素构图；产品默认 9:16 硬渲会丢失右侧约 43.75% 内容并留下方黑区（composition/typography 相关缺陷）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 91→92（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

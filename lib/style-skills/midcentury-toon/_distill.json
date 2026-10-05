@@ -1,0 +1,104 @@
+{
+  "slug": "midcentury-toon",
+  "nameZh": "50s 扁平卡通",
+  "distilledAt": "2026-10-03T05:30:00.000Z",
+  "matchScore": 92,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 20,
+    "typography": 16,
+    "rhythm": 19,
+    "audio": 18
+  },
+  "defects": [
+    "【重要】本次出片的字幕未重新生成：日志打了两条警告——'该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件'（logs/midcentury-toon.log:29）与混流阶段的重复警告（logs/midcentury-toon.log:81）。成片里的字幕不是本次按 content.json 生成的，而是仓库里已提交的旧 .srt；只要改 content 台词，字幕就会与旁白不一致（typography 扣分）。",
+    "lib/dub-styles.json#midcentury-toon 的 subtitle.fontFamily=DengXian（本机无 Oleo Script / Alfa Slab One / Jost），字号 40px 与下边距 157px 与原生卡（Jost 500 42px、距底 60px、宽上限 1280px）不同；原生字幕卡的纸色圆角板 + 细墨边 + 两端珊瑚 8 角星 + 颜色赛璐璐套印偏移 5px 在 dub.mjs 通路里不会出现（typography 扣分）。",
+    "混音峰值偏高：mix.wav peak 0.95（logs/midcentury-toon.log:74），距削波不足 0.5 dB（最终由混流压到 Peak -1.5 dBFS）（audio 扣分）。★ 真峰值口径更正（本次补记）：成片真峰值 = loudnorm 的 input_tp（4× 过采样）−1.50 dBTP，在 −1.2 dBTP 交付线内（余量 0.30 dB）、未削波；astats 采样峰值 −1.636732 是下界。",
+    "成片 LRA 7.3 LU（logs/midcentury-toon.log:85），明显大于同批其他风格（3.5 / 4.6 LU）——三处真静音把动态范围拉开，属设计使然，但小音量下可能显得忽大忽小（audio 扣分）。"
+  ],
+  "assetGaps": [
+    "无外部图片/视频素材需求——形体、套印、墨线、装饰、拟音、配乐全部程序化生成（Canvas2D 引擎 + 合成音频），18 个图标已内置。",
+    "缺字体资产：Oleo Script Bold（钩子手写体）、Alfa Slab One（标题/数字/步骤头）、Jost 500/600（正文/字幕/标签）三款若不在环境里，风格识别度大幅下降。",
+    "缺 9:16 版场景布局参数（色面分区、主体站位、圆形特写排布），竖版必须重排，无法从现有文件推导。",
+    "payoff.plan 需要人工画平面图（zones[] / items[] 用 1920x1080 平面像素标定）——没有平面图就没有回报段，这是内容侧最费工的素材。"
+  ],
+  "limits": [
+    "只做「怎么做」不做「为什么」：没有步骤可教的内容（抒情、观点、人物访谈）会让它无事可做（STYLE.md:14）。",
+    "步数 2-5、每步 +5.45s（>=3 小节）；4 步已 ≈45s，超出产品安装指南 30-40s 的舒适区（DEMO.md:118）。",
+    "静音窗口与配乐小节数不自动重排：三处静默在 mix.py 里用 gate() 按绝对秒数硬编码（B: 20.909-21.80s 真静音；C: 30.2-30.905s 只留房间底噪），配乐也按 22 小节写死；换内容后两者都要人工重跑（style-dna/midcentury-toon.md:240、DEMO.md:133）。",
+    "关键主体必须 >=1/3 画面高且避开底部 140px 字幕带（STYLE.md:64），限制了远景与全景的可用性。",
+    "换 content.json 只是验证引擎能重排的技术检查，不是做片子的方式（DEMO.md:149）。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f03.jpg",
+    "f04.jpg",
+    "f05.jpg",
+    "f06.jpg",
+    "f07.jpg",
+    "f08.jpg",
+    "f09.jpg",
+    "f10.jpg",
+    "f11.jpg",
+    "f12.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f15.jpg",
+    "f16.jpg",
+    "f17.jpg",
+    "f18.jpg",
+    "f19.jpg",
+    "f20.jpg",
+    "f21.jpg",
+    "f22.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/midcentury-toon/STYLE.md",
+    "styles/midcentury-toon/DEMO.md",
+    "styles/midcentury-toon/style.json",
+    "styles/midcentury-toon/demo/build.sh",
+    "lib/style-dna/midcentury-toon.md",
+    "lib/style-dna/midcentury-toon.json",
+    "lib/dub-styles.json#midcentury-toon",
+    "_distill/logs/midcentury-toon.log",
+    "_distill/frames/midcentury-toon/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/midcentury-toon/midcentury-toon.mp4",
+    "durSec": 40,
+    "bytes": 33651724,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 960
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14.1,
+      "lra": 7.3,
+      "truePeakDbtp": -1.5,
+      "samplePeakDbfs": -1.636732,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.50 dBTP，在 −1.2 dBTP 交付线内（余量 0.30 dB）、未削波。astats 采样峰值 −1.636732 是下界、ebur128 的 Peak −1.5 只有 1 位小数，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。mix.wav peak 0.95（距削波不足 0.5 dB）经两遍 loudnorm 后安全落地。"
+    },
+    "warnings": [
+      "该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件（logs/midcentury-toon.log:29）",
+      "警告：本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成（logs/midcentury-toon.log:81）",
+      "mix.wav peak 0.95，距削波不足 0.5 dB",
+      "成片 LRA 7.3 LU，明显高于同批其他风格"
+    ]
+  },
+  "resolvedDefects": [
+    "composition −1（原缺陷）：本风格无 aspects 声明、按 1920x1080 绝对像素构图；产品默认 9:16 导出时右侧约 43.75% 丢失，常站在右侧的 June 会被整条切掉、上部的圆形特写也会被切，下方整片黑（composition 扣分）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 91→92（分数于 2026-10-05 回补）。原记录保留作历史。"
+  ]
+}

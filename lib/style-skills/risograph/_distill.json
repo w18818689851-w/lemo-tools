@@ -1,0 +1,88 @@
+{
+  "slug": "risograph",
+  "nameZh": "孔版印刷",
+  "distilledAt": "2026-10-03T13:41:55+08:00",
+  "matchScore": 93,
+  "scoreBreakdown": {
+    "palette": 20,
+    "composition": 18,
+    "typography": 16,
+    "rhythm": 20,
+    "audio": 19
+  },
+  "audioScoreBasis": "audio 18/20（本轮由 19 扣为 18）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−0.76 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.44 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位取 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量——本风格副本 styles/risograph/demo/tools/mux.sh（core 副本）的 loudnorm 目标写死 TP=-1.2（tools/mux.sh:3,5,9），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），故**减半 = −1**，audio 19→18。属项目级既有缺陷、非本风格音频链所致。另 −1 为既有：实测 −13.9 LUFS（目标 −14，偏 0.1 LU，可接受）、LRA 5.3 LU 远低于 loudnorm 目标 11 LU，静音小节与满乐队之间的动态落差被线性增益压平。",
+  "defects": [
+    "composition −2：f09（≈15s）骑车人叠在带窗格与门廊的立面上、f13（≈21.7s）叠在鸽群与绿地上，主体与网点/窗格打架，违反 STYLE.md:33「人物的头要压在画面里最平的那块颜色上」",
+    "typography −3：样本字幕用 Jost 500（42px）、片名用 Bricolage Grotesque 800（190px），本机两套字体都没有，dub 通路回退到 DengXian，片名「Riso 双印」的重黑体气质在模板通路里掉一半",
+    "typography −1：样本字幕印在蓝版上是 #0078BF，dub 通路为满足对比度 ≥4.5 改用 #3D5588（lib/dub-styles.json#risograph notes 记录为有意修正），与成片抽帧 f05/f19/f21 的蓝版字不完全一致",
+    "audio −1：实测整片响度 −13.9 LUFS（目标 −14，偏 0.1 LU，可接受），但 LRA 5.3 LU 远低于 loudnorm 目标 11 LU，静音小节与满乐队之间的动态落差被线性增益压平"
+  ],
+  "assetGaps": [
+    "本机缺 Bricolage Grotesque 800 / Jost 500–700 字体（demo/fonts/ 里有，dub 通路未接）",
+    "没有真实 Riso 纸张/油墨的扫描纹理，纸纤维与墨粒全是 riso.js shader 程序化生成，100% 放大看比真印品更干净",
+    "没有任何可复用的插画素材库：角色与场景全部是代码画的分版浓度，换主题必须重画 rider.js / scenes.js / scenes2.js"
+  ],
+  "limits": [
+    "原生只有 16:9：demo/draw.js:3 把画布写死 1920×1080，无 aspects 声明。硬渲 9:16 会 1:1 塞左上角、右侧约 43.75% 内容丢失、下方整片黑；片名会被切成半截，横移镜头走到右半的主体整段看不见（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "WebGL2 分版印刷 shader（riso.js）只在浏览器渲染链生效，模板化的 dub 通路拿不到，叠印相乘混色与套色错位会丢失，只剩 halftone 纹理近似",
+    "GPU 与 Index-TTS 都是独占资源，不能并发起两个风格的渲染",
+    "半调网点在 4:2:0 压缩下会摩尔纹，必须 PNG 帧 → yuv444 无损中间片、只编码一次",
+    "最高可达分说明：palette/rhythm 已满分；composition 受「主体与网点重叠」扣 2；typography 受本机缺字体 + dub 通路对比度修正扣 4；audio 受 LRA 偏窄扣 1 + 成片真峰值 −0.76 dBTP 超 −1.2 dBTP 交付线（−2 档、根因在下游 AAC 编码余量故减半 = −1）共扣 2。若不换字体、不改 9:16 重排、不改 mux 副本的 TP 目标，92 即为当前上限"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f05.jpg",
+    "f09.jpg",
+    "f13.jpg",
+    "f16.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/risograph/STYLE.md",
+    "styles/risograph/DEMO.md",
+    "styles/risograph/style.json",
+    "styles/risograph/risograph.srt",
+    "styles/risograph/demo/build.sh",
+    "styles/risograph/demo/riso.js",
+    "styles/risograph/demo/draw.js",
+    "styles/risograph/demo/tools/mux.sh",
+    "lib/style-dna/risograph.md",
+    "lib/style-dna/risograph.json",
+    "lib/dub-styles.json#risograph",
+    "_distill/logs/risograph.log",
+    "scripts/patch-style-mux.mjs"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/risograph/risograph.mp4",
+    "durSec": 40,
+    "bytes": 73983161,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 960
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14.5,
+      "lra": 4,
+      "truePeakDbtp": -3.11,
+      "samplePeakDbfs": -3.11,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−0.76 dBTP，超 −1.2 dBTP 交付线 0.44 dB、未削波（真峰值为负）。astats 采样峰值 −1.107324 是下界（比真峰值低 0.35 dB，会误判为达标）。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。混流走自带副本 tools/mux.sh（TP=-1.2），无 AAC 余量。 ★ 2026-10-05 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-3.11 dBTP**、astats 采样峰值 **-3.106276 dBFS**。原记（真峰值 -0.76 dBTP / astats -1.107324）属修复前或重渲前版本，已按实测更正。"
+    },
+    "warnings": []
+  },
+  "resolvedDefects": [
+    "【audio −1，本次新补记】成片真峰值 −0.76 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.44 dB；真峰值为负 ⇒ 未削波，属『仅超线』。根因在下游 AAC 编码余量：本风格副本 styles/risograph/demo/tools/mux.sh 是 core/render/mux.sh 的副本（只改了 crf 与 -tune grain），其 loudnorm 目标仍写死 TP=-1.2（tools/mux.sh:3,5,9），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），AAC 编码过冲把真峰值顶到 −0.76。属项目级既有缺陷、非本风格音频链所致。扣分按 AGENT-BRIEF『真峰值超标怎么扣』：真峰值为负但超线取 −2 档，根因在下游 AAC 故减半 = −1，audio 19→18。此前 §6 只写了 −13.9 LUFS / LRA 5.3 LU、未记成片真峰值。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −0.76 dBTP → **−1.96 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。"
+  ]
+}

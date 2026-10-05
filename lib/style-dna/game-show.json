@@ -1,0 +1,148 @@
+{
+  "slug": "game-show",
+  "name_zh": "综艺节奏扁平（Game Show Flat）",
+  "essence": "一部「节奏游戏式的综艺节目」：玩具般的吉祥物（粗墨线描边）站在糖果色条纹与太阳burst上，每一次打击都落在固定的速度网格上，是「呼—应」的模式，每一局赢的时候弹出一个判定词。格式从 45s（三局）到约 3min（八局）都成立；旁白是可选的——这个风格可以只靠短促的呼喊和字幕（telop）撑起一部片。它不是微型游戏大杂烩（没有计时器、不是每 3s 换一种画风），不是中世纪卡通（没有手绘质感背景、没有角色表演），不是发布会（没有慢揭示、没有渐变）。",
+  "materials_and_rendering": [
+    "纯矢量（SVG 或 canvas 路径）1920×1080：平涂填充、一种描边色（近黑）、角色与道具 8px 描边、小零件 5–7px、圆角连接与端帽。",
+    "**没有渐变、没有模糊、没有纹理、没有柔和阴影**。景深是**硬偏移阴影**：同一个形状用描边色平移 ~10px（贴纸、横幅）到 ~14px（卡片），再把彩色形状盖在上面。",
+    "布景 = 一个饱和底色 + 同色系浅一档的图案：斜条纹（常常缓慢滚动）、错位波点（~20% 白）、或旋转的太阳burst。一条更暗的地板带、顶上压一条墨线，把角色稳住。",
+    "角色：圆豆身体、短粗手臂 + 连指手、椭圆眼 + 高光、一张会换成张开的嘴；人类共用同一套构造；老机器/旧时代靠更方的剪影来读。",
+    "UI 套件：圆卡片、角贴横幅、判定词、burst（星 + 环 + 速度线）、记分牌。",
+    "`render(t)` 是 `t` 的纯函数：每个元素的状态都从 `t` 重算，绝不从上一帧继承（这是这个风格最容易翻车的地方）。"
+  ],
+  "sentence_patterns": {
+    "length": "文本是字幕式（telop），不是句子：横幅一行 ≤ ~20 个 CJK 字，牌子上 ≤ ~12 个 CJK 字（拉丁文约宽 1.6×）；呼喊是 1–3 个词（\"Hey!\"、一个数字、一个判定），**不是句子**。demo 无旁白，屏上全中文、声音只有短的英文呼喊。每一段文字停留 ≥ max(1.8s, 语音 + 0.6s)；判定词可以更短，因为是一眼读完的。",
+    "person_and_tense": "无旁白（或极简）：语气由呼喊与字幕承担——呼喊是祈使/惊叹（\"Hey!\"、\"Question!\"、\"Checkmate.\"），字幕是标签式（关卡名 + 年份 + 一句短副标）。没有第一人称、没有抒情。",
+    "typical_openers": [
+      "报数式开场（\"One! Two! Three! Four!\"）",
+      "关卡卡式开场（GAME N + 关卡名 + 年份区间）",
+      "一声呼喊打断（\"Hey!\" / \"Question!\"）",
+      "一个判定词先出现（\"Perfect!\"）",
+      "年份横幅从左边滑进来（年份 + 名字 + 一行副标）"
+    ],
+    "forbidden": [
+      "长句、从句、书面语（一切都要能一眼读完）",
+      "旁白式解说（本风格默认没有旁白）",
+      "把字幕做成细的通用 caption（字幕就是 telop 牌子）",
+      "一句里塞进两个以上信息点"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一场节奏游戏综艺）：冷开场在全员 + 报数（4 小节） → 若干**关卡**（每关 = 1 小节关卡卡 + 8 小节玩法：前半建立模式、后半回应/升级，最后一拍 [第 7 小节第 3 拍] 是一个 slam + \"Perfect!\" 判定） → 一个 **remix** 关（把所有近期事件堆到一块布景上，顶部一条月份时间带、底部停着每个已完成片段的缩小缩略图） → 结尾（蛋里孵出新角色 → 打字机成绩单 + Superb! 星 → 信用卡）。",
+    "beat_durations": "时间挂在**一个固定快速速度**上。demo 出厂值 150 BPM（`DEMO.md:31`：B = 0.4s、BARL = 1.6s；`assemble.py:5` 把 `main_v1.js` 的 BPM=140 改成 150、END_BAR=61 改成 93）。demo 总长 93 小节 = 148.8s。关卡卡那一小节用硬切 + 0.08s 白闪；打击量：tick 0.008、hit 0.02、slam 0.03–0.05；打字机每 1/8 拍一个字符、每 2 个字符一次键击；结尾最后 0.8s 淡到 navy（全片唯一的淡出）。",
+    "total_length_range": "demo 148.8s（style.json dur=148.8，frame_sec=74.4）。STYLE 明确格式从 45s（三局）到约 3min（八局）都成立。",
+    "silence_policy": "静默是可选的强度手段之一：可以用「一小节只有鼓、然后一个大击」或「一小节静默、被一声呼喊打破」；本风格不把静默当主结构，而是当节奏上的一个空拍。"
+  },
+  "tone": "一位热情、玩具感的主持人在带节奏：短促、有弹性、每次都落在拍上；靠呼喊、判定词和字幕把意思讲清楚，不解释、不煽情。角色是「玩具」——踩着拍跳、被打中就压扁、呼喊时举手张嘴。",
+  "shot_logic": {
+    "camera_is": "一个正面、对称的舞台台口；**是画框自己在动**（beat punch），没有运镜旅行。它表达的是一种「一切都在网格上、随时可以数拍」的世界。",
+    "vocabulary": [
+      { "move": "Beat punch（围绕中心 zoom 0.8–5%，~0.16s 衰减）", "expresses": "被画框感觉到的打击", "serves": "任何重音；一次猛击；报数" },
+      { "move": "一小节里打好几次 punch", "expresses": "画框随音乐呼吸", "serves": "副歌；一个升级的模式" },
+      { "move": "锁死正面宽景", "expresses": "整个舞台就是一块游戏盘", "serves": "建立模式；人群；记分牌" },
+      { "move": "在小节线上硬切 + 白闪", "expresses": "新一关、新布景", "serves": "章节切换；之前/之后" },
+      { "move": "分屏舞台（两半、两套布景）", "expresses": "两边互相应答", "serves": "对抗；人 vs 机器；旧 vs 新" },
+      { "move": "缩成缩略图（完成的片段缩进一个槽位）", "expresses": "记忆、累积", "serves": "回顾；\"然后这一切都发生了\"" },
+      { "move": "布景竖直滚动（地板到天空）", "expresses": "升高的赌注或尺度", "serves": "排行榜；成长；一叠东西" },
+      { "move": "啪地推近一个道具（硬切到 2× 取景、下一小节回来）", "expresses": "这个细节就是笑点", "serves": "价签；一个数字；一张反应的脸" }
+    ],
+    "transitions": [
+      "在小节线上硬切 + 很短的白色闪光",
+      "淡出只留到全片最末尾（若有）",
+      "缩略图缩进底部槽位（记忆/累积式转场）"
+    ],
+    "forbidden": [
+      "溶解（dissolve）",
+      "任何脱离网格的运动（拍与拍之间的事件也要落在细分上）",
+      "同时 punch 的总和超过 ~0.06（否则会露出画框边缘）",
+      "慢慢淡入（东西要么就在，要么「啪」地弹出）"
+    ]
+  },
+  "idioms": [
+    "带卡的关卡（rounds with a card）：1 小节卡片（关号 + 名字 + 一个标签如年份/步骤）跟着 jingle 飞进来，然后开玩。",
+    "呼—应（call-and-response）：任何有「轮次」的东西都变成节奏模式；把模式加速（四分→八分）**就是**剧情。",
+    "判定词（judgement word）：一个大的描边词在关卡最后一击上斜着弹出。",
+    "统计当游戏 UI（stats as game UI）：数字变成领奖台分数、冲向目标的计数器、被锤的价签、按拍生长的柱状图。",
+    "Remix 板（remix board）：一块布景 + 一条时间带；每个条目在舞台中央拿几小节，然后缩进底部一个槽；终章里所有槽一起弹。",
+    "人群降落（crowd drop）：很多选手一拍一个落进来，每个带一个音高化的 pip。",
+    "下一关预告（next-level tease）：有东西孵化或解锁。",
+    "成绩单（report card）：一张打字机打出来的回顾 + 一个等级印章。"
+  ],
+  "atmosphere": "一个亮、吵、糖果色的综艺舞台：饱和的底色、会滚动的条纹、旋转的太阳burst、踩拍蹦跳的玩具角色；热闹、有弹性、永远在数拍。整体是「欢乐、机械精确、玩具感」的气质，而不是细腻或安静的。",
+  "sound_palette": {
+    "instruments": [
+      "全部**从画面事件合成**：软饱和正弦 kick、带通噪声军鼓与拍手、hats、slap bass、带关闭滤波的失谐锯齿 brass stab、带颤音的方波主音、马林巴式拨弦、音乐盒铃、三角波 pad、方波琶音、牛铃",
+      "明亮大调流行和声在一条短和弦循环上，一小节一个和弦；每一关有自己的味道（funk/quiz/electro/dream/heavy…），不是换一首新歌（demo：F–G–Em–Am 王道进行）"
+    ],
+    "foley": "玩具化、带音高：pop、plop + boing 落地、印章、打字机键击、蜂鸣器、叮、伺服嗡鸣、splat；带音高的 pip 可以在人群降落时拼出一段旋律。呼喊是 1–3 个词（\"Hey!\"、一个数字、一个判定），放在拍点**前 20–30ms**，让辅音落在拍上；人群呼喊 = 好几个不同嗓音叠几 ms、在立体声场里铺开。",
+    "mix_rules": "人声与拟音走自己的 bus；音乐由那个 bus 的 12Hz 包络 duck 最多 40%；用软削波而不是硬限幅；整体 −14 LUFS、真峰 ≤ −1 dB。demo：peak-normalize 到 1.5 再 `tanh` 软削波 ×0.9，`finish.sh` 两遍 loudnorm 到 −14 LUFS / TP −1.2、重采样到 48kHz AAC 256k。"
+  },
+  "variation_space": "可自由决定：关卡及其动词、演员阵容、布景与颜色、有没有旁白、速度、开场、结尾与长度——**网格、绘画套件与字幕语言保持不变**。远离 demo 的方向——结构：一场淘汰赛对阵表（每关两名选手、胜者晋级、决赛是分屏舞台）；一个超长关卡，把单一模式从四分一路升级到十六分，作为剧情压力上升；一场有三名选手的答题秀，每个问题是主题的一个事实、记分牌就是论点。开场：先给判定（空舞台上弹出 \"Perfect!\"，然后倒回它是怎么挣来的）；一个选手独自在光地上蹦到人群落进来；记分牌先给一个最终数字，再倒数回零。结尾：一张合影（所有人蹦到一半定住、一次闪光、画面变成一张拍立得贴在卡上）；一张选关地图，每个完成的关卡是一个亮起的节点；一块幕布一小节一小节落下、最后一声呼喊在幕布下面。",
+  "taboos": [
+    "微型游戏大杂烩（没有计时器、不是每 3s 换一种画风）",
+    "中世纪卡通（没有手绘质感背景、没有角色表演）",
+    "发布会（没有慢揭示、没有渐变）",
+    "渐变、模糊、纹理、柔和阴影（景深必须是硬偏移阴影）",
+    "溶解转场",
+    "脱离速度网格的运动",
+    "有状态的逐帧更新（`render(t)` 必须只依赖 `t`）",
+    "照抄任何真实游戏/综艺的角色、UI、关卡或音乐"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一个字与每一个声音。要素：`SECT`（每个关卡卡的首小节，`main_b.js:243`）、`CUTS`（白闪的小节线，`main_b.js:1171`）、`END_BAR`（由 `assemble.py:5` 字符串替换设定）、关卡卡文本 `card(bar0, num, name, years, col, col2, icon)`、年份横幅 `banner(g, year, name, sub, col)`、remix 条目与月份带、道具文本（问答对、价签、成绩单）、`music.py` 的 `PLAN[bar]` 与 `span(a,b,mode)`、`voices/lines*.txt`（呼喊行：name|voice|rate|pitch|text）。",
+    "new_subject_contract": "新画面元素用 SVG 助手画：`el/txt` 建节点，`tf/op/show` 变换，`gtext(parent,s,x,y,size,{...})` 描边字幕，`chars(parent,str,{...})` + `charsPop` 逐字弹出标题，`stripes/dots/raysEl/starPath` 布景图案，`burst/judge/banner` 返回 `f(t)`。角色用 `bean(parent,{color,belly,antenna,name,kind,...})` + `pose(c,{hey,open,sq,lean,face,blink,...})` / `poseAny`；人类 `human(...)`；道具 `podium/taskIcon/smallBot`。**`scene(t0,t1,build)` 只建一次节点、返回 `update(t)`，`update` 只设属性。**",
+    "timeline_contract": "`frame_head.html` 提供基础助手；`main_v1.js` 提供速度网格 `at(bar,beat)/B/BARL/frac`、`ev(t,name,{f,i})`、`punch(t,a)`、`hopY/hitSq`、字幕/布景/爆发/判定/横幅；`main_b.js` 提供角色、`scene(t0,t1,build)`、`card(...)`、`render(t)`、`init()`。`assemble.py` 组装出 `main.js`，`build.py` 把 `frame_head.html` + `main.js` 变成 `index.html`。`render.mjs events` 导出 `events.json`。",
+    "event_vocabulary": "画面里每个 `ev(t,name,{f,i})` 都被导出到 `events.json`（demo 474 个事件），`music.py` 把每个事件名映射到一个声音：`tock/bleep`（象棋）、`stone`（围棋）、`ding/boop/buzz`（答题）、`land`（plop+boing）、`pip`（带音高 pop，用 `f`）、`slam/bigslam`、`stamp`、`type`、`crack/hatch`、`servo`、`liftoff`、`swish`、`clap`、`drop`、`blip`、`kickhit`、`splat`、`denoise`、`cheer`；未知名字被静默忽略。呼喊是 `v:<name>` 事件，播放 `voices/<name>.wav`。"
+  },
+  "evidence": [
+    "styles/game-show/STYLE.md:3 —— 一句话（节奏游戏综艺、落拍、呼—应、判定词）",
+    "styles/game-show/STYLE.md:6 —— 格式 45s（三局）到约 3min（八局）；旁白可选",
+    "styles/game-show/STYLE.md:10-13 —— 本质四条（都在网格上 / 一套绘画套件多种布景 / 角色是玩具 / 一关=一个可重复动词+一个胜利）",
+    "styles/game-show/STYLE.md:15 —— 不是什么（非微型游戏/非中世纪卡通/非发布会）",
+    "styles/game-show/STYLE.md:19-24 —— 材料与渲染（纯矢量/硬偏移阴影/布景/角色/UI 套件/纯函数 render）",
+    "styles/game-show/STYLE.md:28-32 —— 颜色逻辑（墨+纸+糖果、一套=一个色相、角色拥有颜色）",
+    "styles/game-show/STYLE.md:36-39 —— 字体与字幕（Fredoka/Noto Sans SC 900/描边 telop、停留规则）",
+    "styles/game-show/STYLE.md:43-50 —— 运动质量（拍上蹦跳、压扁、从天而降、back-ease 弹出、呼喊姿势、打字机、小节线硬切+白闪）",
+    "styles/game-show/STYLE.md:54-67 —— 镜头语法表 + punch 总和上限",
+    "styles/game-show/STYLE.md:71-76 —— 声音（全合成、明亮大调、玩具拟音、呼喊、强度选项、混音）",
+    "styles/game-show/STYLE.md:82-89 —— native moves（关卡卡/呼—应/判定词/统计当 UI/remix 板/人群降落/下一关预告/成绩单）",
+    "styles/game-show/STYLE.md:110-112 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/game-show/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/game-show/DEMO.md:5 —— 纯 SVG DOM + 纯 render(t)、Playwright 截图、numpy 从 events.json 合成配乐",
+    "styles/game-show/DEMO.md:8 —— 屏上全中文、只有英文短呼喊、无旁白",
+    "styles/game-show/DEMO.md:12 —— 故事结构（标题→关卡→remix→结尾）",
+    "styles/game-show/DEMO.md:18-23 —— 六个 native moves 的用法",
+    "styles/game-show/DEMO.md:25 —— demo 形状：4 + 7×9 + 1 + 16 + 9 = 93 小节 = 148.8s",
+    "styles/game-show/DEMO.md:31 —— 正面台口、BPM 150、B 0.4s、BARL 1.6s",
+    "styles/game-show/DEMO.md:35-38 —— 逐段镜头表",
+    "styles/game-show/DEMO.md:42-46 —— 配乐（150 BPM、F–G–Em–Am、PLAN 每小节模式、474 事件、呼喊、混音）",
+    "styles/game-show/DEMO.md:50-73 —— 调色板/布景/字体/角色/UI/运动数值",
+    "styles/game-show/DEMO.md:130 —— render(t) 必须是 t 的纯函数（worker 冷启动翻车）",
+    "styles/game-show/demo/main_v1.js:5 —— 调色板 K",
+    "styles/game-show/demo/main_v1.js:13-14 —— OW=8、SO 描边",
+    "styles/game-show/demo/main_v1.js:16 —— BPM=140（被 assemble 改成 150）",
+    "styles/game-show/demo/main_v1.js:18-19 —— END_BAR=61（被改成 93）、window.DUR",
+    "styles/game-show/demo/main_v1.js:24-25 —— ev / punch",
+    "styles/game-show/demo/main_v1.js:34 —— gtext（描边 telop）",
+    "styles/game-show/demo/main_v1.js:40-60 —— stripes/dots/raysEl/starPath 布景图案",
+    "styles/game-show/demo/main_v1.js:66 —— burst",
+    "styles/game-show/demo/main_v1.js:81 —— judge（判定词）",
+    "styles/game-show/demo/main_v1.js:92 —— banner（年份横幅）",
+    "styles/game-show/demo/main_b.js:2 —— bean 角色",
+    "styles/game-show/demo/main_b.js:63 —— pose",
+    "styles/game-show/demo/main_b.js:81-82 —— poseAny / CAST（16 名选手）",
+    "styles/game-show/demo/main_b.js:103 —— human",
+    "styles/game-show/demo/main_b.js:146-147 —— dropY / heyAt",
+    "styles/game-show/demo/main_b.js:158 —— scene(t0,t1,build)",
+    "styles/game-show/demo/main_b.js:166 —— card（关卡卡）",
+    "styles/game-show/demo/main_b.js:242-243 —— buildAll / SECT",
+    "styles/game-show/demo/main_b.js:1171-1172 —— CUTS / render",
+    "styles/game-show/demo/assemble.py:5 —— 字符串替换 BPM 140→150、END_BAR 61→93",
+    "styles/game-show/demo/music.py:1 —— 150 BPM、Fmaj7–G7–Em7–Am7 王道进行",
+    "styles/game-show/demo/music.py:113-115 —— CH 和弦循环 + MA/MB 两条旋律",
+    "styles/game-show/demo/music.py:142 —— jingle",
+    "styles/game-show/demo/music.py:149-162 —— PLAN / span 每小节模式",
+    "styles/game-show/demo/music.py:330 —— tanh 软削波 ×0.9",
+    "styles/game-show/style.json:16-17 —— frame_sec 74.4 / dur 148.8"
+  ]
+}

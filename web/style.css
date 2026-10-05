@@ -312,6 +312,12 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
 }
 .input:focus { border-color: var(--accent); }
 
+/* 自定义输出尺寸：宽 × 高 两个数字框并排 */
+.size-row { display: flex; align-items: center; gap: 6px; }
+.size-row .input.num { width: 100%; }
+.size-row .size-x { color: var(--fg-faint); font-family: var(--mono); font-size: 12px; }
+.size-row .input.bad { border-color: var(--err); }
+
 .checks { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
 .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-dim); cursor: pointer; }
 .chk input { accent-color: var(--accent); }
@@ -563,6 +569,10 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
 .film .fmeta { color: var(--fg-faint); font-size: 12px; word-break: break-all; }
 .film .factions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .film .factions .btn { flex: 1 1 auto; }
+/* 文案出片的成片（来源 dub，没有风格 slug）：左侧一条强调边，
+   让它在成片库里一眼能认出来 —— 它的操作与风格成片不同（没有「重新生成」「打开目录」）。 */
+.film.dub { border-left: 3px solid var(--accent); }
+.film .film-note { flex: 1 1 100%; font-size: 11px; color: var(--fg-faint); line-height: 1.5; }
 .empty { color: var(--fg-faint); font-size: 13px; padding: 6px 0; }
 .empty-sub { color: var(--fg-faint); font-size: 12px; opacity: .8; margin-top: 2px; }
 
@@ -1002,4 +1012,557 @@ html[data-theme="light"] {
   --player-bg:  #10151d;      /* 视频区保持深底：浅底会让画面看不清 */
   --toast-err:  #78101f;
   --tint-soft:  rgba(0,0,0,.045);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   主题出片（工单）
+   ★ 只服务 4 个「内容驱动」风格：画面主体是库内写死的，能改的只有文案 / 配色 / 细节 / 台词。
+     工单的流程是「控制台落单 → 外部 LLM 生成内容 → 控制台出片」，所以状态徽标要一眼看清。
+   ★ 只用上面两套主题里已有的颜色变量 —— 浅色/深色自动都对，不用再补一份。
+   ══════════════════════════════════════════════════════════════ */
+.brief-intro { font-size: 12.5px; color: var(--fg-dim); margin-bottom: 10px; line-height: 1.6; }
+
+/* ★ 「自定义像素（宽 × 高）」与「文案出片」卡的 #dubSizeField 是同一个毛病：
+   它只占一格（实测 200–237px），放不下「→ 1080 × 1920（出片命令：--size 1080x1920）」
+   这句 hint，而 .hint 的 word-break:break-all 会把 1080x1920 从中间折断成两行
+   （截图上就是「…--size 1080x1」/「920）」）。这里跨两格，hint 就放得下了。
+   ★ 这张卡是 .form-grid，不是 .dub-params —— 所以选择器**只认 #briefSizeField**，
+     没有把 .dub-params 的规则改成全局的（那会波及没看过的其它卡片）。
+   ★ order: 1 在本卡是**空操作**：#briefSizeField 本来就是网格里最后一个子元素，
+     放到最后与自然顺序一致。写出来只为与 #dubSizeField 那条保持同一种写法。
+   ★ 默认态（未选「自定义尺寸…」）时该元素带 hidden，两条规则都碰不到它，
+     所以默认态的渲染与改前逐字节一致。 */
+#briefSizeField { grid-column: span 2; order: 1; }
+/* 同 #dubSizeField：hint 里的数字不许被折断。★ 只挂 #briefSizeField，
+   不碰同一网格里的 #briefRatioHint —— 它在默认态是可见的，放宽断行规则
+   会改变默认态的换行位置（那正是「回归」）。 */
+#briefSizeField .hint { word-break: normal; overflow-wrap: anywhere; }
+
+.brief-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
+.brief {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.brief-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brief .bslug { flex: 0 0 auto; font-size: 12.5px; color: var(--fg); }
+.brief .btopic { font-size: 13px; font-weight: 600; color: var(--fg); word-break: break-word; }
+.brief .bid { font-family: var(--mono); font-size: 11.5px; color: var(--fg-faint); }
+.brief .bmeta { font-size: 12px; color: var(--fg-faint); }
+.brief .bspacer { margin-left: auto; }
+.brief .bfilm { font-family: var(--mono); font-size: 11.5px; color: var(--ok); word-break: break-all; }
+.brief-note { font-size: 11.5px; color: var(--fg-dim); }
+
+/* 影片构图能力警告：选的尺寸会被裁切时的提示（只警告，不禁用出片） */
+.brief-aspect-warn {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(224, 168, 58, .5);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  background: rgba(224, 168, 58, .1);
+  color: var(--warn);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+/* 「改用 X」一键修复按钮：紧跟在警告文本后，不换行到独立一行 */
+.brief-aspect-warn .baw-fix { margin-left: 8px; vertical-align: middle; }
+.brief .bwarn { font-size: 11.5px; color: var(--warn); }
+
+/* 左边框按状态着色：一眼看出哪几张在等外部（pending）处理 */
+.brief.pending { border-left-color: var(--warn); }
+.brief.ready   { border-left-color: var(--accent); }
+.brief.running { border-left-color: var(--accent); }
+.brief.done    { border-left-color: var(--ok); }
+.brief.failed  { border-left-color: var(--err); }
+
+/* 工单的两个新状态徽标（.status.running / .done / .failed 复用上面已有的） */
+.status.pending { color: var(--warn);   border-color: rgba(224,168,58,.5); background: rgba(224,168,58,.1); }
+.status.ready   { color: var(--accent); border-color: rgba(76,154,255,.5); background: rgba(76,154,255,.1); }
+
+/* ══════════════════════════════════════════════════════════════
+   声音（配音音色）
+   ★ 音色 = 一条参考音频；清单 / 分组 / 默认值 / 告警阈值全部来自服务端 /api/voices。
+   ★ 只用上面两套主题里已有的颜色变量 —— 浅色/深色自动都对，不用再补一份。
+   ══════════════════════════════════════════════════════════════ */
+.voice-intro { font-size: 12.5px; color: var(--fg-dim); margin-bottom: 10px; line-height: 1.6; }
+.voice-intro b { color: var(--fg); }
+
+/* 当前音色条 */
+.voice-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.voice-current .vc-lbl { font-size: 12px; color: var(--fg-dim); }
+.voice-current .vc-name { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--fg); }
+.voice-current .vc-tag {
+  font-size: 11.5px;
+  color: var(--accent);
+  border: 1px solid rgba(76,154,255,.5);
+  background: rgba(76,154,255,.1);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.voice-current .vc-tag.warn { color: var(--warn); border-color: rgba(224,168,58,.5); background: rgba(224,168,58,.1); }
+.voice-current .vc-reset { margin-left: auto; }
+
+/* 音色列表 */
+.voice-list { display: flex; flex-direction: column; gap: 6px; }
+.voice-group { margin-top: 6px; }
+.voice-group-head {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  color: var(--fg-dim);
+  margin-bottom: 6px;
+}
+
+.voice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.voice.sel  { border-left-color: var(--accent); background: var(--bg-3); }
+.voice.loud { border-left-color: var(--warn); }
+.voice .vmain { flex: 1 1 240px; min-width: 0; }
+.voice .vhead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.voice .vname { font-size: 13px; font-weight: 600; color: var(--fg); word-break: break-all; }
+.voice .vmeta { font-size: 12px; color: var(--fg-faint); word-break: break-all; }
+.voice .vwarn { font-size: 11.5px; color: var(--warn); margin-top: 2px; line-height: 1.5; }
+.voice .vacts { display: flex; gap: 6px; flex: 0 0 auto; }
+
+.voice .vbadge {
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid rgba(76,154,255,.5);
+  background: rgba(76,154,255,.1);
+  border-radius: 999px;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+.voice .vbadge.bad { color: var(--err); border-color: rgba(240,89,107,.5); background: rgba(240,89,107,.1); }
+
+/* 加载骨架屏（请求没回来时不留空白） */
+.voice-skel {
+  position: relative;
+  height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.voice-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--tint-soft), transparent);
+  animation: vskel 1.2s linear infinite;
+}
+@keyframes vskel { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* 空 / 错状态：把服务端的 error 原样展示，不吞 */
+.voice-error {
+  padding: 10px;
+  border: 1px solid rgba(240,89,107,.5);
+  border-left: 3px solid var(--err);
+  border-radius: 8px;
+  background: rgba(240,89,107,.1);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.voice-error .ve-title { font-weight: 700; color: var(--err); }
+.voice-error .ve-detail { color: var(--fg); font-family: var(--mono); font-size: 12px; word-break: break-all; margin-top: 4px; }
+.voice-error .ve-hint { color: var(--fg-dim); margin-top: 4px; }
+
+/* 语速输入 */
+.voice-speed-row { margin-top: 12px; }
+.voice-speed-row .input.bad { border-color: var(--err); }
+
+/* 试合成一句：异步任务的提交行 + 状态行 + 产物播放器 */
+.voice-test {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.voice-test .vt-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.voice-test .vt-row .input { flex: 1 1 320px; min-width: 0; }
+.voice-test .vt-state { margin-top: 8px; }
+.voice-test .vt-line { font-size: 12.5px; color: var(--fg-dim); }
+.voice-test .vt-sub { font-size: 11.5px; color: var(--fg-faint); margin-top: 2px; line-height: 1.5; }
+.voice-test .vt-err { font-size: 12.5px; color: var(--err); word-break: break-all; }
+.voice-test .vt-audio { width: 100%; margin-top: 8px; height: 34px; }
+
+/* ── 导入新音色（折叠区）───────────────────────────────────────
+   ★ 只用上面两套主题里已有的颜色变量 —— 浅色/深色自动都对，不另写一份。
+   ★ 默认收起（<details> 不带 open），因为它不是这个版块的主用途。 */
+.voice-import {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.voice-import > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg-dim);
+  list-style: none;
+}
+.voice-import > summary::-webkit-details-marker { display: none; }
+.voice-import > summary::before { content: '▸ '; color: var(--fg-faint); }
+.voice-import[open] > summary::before { content: '▾ '; }
+.voice-import[open] > summary { color: var(--fg); margin-bottom: 8px; }
+.voice-import .vi-sum { color: var(--fg-faint); font-size: 12px; }
+
+.voice-import .vi-body { display: flex; flex-direction: column; gap: 8px; }
+.voice-import .vi-p,
+.voice-import .vi-why {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  line-height: 1.65;
+}
+.voice-import .vi-why { color: var(--fg-dim); }
+.voice-import .vi-why b { color: var(--warn); }
+.voice-import .vi-path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  word-break: break-all;
+}
+.voice-import .vi-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.voice-import .vi-hint { font-size: 11.5px; color: var(--fg-faint); }
+
+.voice-import .vi-list { display: flex; flex-direction: column; gap: 6px; }
+.voice-import .vi-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.voice-import .vi-item.busy { border-left-color: var(--warn); }
+.voice-import .vi-item .vimain { flex: 1 1 220px; min-width: 0; }
+.voice-import .vihead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.voice-import .vifile { font-size: 13px; font-weight: 600; color: var(--fg); word-break: break-all; }
+.voice-import .vimeta { font-size: 11.5px; color: var(--fg-faint); word-break: break-all; }
+.voice-import .vitag {
+  font-size: 11px;
+  color: var(--fg-dim);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 0 5px;
+  text-transform: uppercase;
+}
+.voice-import .viacts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.voice-import .vi-name { width: 160px; font-family: var(--mono); font-size: 12.5px; }
+.voice-import .vi-state { flex: 1 1 100%; font-size: 11.5px; color: var(--warn); line-height: 1.5; }
+.voice-import .vi-empty {
+  padding: 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  word-break: break-all;
+}
+
+/* 已导入的单独折叠，别和待导入混在一起（免得重复导） */
+.voice-import .vi-done { font-size: 12px; }
+.voice-import .vi-done > summary { cursor: pointer; color: var(--fg-faint); }
+.voice-import .vi-doneline { padding: 2px 0 2px 14px; word-break: break-all; }
+.voice-import .vi-doneline .vifile { font-weight: 400; font-size: 12px; color: var(--fg-dim); }
+.voice-import .vi-doneline .vimeta { display: inline; }
+
+/* 导入成功后：音色列表里高亮那条新音色（几秒后自动褪去） */
+.voice.flash {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 2px rgba(53,196,107,.35);
+}
+
+
+/* ── 文案出片（#dubCard）───────────────────────────────────────
+   ★ 只用上面两套主题里已有的颜色变量（--bg-2 / --line / --fg-dim / --err / --warn / --ok …），
+     浅色与深色**自动都对** —— 不在这里写任何具体色值，否则浅色下必然漏一处。
+   ★ 结构照抄「声音」版块（.voice-* / .vt-*）的那套写法，保持全站一致。 */
+.dub-intro { font-size: 12.5px; color: var(--fg-dim); margin-bottom: 10px; line-height: 1.65; }
+.dub-intro b { color: var(--fg); }
+
+/* 文案输入：等宽字体 + 可纵向拉伸（长文案要能一眼看到段落） */
+.dub-script {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.dub-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 0; }
+
+/* 断句结果：编号 + 文本 + 字数 */
+.dub-lines {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.dub-lines-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--fg-dim); flex-wrap: wrap; }
+.dub-tag {
+  font-size: 11px;
+  color: var(--fg-dim);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.dub-tag.warn { color: var(--warn); border-color: rgba(224,168,58,.5); background: rgba(224,168,58,.1); }
+.dub-lines-note { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; line-height: 1.55; }
+.dub-lines-list { margin-top: 8px; max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 3px; }
+.dub-line { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; line-height: 1.6; }
+.dub-line-i {
+  flex: 0 0 auto;
+  min-width: 26px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+.dub-line-t { flex: 1 1 auto; min-width: 0; color: var(--fg); word-break: break-word; }
+.dub-line-n { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--fg-faint); }
+
+/* 口播视频（可选）*/
+.dub-block {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.dub-block-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--fg); flex-wrap: wrap; margin-bottom: 8px; }
+.dub-drop {
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+  padding: 14px 12px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--bg);
+  transition: border-color .15s, background .15s;
+}
+.dub-drop:hover { border-color: var(--accent); }
+.dub-drop.over { border-color: var(--accent); background: var(--bg-3); }
+.dub-drop-main { font-size: 13px; color: var(--fg); }
+.dub-drop-sub { font-size: 11.5px; color: var(--fg-faint); margin-top: 6px; word-break: break-all; }
+
+.dub-upload { margin-top: 8px; }
+.dub-up-line { font-size: 12.5px; color: var(--fg-dim); }
+.dub-up-track { height: 6px; margin-top: 6px; border-radius: 3px; background: var(--bg-3); overflow: hidden; }
+.dub-up-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.dub-up-note { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; word-break: break-all; }
+
+.dub-src-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.dub-src-row .lbl { font-size: 12px; color: var(--fg-dim); flex: 0 0 auto; }
+.dub-src-sel { flex: 1 1 260px; min-width: 0; }
+
+.dub-params { margin-top: 14px; }
+
+/* ★ 自定义尺寸（宽 × 高）是「输出比例」的从属项，但它一出现就多占一个格位，
+   会把「素材适配」「片头标题」挤到下一行；而且 202px 的格位放不下
+   「→ 1080 × 1920（出片命令：--size 1080x1920）」这句 hint，
+   .hint 的 word-break:break-all 会把 1080x1920 从中间折断成两行。
+   这里只改排布，两条一起解决：
+   - grid-column: span 2 → 跨两格，hint 一行放得下；宽高两个框各占约一格，
+     宽度仍与同行其它输入框一致，不会被拉长；
+   - order: 1 → 排到网格末尾，**不占主行的那一格**，
+     所以默认态、以及「素材适配 / 片头标题」的位置与改前**完全一致**。
+   ★ 只动样式：fillDubRatios() / syncDubSizeUI() 的填充与取值逻辑一行未碰。 */
+#dubSizeField { grid-column: span 2; order: 1; }
+
+/* hint 里的数字（1080x1920）不许被折断。
+   原来是 word-break:break-all（任意字符都能断），换成 overflow-wrap:anywhere：
+   只在整词真的放不下时才断，同时仍然保证不溢出（anywhere 参与 min-content 计算）。 */
+.dub-params .hint { word-break: normal; overflow-wrap: anywhere; }
+
+/* 出片任务状态：提交行 / 输出路径 / 完成后的播放按钮 */
+.dub-state {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.dub-state-line { font-size: 12.5px; color: var(--fg); }
+.dub-state-sub { font-size: 11.5px; color: var(--fg-faint); margin-top: 3px; line-height: 1.55; }
+.dub-state-path { font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim); margin-top: 3px; word-break: break-all; }
+.dub-done { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.dub-done-path { font-family: var(--mono); font-size: 11.5px; color: var(--fg-faint); word-break: break-all; }
+
+/* 错误：与服务端的 error 文案一样**原样**展示，不加工 */
+.dub-err {
+  padding: 10px;
+  border: 1px solid rgba(240,89,107,.5);
+  border-left: 3px solid var(--err);
+  border-radius: 8px;
+  background: rgba(240,89,107,.1);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.dub-err-title { font-weight: 700; color: var(--err); }
+.dub-err-detail { color: var(--fg); font-family: var(--mono); font-size: 12px; word-break: break-all; margin-top: 4px; }
+.dub-err-hint { color: var(--fg-dim); margin-top: 4px; }
+
+/* ── 形态切换（仅文案出片 / 文案 + 口播视频）────────────────────
+   ★ 这两种形态的**输入和产物都不一样**，所以是二选一而不是复选框；
+     切换只切 CSS 类（.mode-script / .mode-keep），不动 DOM —— 用户的输入不会被切丢。 */
+.dub-mode {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-2);
+}
+.dub-mode-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.dub-mode-btn:hover { color: var(--fg); background: var(--bg-3); }
+.dub-mode-btn.is-on {
+  color: var(--fg);
+  background: var(--bg-3);
+  border-color: var(--line-2);
+  font-weight: 600;
+}
+
+/* 形态 2 的醒目说明：素材的画面与声音**不会被修改**。用 warn 色，让它真的被看见。 */
+.dub-mode-note {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(224,168,58,.45);
+  border-left-width: 3px;
+  border-radius: 7px;
+  background: rgba(224,168,58,.09);
+  color: var(--fg);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.dub-mode-note b { color: var(--fg); font-weight: 700; }
+
+/* ★ 两形态的表单差异**只在这里**表达：给卡片根加 .mode-* 类，各自隐藏不属于自己的块。
+   不用 JS 逐个 toggle hidden —— 那样每加一个字段就要改一次 JS，迟早漏。 */
+.dub-card.mode-script .dub-keep-only { display: none !important; }
+.dub-card.mode-keep .dub-script-only { display: none !important; }
+
+/* ── 风格选择 + 分析文案 ──────────────────────────────────────── */
+.dub-style {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.dub-style-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dub-style-line .lbl { font-size: 12px; color: var(--fg-dim); flex: 0 0 auto; }
+.dub-style-sel { flex: 1 1 320px; min-width: 0; }
+.dub-style .hint { display: block; margin-top: 6px; }
+
+/* 分析结果：可折叠，别把卡片撑长 */
+.dub-analysis {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  padding: 8px 10px;
+}
+.dub-analysis > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  user-select: none;
+}
+.dub-analysis[open] > summary { color: var(--fg); margin-bottom: 8px; }
+.dub-analysis-body { font-size: 12.5px; line-height: 1.6; }
+.dub-sec { margin-top: 10px; }
+.dub-sec:first-child { margin-top: 0; }
+.dub-sec-head {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  text-transform: none;
+  letter-spacing: .02em;
+  margin-bottom: 5px;
+}
+.dub-seg { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; }
+.dub-seg-i { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--fg-faint); min-width: 20px; }
+.dub-seg-role {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  color: var(--fg-dim);
+  background: var(--bg-3);
+}
+.dub-seg-t { flex: 1 1 auto; min-width: 0; color: var(--fg); word-break: break-word; }
+.dub-seg-n { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--fg-faint); }
+.dub-tagrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.dub-kv { font-size: 12.5px; color: var(--fg); }
+.dub-kv .k { color: var(--fg-faint); margin-right: 4px; }
+.dub-score { font-family: var(--mono); font-size: 11.5px; color: var(--fg-dim); }
+.dub-srt-note,
+.dub-keep-params-note { font-size: 11.5px; color: var(--fg-faint); margin-top: 8px; line-height: 1.6; }
+
+/* ── 素材比例 × 输出比例的防呆提示 ───────────────────────────────
+   素材会被「铺满 + 居中裁切」到输出尺寸，比例差得多就真的会切掉画面（不是拉伸、
+   也不是留黑边）。用与「影片构图能力警告」(.brief-aspect-warn) 同一套 warn 视觉，
+   让「会被裁」这类提示在整个控制台里长得一样。
+   ★ 只提示、不禁用出片 —— 判断权交回用户。 */
+.dub-crop-warn {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(224, 168, 58, .5);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+  background: rgba(224, 168, 58, .1);
+  color: var(--warn);
+  font-size: 12.5px;
+  line-height: 1.65;
 }

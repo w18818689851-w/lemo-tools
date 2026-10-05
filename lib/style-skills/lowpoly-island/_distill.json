@@ -1,0 +1,95 @@
+{
+  "slug": "lowpoly-island",
+  "nameZh": "低多边形等距小岛",
+  "distilledAt": "2026-10-03T05:10:00.000Z",
+  "matchScore": 91,
+  "scoreBreakdown": {
+    "palette": 18,
+    "composition": 18,
+    "typography": 17,
+    "rhythm": 19,
+    "audio": 19
+  },
+  "defects": [
+    "本风格无 aspects 声明、按 1920x1080 绝对像素构图；产品默认 9:16 导出时画面被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑（composition 扣分）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "lib/dub-styles.json#lowpoly-island 是 derived:true 的派生条目，subtitle.fontFamily 写的是 DengXian，而风格原生字幕是 Quicksand 600 / 44px，走 dub.mjs 通路时字幕字形会偏离（typography 扣分）。",
+    "dub-styles.json 条目的 subtitleOutline=0 与原生「无描边」一致，但原生字幕的藏蓝投影（blur 14）在通路里会被丢掉（typography 扣分）。",
+    "本次渲染有一条非致命告警：THREE.WebGLProgram warning X3595 gradient instruction used in a loop with varying iteration（logs/lowpoly-island.log:42），画面无可见异常。",
+    "第 2 圈房子/风车/树按 BEAM_NOTES 布点，导致部分建筑在画面中略偏右，f10 全景里右侧码头与灯塔的间距比左侧紧（composition 轻微扣分）。",
+    "【palette −1】细纹理 `textureRaw: flat-shaded-3d` 声明了但渲染未实现：`lib/dub-styles.json#lowpoly-island.bgRecipe.textureRaw` 是 `flat-shaded-3d`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `flat-shaded-3d` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `flat-shaded-3d` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
+  ],
+  "assetGaps": [
+    "无外部图片/视频素材需求——世界、道具、配乐、拟音全部程序化生成。",
+    "缺字体资产：运行环境若无 Quicksand 与 Josefin Sans，字幕与片名会 fallback，字形立刻偏离风格。",
+    "缺 9:16 版地块布局与相机参数（frustum/俯角），竖版必须重新调参，无法从现有文件推导。"
+  ],
+  "limits": [
+    "依赖 WebGL + GTAO + 2x SSAA，本次 6 workers 渲 1272 帧耗时 207s，对 GPU 要求不低。",
+    "核心机制「建岛即作曲」要求页面能导出 EV（每条生长事件带 MIDI note）；走纯 dub.mjs 通路（无页面事件）时该机制失效，最高只能拿到环境床级配乐。",
+    "相机距离必须 >= 3x frustum 高度，否则画面下缘会露出海面以下（main.js:78），限制了极近景的可用性。",
+    "配乐明确禁用钢琴与弦乐（STYLE.md:67），素材库中若只有钢琴/弦乐将无法合规替换。",
+    "本风格撑不起强冲突、快节奏、密集信息或真实人物内容；抽象概念当主语会立刻失焦。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f04.jpg",
+    "f05.jpg",
+    "f07.jpg",
+    "f08.jpg",
+    "f10.jpg",
+    "f11.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f16.jpg",
+    "f17.jpg",
+    "f18.jpg",
+    "f19.jpg",
+    "f20.jpg",
+    "f21.jpg",
+    "f22.jpg",
+    "f23.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/lowpoly-island/STYLE.md",
+    "styles/lowpoly-island/DEMO.md",
+    "styles/lowpoly-island/style.json",
+    "styles/lowpoly-island/demo/build.sh",
+    "lib/style-dna/lowpoly-island.md",
+    "lib/style-dna/lowpoly-island.json",
+    "lib/dub-styles.json#lowpoly-island",
+    "_distill/logs/lowpoly-island.log",
+    "_distill/frames/lowpoly-island/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/lowpoly-island/lowpoly-island.mp4",
+    "durSec": 53,
+    "bytes": 26884984,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1272
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -14,
+      "lra": 4.6,
+      "truePeakDbtp": -1.48,
+      "samplePeakDbfs": -1.52521,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.48 dBTP，在 −1.2 dBTP 交付线内（余量 0.28 dB）、未削波。astats 采样峰值 −1.525210 是下界、ebur128 的 Peak −1.5 只有 1 位小数，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。★ 本风格是 core/render/mux.sh 里「ebur128 只印 1 位小数会静默放行」那个反例（该处记的 input_tp −1.16 是更早一版成片，本次成片为 −1.48）。"
+    },
+    "warnings": [
+      "THREE.WebGLProgram warning X3595: gradient instruction used in a loop with varying iteration（非致命，画面无可见异常）"
+    ]
+  },
+  "resolvedDefects": []
+}

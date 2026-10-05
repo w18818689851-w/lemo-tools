@@ -1,0 +1,157 @@
+{
+  "slug": "paper-lantern",
+  "name_zh": "纸雕灯影（Paper-cut Lightbox）",
+  "essence": "一个从背后打光的层叠纸雕灯箱：6–9 张剪纸卡纸叠在一个浅盒子里，暖光透纸，窗和月亮从孔里烧出来，每一层投下柔和影子到下一层。盒子就是画框；镜头是灯里的一支微距镜头。每个镜头都是**一个实体物件**——一个浅盒（腔体约 0.56 × 0.33 m、深 0.16 m）装着互相平行的剪纸层。屏幕上的一切都是三样之一：① 一个**纸层**（平剪的纸、单色、纤维纹、顶边一道暖光边、底边一道暗带；后层更亮更冷、前层近乎全黑——这条明度阶梯就是深度）；② **透纸的光**（暖、浑浊的半透，靠近光源最强；窗、灯笼、光带是孔 / 自发光窗，会烧、会 bloom）；③ **影子**（顶光从每层投下柔和影子到后面的层上——这是「真纸在真盒子里」的关键，永远不要关掉）。片子可以走出盒子进入真实世界（桌上亮着的灯、旁边物体上的溢光），说「这是一件被人留着的物件」。它不是平面剪纸动画（这里有深度、背光、投影），不是皮影（没有单屏、没有杆），不是 3D 立体模型（每个元素都是平行于盒前面的平面纸）。",
+  "materials_and_rendering": [
+    "单位是**米、y 向上**。层从 z ≈ −0.14（天）到 0（前）；相机在 z ≈ 0.3–0.56、fov ~26°。满幅纸层**永远不大于腔体**（demo 用 .558 × .328），否则会在外景镜头里戳穿木框。",
+    "一层 = 米制空间的 Canvas2D 画映射到一个平面；剪纸用 `destination-out` 挖孔（挖之前必须先给不透明 fillStyle）。每张纸的收尾：纤维纹（`source-atop`）、顶边暖光边、底边暗影，各偏移几像素（paper.js:71-83）。",
+    "背光 shader：`emissive += albedo × lightCol × trans × lit × falloff × (base + cloud)`，高斯衰减围绕每个镜头的灯点（通常是月亮），加一张平铺的纸浆云纹贴图（paper.js:92-115）。`trans` 每层从约 .9（远）降到约 .05（前）。",
+    "自发光窗：第二张画布（白 = 光、黑 = 遮罩），由一个 0→1 的「开灯」uniform 门控；bloom 让它们烧起来（paper.js:100、paper.js:107-111）。",
+    "镜头：浅景深、bloom、轻暗角；2× 超采样让剪边保持锐利（main.js:9、post.js 的 Pipe.shot）。",
+    "真实世界布景（用的时候）：木框、黑纸内衬、暗房间、一盏面光作为盒子对真实物体的溢光（room.js 的 `lightbox()`）。",
+    "纸张纹理：纤维纹 `GRAIN`（512²、α .9、`source-atop`）+ 透光云纹 `CLOUD()`（平铺的多倍频值噪声 + 纤维，灰度）；画布分辨率 `PPM = 5200` px/m（paper.js:5、paper.js:10-21、paper.js:23-48）。",
+    "光晕要用**解析式 shader 衰减**（`burst()`），不要用透明的径向渐变贴图——后者会露出方形边（paper.js:198-205）。"
+  ],
+  "sentence_patterns": {
+    "length": "字幕是一行**安静的烧入行**，在盒子下方：衬线 500，中文约 40px / 拉丁约 38px，暖白，柔和阴影，距底约 74px，在台词前淡入、台词后淡出。长句在最靠近中间的逗号处断成两行（约 21 个中文字 / 约 42 个拉丁字符）。停留 ≥ max(1.8s, 语音 + 0.6s)。demo 25 行，最长 L13（引述神话，约 44 字），最短 L25「中秋快乐。」（5 字）。",
+    "person_and_tense": "demo 用**第一人称**（「我是一块月饼，出生在外婆的厨房。」）——因为叙述者就是那块月饼本身；也可以换成第三人称的说书人。语气是**坐在桌边讲故事的人**，不是播音员。剪影人物没有脸，读成「所有人」。",
+    "typical_openers": [
+      "以时间/节令起句（「农历八月十五，秋天刚好走到一半，所以叫中秋。」）",
+      "自我介绍的物件（「我是一块月饼，出生在外婆的厨房。」）",
+      "转折 / 时间推进（「可今年，…」/「于是，我出发了。」）",
+      "半路插入（「半路上，一个盒子和我擦肩而过。」）",
+      "引文（「但愿人长久，千里共婵娟。」）"
+    ],
+    "forbidden": [
+      "播音腔、广告腔（这是一个安静的说书人）",
+      "一句话塞两个信息点",
+      "把画面里已经作为纸出现的词再做一遍字幕（同一批字不许出现两次）",
+      "多音字直接喂给 TTS（要用同音字 `say` 字段，字幕保留真字）",
+      "过长不分行（超过约 21 个中文字必须在最靠近中间的逗号处断行）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "房间 → 开灯 → 推入盒子，标题 → 起源（外婆的厨房、压月饼）→ 一点文化（明代卷轴引用）→ 缺席（空位子）→ 旅程（火车穿过层叠山、路上讲的神话、一个反向的盒子）→ 抵达远方的城市 → 信 → **反转：另一个盒子是往另一个方向的**（互相思念——两扇窗、一个月亮）→ 一首古诗 → 拉出盒子，「中秋快乐」。demo 的镜头表把这条弧切成 20 段（shots/index.js:21-45）。",
+    "beat_durations": "每句台词从 **2.6s** 开始；每句持续它 `dur.json` 的长度，后面跟 `GAP[id]` 秒（GAP 表在 main.js:15-16，如 `L02: 4.2` 给标题节拍、`L25: 5.0` 给结尾）。**镜头在 shots/index.js 里锚定到台词**（`start: L('L06') - .5`），所以改一句配音就自动重排整条时间线。总长 121.8s。",
+    "total_length_range": "主 demo 121.8s（style.json dur=121.8、frame_sec=60.9）。DEMO.md 明确：demo 跑 2 分钟，**45–120s 都适合这个风格**。",
+    "silence_policy": "灯被**关掉**时，除了房间底噪所有声音都掉出去，然后随灯一起回来（STYLE.md:73）。这是这个媒介专属的静默——不是压低音乐，而是把「光」本身拿掉。"
+  },
+  "tone": "一个安静的说书人坐在桌边，就着一盏灯讲故事。民谣、家庭、节日夜晚的语气；温暖、克制、有一点乡愁。剪影没有脸，所以观众把自己放进去。",
+  "shot_logic": {
+    "camera_is": "灯里的一支**微距镜头**——盒子是画框，镜头小而盒子浅，所以运动都短。景深很浅：故事层对焦，前景和远层都虚。",
+    "vocabulary": [
+      { "move": "缓慢推近、几乎正面", "expresses": "亲密；被吸进一个地方", "serves": "一段记忆；一个要紧的细节；一扇亮窗" },
+      { "move": "缓慢拉远", "expresses": "语境；孤独；尺度", "serves": "一个独处的人；前后对比；整个地方一次看完" },
+      { "move": "层间跟焦（rack focus）", "expresses": "注意力在深度里移动", "serves": "两个人一近一远；背后的线索；现在与从前" },
+      { "move": "带深度视差的横移", "expresses": "旅程；时间流逝", "serves": "一趟旅行；分阶段的流程；一条时间线" },
+      { "move": "俯视叠层", "expresses": "一件被造出来的东西，像匠人看到的那样", "serves": "一份食谱；一封信；一张地图；一件产品被装配" },
+      { "move": "拉出 / 推入盒子", "expresses": "画框作为物件；「这是一个被讲出来的故事」", "serves": "一件纪念品；一个取景装置；回到当下" },
+      { "move": "锁死机位，只有光在变", "expresses": "等待；一天或一夜的流逝", "serves": "守夜；四季；一座城入睡" },
+      { "move": "沿叠层上下倾斜", "expresses": "攀爬；坠落；天与地", "serves": "一座山；一口井；希望与重量" },
+      { "move": "近景幕布遮挡转场", "expresses": "场景之间的一道幕", "serves": "换章；梦；一个秘密被揭开" }
+    ],
+    "transitions": [
+      "溶解（0.5–1.2s）",
+      "iris（从 center 起的圆形擦除）",
+      "灯关 / 灯开",
+      "近景幕布（两半必须在前缘精确相接）"
+    ],
+    "forbidden": [
+      "甩镜（whip pan）",
+      "数字变焦",
+      "盒边半在画内半在画外（在盒内要么完全出画，在外景要么清晰入画）"
+    ]
+  },
+  "idioms": [
+    "灯打开：光源先亮，然后远层、然后窗一盏盏亮。",
+    "两扇窗、一个月亮：两个亮着的地方共用一个光源。",
+    "深度即距离：一堆山脊或街道让「很远」可见；行进时各层以正比于深度的速度移动。",
+    "会自己写的纸：一条纸带从它的边缘、在说出的那个词上长出来。",
+    "盒子作为纪念物：镜头在一个房间里找到那盏真实的灯，真实物体被它的溢光照亮。",
+    "从打开的东西里爆出的光：盖子抬起，解析式的光溢出来。",
+    "窗里的剪影：一个带关节的身影在一个亮框里。"
+  ],
+  "atmosphere": "一个安静暗房间里一盏亮着的灯：暖光从纸后透出，能看见纸的纤维、木框的纹、桌上被溢光照亮的茶具。整体是「被珍惜的、家里的、节日夜晚」的气质——不是戏剧性，而是陪伴。",
+  "sound_palette": {
+    "instruments": [
+      "像纸后透出的光一样的乐器：毡钢琴、音乐盒、钢片琴、竖琴或弹拨筝、竹笛、软弦乐",
+      "一件主题文化里的独奏乐器",
+      "没有鼓组；打击乐只作为单下的软击（木鱼、小锣、手鼓）"
+    ],
+    "foley": "纸与光：开灯时开关咔哒 + 上升的微光；纸的沙沙与滑动；卡纸轻拍；盒盖闷响；揭示时的钟声；幕布的软 whoosh；场景床（河、铁轨、城市嗡、蟋蟀、雪风）。",
+    "mix_rules": "人声压缩并前置（RMS ~−18 dB），音乐在语音下 duck ~5–6 dB，foley 低（−24…−34 dB），峰值限制，最终 −14 LUFS。配乐可以「倒着解」：让一段 swell 正好落在关键那句上。"
+  },
+  "variation_space": "你决定地点、人物（或没有）、明度阶梯、光源、真实世界是否出现、开场、结尾和镜头路径。远离 demo 的三个方向。结构：其一「一扇窗、一年」——一盏锁定的灯，里面的场景一季一季地变，光是唯一的转场；其二「一个垂直堆叠」——片子向下倾斜穿过天空、城市、街道、地下，各是一章；其三「物件的接力」——同一件物件在五个小盒子之间手手相传，每个盒子一个不同的阶梯。开场可以是：已经点亮、场景中途（一个身影走过亮着的街；只有当镜头 rack focus 时我们才知道这是纸）；黑暗与一个孔（一个针尖大的光点扩大成月亮、一扇门、一只眼）；俯视（手的视角看一张纸被剪，剪好的纸滑进叠层）。结尾可以是：灯一盏盏灭、最后一扇窗最后灭；rack focus 到前层，直到故事糊成暖光；一张新纸从前面滑进来，开始下一个故事。所有这些都必须守住同一条铁律：**后层亮而半透、前层暗而不透**——这条阶梯就是深度，破坏它就压平了盒子。",
+  "taboos": [
+    "`destination-out` 剪纸前必须有不透明 fillStyle，否则孔是半剪的（props.js 的 `cut(x, fn)` 替你做了）。",
+    "柔和影子会溢光 / 产生自阴影光环：不该参与的层（标题、前面的灯笼、光弧、幕布）需要 **`shadow: false` 和 `recv: false` 两者都要**。",
+    "透明的径向渐变贴图会露出方形边 → 用解析式 shader 衰减（`burst()`）。",
+    "近景幕布两半不在**前缘**相接，会露出旧镜头的一条缝。",
+    "比腔体大的纸层会在外景镜头里戳穿木框。",
+    "**grade 状态不许在镜头之间残留**：每个镜头省略的 grade key 必须每帧回落到默认，否则渲染结果取决于一个 worker 从哪一帧开始（worker 边界会有可见的跳变）。",
+    "headless Chrome 必须带 GPU flags；SwiftShader 慢约 6×。",
+    "复用示例的故事、叙事弧、镜头、道具或时长（DEMO.md:3）。"
+  ],
+  "asset_contract": {
+    "content_fields": "新内容需要驱动：台词表 script.json（每行 `{id, text, rate?, say?, sub?}`）、`vo/dur.json`、`vo/words.json`（whisper 逐词时间戳）、镜头表（start 锚定到台词）、每镜头一个模块。demo 里分别由 script.json（script.json:1-110）、vo/dur.json、vo/words.json、shots/index.js（shots/index.js:21-45）提供。",
+    "new_subject_contract": "一个新的镜头模块必须导出 `build(E) → { S, update(t), post(t), grade(t) }`；`E` 含 `dur/T0/C/env/W/cue/cueEnd/word`（main.js:41）。每个纸层用 `sheet({U, w, h, draw, glowDraw?, glow, glowCol, trans, z, x, y, ax, ay, shadow, recv, finish, ppm, bumpDraw?})`（paper.js:124-139）——`draw(x,k)` 在米制空间作画（原点居中、y 向上），`glowDraw` 画自发光图（白 = 光、黑 = 遮罩），`ax/ay` 是关节枢轴。",
+    "timeline_contract": "main.js 是时间线（GAP 表 + 台词锚定）；页面契约 `window.READY` / `window.DUR` / `window.render(t)`（逐帧确定）/ `window.CUES` / `window.PLAN`（main.js:20、main.js:25、main.js:81）。`out/timeline.json` 由 render/cues.mjs 导出，供 mix.py 排 foley。",
+    "event_vocabulary": "事件是每个镜头的 `s.sfx` 数组（main.js:26），由 `out/timeline.json`（台词起点）与 `vo/words.json`（逐词时间）驱动 mix.py 的 foley；转场是 `in: { type: 'dissolve' | 'iris', dur, center }`（main.js:58-68）。"
+  },
+  "evidence": [
+    "styles/paper-lantern/STYLE.md:3 —— 一句话定义（6–9 张剪纸层 + 背光 + 柔影，盒子即画框，镜头是灯里的微距）",
+    "styles/paper-lantern/STYLE.md:4 —— 参考语汇（商业纸雕灯 / Reiniger 剪影 / 剪纸母题）与不可复制项",
+    "styles/paper-lantern/STYLE.md:8-16 —— 本质三条（纸层/透光/影子）+ 可走出盒子 + 不是什么",
+    "styles/paper-lantern/STYLE.md:20-25 —— 米制单位/层/背光 shader/自发光窗/镜头/真实世界布景",
+    "styles/paper-lantern/STYLE.md:29-33 —— 颜色逻辑（明度阶梯即深度、每叠一种色温、光最暖、一个强调色）",
+    "styles/paper-lantern/STYLE.md:37-41 —— 文字即纸、字体、字幕、画面里的词不做字幕",
+    "styles/paper-lantern/STYLE.md:45-49 —— 运动质量（纸在棍上、关节、光作为大运动、硬动作落在词上、手持微动、30fps on ones）",
+    "styles/paper-lantern/STYLE.md:53-67 —— 镜头词汇表、framing、允许的转场",
+    "styles/paper-lantern/STYLE.md:71-76 —— 乐器/foley/静默/混音/选项/人声",
+    "styles/paper-lantern/STYLE.md:82-88 —— 七个 native move",
+    "styles/paper-lantern/STYLE.md:92-98 —— 媒介陷阱（destination-out/影子泄漏/加色光晕/幕布缝/超腔体/grade 残留/headless GPU）",
+    "styles/paper-lantern/STYLE.md:106-110 —— 变化空间（一窗一年/垂直堆叠/物件接力 + 开场/结尾）",
+    "styles/paper-lantern/DEMO.md:3 —— 不要复用它的故事/叙事弧/镜头/道具/时长",
+    "styles/paper-lantern/DEMO.md:5 —— demo 名与 121.8s、引擎",
+    "styles/paper-lantern/DEMO.md:8 —— demo 是中文旁白，45–120s 都适合",
+    "styles/paper-lantern/DEMO.md:12 —— 盒子腔体 0.56×0.33×0.16 m、真实世界首尾呼应",
+    "styles/paper-lantern/DEMO.md:16-24 —— 六个 native power 的故事用法表",
+    "styles/paper-lantern/DEMO.md:25 —— demo 故事形状",
+    "styles/paper-lantern/DEMO.md:27 —— 改编任何主题的配方（两个地方 + 一个共享的光）",
+    "styles/paper-lantern/DEMO.md:31-37 —— 逐段镜头表（开场推入/盒内/俯视插入/火车/结尾拉出）",
+    "styles/paper-lantern/DEMO.md:41-46 —— 运动（纸在棍上/关节/开灯序列/文字揭示/硬动作落在词上/转场）",
+    "styles/paper-lantern/DEMO.md:50-59 —— 配音（中文 edge-tts、多音字 say、asr 校验、逐词时间、英文切换、配乐、混音）",
+    "styles/paper-lantern/DEMO.md:63-89 —— 单位布局、S01 层叠表、色值、纸面收尾、背光 shader、字体、真实世界布景",
+    "styles/paper-lantern/DEMO.md:93-98 —— 字幕/标题/片尾卡",
+    "styles/paper-lantern/DEMO.md:102-109 —— 实测坑（destination-out/影子/加色/幕布/超腔体/grade 残留/whisper 误听/GPU）",
+    "styles/paper-lantern/DEMO.md:114-153 —— 模块图与构建步骤",
+    "styles/paper-lantern/DEMO.md:157-216 —— 引擎参考（页面契约、时间线、shot 上下文 E、模块 API 表、最小镜头、切英文）",
+    "styles/paper-lantern/demo/src/main.js:9-12 —— SSAA 与三份数据（script/dur/words）",
+    "styles/paper-lantern/demo/src/main.js:15-20 —— GAP 表 + 时间线（每句 at/dur/end）+ window.CUES/DUR",
+    "styles/paper-lantern/demo/src/main.js:23-26 —— 镜头表 plan 与 window.PLAN/EV",
+    "styles/paper-lantern/demo/src/main.js:30-36 —— 渲染器（VSM 阴影、SSAA、PMREM env、字体加载）",
+    "styles/paper-lantern/demo/src/main.js:41 —— get()：懒构建镜头、传入 E（dur/T0/C/env/W/cue/cueEnd/word）",
+    "styles/paper-lantern/demo/src/main.js:44 —— gc()：释放离场镜头",
+    "styles/paper-lantern/demo/src/main.js:46-52 —— drawShot()：update + pipe.shot + grade",
+    "styles/paper-lantern/demo/src/main.js:56-80 —— window.render(t)：镜头切换、溶解/iris、Pipe.final、字幕与 credits",
+    "styles/paper-lantern/demo/src/main.js:73-77 —— 字幕断行（>21 字按最靠中间的逗号断）",
+    "styles/paper-lantern/demo/src/main.js:81 —— window.READY",
+    "styles/paper-lantern/demo/src/paper.js:5 —— PPM=5200 每米像素",
+    "styles/paper-lantern/demo/src/paper.js:10-21 —— makeGrain() 纸纤维纹",
+    "styles/paper-lantern/demo/src/paper.js:23-48 —— makeCloud()/CLOUD() 透光云纹",
+    "styles/paper-lantern/demo/src/paper.js:52-58 —— paint()：米制画布（原点居中、y 向上）",
+    "styles/paper-lantern/demo/src/paper.js:60-68 —— text()/vtext() 米制文字与竖排",
+    "styles/paper-lantern/demo/src/paper.js:71-83 —— finish()：纸纹 + 顶边受光 + 底边暗",
+    "styles/paper-lantern/demo/src/paper.js:92-115 —— paperMat()：背光透纸 + 自发光窗 + 圆裁剪",
+    "styles/paper-lantern/demo/src/paper.js:124-139 —— sheet()：一张纸雕层（画布/发光图/凹凸/锚点/投影）",
+    "styles/paper-lantern/demo/src/paper.js:142-162 —— skyPanel()：不受光渐变背板 + 星点",
+    "styles/paper-lantern/demo/src/paper.js:165-195 —— moon()/setMoon()：月盘 + 加色光晕",
+    "styles/paper-lantern/demo/src/paper.js:198-205 —— burst()：解析式加色光晕",
+    "styles/paper-lantern/demo/src/stage.js:5-24 —— stage()：场景 + 顶部 LED 主光（VSM 2048²）+ 环境光 + 背光 uniforms",
+    "styles/paper-lantern/demo/src/stage.js:27-33 —— aim()：相机位置/注视点 + 手持微动",
+    "styles/paper-lantern/demo/src/stage.js:37-44 —— dispose() 释放 GPU 资源",
+    "styles/paper-lantern/demo/src/shots/index.js:21-45 —— SHOTS()：20 段镜头表，start 锚定到台词，in 转场",
+    "styles/paper-lantern/demo/script.json:1-110 —— 25 行中文台词（rate/say/sub 字段）",
+    "styles/paper-lantern/style.json:16-17 —— frame_sec 60.9 / dur 121.8"
+  ]
+}

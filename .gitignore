@@ -7,3 +7,15 @@
 
 # 依赖（本项目零依赖，但以防万一）
 node_modules/
+
+# 风格蒸馏产物（约 26M：24 帧 + 6×4 接触印样 / 逐风格日志 / 画面证据 / 增量指纹 state.json）
+# ★ 例外：`_distill/AGENT-BRIEF.md` 是「风格蒸馏作业手册」，`scripts/check-doc-coverage.mjs`
+#   直接读它（缺了它，该闸门会把 27 个 `check-*.mjs` 全判成「未登记」⇒ exit 1）⇒ 必须入库。
+_distill/*
+!_distill/AGENT-BRIEF.md
+
+# 一次性调试 / 备份目录（全仓无人引用，详见第二批提交报告）
+_tmp_gsa/
+_tmp_pl/
+_tmp_semantic/
+.bak/

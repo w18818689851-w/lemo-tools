@@ -1,0 +1,140 @@
+{
+  "slug": "tilt-shift",
+  "name_zh": "移轴微缩（Tilt-Shift Miniature）",
+  "essence": "一部「从高空用移轴镜头 + 延时相机拍一个真实地方」的片子：画面里只有一条水平的窄带是清晰的，上下都融进模糊——眼睛把这读成微距拍小东西，于是整个世界变成了模型。另外两件事让这个把戏成立：**饱和的阳光色**（模型火车漆）和**延时**（车与人像发条玩具一样跳着快进）。它不是玩具或黏土渲染（世界是写实的，只有镜头与时钟把它变小）、不是游戏俯视图（没有 UI、没有干净平涂）、也不是无人机航拍（虚化带、饱和度、跳帧是必须的）。",
+  "materials_and_rendering": [
+    "**机位**：永远在高处。斜视约 45–55° 俯角、100–200m 距离、中长焦（垂直 FOV ~27–30°）；最像「棋盘游戏」时用垂直俯拍。真实移轴从不在街面高度拍——除了一个刻意的亲密时刻：在演员高度来一个真正的中景近景，用虚化前景框住清晰的演员，演员占画幅高度 ~1/4–1/3（`STYLE.md:14`、`DEMO.md:29`）。",
+    "**虚化带**（`post.js`）：物理景深与屏幕空间上下虚化带**混合**。像素 CoC = `mix(aper·(1/focus − 1/z), sign(dy)·amp·(max(0,|dy|−w)/0.5)^1.2, mix)`，再 clamp（~30px）（`post.js:27-43`）。带子放在主体上；主体移动时每帧把它投影到屏幕并把带子滑过去；要亲密感就收窄带子（`STYLE.md:15`）。在 2× 超采样渲染之后、在输出分辨率做 gather，用 128 个螺旋采样 + 逐像素随机旋转；★ **更远的样本不能糊到更近的清晰物体上**（`post.js:46-71`）。",
+    "**调色**：中性色调映射 + 强饱和提升（demo ×1.55）+ 柔和加对比（+0.42）+ 略暖高光 + 暗角（0.3）；夜里降低饱和度（`post.js:108-119`、`DEMO.md:46`）。",
+    "**光**：硬太阳 + 锐利阴影（每个镜头拟合一张大 shadow map）、低半球填充带暖地面反弹（阴影保持蓝而不浑浊）、天光渐变环境贴图给玻璃与漆面。★ **逐镜头骗太阳方位角**：每个延时片段是自己的镜头，所以正面照亮你看到的那面；一个固定太阳会让半部片子背光发灰（`STYLE.md:17`、`DEMO.md:84`）。",
+    "**模型感细节**（「拍出来的微缩」与「游戏 CG」的分界）：立面有多种窗型、1.6–3m 开间、深窗洞、世界空间污渍、反射天光的玻璃与越靠地面越暗的墙；屋顶杂物、遮阳篷与招牌；磨损标线与污迹；车有暗玻璃、柔和接触阴影与刹车灯；一切叠 AO（`STYLE.md:18`、`DEMO.md:49`）。",
+    "**人**是小小的彩色胶囊，像模型火车里的小人。近处的演员要有有机的身体 + 柔和 sheen 材质，并**放大 20–30%** 才读得出来（`STYLE.md:19`、`DEMO.md:45`）。demo 的鸭子用 `MeshPhysicalMaterial`（roughness .92、sheen 1、sheenRoughness .55）做绒毛（`ducks.js:20-22`）。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白单句实测 24–36 个字符（约 5–7 个英文词）：最短 `Every song needs a rest.`（24 字符），最长 `By eight, the whole town is playing.`（36 字符）。硬规则：字幕停留 ≥ max(1.8s, 语音时长 + 0.6s)（`STYLE.md:30`）。字幕属于**世界自己的标识系统**：一块用当地招牌语言的牌（路牌、站台牌、港口通告…），用开放的标志复兴字体（Overpass，OFL，是 Highway-Gothic 的复兴），坐在下虚化带里（`STYLE.md:30`、`DEMO.md:55`）。",
+    "person_and_tense": "第三人称、现在时，放松的旁白腔。demo 用 Kokoro `am_adam`，speed 0.9–0.95，5–6 句短话，音乐 duck ~8 dB（`DEMO.md:41`）。★ 数字必须写成单词、把数字放进 `asr` 字段（`STYLE.md:66`）。",
+    "typical_openers": [
+      "用时间起句（\"Six a.m. One car. One note.\"）",
+      "用一个普遍规则起句（\"Every green light adds a beat.\"）",
+      "用一个具体时刻 + 一个具体角色起句（\"The seven-forty brings the bass.\"）",
+      "用「到某个时刻，整个地方…」起句（\"By eight, the whole town is playing.\"）",
+      "结尾用一句「从头再来」的命令收束（\"Then… take it from the top.\"）"
+    ],
+    "forbidden": [
+      "第一人称抒情与内心独白（这个风格靠速度、虚化带和系统承载情节）",
+      "网络化口播腔、感叹号堆叠、营销话术（\"amazing\"、\"unbelievable\"）",
+      "长复合句（单句 >36 字符会盖过一次速度变化）",
+      "抽象概念当主语（只说能在这个地方被拍到的东西）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一个地方醒来并堵住）：安静（黎明一条光轨）→ 系统醒来（演员变多、节奏建立）→ 最大密度 → **硬掉到真实速度**（一个细节：鸭子一家过马路，失败一次再成功 = 喜剧拍）→ 放行回到快进 → 上升到一个尺度揭示（整座城变成电路板）。一个主体、一个目标、一个转折。",
+    "beat_durations": "时间挂在 120 BPM 网格上：1 拍 = 0.5s，1 小节 = 2.0s（`story.js:4`）。★ **延时跳帧是风格的灵魂**：快进时整个世界（车、人、灯、太阳）以低速率更新、每个位置保持若干帧（8 Hz = 24fps 下 3 帧）；★ 选这个速率让每一次跳都落在音乐网格上（`STYLE.md:36`）。demo：快进 8 Hz、×2 与 ×6 之间 12 Hz、×2 以下变平滑（`DEMO.md:50`）。**相机每一帧都是平滑的**（`STYLE.md:36`）。关键时刻表 T（`story.js:6-16`）：rampDown=[22.5,24.0]（×40→×1）、rampUp=[30.0,30.6]、hops=[24.8,25.6,26.4,27.1,27.8,29.4]（母鸭、小鸭 1–3、小鸭 4 第一次失败、成功）、release=30.0、finalChord=34.0。速度曲线 `jamRate`：t<22.5 → ×40；22.5–24.0 用 smoothstep 从 ×40 降到 ×1；24.0–30.0 → ×1；30.0–30.6 从 ×1 升回 ×40（`story.js:23-29`）。镜头切分 SHOTS（`story.js:17-19`）：dawn/title/ix/train/jam/ducks/rise/end。",
+    "total_length_range": "主 demo 38.0s（`story.js:5` `DUR=38`；style.json dur=38.0，frame_sec=22.8）。STYLE.md 不给固定区间，按题材与速度曲线决定（`DEMO.md:14` 的弧线是 38s）。",
+    "silence_policy": "静默是**真实时间到来的那一刻**：切掉音乐，只留一两个真实声音（`STYLE.md:65`、`DEMO.md:39`）。demo 的实时掉速是一个 **tape-stop**：varispeed 1 → 0.22，声部一个个退出，然后真静默；休止里每个故事事件只弹一个柔和的音，每次鸭子跳一级音阶（`DEMO.md:36`）。"
+  },
+  "tone": "一位放松的旁白在看一个玩具城醒来：短句、现在时、带一点玩味；把速度当作叙述手段（快进时音乐先入、真实速度时世界突然变真）。它不煽情、不说教，让「一个系统 + 一个很小的演员」承担全部戏剧性。",
+  "shot_logic": {
+    "camera_is": "一台从高处俯视的移轴相机：清晰带就是它的「视线」，它把注意力沿画面滑动、收窄或交给另一个主体；它永远保持高机位，只有在亲密时刻才降到演员高度。",
+    "vocabulary": [
+      { "move": "高空斜视广角 + 极慢滑动", "expresses": "一眼看整个系统", "serves": "交代地点；日常；很多小演员" },
+      { "move": "虚化带跟着一个主体横移", "expresses": "「就这一个」", "serves": "一个通勤者；一次投递；一个走失的孩子" },
+      { "move": "虚化带从一主体拉焦到另一主体", "expresses": "注意力易手", "serves": "因果；一次交接；一次比较" },
+      { "move": "缓慢推向路口/车站/货场", "expresses": "一个系统在升温", "serves": "早高峰；一个节庆在布置；一条队伍" },
+      { "move": "垂直俯拍、缓慢旋转", "expresses": "世界作为棋盘或机器", "serves": "图案；物流；编排" },
+      { "move": "从高空连续俯冲到演员高度并变速", "expresses": "那一件重要的小事", "serves": "一个转折；一个笑点；一次相遇" },
+      { "move": "虚化带收窄成一条缝", "expresses": "亲密", "serves": "一次坦白；一次重逢；一个决定" },
+      { "move": "对数高度的垂直上升", "expresses": "尺度、放手", "serves": "余波；一个总结；系统变成图案" },
+      { "move": "沿一条线（铁路/河/公路）横移", "expresses": "一个按顺序发生的过程", "serves": "供应链；一次游行；一场比赛" },
+      { "move": "锁死机位跨越数小时", "expresses": "时间就是演员", "serves": "一次施工；一个集日；潮汐" }
+    ],
+    "transitions": [
+      "在拍点上硬切",
+      "速度坡（变速）",
+      "俯冲（dive）与上升（rise）"
+    ],
+    "forbidden": [
+      "溶解/叠化（会暴露假镜头）",
+      "低机位（除非是一个刻意的亲密时刻）",
+      "无来由的运镜（每次运动都要服务「带子指哪 / 速度怎么变」）",
+      "让相机跟着跳帧（相机每一帧都必须平滑）"
+    ]
+  },
+  "idioms": [
+    "速度掉落（×40 → ×1）：时间在一个细节上砸回真实速度。",
+    "虚化带当指针：滑动或收窄那条清晰带，把视线引过去。",
+    "上帝视角的系统：地方作为音序器或机器。",
+    "长曝光光轨：黄昏时灯留下轨迹，在世界里画线。",
+    "尺度揭示：一直升到地方变成图案。",
+    "云影扫过：天气穿过模型。",
+    "延时跳帧 = 灵魂：世界以低速率跳步，相机保持平滑。",
+    "失败的第一次：一次没成功的尝试在成功之前——喜剧引擎。"
+  ],
+  "atmosphere": "一个真实地方被从高空当成模型来看：阳光、饱和的漆色、干净的蓝影；清晰带之外一切都化开。整体是「明亮、有秩序、被时钟驱动、带一点玩味」的气质，而不是阴郁或写实纪录片。",
+  "sound_palette": {
+    "instruments": [
+      "**有音高的打击乐承载风格**：马林巴、钟琴、颤音琴、木鱼、卡林巴、钢片琴；脉冲式、极简（Reich 语法：相位、声部一个个加入、脉动和弦）；再加拨弦或小编制簧管。**不要**通用钢琴与弦乐（`STYLE.md:62`）",
+      "demo：采样极简马林巴合奏、120 BPM（于是 8 Hz 延时跳帧正好是十六分音符）；**固定乐句骨架，城市事件决定哪些音发声**——车越过停止线 gate 马林巴 A、绿灯弹木鱼重音、人群触发钟琴、列车车厢弹贝斯（`DEMO.md:33`）"
+    ],
+    "foley": "**声音跟着速度走**：延时段以音乐为主，配很轻的「加速城市」颗粒底噪、轨道咔哒、变灯继电器；真实速度段世界突然变真——怠速引擎、远处车流、麻雀、细小的鸭叫与啾声、蹼掌拍柏油；放行时引擎轰鸣、上升段风起（`STYLE.md:64`、`mix.py:17-102`）。",
+    "mix_rules": "人声放松、少数几句短话；音乐在人声下 duck ~8 dB（demo 实际 `1 − 0.6·vk`）；整体 −14 LUFS（`STYLE.md:66`、`mix.py:127-136`）。★ 技术选项：世界事件 gate 固定乐句骨架的音（有基础填充率保证乐句可听）；tape-stop（varispeed 下降、声部退出）进静默；两条相同线相位错开；最小尺度用八音盒版主题（`STYLE.md:63`）。demo 的混音先把整体推到 RMS≈−17 dB 再限幅在 −1.5 dBFS，让 mux 的两遍 loudnorm 能线性增益到 −14 LUFS（`mix.py:134-136`）。"
+  },
+  "variation_space": "可自由决定：地点、系统、那个很小的演员、结构、开场、结尾、镜头路径、速度曲线，以及颜色逻辑之内的调色板。所有方向都必须远离 demo 的《Toy Town Rush Hour》：结构——**一天，从黎明到夜**（一个锁死机位，太阳与阴影扫过，只有一家店的灯最后熄）；**接力**（虚化带把注意力从一个演员交给下一个，每个把某样东西递给下一个）；**前后**（一个工地从空地延时到开业，每个阶段配一个实时时刻）。开场——**满密度地在喧嚣中开场**，带子已经落在一个怪东西上；**一个俯视图案**慢慢倾斜成一个地方；**先真实时间**：一个人在演员高度，然后镜头抬起、时间加速。结尾——**掉到真实时间并停在那里**（不拉回）；**灯一盏盏熄灭**从高空看；**镜头解除移轴**：带子放宽到全清晰，模型变回一个真实地方。同时可换：那个「被发现的」饱和主体、速度曲线、地点（地中海港口/雪山小镇/沙漠集市）。★ 但「虚化带 + 延时跳帧 + 高机位」这三条骨架不能拆（`STYLE.md:95-101`、`DEMO.md:12`）。",
+  "taboos": [
+    "玩具或黏土渲染（世界必须写实，只有镜头与时钟把它变小）",
+    "游戏俯视图（没有 UI、没有干净平涂）",
+    "无人机航拍（虚化带、饱和度、跳帧是必须的）",
+    "低机位（除非是刻意的亲密时刻）",
+    "溶解/叠化（会暴露假镜头）",
+    "让相机跟着跳帧",
+    "一个固定太阳（会让半部片子背光发灰）",
+    "照抄任何真实地点、地标、品牌或 logo"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一句旁白、每个速度与每个颜色。要素：**时间线**（`story.js` 的 `BPM/BEAT/BAR/DUR/T/SHOTS/shotAt`、`WINDOWS`（每个时间窗有自己的城市时钟起点 `clock0` 与倍率函数 `rate(t)`）、`clockAt/fmtClock`）；**旁白**（`story.js` 的 `VO`，每条 `{id, t, text}`，5–6 句；数字写成单词、数字放 `asr`）；**地点与系统**（`city.js` 程序化城镇 + 立面着色器 + 招牌、`geo.js` 合并几何、`sky.js` 时钟→太阳/天空/雾/环境图）；**交通**（`traffic.js` 车道/灯/IDM 仿真/车队/光轨/行人）；**英雄演员**（`ducks.js` 车削鸭子 + 跳跃编排）；**调色与虚化带**（`post.js` 的 `TiltPass` 参数与 grade）；**音效事件**（events.json）。",
+    "new_subject_contract": "新画面元素用 `geo.js`（合并几何构建器）+ `city.js`（程序化城镇/立面着色器/招牌）搭；动态系统用 `traffic.js`（车道、灯、IDM 跟车仿真、车队、光轨、行人）与 `train.js`；有生命的英雄演员参考 `ducks.js` 的车削（`LatheGeometry` 身体 + `MeshPhysicalMaterial` sheen 绒毛 + 接触阴影 blob）与 `duckState` 编排（过街/跳路沿的预备压缩→起跳拉伸→落地压缩→回弹，失败一次再成功）。虚化带用 `makePost` 返回的 `dof.band = {y,w,amp,mix,tilt,pow}` 与 `band.follow` 控制。",
+    "timeline_contract": "`story.js` 是唯一时间真值：导出 `BPM/BEAT/BAR/DUR/T/SHOTS/shotAt`、`WINDOWS/windowAt/clockAt/fmtClock`（把成片秒数映射到「城市时钟」，每个窗口一个倍率曲线，用 1ms 步长预积分保证确定性）、`VO`、`TITLE`。`main.js` 负责相机、跳帧（stepping）、人群、HUD 与事件；`mix.py` 读 events.json 做环境/拟音/人声/配乐；`subs.mjs` 导出字幕。页面契约由 `main.js` 暴露 `window.READY / window.render(t) / window.DUR / window.EV`。",
+    "event_vocabulary": "事件由 `main.js` 产生（→ mix.py 消费者）：`light{win}`（变灯继电器，按窗口区分）/ `carriage{k}`（列车车厢过钢轨接缝的咔—嗒）/ `duckStep{i}`（蹼掌拍柏油）/ `hop`（跳）/ `hopFail`（跳失败）/ `quack{soft}`（鸭叫）/ `peep{happy}`（小鸭啾声）/ `splash`（入水）/ `vo{id}`（人声，mix.py 从 voices/<id>.wav 读）。另有一批**硬编码在 mix.py 里的**同步拟音：`.5` 的红车驶过、`2.98` 绿灯、`16.2–18.4` 的列车进站（squeal/hiss/chime）、`19.3–22.3` 的堵车喇叭、`22.45` 的 tape-stop、`29.85` 的放行引擎（`mix.py:87-102`）。"
+  },
+  "evidence": [
+    "styles/tilt-shift/STYLE.md:6-10 —— 本质与「不是什么」（非玩具/黏土渲染、非游戏俯视、非无人机航拍）",
+    "styles/tilt-shift/STYLE.md:12-19 —— 材料与渲染（机位 45–55°/100–200m、虚化带公式、调色、逐镜头骗太阳、模型感细节、人是彩色胶囊）",
+    "styles/tilt-shift/STYLE.md:21-26 —— 颜色逻辑（饱和阳光模型漆、阴影保持蓝、夜间才降饱和、三组示例）",
+    "styles/tilt-shift/STYLE.md:28-32 —— 字体与字幕（世界自己的标识系统、Overpass、延时时钟读数、标题住在世界里）",
+    "styles/tilt-shift/STYLE.md:34-39 —— 运动质量（延时跳帧是灵魂、8Hz=3帧、跳落在音乐网格、相机每帧平滑、英雄演员艺术化定时、近景表演的压缩/拉伸）",
+    "styles/tilt-shift/STYLE.md:41-58 —— 镜头语法表 + 构图 + 转场（避免溶解）",
+    "styles/tilt-shift/STYLE.md:60-66 —— 声音（有音高打击乐、世界事件 gate 骨架、声音跟速度、静默即真实时间、人声 duck 8dB/−14 LUFS）",
+    "styles/tilt-shift/STYLE.md:68-77 —— 六个 native moves（速度掉落/虚化带当指针/上帝视角系统/长曝光光轨/尺度揭示/云影）",
+    "styles/tilt-shift/STYLE.md:79-89 —— 媒介陷阱（高楼遮地、主体被挡、实例上限丢演员、jam gap、焦点滞后一帧、俯拍→斜视扭转、云洗白上升段、背光发灰、黎明读成午夜）",
+    "styles/tilt-shift/STYLE.md:95-101 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/tilt-shift/DEMO.md:3 —— 「不要复用它的故事、弧线、镜头、道具或时长」",
+    "styles/tilt-shift/DEMO.md:5-6 —— demo 38s",
+    "styles/tilt-shift/DEMO.md:8-16 —— demo 故事、改编配方、38s 弧线、花掉的 native powers",
+    "styles/tilt-shift/DEMO.md:18-29 —— 逐镜表 + 近景与斜视的具体数值（1.7m/6–8m/12°/17°FOV/near 0.08；45–55°/110–200m/27–30°）",
+    "styles/tilt-shift/DEMO.md:31-41 —— 配乐（马林巴 120 BPM、事件 gate 骨架、tape-stop、声音设计、人声 am_adam）",
+    "styles/tilt-shift/DEMO.md:43-51 —— 调色板与道具（立面/车/绿/沥青、grade、虚化带数值、光、立面着色器、交通仿真、英雄演员）",
+    "styles/tilt-shift/DEMO.md:53-57 —— 字幕（路牌面板）、延时时钟、片尾卡",
+    "styles/tilt-shift/demo/story.js:4-5 —— BPM 120 / BEAT .5 / BAR 2 / DUR 38",
+    "styles/tilt-shift/demo/story.js:6-16 —— 关键时刻表 T（rampDown/rampUp/hops/release/finalChord）",
+    "styles/tilt-shift/demo/story.js:17-20 —— SHOTS 镜头切分 + shotAt",
+    "styles/tilt-shift/demo/story.js:23-29 —— jamRate ×40 → ×1 → ×40 速度曲线",
+    "styles/tilt-shift/demo/story.js:30-36 —— WINDOWS 五个时间窗（各自 clock0 与 rate）",
+    "styles/tilt-shift/demo/story.js:38-42 —— 1ms 步长预积分（确定性）",
+    "styles/tilt-shift/demo/story.js:44-49 —— clockAt / fmtClock（成片秒数 → 城市时钟）",
+    "styles/tilt-shift/demo/story.js:51-59 —— VO 6 行旁白 + TITLE",
+    "styles/tilt-shift/demo/post.js:27-43 —— CoC 计算（物理景深 + 屏幕空间上下虚化带混合 + clamp）",
+    "styles/tilt-shift/demo/post.js:46-71 —— gather：128 螺旋采样 + 逐像素旋转 + 远样本不糊到近清晰物体",
+    "styles/tilt-shift/demo/post.js:73-106 —— TiltPass（2× SSAA + MSAA + 深度 + 输出分辨率 gather）",
+    "styles/tilt-shift/demo/post.js:108-119 —— grade（饱和 ×1.55、对比、暖高光、暗角）",
+    "styles/tilt-shift/demo/post.js:121-129 —— makePost 组合（dof + bloom + grade + output）",
+    "styles/tilt-shift/demo/ducks.js:20-22 —— fuzzMat 绒毛材质（sheen 1、sheenRoughness .55）",
+    "styles/tilt-shift/demo/ducks.js:24-50 —— makeDuck 车削身体 + 头/喙/眼/翅/脚蹼（比真实略大）",
+    "styles/tilt-shift/demo/ducks.js:60-76 —— pose（摇摆步态、身体左右翻滚、接触阴影 blob）",
+    "styles/tilt-shift/demo/ducks.js:98-111 —— hop：预备下蹲（sy 1→.72）→ 起跳拉伸（sy 1.22）→ 落地压缩回弹",
+    "styles/tilt-shift/demo/ducks.js:112-121 —— 最后一只第一次撞路沿弹回、第二次才成功",
+    "styles/tilt-shift/demo/mix.py:17-43 —— 环境床（加速城市颗粒底噪/黎明风/怠速/麻雀/上升段风）",
+    "styles/tilt-shift/demo/mix.py:45-102 —— 拟音（继电器/清晨车/列车/喇叭/tape-stop/鸭步/跳/鸭叫/啾声/放行/入水）",
+    "styles/tilt-shift/demo/mix.py:110-136 —— 配乐闪避 duck 0.6 + 推电平到 −17 RMS 再限幅",
+    "styles/tilt-shift/style.json:16-17 —— frame_sec 22.8 / dur 38.0"
+  ]
+}

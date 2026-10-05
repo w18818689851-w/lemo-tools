@@ -4,7 +4,8 @@
  *
  * 用法：
  *   node test/smoke.mjs                跑全部（不含完整回归，约 15–40 秒；WSL 冷启动时会到 1–2 分钟）
- *   node test/smoke.mjs --full         额外跑一次完整 ascii-crt 回归（约 80 秒起）
+ *   node test/smoke.mjs --full         额外跑完整回归（ascii-crt 全链路 + **现场 GPU TTS**，约 3–9 分钟；
+ *                                      波动几乎全来自 WSL 冷启动，新增的现场 TTS 用例本身稳定 ~35 秒）
  *   node test/smoke.mjs --filter demos 只跑名字里含 "demos" 的用例
  *   node test/smoke.mjs --keep-server  跑完不杀测试服务（调试用）
  *
@@ -16,7 +17,12 @@
  *   5. 测试服务启动时会覆写 `.console-port` / `打开控制台.url` —— 跑前备份、跑后**逐字节还原**，
  *      保证用户那个 18080 实例的「固定入口」不被改掉。
  *   6. **测试产物登记 + 收尾清理**：进程用例会往 D:\lemo-films\.console 写任务记录、往 WSL 侧写临时
- *      文件；`cases.mjs` 的 ARTIFACTS 登记它们，本文件在 finally 里统一摘干净（见 cleanupArtifacts）。
+ *      文件、--full 的现场 TTS 用例还会建一个 `_smoke-tts-*` 输出目录；`cases.mjs` 的 ARTIFACTS
+ *      登记它们，本文件在 finally 里统一摘干净（见 cleanupArtifacts）。
+ *   7. **--full 会真的调 GPU TTS**（Index-TTS 全局串行锁是独占的）：
+ *        · 跑之前若配音锁已被占用 → 用例**立刻失败**并说明「这是环境占用」，
+ *          绝不等锁到 LOCK_TIMEOUT（2 小时）；
+ *        · 所以 `--full` 要求本机装好 Index-TTS、且没有别的配音任务在跑。
  *
  * 退出码：全绿 0，有失败 1，自身异常 2。
  */
@@ -32,6 +38,11 @@ import {
   STATIC_CASES, SERVER_CASES, PROCESS_CASES, FULL_CASES,
   ORCH_MD5, md5Of, cleanupArtifacts,
 } from './cases.mjs';
+
+// ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
+//   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
+//   设了这个环境变量，本进程 spawn 出的 server.mjs 会跳过写入。下面的备份/还原是第二道防线，保留。
+process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -349,11 +360,11 @@ async function main() {
     // ── 完整回归（可选）──
     if (OPT.full) {
       log('');
-      log(C.b('  完整回归（--full，约 80 秒）'));
+      log(C.b('  完整回归（--full：全链路出片 + 现场 GPU TTS；新增用例本身约 35 秒）'));
       await runCases(FULL_CASES, makeCtx(), null);
     } else {
       log('');
-      log(C.dim('  （跳过完整回归 —— 加 --full 才跑，约 80 秒）'));
+      log(C.dim('  （跳过完整回归 —— 加 --full 才跑，约 3–9 分钟；含现场 GPU TTS）'));
     }
   } finally {
     // ── 收尾：杀测试服务 + 还原固定入口 ──
@@ -386,6 +397,7 @@ async function main() {
       if (rep.jobs.length) parts.push(`任务 ${rep.jobs.join(', ')}`);
       if (rep.locks.length) parts.push(`锁 ${rep.locks.join(', ')}`);
       if (rep.wsl.length) parts.push(`WSL 文件 ${rep.wsl.length} 个`);
+      if (rep.dirs.length) parts.push(`目录 ${rep.dirs.length} 个（${rep.dirs.map((d) => path.basename(d)).join(', ')}）`);
       if (parts.length) log(C.dim(`  测试产物已清理：${parts.join(' · ')}`));
       if (rep.errors.length) log(C.bad(`  ⚠️ 测试产物清理有失败项：${rep.errors.join('；')}`));
     } catch (e) {

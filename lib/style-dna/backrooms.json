@@ -1,0 +1,158 @@
+{
+  "slug": "backrooms",
+  "name_zh": "后室 / 新怪谈（Liminal Found Footage）",
+  "essence": "一段从空荡、无尽、荧光灯照明的空间里回收的摄像机磁带：一台 1990 年代手持 VHS 摄像机（4:3）连续拍下一个个「熟悉但不对劲」的室内（办公室、酒店层、学校、商场、停车场层、医院翼楼），荧光灯嗡嗡响，没有人。恐怖来自**空、重复、官僚式的规则、以及摄像机本身在最不该出错的时刻出错**——没有东西追人，是后颈一凉而不是一惊一乍。它不是恐怖片（没有怪物特写、没有血、没有 jump scare、没有配乐 sting）、不是 ASCII/CRT 终端片（那些伪影是磁带与镜头，不是磷光与扫描线）、也不是废墟（干净是这个风格的一部分）。",
+  "materials_and_rendering": [
+    "画幅：4:3 加黑边嵌在 1920×1080 里。3D 用低分辨率渲染（如 720×540），让 VHS 通道放大——低分辨率既藏住 CG 的干净感，也是外观的一部分。",
+    "空间：在网格上轴对齐的隔断墙，带随机缺口与短桩，柱子，按固定间隔嵌入灯板的吊顶。手工设计的路线穿过程序化填充的空间，所以每扇门后都露出更多的空。",
+    "光照 = 上千盏灯、无阴影：把每块灯板的颜色与强度存进一张浮点纹理；每个片元把最近的灯板求和（发光体余弦 × Lambert / (d² + ε)）再加一项反弹光。无遮挡——后室的光是平的。每盏灯几 % 的暖/冷/绿变化、几 % 死灯、几 % 闪烁。AO 把接缝压暗。",
+    "雾跟着当地光照走：雾色 ×（当地光 / 平均）。灯死的地方雾也暗，所以那里的剪影读起来像**光里的一个洞**。背景 = 雾 × ~0.15，走廊因此溶进黑暗，而不是一堵亮墙。",
+    "克制的衰败：部分墙根的水渍潮痕、吊顶下一条烟黄带、少量翘边的接缝、几块发黄或缺掉的板、扩散板里的死虫。百分比都在个位数。",
+    "印刷品：办公激光打印在发黄的纸上，压缩体无衬线表头、表单号与修订号、编号的规则、一句「管理层」礼貌的结尾。钉在软木板上或胶带贴在墙上。",
+    "VHS 摄像机通道（不是 CRT）：小幅逐行抖动（≤0.25px 低频摆动）、磁头切换条、按需的跟踪撕裂、画面（不是 OSD）上的桶形畸变 + 暗角、亮度模糊 + 边缘振铃、色度向右渗开、高光拖尾、白平衡漂移、暗部 AGC 噪声、掉磁、黑电平抬升、高光软削。噪声按磁带速率（30fps）。无扫描线、无 RGB 荫罩。",
+    "OSD：手工 5×7 点阵字体 + 黑色描边：REC 红点、电量、时间与日期。摄像机的字幕机用同一套字体，放大。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白/台词极短。PA 规则句实测 6–13 个英文词（如 \"Rule three. If the lights flicker three times, do not look at the ceiling.\" 71 字符）；操作者的话更短（\"Okay. First night.\" / \"Hello?\" / \"That's an exit.\"）。字幕硬规则：CEA-608 风格，每行 ≤ 32 字符，一行一条黑底块，IBM Plex Mono 600 42px。",
+    "person_and_tense": "两类说话者。**PA（广播）**：第三人称/祈使的规则口吻，平静的公司腔（\"Rule one. The humming of the lights is normal.\"），字幕加 `[PA]` 前缀。**操作者**：第一人称、现在时、低声（字幕用斜体、首行标 `(whispering)`）。环境声用方括号 SDH 描述（`[LIGHTS FLICKER]`、`[SILENCE]`）。",
+    "typical_openers": [
+      "欢迎/入职式开场（\"Good evening, and welcome to the night shift.\"）",
+      "编号规则句（\"Rule one. …\" / \"Rule three. If …, do not …\"）",
+      "操作者的短反应/自语（\"Okay. First night.\" / \"Hello?\"）",
+      "用时间差制造不对（\"It was midnight a second ago.\"）",
+      "用一句平铺直叙点名异常（\"That's an exit.\"）"
+    ],
+    "forbidden": [
+      "血腥/暴力/惊吓式台词（恐怖来自空与规则，不来自怪物）",
+      "网络口播腔、感叹号堆叠、营销话术",
+      "解释性长句（规则必须像印在墙上的制度，短、冷、有编号）",
+      "把规则写成字幕（规则是画面，要能读出来，不能被旁白念完代替）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序：磁带滚入（AWB 蓝→黄摆动，AF 找到墙上的一张告示，字幕机打上片名）→ 慢慢摇离告示露出走廊（隔断与灯退进雾里）→ 例行（行走 POV，低头看湿地毯上的鞋尖；约 20s 几乎无事）→ 矛盾（蹲下看一张重复出现的告示，保持 ≥4s 不被遮挡）→ 遵守规则（猛地低头看鞋；让地毯上的光变化而不是抬头看天花板）→ 峰值（变焦 + 自动对焦在走廊里找，那东西只在约 0.5s 的合焦里存在）→ 时间被拿走（跟踪撕裂，随后**完全相同的构图**，只有 OSD 变了）→ 打破规则（转角看到红色 EXIT；在完全静默里保持不动；推近；门自己开了）→ 最后一条规则转向观众 → REC 熄灭（定格、撕裂、黑）→ 片尾卡。",
+    "beat_durations": "时间挂在「原始时间」上，再经一个分段线性 warp `W()` 映射到成片时间（demo 只压走路段）。关键锚点（原始秒 → 经 W）：rollIn .55、afLock 1.55、pan 6.0–7.3、lookDown1 11.3–13.4、notice2 16.2–21.2、三次灯闪 flick 27.45/27.95/28.45、lookDown2 28.55–31.1、zoom 32.2–33.4、figOn 32.2–33.95、afFig 33.15–33.65（那东西只有这 ~0.5s 是清楚的）、afEmpty 35.15（第二次对上焦已不在）、tear 36.35–37.0（时间码 +3 小时）、turn 42.7–44.5、hush 47.35–48.35（全片 1s 数字静音）、door 51.0–52.3、recOff 57.7、endCard 58.1–61.0。DUR = W(61.0) = 59.7s。字幕停留 ≥ max(1.9s, 说完 + 0.65s)。",
+    "total_length_range": "主 demo 59.7s（style.json dur=59.7，frame_sec=35.82）。STYLE.md 明确「适合 45–60s 的片子」。",
+    "silence_policy": "静默是**高潮**：出口出现时整整一秒数字归零（连混响尾巴一起），字幕写 `[SILENCE]`。允许的唯一惊吓是柔和的：声音回来时所有镇流器同时重启的一声低闷「咚」。另外每次灯闪是一段 0.1s 的黑（三次一组），AE 之后约 0.45s 才追上、增益噪声随之泵动。"
+  },
+  "tone": "一次「入职/例行程序」的第一人称记录：说话的是一个新夜班员工（低声、克制）与一个平静的公司广播。恐怖是官僚式的、空荡的、重复的；叙述者不解释、不尖叫，只是照着墙上的规则走，直到规则开始互相矛盾、最后转向观众。",
+  "shot_logic": {
+    "camera_is": "一台手持的家用摄像机——它是一段连续的长镜头，剪辑只发生在磁带断掉的地方（开机滚入、跟踪撕裂、REC 熄灭）。它表达的是「一个人在照着一份程序走」，它的机械故障就是情节。",
+    "vocabulary": [
+      { "move": "沿走廊行走 POV", "expresses": "例行、无尽", "serves": "建立空间；时间流逝" },
+      { "move": "从细节慢慢摇到空间", "expresses": "尺度；空间还在延伸", "serves": "一次揭示；第一眼" },
+      { "move": "低头看脚", "expresses": "服从、回避", "serves": "遵守一条规则；不去看" },
+      { "move": "蹲下并保持不动看印刷文字", "expresses": "阅读；官僚", "serves": "一条规则；一处矛盾" },
+      { "move": "变焦 + 对焦在远处搜寻", "expresses": "看见 / 看不见", "serves": "一个存在；一份怀疑" },
+      { "move": "撕裂后完全相同的构图，只有 OSD 变了", "expresses": "时间被拿走", "serves": "一次跳跃；一份失去" },
+      { "move": "转过一个角，保持不动", "expresses": "一道门槛", "serves": "一个出口；一个选择" },
+      { "move": "无声的缓慢推近", "expresses": "某物的牵引", "serves": "一扇门；一个标志" },
+      { "move": "一边拍一边后退", "expresses": "撤退、恐惧", "serves": "离开一个房间；一条被打破的规则" },
+      { "move": "把摄像机放在一个平面上、静止、独自录制", "expresses": "被遗弃", "serves": "操作者不在了；一段长等待" },
+      { "move": "朝一个声音猛甩过去，然后什么都没有", "expresses": "期待落空", "serves": "一个没有来源的噪声" }
+    ],
+    "transitions": [
+      "开机滚入（power-on roll-in）",
+      "跟踪撕裂（tracking tear）——宇宙做的一次剪辑",
+      "REC 熄灭"
+    ],
+    "forbidden": [
+      "怪物特写、血腥、jump scare、配乐 sting",
+      "在磁带不断的情况下剪辑（剪辑只发生在磁带事件处）",
+      "废墟化（干净是风格的一部分；衰败只在个位数百分比）",
+      "让印刷文字被遮挡或不可读（规则是画面，必须能读）"
+    ]
+  },
+  "idioms": [
+    "自动对焦 / 自动曝光搜寻：某物只在合焦正确时存在（第一次对上焦它在，第二次对上焦它不在）。",
+    "磁带跟踪损伤：一次撕裂是宇宙做的剪辑；相同构图之后，时钟跳了几小时、电量掉了一格、一盏灯灭了。",
+    "OSD 就是情节：REC、电量、日期与时间码是画内证据（不在场证明、倒计时、带日期的巡检）。",
+    "规则作为画面里的文字：告示与 PA 广播从普通开始，逐渐出错、互相矛盾，最后转向观众。",
+    "空与重复：同一张告示出现在另一个地方；同一个房间少了一个细节；一条走廊通进雾里。空本身就是威胁。",
+    "那个「几乎是人」的东西：一个远处的剪影，偏差 15–40%（小头、长颈、窄而高的肩、长到膝的手臂），画成有机曲线贴在朝向相机的广告牌上，缓慢移动。",
+    "唯一的饱和色：一个信号色（红色警报灯 / 绿色应急标志 / 琥珀警示灯）是唯一会 bloom 的东西（把自发光推高过 bloom 阈值）。"
+  ],
+  "atmosphere": "一片空荡、熟悉但不对劲的室内：芥末黄墙纸、潮湿的地毯、嗡嗡响的荧光吊顶、重复到永远。没有人。整体是「官僚、疲惫、后颈发凉」的气质——不是血腥的恐怖，而是「你在一个不该还在运转的地方值班」的不安。",
+  "sound_palette": {
+    "instruments": [
+      "**没有配乐。** 只有磁带会录下的东西。音乐只存在于画内（隔墙传来的电梯音乐、收音机、天花板喇叭里一段走调的叮咚），被过滤、混响、可能随磁带 wow 走调。",
+      "demo 的画内音乐：一段原创 easy-listening 循环（88 BPM F 大调、颤音琴旋律、2、4 拍上的清音吉他、指弹贝斯），限带并淹没在混响里像隔墙传来，读一条逐渐变慢的带速曲线（1.00→0.97→0.89）。"
+    ],
+    "foley": "日光灯床：120Hz（或 100Hz）+ 谐波（1/.55/.42/.22/.16/.06）、一段带通方波的「滋」、约 9kHz 的镇流器细啸、坏灯管的随机「滋滋」爆发；与画面同一套光照曲线门控；小房间里 +3dB。PA：平静的公司腔（Kokoro `af_bella` 0.82–0.84）过「天花板喇叭」（限带约 310–3500Hz、纸盆共振 ~1.3kHz、tanh 饱和、房间混响），干到 whisper 仍能转写；每条规则前一段原创两音叮咚（颤音琴 E5→C5），时间跳跃后叮咚与人声一起走调。操作者：3–4 句短台词（`am_michael`），低电平、近讲低频、随人声包络的气流层、压缩；近讲呼吸，速率跟着恐惧曲线；屏息后一口长呼气。按材料拟音：湿地毯脚步（60–85Hz 闷击 + 0.9–2.6kHz 小湿黏）、转身时的布料摩擦、REC 开关的摄像机咔哒 + 马达、变焦伺服啸、AF 马达细咔哒、每次灯闪的镇流器「叮」+ 电弧「滋」、头顶极轻的拖曳、门闩 + 粘滑合页吱呀 + 气压呼声。"
+    ,
+    "mix_rules": "铺底与画内音乐在人声下约 −8 dB；−14 LUFS；不加颗粒（噪声活在画面里）。静默是高潮：整整一秒数字归零（含尾巴），随后所有镇流器同时重启的低闷「咚」是全片唯一的声音惊吓，且克制。撕裂处整条混音被切碎 + 噪声爆发。低频底噪（35–55Hz 布朗噪声 + 41/43.5Hz 拍频）从时间跳跃升起、到静默处切断。"
+  },
+  "variation_space": "可自由决定：地点与其材质、拍摄的程序/理由、规则、路线、那个存在（或没有）、信号色、开场、结尾与长度。远离 demo 的方向：结构——两盘磁带（同一条路线相隔一年各拍一次，第二盘发现变了什么）、一次真实的房产看房（操作者兴高采烈地介绍每个房间，而房子在不停加房间）、一份逐条念出的清单（每条在画面里的写字板上打勾，直到出现一条不在清单上的）；开场——半句话开始（磁带开始操作者已经在说话，跟踪还在滚入）、测试卡与日期板在摄像机被拿起之前、镜头盖没摘（只有声音，直到盖子取下）；结尾——电池耗尽（图标闪烁，画面定格在耗尽的那格）、摄像机被放下继续录一个空房间、磁带循环回第一镜（现在里面有了操作者的鞋）。",
+  "taboos": [
+    "在片中使用「Backrooms」这个词、wiki 的「Level」编号、社区实体名、任何现有组织或 logo（一切都要原创）",
+    "怪物特写、血、jump scare、配乐 sting",
+    "把伪影做成 CRT 的磷光/扫描线（伪影是磁带与镜头）",
+    "废墟化（干净是风格的一部分）",
+    "在磁带不断的情况下剪辑",
+    "让印刷规则不可读或被遮挡",
+    "照抄任何真实录像带的界面文字、字体或 logo"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一句台词、每一条规则、每一个 OSD 数值。要素：台词 `lines.json`（每条 {id, voice, speed, text, asr?}；分 PA `af_bella` 与操作者 `am_michael` 两类）；时间线 `story.js` 的 `T0`（关键时刻，原始时间）+ 分段线性 warp `W()`；机位关键帧（位置 `POS`/朝向 `YAW`/俯仰 `PITCH`/视场角 `FOV`/对焦 `FOCUS`/光圈 `APER`/恐惧 `FEAR`/屏息 `HOLD`）；OSD 时钟与电量曲线 `clock(t)`/`battery(t)`；告示与规则文本（`tex.js` 的 `notice()`）；那个存在的剪影设计（`thing2d.js`）。",
+    "new_subject_contract": "新画面元素走 `world.js` 的材质工厂：`paint({map,color,shin,spec,emit})` 画任意贴图/纯色漫反射物体；`silhouetteMat(map)` 画几乎不受光的剪影（alpha 测试）；贴图由 `tex.js` 程序化生成（确定性 mulberry 种子，不依赖外部图片）。剪影必须用有机曲线画在朝向相机的广告牌上（原始几何体会读成玩具）。",
+    "timeline_contract": "`story.js` 是唯一真值：导出 `DUR`（= W(61.0)）、`T`（关键时刻，已 warp）、`LINES`、`CHIMES`、以及机位曲线 `POS/YAW/PITCH/CAMH/FOV/FOCUS/APER/FEAR/HOLD` 和 OSD `clock/battery`。所有时间按「原始时间」写、经 `W()` 映射；任何别处的硬编码时间也要一起 warp。`main.js` 组装渲染链（GTAO + DOF + bloom → VHS）并导出事件；`subs.js` 生成 608 字幕。",
+    "event_vocabulary": "事件由 `story.js`/`main.js` 产生，mix.py 按 type 分派：`recOn`/`recOff`（摄像机咔哒 + 马达）、`line{id,who}`（PA 过天花板喇叭 / 操作者小声说话）、`chime`（两音叮咚）、`step{v}`（湿地毯脚步）、`rustle{v}`（布料摩擦）、`zoom{d}`（变焦伺服）、`af`（对焦马达细咔哒）、`flick`（灯闪，与画面 gLight 同一公式）、`overhead{d}`（头顶掠过）、`tear{d}`（跟踪撕裂）、`hush{d}`（屏息数字静音）、`door{d}`（门）、`end`（片尾）。"
+  },
+  "evidence": [
+    "styles/backrooms/STYLE.md:3-6 —— 一句话本质与「Never 使用 Backrooms/Level/实体名/组织 logo」",
+    "styles/backrooms/STYLE.md:8-15 —— 本质五条与「不是什么」（非恐怖片/非 ASCII-CRT/非废墟）",
+    "styles/backrooms/STYLE.md:17-26 —— 材料与渲染（4:3、网格空间、上千盏灯无阴影、雾跟光、克制衰败、印刷品、VHS 通道、OSD）",
+    "styles/backrooms/STYLE.md:28-33 —— 颜色逻辑（一个病态主色 + 恰好一个饱和信号色 + 白平衡漂移）",
+    "styles/backrooms/STYLE.md:35-40 —— 字体与字幕（CEA-608 32 字符、[PA]/斜体操作者/SDH、规则不是字幕是画面）",
+    "styles/backrooms/STYLE.md:42-49 —— 运动质量（一个连续长镜、手持 = 步态+呼吸+恐惧颤抖、低头只看鞋尖、对焦过冲、灯闪 0.1s + AE 0.45s 滞后）",
+    "styles/backrooms/STYLE.md:51-69 —— 镜头语法表 + 构图（文字可读不被遮挡）+ 转场（只有磁带事件）",
+    "styles/backrooms/STYLE.md:71-80 —— 声音（无配乐、荧光灯床、PA、操作者、按材料拟音、静默是高潮、drone、混音 −14 LUFS 无颗粒）",
+    "styles/backrooms/STYLE.md:82-91 —— 母题清单（对焦搜寻/跟踪损伤/OSD 是情节/规则作为文字/空与重复/几乎是人」的东西）",
+    "styles/backrooms/STYLE.md:93-105 —— 媒介陷阱（全亮读成医院走廊/灯穿墙/背景亮矩形/均匀雾/线摆动斜体化文字/原始几何体读成玩具/纯红不 bloom）",
+    "styles/backrooms/STYLE.md:111-119 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/backrooms/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/backrooms/DEMO.md:12-28 —— 故事与五个母题使用 + 情绪弧 + 改编套路（把主题变成一次入职/程序/清单）",
+    "styles/backrooms/DEMO.md:30-53 —— 逐拍镜头 + 「那东西」规格 + 运动数字（步幅 0.72m、头 bob 3cm、呼吸 0.27Hz、fear 1/3.5/9Hz、低头 pitch −1.2rad、FOV 52°→27°、三次 0.1s 黑、AE 0.45s、门 1.3s）",
+    "styles/backrooms/DEMO.md:55-66 —— 声音设计（无配乐、荧光灯床、PA、操作者、画内电梯音乐带速变慢、拟音、静默 1s + 柔和重击、−14 LUFS grain 0）",
+    "styles/backrooms/DEMO.md:68-78 —— 调色板与道具（4:3 720×540、隔断 2.4m 网格、灯板 DataTexture、雾跟光、墙纸 #d5bd66、地毯 #8c763c、EXIT #ff2a1a emit 9、克制衰败、告示、VHS 通道参数、OSD）",
+    "styles/backrooms/DEMO.md:80-85 —— 字幕（CEA-608 32 字符、[PA]/斜体/SDH、规则不是字幕）",
+    "styles/backrooms/demo/story.js:6-12 —— WARP 分段线性 warp + W()",
+    "styles/backrooms/demo/story.js:14 —— DUR = W(61.0)",
+    "styles/backrooms/demo/story.js:17-49 —— 关键时刻 T0（rollIn/afLock/pan/notice2/flick/zoom/figOn/afFig/afEmpty/tear/hush/door/recOff/endCard）",
+    "styles/backrooms/demo/story.js:53-60 —— 台词 LINES 与 CHIMES",
+    "styles/backrooms/demo/story.js:64-83 —— 机位 POS/YAW/PITCH/CAMH/FOV",
+    "styles/backrooms/demo/story.js:85-90 —— FOCUS 自动对焦曲线",
+    "styles/backrooms/demo/story.js:92-95 —— APER/FEAR/HOLD",
+    "styles/backrooms/demo/story.js:98-102 —— clock/battery（OSD 是情节：撕裂后 11:59→2:59）",
+    "styles/backrooms/demo/world.js:6-10 —— 吊顶 2.7m / 灯阵 2.4m / 墙厚 0.16 / 灯贴图 128",
+    "styles/backrooms/demo/world.js:17-27 —— 主走廊 + 出口走廊 + 门后小房间",
+    "styles/backrooms/demo/world.js:37-46 —— 程序化填充（2.4m 网格、0.21 概率、避开路线）",
+    "styles/backrooms/demo/world.js:59-86 —— 灯阵数据（dead 3.5%/flicker 2.5%/dim，主走廊远处暗区、出口两盏灭）",
+    "styles/backrooms/demo/world.js:88-101 —— updateLights（坏灯管闪烁 + 全局 g）",
+    "styles/backrooms/demo/world.js:121-141 —— lightAt（周围 5×5 盏灯 + 反弹光 + 出口红光）",
+    "styles/backrooms/demo/world.js:142-145 —— fog / fogA（雾跟当地亮度）",
+    "styles/backrooms/demo/world.js:152-188 —— WALL_FS（墙纸幅褪色差、水渍潮痕、烟黄带、接缝翘边、踢脚线）",
+    "styles/backrooms/demo/world.js:190-204 —— FLOOR_FS（地毯绒面 + 潮湿发暗斑块）",
+    "styles/backrooms/demo/world.js:206-230 —— CEIL_FS（矿棉板 + 龙骨 + 发黄/回风口/缺板黑洞）",
+    "styles/backrooms/demo/world.js:232-241 —— TROF_FS（灯板发光 = 贴图 × 每盏灯自己的色与亮度，uEmit 5.0）",
+    "styles/backrooms/demo/world.js:253-261 —— SIL_FS（剪影几乎不受光，只吃一点）",
+    "styles/backrooms/demo/world.js:351-357 —— 出口标志 emit 9（红色推高过 bloom 阈值）",
+    "styles/backrooms/demo/vhs.js:6-14 —— VHS uniforms（barrel .07 / vig .42 / black .045 / sharp .9 / jitter .3）",
+    "styles/backrooms/demo/vhs.js:36-58 —— 4:3 pillarbox + 逐行抖动 + 磁头切换条 + 跟踪撕裂",
+    "styles/backrooms/demo/vhs.js:60-79 —— 亮度窄/宽高斯 + 振铃 + 色度向右滞后 + 高光拖尾 + AGC 噪声",
+    "styles/backrooms/demo/vhs.js:85-94 —— 掉磁白线 + 白平衡/曝光 + 黑电平抬升 + 高光软削 + 暗角",
+    "styles/backrooms/demo/osd.js:3-26 —— 5×7 点阵字体表",
+    "styles/backrooms/demo/osd.js:45-82 —— drawOSD（REC 红点 / 电量 / 时间码日期 / 磁带计数 / 字幕机片名）",
+    "styles/backrooms/demo/subs.js:1-9 —— CEA-608 风格、每行 ≤32 字符、黑底块",
+    "styles/backrooms/demo/subs.js:20-41 —— 字幕表（[PA]/斜体操作者/SDH [LIGHTS FLICKER]/[SILENCE]）",
+    "styles/backrooms/demo/tex.js:25-48 —— 墙纸 #d5bd66 + 竖条 + 菱形列 + 褪色",
+    "styles/backrooms/demo/tex.js:52-58 —— 地毯 #8c763c 斑驳",
+    "styles/backrooms/demo/tex.js:62-76 —— 吊顶板 #d9d3b8 + 龙骨",
+    "styles/backrooms/demo/mix.py:106-121 —— 荧光灯 hum（120Hz 及谐波 + 带通方波 + 9kHz 镇流器啸）",
+    "styles/backrooms/demo/mix.py:59-68 —— speaker 天花板喇叭（限带 + 纸盆共振 + 饱和 + 混响）",
+    "styles/backrooms/demo/mix.py:194-203 —— 画内电梯音乐（带速 1.00→0.885 + wow，屏息时消失）",
+    "styles/backrooms/demo/mix.py:222-227 —— 屏息 1s 数字静音 + 所有镇流器同时重启的闷咚",
+    "styles/backrooms/demo/lines.json:1-66 —— PA 规则 + 操作者台词实测文案与音色/语速",
+    "styles/backrooms/style.json:16-17 —— frame_sec 35.82 / dur 59.7"
+  ]
+}

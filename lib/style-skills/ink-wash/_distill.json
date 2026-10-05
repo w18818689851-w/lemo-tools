@@ -1,0 +1,87 @@
+{
+  "slug": "ink-wash",
+  "nameZh": "中国水墨",
+  "distilledAt": "2026-10-03T00:00:00Z",
+  "matchScore": 88,
+  "scoreBreakdown": {
+    "palette": 19,
+    "composition": 17,
+    "typography": 17,
+    "rhythm": 18,
+    "audio": 17
+  },
+  "defects": [
+    "composition −3：平移镜头里竖排题跋标题列被画面左缘裁掉（帧 f04 已切出画外，f02 完整），DEMO.md:82 承认同类问题「subtitles inherited the world camera transform and slid off screen」。",
+    "typography −3：本次 .srt 未随片重新生成，出片日志明确告警「该 demo 没有本编排器支持的字幕生成器 —— .srt 将沿用仓库里已提交的旧文件」，成片字幕与随片 .srt 可能不同步；且 STYLE.md:44 点名的 Cormorant Garamond italic 本机不存在，dub 通路回退 KaiTi。",
+    "rhythm −2：断流瞬间（帧 f17）溅墨点密度偏高，局部接近糊成一片，与 DEMO.md:84「the cut began splitting the wave while the stroke was still crossing the frame」的旧坑同源。",
+    "audio −3：实测整片 −13.8 LUFS，与 mux 目标 −14 LUFS 有 0.2 LU 偏差；LRA 8.0 LU（ebur128）偏宽，静默与泼墨段之间的留白对比被削弱——这 3 分来自响度偏差与动态/留白，**不含真峰值**。★ 真峰值口径更正（本次补记）：成片真峰值 = loudnorm 的 input_tp（4× 过采样）**−1.62 dBTP**，在 −1.2 dBTP 交付线内（余量 0.42 dB）、未削波；此前写的「真峰值 −1.6 dBFS」是 ebur128 的 1 位小数读数、astats 采样峰值 −1.630804 是下界，都不能当真峰值用，也不构成扣分项。"
+  ],
+  "assetGaps": [
+    "无外部图像/视频素材缺口：纸、墨、山、水、人物、书法、印章全部由 demo/ 引擎程序化生成（ink.js / comp.js / land.js / wave.js / glyph.js / seal.js / hero.js）。",
+    "字体缺口：STYLE.md:44 声明的 Cormorant Garamond italic 本机无此字体，dub-styles.json#ink-wash 回退 KaiTi（楷体），仅能近似题跋手写感。",
+    "字体骨架依赖：书法需要一支 OFL 毛笔字体当骨架（demo 用 Ma Shan Zheng 描中心线），若换机器缺字体则书法元素需替换骨架来源。"
+  ],
+  "limits": [
+    "只有 16:9：style.json 无 aspects 声明，产品默认 9:16 下画面会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑，逐镜贴留白的字幕会整行落进丢失区；本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "只适合 40–60s 单场景短片（样片 48.0s）；信息密度撑不起数据表、多栏文字、清单式讲解、多角色对话。",
+    "配乐依赖 core/audio/pluck.py 的 guqin 合成音色，缺该模块则古琴/箫退化，风格辨识度下降。",
+    "matchScore 上限说明：由于成片即本风格自身的 demo，客观上限为 100；扣掉的 12 分全部来自可复现的具体缺陷（标题被裁、srt 不同步、溅墨偏密、响度微偏），无「不可达分」。"
+  ],
+  "evidenceFrames": [
+    "_contact.jpg",
+    "f01.jpg",
+    "f02.jpg",
+    "f04.jpg",
+    "f07.jpg",
+    "f10.jpg",
+    "f13.jpg",
+    "f14.jpg",
+    "f16.jpg",
+    "f17.jpg",
+    "f19.jpg",
+    "f21.jpg",
+    "f22.jpg",
+    "f24.jpg"
+  ],
+  "sources": [
+    "styles/ink-wash/STYLE.md",
+    "styles/ink-wash/DEMO.md",
+    "styles/ink-wash/demo/build.sh",
+    "styles/ink-wash/style.json",
+    "lib/style-dna/ink-wash.md",
+    "lib/style-dna/ink-wash.json",
+    "lib/dub-styles.json#ink-wash",
+    "_distill/logs/ink-wash.log",
+    "_distill/frames/ink-wash/"
+  ],
+  "generatedVideo": {
+    "path": "D:/lemo-films/ink-wash/ink-wash.mp4",
+    "durSec": 48,
+    "bytes": 33217807,
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "frames": 1152
+  },
+  "selfCheck": {
+    "rendered": true,
+    "usedPreGeneratedAudio": false,
+    "muxEncoder": "nvenc",
+    "loudness": {
+      "integratedLufs": -13.8,
+      "lra": 8,
+      "truePeakDbtp": -1.62,
+      "samplePeakDbfs": -1.630804,
+      "peakDbtpTarget": -1.2,
+      "peakTargetMet": true,
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.62 dBTP，在 −1.2 dBTP 交付线内（余量 0.42 dB）、未削波。此前 §6 写的「真峰值 −1.6 dBFS」是 ebur128 的 1 位小数读数（口径不对），本次改为 input_tp 口径；astats 采样峰值 −1.630804 是下界。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
+    },
+    "warnings": [
+      "该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件",
+      "出片命令为 node lemo-make.mjs ink-wash --skip-sync --no-preflight --ratio 16:9（跳过两份库同步与预检）"
+    ]
+  },
+  "resolvedDefects": []
+}

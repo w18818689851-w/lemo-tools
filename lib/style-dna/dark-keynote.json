@@ -1,0 +1,145 @@
+{
+  "slug": "dark-keynote",
+  "name_zh": "暗色科技发布（Dark Tech Keynote）",
+  "essence": "一部「界面本身是主角」的软件发布片：没有实体产品、没有玻璃渲染，主角是界面（一个光标、窗口、通知、方块、一个数字），活在近黑舞台上、被柔和冷光照亮，**只有一种品牌强调色**留给最重要的那一个元素。风格由「精度」定义——每个元素吸附网格、每个动作落在拍上、每个声音属于同一个设计好的家族；戏剧性来自对比：混乱被「生成」成界面、一次决定性动作、然后留白。它不是玻璃产品渲染（没有实体）、不是录屏（没有真系统或 App）、不是全息 HUD（没有扫描线）、也不是图表片（是一个数字，不是一张图）。",
+  "materials_and_rendering": [
+    "舞台：近黑底色 + 上中部径向提亮，一个大型冷色光晕以个位数不透明度放在偏离中心处，四角 50–55% 暗角；发丝网格（白色 ~3%，每第 4 条 ~6%）挂在 48px 模数上；无颗粒。",
+    "UI 套件全部原创、用代码画：圆角窗口（标题栏只有一个小图标和标题，绝不用红黄绿交通灯按钮、菜单栏或 Dock）、通知卡、带等宽文件名的文件图标、程序化缩略图、列表行、标签页、徽章、进度条、统一方块。",
+    "表面分三级抬升的暗面：1px 边框（~8% 白）、1px 内顶高光、柔和投影。",
+    "景深是 2.5D 相机（`s = 1/(1/zoom − z)`）；靠近镜头的卡片随放大而模糊；旋转用条带渲染的透视（rotY ≤ ~24°）。",
+    "光是揭示工具：只有被光扫过的像素才亮起，未照到的地方停在几个百分点（demo 里 7%）。",
+    "运动质量：24fps on ones，不步进、不沸腾——这是精度，不是手作；一切都落在网格和拍上；缓动是快出 + 一次小过冲（back，s≈1.3）后立刻安定；出生动作短且有类型（下落+弹跳/甩入/滑入/弹出，0.2–0.3s）；消失是被设计的（一拍收一个部件、像显像管关机一样压扁成一点），没有东西只是淡出。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白是短促的陈述句：demo 6 行实测 10–42 个字符，最短是点题句 \"Meet Tidy.\"（10 字符），最长是一句价值主张 \"One press, and everything finds its place.\"（42 字符）；多数 2–4 个词。字幕是一条 UI 组件——底部居中的深色半透明胶囊（1px 浅边、柔和投影、Inter 500 约 40px、一个小的强调色「正在说话」圆点），以 0.16s 的轻微上浮 + 淡入进入，停留 ≥ max(1.8s, 语音 + 0.6s)。",
+    "person_and_tense": "第二人称 + 现在时（对观众直接说话：\"Your desktop.\"、\"Meet Tidy.\"）；叙述者是克制、自信的产品播报，短促陈述，不解释、不煽情。",
+    "typical_openers": [
+      "第二人称点出用户的处境（\"Your desktop.\" / \"Your photos.\" / \"Your inbox.\"）",
+      "宣布式短句介绍产品（\"Meet Tidy.\"）",
+      "一句话把承诺说完（\"One press, and everything finds its place.\"）",
+      "结尾用一句短语收束（\"Room to think.\"）",
+      "用数字做钩子（把最重要的统计量单独给一屏）"
+    ],
+    "forbidden": [
+      "第一人称内心独白与抒情（让界面和数字说话）",
+      "营销腔、感叹号堆叠（\"amazing\"、\"revolutionary\"）",
+      "长复合句、从句套从句（一句只承担一层信息）",
+      "抽象概念名词当主语（只谈能被画成界面的东西）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一次发布）：平静钩子（光标在静默里打片名） → 打断（3s 第一条通知） → 累积（一次连续拉远，每小节加一层） → 过载插入（半秒级的 999+ / 148 标签页 / 红色存储条） → **冻结 + 静默** → **那一个动作**（所有层对齐成一个和弦） → 光的揭幕 → 大数字 → 一个呼吸（UI 自己收起来、音乐自己减掉） → 回响（光标把第一句打完） → 片尾卡。",
+    "beat_durations": "时间挂在 120 BPM 网格上（1 拍 = 0.5s，1 小节 = 2s，1 个十六分 = 0.125s，`timeline.js:2`）。关键锚点（秒）：typeStart 0.75、ret 2.5、三声通知 3.0/3.5/3.75、拉远 4.0–12.0、插入 12.0/12.5/13.0/13.5、冻结 15.0、拉伸 15.5、按下 16.0、网格显形 17.0、收拢 18.0、chrome 19.0、揭幕 20.0、转正 24.5、大数字 26.0、锁位 26.5–27.0、数字退回 29.5、四拍收回 30.0–32.0、静默2 33.0、回响 34.0、片尾卡 37.0、片尾淡出 40.0、光标熄灭 41.5。字幕停留 = max(1.8s, 语音 + 0.6s)；字幕上浮 0.16s。",
+    "total_length_range": "主 demo 42.0s（style.json dur=42.0，frame_sec=8.4）；DEMO 给的简报是 30–45s 的软件发布片。体裁适合 25–60s。",
+    "silence_policy": "静默是工具：15.0–16.0s 是**所有轨道的数字零**（屏幕暂停了），它之后的第一声就是「按下」；33.0–34.0s 是近静默（−60 dB 房间），它之后的第一声是光标「嗒」——和第一帧同一个声音。第一次静默之后的声音是全片最重要的声音。"
+  },
+  "tone": "一位克制、自信的产品播报员在发布一件工具：短促陈述、不夸张、不设悬念；让界面、网格、光和数字自己承担戏剧性。主角一侧（光标）则是带一点拟人的「活的元素」，会眨眼、被挤、蓄力、按下。",
+  "shot_logic": {
+    "camera_is": "一台按网格与拍点精确驱动的 2.5D 摄影机：它表达的是一种「有刻度、可复现、落在拍上」的世界；它自己不乱动（舞台和网格从不动），只有镜头动它们。",
+    "vocabulary": [
+      { "move": "锁死极特写（locked extreme close-up）", "expresses": "亲密、屏幕上唯一活着的东西", "serves": "一个单一动作；一个念头成形；一个安静的状态" },
+      { "move": "连续拉远（对数空间按小节打点）", "expresses": "累积、从一个点长出的规模", "serves": "负载扩散；网络生长；团队加入" },
+      { "move": "穿过冻结帧推近（push-in through a frozen frame）", "expresses": "时间停住、焦点收窄", "serves": "一个决定；提交前的瞬间；发现一个 bug" },
+      { "move": "一拍内急拉（whip pull-out）", "expresses": "因果被同时看见", "serves": "同步完成；一次部署落地到所有地方" },
+      { "move": "潜入小 UI 元素（log-zoom）+ 匹配剪辑", "expresses": "进入细节内部", "serves": "一个重要的计数器；一行日志；一个设置" },
+      { "move": "半秒插入镜从源头展开", "expresses": "过载、读不过来", "serves": "通知风暴；报错；选择过载" },
+      { "move": "近乎锁死、物体转动 + 光扫过", "expresses": "呈现、产品即英雄", "serves": "一次揭幕；新版本；一个功能名" },
+      { "move": "缓慢横移过 UI 平面", "expresses": "秩序被眼睛读出", "serves": "时间线；流水线" },
+      { "move": "网格上的俯视平面图", "expresses": "系统视角、结构", "serves": "架构；权限；一张工作流图" },
+      { "move": "回到早先的取景", "expresses": "押韵：什么变了", "serves": "之前/之后；一个循环闭合；一次回响" }
+    ],
+    "transitions": [
+      "UI 展开 / 收起（expand / collapse）：每一次镜头切换都是某个界面元素展开占满画面，或画面收进某个元素",
+      "插入镜从它的源位置长出来（beat 前一帧就开始，落到拍上时已 ~80% 打开）"
+    ],
+    "forbidden": [
+      "淡入淡出（fade）与空白帧",
+      "让舞台或网格自己动（只有镜头能移动它们）",
+      "无来由的运镜（每次移动都要表达累积/尺度/数字/因果）",
+      "把强调色给两个元素（如果两个东西是强调色，其中一个错了）"
+    ]
+  },
+  "idioms": [
+    "生成的累积（generated accumulation）：按规则生成 UI，越来越快、成百上千；混乱不是你画的，是你生成的。",
+    "吸附网格（the snap grid）：一个承诺用一次动作讲完——所有东西一拍内飞进网格，网格在此刻之前一直隐形。",
+    "活的元素（the living element）：光标（或产品最小的活元素）是主角，也是品牌标记。",
+    "冻结（freeze）：所有东西停在半空、声音掉到数字零；只有屏幕能这样让时间停住。",
+    "光揭示（light reveal）：一条柔光带扫过，只有被照亮的像素才亮起（软前沿、glint ≤20%、≤1.3s）。",
+    "数字从字形噪声里滚出（number from glyph noise）：数字乱跳、每个十六分音符锁一位、带一个小弹跳。",
+    "类型流（type streams）：元素沿彩色曲线轨迹飞进各自的行，于是类别读成「流」。",
+    "收起来（put-away）：UI 一拍拆掉一个部件，直到只剩一个元素。"
+  ],
+  "atmosphere": "一个有刻度、有网格、正在精确运行的暗色舞台：近黑、微冷的蓝、一层柔和的光池；安静、干净、可复现。整体是「精密、克制、值得信赖」的气质，而不是热闹或戏剧化的。",
+  "sound_palette": {
+    "instruments": [
+      "调音打击乐与铺底：马林巴、颤音琴（琴槌或弓奏）、钟琴、钢片琴、一个合成 pad 或 drone、一个低音正弦脉冲、一个沙锤、拨弦合成、毛毡钢琴；干净、干、极简（样例 VCSL，CC0）",
+      "音乐是一条可见的过程：错相（两条声部同一音型，一条渐渐漂移）、加法累积（每小节加一个音）、减法过程（拿掉音符直到只剩一个）、用切分拍子来加速而不是改速度、或一个所有东西都落上去的和弦"
+    ],
+    "foley": "按材料分层：光标「嗒」、矮轴键盘、通知玻璃、文件落下、窗口呼啸、故障重音、堆叠闷响、按下的「咚」（毛毡琴槌 + 55→40Hz 正弦下落）、光扫微光、数字颗粒、显像管关机。**两个声音家族 = 故事**：混乱的声音是「散」的（每条通知音高各差 ±45 音分、声像乱摆、每种来源一种音色）；Tidy 的声音是「一套」（毛毡嗒 + 玻璃叮，全在 A 大调五声里、居中），于是 264 次落地汇成一片同调微光。",
+    "mix_rules": "音乐在人声下压 −8 dB、拟音 −4 dB；整体 −14 LUFS；无颗粒。环境声（安静房间 + 电脑风扇 + 一条 6.8kHz 线圈啸叫，随混乱段增长）**压到本段最后一句旁白结束前**才放开（它在人声频段里）。J/L cut 承载 UI 转场（一个和弦延续、微光在光之前 0.4s 就到）。"
+  },
+  "variation_space": "可自由决定：产品的动词、主角元素（或没有）、问题图像、强调色、结构、开场、结尾、镜头路径与配乐过程。远离 demo 的方向——结构：一个倒计时（发布清单一项项勾过，每项是一个 UI 时刻，落在「已发布」）；并排对照（两个版本的工作流分屏跑，旧的溺水、新的提前完成）；一条缩放阶梯（一个像素 → 一个组件 → 一屏 → 一队设备，每层一个新事实）。开场：先给数字（黑底上一个巨大的统计量，它的意义倒着揭示）；一张空网格的平面图，一个槽一个槽填满；从第一帧就是硬的插入风暴，平静很晚才来。结尾：空网格上只剩一个方块亮着强调色；产品在宽景里安静运行、没有文字；一个「已发布」状态（一条确认气泡，然后黑暗）。强调色与「什么被计数」都可换。",
+  "taboos": [
+    "玻璃产品渲染（没有实体产品）",
+    "录屏（没有真操作系统或 App、没有系统控件/交通灯/Dock）",
+    "全息 HUD（没有扫描线）",
+    "图表片（是一个数字，不是一张图）",
+    "通用淡入淡出转场与空白帧",
+    "把强调色给两个元素",
+    "问题色（红）在转折之后再次出现",
+    "照抄任何真实发布会、界面、字体、系统控件、旋律或 logo"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一句台词、数字与颜色。要素：`timeline.js`（速度网格 BPM/BEAT/BAR/S16、音型 P、关键时间点 K、三条声部的音符表）；`lines.json`（每行 {id, text, voice, speed, onscreen?}，demo 用 af_kore、speed 0.95，`onscreen:true` 的行由光标在画面里打出、只进 .srt 不烧两遍）；强调色（`setAccent`，示例 lime `#B7F34A`）；UI 道具（窗口/通知/文件/照片/徽章/存储条）；品牌标记（squircle + 光标）与字标。",
+    "new_subject_contract": "新画面元素用引擎画：任意形状走 `E.litShape(g, path2d, {accent, color, glowR, sweep, bbox})`（暗面 + 边缘光，或强调色发光填充）；母题/星标用 `sparklePath`；轨迹用 `trail`；光标用 `caret`；UI 套件用 `windowBox / windowContent(kind) / notif / fileIcon / photo / badge / appIcon / storageBar`；飞行用 `flyPose` + `motionBlur`；光扫用 `lightReveal`；透视用 `perspective`；数字用 `scramble`；字幕用 `toast`；镜头用 `camera`。",
+    "timeline_contract": "`timeline.js` 是唯一真值：导出 `BPM/BEAT/BAR/S16/DUR`、音型 `P`、关键时间点 `K`、声部 `voice1/voice2/voice3/voiceClean`、`typeTimes`；`tools/dump_timeline.mjs` 导出成 `timeline.json` 供 Python 配乐/混音/校点读取。`film.js` 导出 `renderFilm(g,t,o)`、`DUR`、`setLines/subs`、`buildEvents()`；页面契约 `window.READY / window.render(t) / window.DUR / window.EV`。",
+    "event_vocabulary": "事件由 `film.js` 的 `buildEvents()` 产生：`key{c,i}`（打字，逐字）/ `return` / `caret_tick` / `ding{i}` / `spawn_file|spawn_photo|spawn_notif|spawn_window{kind,fg,pan,big}` / `insert{i}` / `insert_back` / `freeze` / `stretch` / `press` / `land{g,pan,k}` / `lift{g}` / `grid` / `sort_wave{w}` / `chrome` / `caret_logo` / `dim` / `sweep` / `check{i}` / `push` / `num` / `lock{i}` / `files` / `line2` / `num_back` / `retract{i}` / `to_caret` / `to_caret2` / `silence2` / `end_card` / `caret_off` / `vo{id}`。`tools/cuecheck.py` 检查关键 cue 且每个生成元素都落在配乐音符上。"
+  },
+  "evidence": [
+    "styles/dark-keynote/STYLE.md:8 —— 本质（界面是主角、暗舞台、一种强调色）",
+    "styles/dark-keynote/STYLE.md:10 —— 由「精度」定义、戏剧来自对比",
+    "styles/dark-keynote/STYLE.md:12 —— 不是什么（非玻璃渲染/非录屏/非全息 HUD/非图表片）",
+    "styles/dark-keynote/STYLE.md:16-20 —— 舞台/UI 套件/表面/景深/光揭示",
+    "styles/dark-keynote/STYLE.md:24-28 —— 颜色逻辑（冷中性阶梯、一种强调色、问题色、类别码）",
+    "styles/dark-keynote/STYLE.md:32-36 —— 字体与字幕（Inter/Inter Tight/JetBrains Mono、字幕=toast、停留规则）",
+    "styles/dark-keynote/STYLE.md:40-46 —— 运动质量（24fps on ones、落拍、出生动作、飞行、消失被设计）",
+    "styles/dark-keynote/STYLE.md:50-67 —— 镜头语法表 + 转场=UI 展开/收起",
+    "styles/dark-keynote/STYLE.md:71-78 —— 声音（调音打击乐、音乐作为可见过程、两个声音家族、静默、混音）",
+    "styles/dark-keynote/STYLE.md:84-91 —— native moves（生成累积/吸附网格/活元素/冻结/光揭示/数字/类型流/收起来）",
+    "styles/dark-keynote/STYLE.md:107-111 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/dark-keynote/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/dark-keynote/DEMO.md:16-21 —— 六个 native moves 在 demo 里的用法（264 元素、网格、光标、冻结、光、0.8）",
+    "styles/dark-keynote/DEMO.md:23 —— 故事弧",
+    "styles/dark-keynote/DEMO.md:25 —— 声音与画面共用一条时间线（错相）",
+    "styles/dark-keynote/DEMO.md:31-43 —— 逐拍镜头表",
+    "styles/dark-keynote/DEMO.md:47-52 —— 运动数值（出生动作、收拢、光标表演、光揭示、数字、收起来）",
+    "styles/dark-keynote/DEMO.md:56-62 —— 配乐结构（120 BPM、错相、A 大调 9 和弦、声音家族、静默、J/L cut、人声）",
+    "styles/dark-keynote/DEMO.md:66-77 —— 舞台色值、表面三级、强调色、三股流色、道具",
+    "styles/dark-keynote/demo/timeline.js:2 —— BPM 120 / BEAT 0.5 / BAR 2 / S16 0.125 / DUR 42",
+    "styles/dark-keynote/demo/timeline.js:5 —— 音型 P（12 个十六分音符）",
+    "styles/dark-keynote/demo/timeline.js:8-24 —— 关键时间点 K",
+    "styles/dark-keynote/demo/timeline.js:27-62 —— 四条声部（voice1/voice2 错相/voice3 反向错相/voiceClean 减法）",
+    "styles/dark-keynote/demo/film.js:21-34 —— caretState（光标眨眼=节拍器、被挤、蓄力、按下、回弹）",
+    "styles/dark-keynote/demo/film.js:37-52 —— camMess（连续拉远、冻结推近、急拉）",
+    "styles/dark-keynote/demo/film.js:193-207 —— 弧线飞行 + 三股流光尾 + 变方块",
+    "styles/dark-keynote/demo/film.js:261-287 —— 光环 + 吸附网格在光环前沿亮起 + 网格显形",
+    "styles/dark-keynote/demo/film.js:332-334 —— winPose（转动 -0.42→0、亮度）",
+    "styles/dark-keynote/demo/film.js:363-369 —— 先在屏幕空间做光扫（lightReveal，base 0.07/soft 700/band 360/glint 0.2）",
+    "styles/dark-keynote/demo/film.js:398-434 —— 大数字场景（scramble、0–1s 标尺）",
+    "styles/dark-keynote/demo/film.js:454-472 —— 窗口 → 线 → 光标（显像管关机）",
+    "styles/dark-keynote/demo/film.js:537-560 —— buildEvents 全部事件 type",
+    "styles/dark-keynote/demo/engine.js:14-15 —— setAccent（唯一彩色）",
+    "styles/dark-keynote/demo/engine.js:100-123 —— litShape（暗面 + 边缘光 / 强调色 / sweep）",
+    "styles/dark-keynote/demo/engine.js:358-387 —— lightReveal",
+    "styles/dark-keynote/demo/engine.js:389-410 —— perspective（条带渲染）",
+    "styles/dark-keynote/demo/engine.js:411-437 —— scramble",
+    "styles/dark-keynote/demo/engine.js:440-458 —— toast",
+    "styles/dark-keynote/demo/engine.js:459-475 —— camera（2.5D）",
+    "styles/dark-keynote/demo/world.js:122-128 —— TILE 60 / 22×12 槽位 / RING 2600",
+    "styles/dark-keynote/demo/mix.py:19 —— A 大调五声（Tidy 的调内音）",
+    "styles/dark-keynote/demo/mix.py:25-58 —— 光标嗒/键盘/玻璃/毛毡/呼啸/落下/照片/通知",
+    "styles/dark-keynote/demo/music/score.py:1 —— 极简主义错相、A 大调/升 F 小调游移、120 BPM",
+    "styles/dark-keynote/demo/music/score.py:46 —— 六条 stem（marimba/vibes/glock/pad/pulse/bowed）",
+    "styles/dark-keynote/style.json:16-17 —— frame_sec 8.4 / dur 42.0"
+  ]
+}

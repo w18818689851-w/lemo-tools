@@ -1,0 +1,173 @@
+{
+  "slug": "scifi-toon",
+  "name_zh": "科幻情景喜剧卡通",
+  "essence": "给成年人看的 2D 电视动画：**会沸腾的均匀粗深色描边**、**平涂 + 硬边阴影块（无渐变）**、**大白眼 + 小瞳孔**、**有弹性的嘴**、又丑又可爱的生物，以及被当成家里破烂用的科幻硬件。喜剧是**对白驱动**的：像即兴的闲聊、打断、尴尬的停顿、反应镜头、层层升级、最后一秒反转。类型的引擎是**「一个极小的日常目标，用荒谬巨大的科幻手段去追」**：能用它解决任何问题的人，却拿它去干一件鸡毛蒜皮的事，而另一个人为这份情绪买单。",
+  "materials_and_rendering": [
+    "描边：近黑（略带紫的黑最合适，demo 用 #1b1422），角色与道具约 7px、背景细节 4–6px，圆接头。**线宽在屏幕空间恒定**：特写是「重画」成同样的粗细，绝不放大（先把点变换到屏幕坐标，再用单位变换描边）（demo/toon.js:7,26,131-134）。",
+    "line boil：每条轮廓在屏幕空间按 ~7px 重采样，沿法向用低频噪声位移，幅度约 1.7px；12fps 在 **3 张 boil 画**之间循环。**一切都沸腾**，包括保持姿势与背景：静止帧从不是死的（demo/toon.js:27-30,80-110）。",
+    "填充：只有平涂色。阴影是裁在填充内部、朝背光一侧的硬边深色块（每个形体一块）。辉光是 1–2 圈平的半透明环，不是渐变。天空是**平的色带**（demo/toon.js:117-130,151-154）。",
+    "脸：大白眼（3/4 视角下两只会相触）、4–5px 瞳孔、厚眼皮做死鱼眼、眼袋。参数化嘴（张开量 o、宽度 w、卷曲 sm、歪斜 skew）+ 口腔、牙、舌。情绪靠眉毛（demo/chars.js:15-49）。",
+    "卡司设计：剪影必须在纯黑下也读得出。给每个主角一个荒谬的服装点子。**避开「白大褂 + 尖刺头发」**（demo/chars.js:129-288；STYLE.md:22）。",
+    "生物：每个世界可以有一只又恶心又可爱的生物；让它不说话（只用音效），这样片子始终是两位主角之间的对白。检查被家具挡住的东西是否还露出脸和上半身（STYLE.md:23）。",
+    "传送门（或任何跨世界的装置）：**全片唯一发光的东西**。一团疙瘩状的边缘 + 粗描边、旋转的旋臂、一个浅色核心、环绕的火花、滴落的黏液、开门时盖在场景上的一层平半透明色。开门带轻微过冲（约 12%，back-ease ~0.3s），弹性过冲要能盖住演员（demo/worlds.js:17-56；demo/main.js:31）。",
+    "屏幕图形：一个复古终端标签（VT323 字体）逐字打出，颜色随世界变（demo/main.js:370-383）。"
+  ],
+  "sentence_patterns": {
+    "length": "对白是两拍一来一回：单句 **1–14 个英文词（约 5–80 字符）**，短促、口语、可被打断。规则：一条台词只承载一个信息点或一个反应；'Nope.' 这种一词句是主力笑点；打断的句子**故意生成得比需要长，再在对方插话处截断音频**（demo/lines.json；STYLE.md:97）。字幕停留：旁白 ≥ max(1.8s, 语音+0.6s)；快对白用 `max(audio + 0.35s, 0.9s + 字符数/17)`；在世界切换处与**静音拍之前**切断，让静音落在干净的画面上（demo/main.js:389-390）。",
+    "person_and_tense": "第一人称口语、现在时。两位主角：一位低沉、平、慢（死鱼眼），一位更高更快（紧张）。允许打断、犹豫、结巴（写成音节，如 'buh, buh-broken'）、自我更正、重复的口头禅。不用第三人称解说，不用书面语。",
+    "typical_openers": [
+      "紧张者结巴开场：'So, um— the machine's b-b-broken, and the café's closed, and the, uh—'",
+      "死鱼眼一个字：'Gary.'",
+      "命令式：'Get your shoes.' / 'One coffee. Black.'",
+      "一词否定：'Nope.' / 'Nope?'",
+      "生物台词（升调）：'Hi!' / 'Yep!'",
+      "回环收尾（重复首句）：'Gary. Get your shoes.'"
+    ],
+    "forbidden": [
+      "长段独白或书面解说（对白要短、要能被抢话）",
+      "在片名或文档里写出源类型的作品名（一句 'inspired by adult-swim-era sci-fi sitcom cartoons' 足矣）",
+      "照抄任何既有作品的角色、剪影、配色组合、名字、口头禅、打嗝梗、logo 或某个传送枪的外观",
+      "解释笑点（喜剧靠反应镜头，不靠旁白说明）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "一个极小的日常目标（买一杯咖啡）被荒谬巨大的手段（跨平行宇宙的传送门）追着完成：实验室（死鱼眼与紧张者的日常）→ 开传送门 → 果冻宇宙（被打断的第一次尝试）→ 马克杯宇宙（咖啡在喝人）→ 三连蒙太奇（牙齿宇宙 / 鸽子当政 / 全员是 Vask，同一个「Nope.」越切越快）→ **可疑地正常**的宇宙（平静本身就是笑点）→ 回家（实验室）→ 咖啡活了、有脸了 → 冷场反转（'Are you decaf?'）→ 把咖啡丢回传送门 → 片尾卡（Decaf 在漩涡里挥手）。每个转折点都对应一个音乐 cue（demo/story.js:19-30,61-71）。",
+    "beat_durations": "120 BPM，**1 拍 = 0.5s**；每个音乐 cue 的第一拍就是它的剪辑点。**角色 12fps 步进（q），镜头 / 传送门 / 飞行道具 / 转场每帧平滑（24fps）**。规则三连：两次慢的错误答案，然后一秒一个世界、按拍切、同一个拒绝词（demo/story.js:1-6,66；STYLE.md:44,87）。",
+    "total_length_range": "demo **57.5s**；一集通常 **40–120s**。世界切换点（WIPES）：12.85 / 20.9 / 28.4 / 29.4 / 30.4 / 31.4 / 36.05 秒；三连蒙太奇的世界各只占 **1.0s**（demo/story.js:33）。",
+    "silence_policy": "**静音就是包袱**：在揭示处和冷场处**硬切音乐、连混响尾巴一起切**，只留房间底噪（日光灯嗡、钟表滴答、冰箱）。44.0 的冷场要一块**干净的画面**（demo/main.js:386；STYLE.md:77）。"
+  },
+  "tone": "干、冷、快，偶尔荒谬地温情。幽默来自两个反应的**落差**（死鱼眼 vs 惊慌），而不是台词本身；荒谬的图像之后永远跟一个反应特写。整体像一集给成人看的科幻情景喜剧。",
+  "shot_logic": {
+    "camera_is": "一台**对白相机**：中景双人、硬切近景、反应特写、插入特写；转场走传送门漩涡或硬切。开场与结尾由题材决定。",
+    "vocabulary": [
+      "中景双人：关系、谁怎么反应（demo/story.js:20 two）",
+      "硬切到近景：打断、一张脸崩掉（demo/story.js:20 vCU1/gCU1）",
+      "插入物件极端特写：荒谬的细节（demo/story.js:23 jCup）",
+      "反应特写：笑点活在脸上（每个荒谬图像之后必跟一个）",
+      "紧特写 + 某个词上短抖：惊慌（demo/main.js:33-37）",
+      "冲向传送门 → 漩涡擦除：离开一个世界（demo/main.js:361-368）",
+      "同一个取景跨世界重复：只有世界在变（demo/story.js:24 三连蒙太奇）",
+      "对静止双人极慢推入：一次冷场（demo/story.js:27 stare）",
+      "把装置和两个主角都框进去的广角：整个处境一次看完（demo/story.js:21 jWide）",
+      "过肩拍屏幕：读坏消息（demo/story.js:23 vNope）",
+      "两张脸之间甩镜：重叠的争吵（demo/story.js:26 gAlive）"
+    ],
+    "transitions": [
+      "传送门漩涡擦除（全屏漩涡在 tc 时刻盖满画面，擦除瞬间闪一层浅绿，demo/main.js:361-368）",
+      "硬切"
+    ],
+    "forbidden": [
+      "溶解/叠化（转场只走传送门漩涡或硬切）",
+      "为孩子做的卡通（要冷幽默、长停顿）",
+      "日式动画（不要闪亮的眼睛）",
+      "矢量说明片（线要 boil）",
+      "把脸放进字幕带（底部约 170px），或让世界标签压到脸"
+    ]
+  },
+  "idioms": [
+    "平行世界：每次跳 = 新配色、新 cue、新生物。",
+    "双人反差：死鱼眼 vs 惊慌，笑点在两个反应的差里。",
+    "规则三连 → 机关枪：两次慢的错误答案，然后一秒一个世界、按拍切、同一个拒绝词。",
+    "可疑地正常的那个世界：模式被打破，平静就是笑点。",
+    "冷场反转：反转之后一段长静默，然后一句台词揭示角色的价值观。",
+    "硬件当破烂：能扭曲世界的技术被用来干一件鸡毛蒜皮的家务。",
+    "回环按钮：最后一句重复第一句，故事闭环。",
+    "每个荒谬图像之后必跟一个反应特写。",
+    "装置在前，笑点在后：目的道具在笑点落地前先进画。"
+  ],
+  "atmosphere": "一间昏暗的实验室 / 一座荒谬的平行宇宙咖啡馆：荧光灯、终端读数、一个发绿光的传送门是全场唯一的光源。冷幽默、尴尬停顿、突然的喧闹——像一集成人的科幻情景喜剧在你眼前现场演。",
+  "sound_palette": {
+    "instruments": [
+      "**合成配乐，不需要采样**：一条**特雷门琴**式主音（正弦 + 少量二三次谐波、连奏滑音约 70ms、起音后约 150ms 淡入颤音、弹簧混响）压在模拟贝斯、方波琶音与复古鼓机上；小调式与半音线条适合主主题（demo/music/score.py:1-5）",
+      "每世界一套类型 cue：冲浪吉他 / 波尔卡手风琴 / 玩具钢琴摇篮曲 / 电梯 bossa（Karplus-Strong 尼龙弦）/ 刷子摇摆 + 颤音琴 / 大号 + 滑哨 / 温暖 Rhodes + 人声 aah / 颤音弦乐做惊慌"
+    ],
+    "foley": "合成：传送门开（低频 boom + 下扫噪声 + 上升漩涡）、嗡鸣、贴近的「fwump」、每次擦除的漩涡 whoosh、pop/boing、湿滑 glorp/squish、slurp、chomp、眨眼 blip、click-beep、kazoo 尖响、橡皮玩具声（demo/mix.py:34-85）。",
+    "mix_rules": "对白两把声音形成对比：死鱼眼主角低沉、平、慢（轻度饱和 + 约 180Hz 抬升做沙哑）；紧张者更高更快（存在感提升）。生物升调（+7 半音）说一两个词。人声走 RMS 配平 + 压缩 + 短早反射（约 9–67ms 五次抽头），让它落在同一个房间里。音乐在对话下闪避约 **−7 dB**（`duck = 1 - 0.55*...`）。母带 **−14 LUFS**（demo/voice.py:25-29；demo/mix.py:140-150）。"
+  },
+  "variation_space": "你要决定：前提、卡司、世界、笑点、开场、结尾、镜头路径、节奏与配色。全部远离本 demo。可换的结构：**一个世界、许多时钟**（两人待在家，装置把他们跳进一天的不同时刻，每次都更糟）；**求职面试**（一个评审团面试来自别的世界的候选人，每人一种类型 cue）；**技术支持电话**（分屏连接两个世界，一个声音引导另一个穿过一场灾难）。可换的开场：**灾难中途**（传送门已经开着，有东西正在过来）；**说明书**（一段终端读数在见到任何人之前先解释装置）；**错的世界**（我们从荒谬的世界开始，后来才看到家）。可换的结尾：**困在别处**（装置坏了，他们愉快地住下）；**观众**（某个世界的生物在屏幕上看完整个片子并给它打分）；**代价**（一个安静的收尾镜头，拍这趟差事让某人付出了什么，不搞笑）。配色、世界数、cue 都可换。唯一不能换的是三件事：**会沸腾的恒定粗描边 + 平涂硬边阴影、每世界一套配色、对白驱动的双人反差喜剧**；换掉任何一件，它就不再是这个风格。",
+  "taboos": [
+    "TTS 会把连字符结巴读成词（要写成音节 'buh, buh-broken'；把念错的词重拼；起名要能过低沉嗓音）",
+    "Whisper 听不清很短的片段（除非前后各补约 0.6s 静音）",
+    "真的打断：要把被打断的那句生成得**比需要长**，再在对方插话处截断音频",
+    "弹性过冲把演员吞掉（要用温和的 back-ease）",
+    "食物与液体需要线索（表面细节、滴落、蒸汽），否则会读成别的物件",
+    "方波合成镲会混叠成刺耳的 8–20kHz 嘶声（要用带通噪声 + 少量 FM）",
+    "持续低于 ~40Hz 的贝斯在笔记本喇叭上是隆隆声（要提高一个八度收尾）",
+    "音乐 cue 被硬切但混响尾巴没切 = 不是死寂",
+    "复刻任何既有作品的角色、剪影、配色组合、名字、口头禅、打嗝梗、logo 或某个传送枪的外观；也不要使用「酸绿 + 黏液滴落 + 摇晃泡泡字」这套组合（会让人联想到特定作品）"
+  ],
+  "asset_contract": {
+    "content_fields": "`story.js` 为唯一真值：`DUR`、`ANIM_FPS`、`q(t)`、`BEAT`、`VO{}`（对白起点）、`SHOTS[]`（`[起,止,名,宇宙]`）、`WIPES[]`（`[tc,半宽]`）、`TAGS[]`（`[起,止,编号,描述,底色,字色]`）、`T{}`（关键时刻）、`CUES[]`（配乐 cue，t0 = 第一拍）。`lines.json` 给 `{id, who, text, sub?, voice, speed, pitch?, cut?, asr?}`（demo/story.js:1-71；demo/lines.json）。",
+    "new_subject_contract": "新增一个角色 = 用 `toon.js` 的矩阵栈 + 形状原语在**世界坐标**里搭，脸用 `chars.js` 的 `eye/mouth/hand`，肢体用 `noodle`；描边自动走屏幕空间 boil 并保持恒定线宽。新增一个世界 = 在 `worlds.js` 里加一个 `export function xxxWorld(t, o)`，给它一套 3–5 色配色（与上一个世界在色相**和**明度上都尽量不同）、一个可选的生物、以及一个配乐 cue。新增一个传送门 = 复用 `worlds.js` 的 `portal(cx,cy,r,t,{open,sx,spin})`（demo/worlds.js:17；STYLE.md:29-30,107）。",
+    "timeline_contract": "`story.js` 是唯一时间真相：画面（main.js）、字幕（SUBS）、拟音（events）、配乐 cue（music/score.py，读 events.json）全从它导出；每个 cue 的 t0 就是剪辑点。页面契约：`window.render(t)` / `window.DUR` / `window.EV` / `window.SUBS`；字体在 render 前预载（demo/main.js:515-516）。字幕在 `WORLD_CUTS` 处与静音拍之前切断（demo/main.js:386-390）。",
+    "event_vocabulary": "事件词表（main.js 的 events() → mix.py / score.py 消费）：vo{id} / cue{...} / amb{w,d} / plip / squeak / tic / gulp / cloth / click / portalOpen / portalHum{d} / portalClose / portalWhoosh / suck / whooshBig / pop / boing / slam / thud / gurgle / glorp / slide / squish / wetblink / slurp{d} / page / lick / chomp / coo / swish / shopbell / cupSet / bloop / blip / wheee{d} / gulpPortal / tOpen（demo/main.js:474-513）。"
+  },
+  "evidence": [
+    "styles/scifi-toon/demo/toon.js:1",
+    "styles/scifi-toon/demo/toon.js:7",
+    "styles/scifi-toon/demo/toon.js:26",
+    "styles/scifi-toon/demo/toon.js:27",
+    "styles/scifi-toon/demo/toon.js:80",
+    "styles/scifi-toon/demo/toon.js:95",
+    "styles/scifi-toon/demo/toon.js:117",
+    "styles/scifi-toon/demo/toon.js:131",
+    "styles/scifi-toon/demo/toon.js:151",
+    "styles/scifi-toon/demo/chars.js:6",
+    "styles/scifi-toon/demo/chars.js:15",
+    "styles/scifi-toon/demo/chars.js:33",
+    "styles/scifi-toon/demo/chars.js:50",
+    "styles/scifi-toon/demo/chars.js:129",
+    "styles/scifi-toon/demo/chars.js:218",
+    "styles/scifi-toon/demo/worlds.js:10",
+    "styles/scifi-toon/demo/worlds.js:17",
+    "styles/scifi-toon/demo/worlds.js:25",
+    "styles/scifi-toon/demo/worlds.js:31",
+    "styles/scifi-toon/demo/worlds.js:46",
+    "styles/scifi-toon/demo/worlds.js:51",
+    "styles/scifi-toon/demo/worlds.js:140",
+    "styles/scifi-toon/demo/worlds.js:215",
+    "styles/scifi-toon/demo/worlds.js:277",
+    "styles/scifi-toon/demo/worlds.js:300",
+    "styles/scifi-toon/demo/worlds.js:319",
+    "styles/scifi-toon/demo/worlds.js:332",
+    "styles/scifi-toon/demo/story.js:1",
+    "styles/scifi-toon/demo/story.js:3",
+    "styles/scifi-toon/demo/story.js:5",
+    "styles/scifi-toon/demo/story.js:6",
+    "styles/scifi-toon/demo/story.js:9",
+    "styles/scifi-toon/demo/story.js:19",
+    "styles/scifi-toon/demo/story.js:33",
+    "styles/scifi-toon/demo/story.js:36",
+    "styles/scifi-toon/demo/story.js:46",
+    "styles/scifi-toon/demo/story.js:61",
+    "styles/scifi-toon/demo/main.js:15",
+    "styles/scifi-toon/demo/main.js:31",
+    "styles/scifi-toon/demo/main.js:33",
+    "styles/scifi-toon/demo/main.js:41",
+    "styles/scifi-toon/demo/main.js:71",
+    "styles/scifi-toon/demo/main.js:361",
+    "styles/scifi-toon/demo/main.js:370",
+    "styles/scifi-toon/demo/main.js:385",
+    "styles/scifi-toon/demo/main.js:389",
+    "styles/scifi-toon/demo/main.js:394",
+    "styles/scifi-toon/demo/main.js:401",
+    "styles/scifi-toon/demo/main.js:420",
+    "styles/scifi-toon/demo/main.js:427",
+    "styles/scifi-toon/demo/main.js:442",
+    "styles/scifi-toon/demo/main.js:461",
+    "styles/scifi-toon/demo/main.js:474",
+    "styles/scifi-toon/demo/main.js:515",
+    "styles/scifi-toon/demo/voice.py:1",
+    "styles/scifi-toon/demo/voice.py:25",
+    "styles/scifi-toon/demo/voice.py:33",
+    "styles/scifi-toon/demo/asr.py:1",
+    "styles/scifi-toon/demo/asr.py:12",
+    "styles/scifi-toon/demo/levels.py:1",
+    "styles/scifi-toon/demo/mix.py:34",
+    "styles/scifi-toon/demo/mix.py:140",
+    "styles/scifi-toon/demo/mix.py:149",
+    "styles/scifi-toon/demo/mix.py:151",
+    "styles/scifi-toon/demo/music/score.py:1",
+    "styles/scifi-toon/demo/lines.json:2"
+  ]
+}

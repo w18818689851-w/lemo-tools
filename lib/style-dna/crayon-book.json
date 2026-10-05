@@ -1,0 +1,137 @@
+{
+  "slug": "crayon-book",
+  "name_zh": "蜡笔儿童绘本（Crayon Picture Book）",
+  "essence": "一部「一页绘本在你眼前被画出来」的片子：蜡笔只粘在纸纹的凸点上、笔压决定它压进凹处多深，涂色总是涂出轮廓，每一条线因为每帧都是新画的一张而轻轻沸腾；水彩是最后刷上去、并且被蜡笔挡住的一层，负责揭示蜡笔早就藏好的东西。任何主题都变成「一页会被画完的绘本」，画画和涂色本身就是情节。它不是「加个蜡笔滤镜的可爱矢量图」（质感来自材质物理）、不是白板讲解（没有马克笔、没有手）、不是水彩画（水彩是客、蜡笔是主）、也不是黑板画。",
+  "materials_and_rendering": [
+    "纸即世界：暖白画纸 ~#f4efe3；纸纹锚定在页面上（随镜头平移；缩放时两个八度交叉淡入，颗粒在屏幕上始终约 1px），三个八度的值噪声 + 一个横向纤维项；终合成做浮雕（光来自左上），蜡填平处浮雕减弱；低频斑驳 ±2%、暖暗角。",
+    "蜡的附着是核心规则：每个蜡笔层是一张 Canvas2D，RGB=颜色、A=笔压；着色器在 `tooth > 1 − 1.22·pressure`（软边 ±0.07）处沉积蜡——轻压=点状凸峰，重压=几乎实心且略深（`×(1−0.10·p²)`）。",
+    "笔触是带低频手抖（约 1.7px）的飘带：宽度 ±15%、两端收尖（taper 默认 0.25、收细段 ≤28px）、一条更密的中芯 + 1–2 条细条纹；角色与建筑用最重的轮廓（~7–8px），精细的「大人式」物件约一半（4–5px）。",
+    "涂色是来回之字形排线、看得见行距缺口：行距 ~10.5px、笔宽 ~11px、每趟笔压不同（0.72–1.14×）、越界 overshoot 0–7px；大面积再补一遍交叉排线（40–50%）。",
+    "水彩是一张独立密度画布乘在页面之上：颜料在边缘堆积（density − blur）、在最深纸纹凹处颗粒化、用噪声渲开（花椰菜状），并被蜡排斥（`density × (1 − 0.93·smoothstep(.12,.55, waxCoverage))`）。刷痕是宽条带 + 鬃毛条纹 + 移动时更深的湿前沿。",
+    "遮挡是「前景形体内部擦掉后面的东西」；角色身后「保留纸白」（一种 knock-out，恢复纸面并重置蜡），像孩子先画人、再绕着人涂背景。",
+    "角色是一个熟练的大人模仿小孩：圆头（约 2.5 头身）、点眼 + 白蜡高光、粉腮、管状四肢、连指手、大块头发；有脸的物件给大眼和眼皮。孩子式透视：山墙正面 + 斜的侧墙；人比门大。"
+  ],
+  "sentence_patterns": {
+    "length": "旁白是「印在书页上的字」：demo 7 行实测 13–47 个字符，最短是收尾句 \"Night, night.\"（13 字符），最长是数羊句 \"It tossed, and it turned, and it counted sheep.\"（47 字符）；多数为一句 5–9 个英文词的单句。字幕用 Patrick Hand 54px、靛蓝蜡笔色、底部居中，一次一行；停留 ≥ max(1.8s, 语音时长 + 0.6s)，无旁白的音乐段落不排字幕。",
+    "person_and_tense": "第三人称、过去时为主（讲一个已经发生的睡前故事）；叙述者是「书里的文字」，简短、温柔、有节奏（\"up, up, up\"）。允许拟人（月亮会失眠、会叹气），但不解释、不评论。",
+    "typical_openers": [
+      "主语 + 状态陈述开场（\"The moon could not sleep.\"）",
+      "用重复动作/叠词推进（\"It tossed, and it turned, and it counted sheep.\"）",
+      "用方位状语引出第二个角色（\"Down below, someone else was awake, too.\"）",
+      "以连续动词串联一个小动作（\"So she climbed up, up, up, onto the roof,\"）",
+      "用一句极短的安抚收尾（\"Night, night.\"）"
+    ],
+    "forbidden": [
+      "第一人称内心独白与抒情（画面已经在讲情绪）",
+      "长复合句、从句套从句（一句只装一个画面动作）",
+      "营销腔、感叹号堆叠、网络口播腔（\"amazing\"、\"you won't believe\"）",
+      "抽象概念名词当主语（只谈能被画出来的东西与动作）"
+    ]
+  },
+  "narrative_rhythm": {
+    "structure": "信息投放顺序（一页绘本的完成过程）：空白页（先看到纸） → 角色被画出来并醒过来（3s 内钩子） → 一个小而可笑的困难（数羊失败） → 第二个角色登场 → 一个小勇敢的动作（爬梯） → 水彩揭示（情绪峰，无旁白） → 大家睡着 → 拉出成书、翻页 → 结束卡。",
+    "beat_durations": "时间挂在 3/4 拍、72 BPM 网格上（1 拍 = 0.833s，1 小节 = 2.5s）。demo 总长 52.0s（film.js DUR=52，style.json dur=52.0，frame_sec=43.68）。关键锚点：片名在 2.6s 起逐字写出；数羊 5 拍（10.0s 起每拍一只）；13.95s 一个整拍静默；爬梯 8 级横档从 20.3s 起每 0.45s 一级；三道水彩 27.9–34.7s；46.0s 拉出成书，47.6s 翻页。字幕提前 0.1s 上、至少停 1.8s，且下一行到来前 0.25s 收；逐字写出约 0.35s。",
+    "total_length_range": "主 demo 52.0s；STYLE/DEMO 给的故事弧是 45–55s（DEMO.md 明确 Arc 45–55s）。一页绘本的体裁适合 30–60s。",
+    "silence_policy": "静默是一个真实的拍子，不是空：数羊失败后留整整一拍静默（13.95–14.95s，mix.py 收到 silence 事件），唱歌前再留 0.3s 呼吸；无旁白的唱歌/水彩段落让音乐自己讲，音乐在人声下压 −7 dB、在无词段落抬 +4 dB。"
+  },
+  "tone": "一位温柔、不慌不忙的睡前故事讲述者：句子短、有呼吸、带一点重复的童趣；不设悬念钩子、不煽情、不解释，让「画画和涂色」把故事讲完。画面上是一个熟练的大人用孩子的眼光和手劲在画。",
+  "shot_logic": {
+    "camera_is": "一台在「一页大画纸」上移动的摄影机：它不制造情绪，它只是看，把视线引到某一处，再让位给画面；一镜到底横跨一页，最后才拉出去揭示「这是一本书」。",
+    "vocabulary": [
+      { "move": "锁死全页（locked full page）", "expresses": "画画之前的纸；整幅图", "serves": "从无到有的开场；一个静止画面；需要整页的揭示" },
+      { "move": "推向某个角色（push toward a character）", "expresses": "「就是这一个」", "serves": "片名让位；一种情绪到来" },
+      { "move": "锁死中近景（locked medium close-up）", "expresses": "替换姿势在表演", "serves": "喜剧；一个决定；一次小失败" },
+      { "move": "沿视线俯仰（tilt along a gaze）", "expresses": "我们看到他们看到的", "serves": "发现；渴望；某个巨大的东西" },
+      { "move": "紧跟随（tight follow）", "expresses": "世界在主体前面自己画出来", "serves": "一个勇敢的动作；一条路；建造" },
+      { "move": "在刷子移动时保持大远景（held wide while the brush moves）", "expresses": "材质本身即运动", "serves": "水彩揭示；天气；昼夜降临" },
+      { "move": "缓慢横移过页面（slow truck across the page）", "expresses": "从左到右阅读", "serves": "一个清单；一个序列；一家人" },
+      { "move": "拉出越过页面边缘（pull out past the page edge）", "expresses": "这页是一个物件", "serves": "桌上的书；冰箱上的画" },
+      { "move": "翻页（page turn）", "expresses": "新章节、时间跳跃", "serves": "之前/之后；第二天" }
+    ],
+    "transitions": [
+      "画出来（drawing on）：线条沿长度在 0.4–0.9s 内揭示",
+      "涂上去（colouring over）：一行一行地被涂满",
+      "水彩刷过（the wash）：整片纸被刷成夜色",
+      "横移或翻页（pan / page turn）"
+    ],
+    "forbidden": [
+      "溶解/叠化（dissolve）等非手绘的转场",
+      "让蜡笔淡入淡出（你不能让蜡笔淡出——片名只能靠镜头移开、翻页或被涂掉来离开）",
+      "无来由的运镜（每次移动都要有一个「看什么」的理由）",
+      "在无旁白的段落排字幕"
+    ]
+  },
+  "idioms": [
+    "白蜡抵抗（wax resist）：白蜡笔画的东西在水彩刷过之前几乎看不见——把彩蛋藏在第一帧的光天化日之下。",
+    "现场画出来（drawn live）：世界在主角前面一级一级地画出来。",
+    "涂色即动作（colouring is an action）：被涂上颜色「就是」在做那件事（涂上外套=穿上它、粉色乱涂=脸红、水彩=夜幕降临）。",
+    "沸腾（boil）：被定住的一帧仍然活着；把它调静，片子就安静下来。",
+    "孩子逻辑（child logic）：错误透视、物件长脸、数字写在天空里。",
+    "它是一本书（it is a book）：拉出到物件本身；翻页。",
+    "一镜到底解释书页：整片一镜到底，最后拉出成书，把「一页」这件事揭示出来。",
+    "逐字写出：片名与字幕按字符 reveal，像手一笔一笔写。"
+  ],
+  "atmosphere": "一张铺开的暖白画纸、一盒蜡笔、一杯水彩：有纸的味道、蜡的哑光、水彩洇开的湿边；安静、缓慢、被照顾。整体是「耐心、温柔、值得被贴在冰箱上」的气质，而不是精致或戏剧化的。",
+  "sound_palette": {
+    "instruments": [
+      "小件木质与金属齿乐器，不用弦乐与三角钢琴：尤克里里或尼龙吉他、单簧管或巴松（低音/幽默）、音乐盒（可随变调走音地「发条松掉」）、钟琴或钢片琴（每颗被揭示的星星一个音）、玩具钢琴（每数一样东西一个音）、长笛或竖笛当歌唱的嗓音、沙锤与木鱼",
+      "旋律是简单的小调子；一个主题可以一直藏着，到最后完整听一次"
+    ],
+    "foley": "按材料分层：蜡笔=粘滑摩擦（带通噪声 × 不规则颗粒调制，颗粒随笔画速度变密变亮；涂色=每一趟一个短刮擦）；湿刷子=柔软低通噪声 + 鬃毛颗粒、随笔画声像移动；毡子噗（羊落地）、布料嗖声（翻身）、卷笔刀、蜡笔放下的嗒声、翻页（提起/呼啸/扑动）；底噪=极轻的蟋蟀/鸟、房间底噪、远处的钟。",
+    "mix_rules": "音乐在人声下压 −7 dB，无词段落抬 +4 dB；音乐盒与钟琴 stem +3 dB 并给 3–7kHz 轻抬；整体 −14 LUFS。人声链：高通 75Hz → 先压缩（thr 0.2、2.5:1、8ms/140ms）→ 低架 +1.5dB@220Hz、−2dB 陷波@3.2kHz、高架 −4dB@6kHz → 分频去齿音（4.8–10kHz、4:1）→ 逐行 RMS 匹配 → 暖近场混响（12ms 预延迟、0.7s 低通尾巴、湿声约 −17dB）；人声比底噪高 7–10dB。"
+  },
+  "variation_space": "可自由决定：结构、角色（或没有角色）、是哪一页、开场、结尾、镜头路径、节奏、蜡笔盒以及有没有水彩。远离 demo 的方向——结构：一本涂色书（所有轮廓第一帧就在，每个想法涂一块区域）；翻过好几页（每页一个阶段，用翻页串起来）；两个孩子、一页（两种蜡笔颜色先争辩、再合流）。开场：一张画好的页被擦掉重新开始；蜡笔尖的极大特写正在画、然后拉开；一张被揉皱的纸被抹平。结尾：这页被贴在冰箱上、旁边还有别的画；最后一笔乱涂用一种颜色填满画面；一滴溅开的水找到白蜡写的留言。蜡笔盒与「揭示什么」都可换，水彩也可完全不用。",
+  "taboos": [
+    "加个蜡笔滤镜的可爱矢量图（质感必须来自材质物理，不是滤镜）",
+    "白板讲解（没有马克笔、没有手、没有手写字幕框）",
+    "水彩画（水彩是客、蜡笔是主）",
+    "黑板画（没有粉笔灰、没有黑板绿）",
+    "让蜡笔淡入淡出",
+    "用纯黑做轮廓（轮廓用靛蓝/深棕/梅子色）",
+    "屏幕固定的纸纹（必须锚定在页面上，否则文件会膨胀）",
+    "照抄任何真实绘本的角色、歌或画面"
+  ],
+  "asset_contract": {
+    "content_fields": "内容驱动每一个字。要素：lines.json（每行 {id, text, voice, speed}，demo 用 af_heart、speed 0.80–0.90，共 6–8 短行）；字幕由 LINES 生成（t0 = 语音起点 −0.1s，t1 = max(t0+1.8, t+时长+0.7) 且不晚于下一行前 0.25s）；事件表 events.json（{dur, ev[]}，ev 由 film.js 的 EV.push 产生）；配乐 cues（A–G 段落）；蜡笔盒（pal.js 的 12 支色）与水彩透射色；片名/结束卡文案。",
+    "new_subject_contract": "新画面主体用蜡笔引擎画：线走 `line(L, pts, {col,w,p,seed,wob,boil,taper,draw,streak})`（飘带 + 收尖 + 条纹 + 沸腾），面走 `fill(L, poly, {col,p,ang,gap,w,over,draw,cross})`（之字排线 + 出界 + 可选交叉），小面积走 `dab`；形状工具 `ellipse / handCircle / bez / smooth / xf`；字走 `text(L,str,x,y,{size,font,reveal})`。角色用 rig.js 的 `part/group` 做遮挡 + knock-out、管状四肢。先画角色的 model sheet（sheet.js）再进任何镜头。",
+    "timeline_contract": "film.js 导出 `DUR`、`frame(comp,t)`（≥46.0s 交给 end.js 的 endFrame）、`drawPage(comp,t,cam,{subs,vig})`、`LINES`、`SUBS`、`EV`、`camT`（世界中心+缩放的单调三次插值）。页面契约：main.js 暴露 `window.READY / window.render(t) / window.DUR`。合成顺序固定：paper → knock → crayon(f/l) → wash → 角色（水彩之后）→ knock 字幕底 → 字幕 → finish。",
+    "event_vocabulary": "事件 type（→ mix.py 拟音）：voice{id} / scratch{dur,pan} / pop / write{dur} / scribble{dur} / paper / toss / hop{i} / baa{i} / number{i} / silence{dur} / cricket / wave / rung{i} / hopout / climbover / step / sit / brush{dur,dir} / dip / glint{pan} / cap / yawn{who} / quilt / tuck / liedown / room / page{dur} / cue{id}。全部由 film.js 里 EV.push 产生，再由 core/render/events.mjs 序列化成 events.json。"
+  },
+  "evidence": [
+    "styles/crayon-book/STYLE.md:8 —— 一句话本质（一页绘本被画出来；画画和涂色是情节）",
+    "styles/crayon-book/STYLE.md:10 —— 不是什么（非蜡笔滤镜矢量/非白板/非水彩画/非黑板）",
+    "styles/crayon-book/STYLE.md:14-20 —— 材料与渲染（纸纹/蜡附着/笔触/涂色/水彩/遮挡/角色）",
+    "styles/crayon-book/STYLE.md:24-27 —— 颜色逻辑（约一打蜡笔、轮廓不用黑、至多一种水彩）",
+    "styles/crayon-book/STYLE.md:31-32 —— 字体与字幕（Patrick Hand 50–56px、停留 ≥max(1.8s,speech+0.6s)、不能淡出）",
+    "styles/crayon-book/STYLE.md:36-40 —— 运动质量（一切 12fps、boil、drawing on、substitution、涂色即动作）",
+    "styles/crayon-book/STYLE.md:46-58 —— 镜头语法表 + 转场",
+    "styles/crayon-book/STYLE.md:62-66 —— 声音（小件木质乐器、静默、foley 按材料、−14 LUFS、人声链）",
+    "styles/crayon-book/STYLE.md:72-77 —— native moves（wax resist / drawn live / colouring / boil / child logic / it is a book）",
+    "styles/crayon-book/STYLE.md:99-103 —— 变化空间（结构/开场/结尾各三例）",
+    "styles/crayon-book/DEMO.md:3 —— 「不要复用它的故事、叙事弧、镜头、道具或时长」",
+    "styles/crayon-book/DEMO.md:12 —— demo 用尽六个 native moves、白蜡星星在第一帧就在",
+    "styles/crayon-book/DEMO.md:14 —— 故事弧 45–55s",
+    "styles/crayon-book/DEMO.md:31-43 —— 逐拍镜头表（一镜到底、世界 3200×1800、全页 scale 0.6）",
+    "styles/crayon-book/DEMO.md:51-57 —— 配乐（3/4 72 BPM、音乐盒/玩具钢琴/长笛、静默位置、混音）",
+    "styles/crayon-book/DEMO.md:63-68 —— 调色板与道具（12 支蜡笔、群青水彩、纸 #f4efe3、蜡阈值）",
+    "styles/crayon-book/demo/film.js:11-12 —— DUR=52、BPM=72、BEAT、BAR=3 拍",
+    "styles/crayon-book/demo/film.js:15-24 —— LINES 7 行与 SUBS 停留规则",
+    "styles/crayon-book/demo/film.js:27-32 —— camT 单调三次插值镜头表",
+    "styles/crayon-book/demo/film.js:36-67 —— EV 全部事件类型",
+    "styles/crayon-book/demo/film.js:151-154 —— frame/endFrame（46.0s 交给 end.js）",
+    "styles/crayon-book/demo/film.js:157 —— BOIL.amp 在 44.4s 后降到 0.55（睡着就安静）",
+    "styles/crayon-book/demo/film.js:210-221 —— 合成顺序（纸→蜡→水彩→角色→字幕）",
+    "styles/crayon-book/demo/film.js:237-246 —— subTo（Patrick Hand 54px、逐字 reveal、留白底）",
+    "styles/crayon-book/demo/gl.js:65-80 —— FS_CRAYON 蜡附着（thr = 1 − a·1.22、重压更沉）",
+    "styles/crayon-book/demo/gl.js:83-109 —— FS_WASH（边缘堆积、颗粒、渲开、蜡防水）",
+    "styles/crayon-book/demo/gl.js:112-135 —— FS_FINAL（纸纹浮雕、暖暗角、台灯）",
+    "styles/crayon-book/demo/crayon.js:35-70 —— line（飘带/收尖/条纹/沸腾）",
+    "styles/crayon-book/demo/crayon.js:80-141 —— fill（之字排线/出界/交叉/每趟笔压不同）",
+    "styles/crayon-book/demo/crayon.js:198-222 —— text（逐字 reveal、每字微抖）",
+    "styles/crayon-book/demo/pal.js:2-19 —— 12 支蜡笔 + 一管水彩",
+    "styles/crayon-book/demo/world.js:132-136 —— BANDS 三道水彩刷痕",
+    "styles/crayon-book/demo/music/score.py:1-2 —— 3/4、72 BPM、F 大调、52.0s、六件乐器",
+    "styles/crayon-book/demo/mix.py:22-28 —— 蜡笔刮纸（粘滑摩擦、颗粒随速度）",
+    "styles/crayon-book/style.json:16-17 —— frame_sec 43.68 / dur 52.0"
+  ]
+}
