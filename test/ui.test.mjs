@@ -6,6 +6,23 @@
  * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
+ * 批次：A/B/C/D（前四批）+ E（第五批：文案出片面板）+ F（第六批：补三处 UI 盲区）
+ *   + **G（第七批：补剩余可点击路径 + 一个刚新增的功能开关）**。
+ *   E 补的是「文案出片」这张卡片的**用户点击路径** —— 形态切换、断句逐字一致、分析、风格下拉、
+ *   出片请求体契约（形态 1 / 形态 2）、以及三条**纯前端拦截**（空文案 / 形态 2 无素材 / 尺寸非法）。
+ *   这三条拦截服务端测不到（前端先拦，请求根本不发出去），只有 UI 层能钉住。
+ *   E7 会真上传一个极小的假 mp4（拿真实 videoToken）—— 落盘文件与上传登记表在 finally 里按
+ *   确切路径删除 / 逐字节还原。
+ *   F 补的是三处「整块静默失明」的版块（渲染/交互/契约三档全空）：播放器弹层 #playerModal、
+ *   窄屏侧栏切换 #btnToggleSide、顶栏「重新检测」#btnRefreshEnv / 「演练」#btnSimulate。
+ *   判据都带一条「有牙」的非平凡断言（transform 真的变了 / 请求真的发出去了 / 标题与视频源自洽）。
+ *   G 补的是审计点名、此前覆盖薄弱/为零的剩余版块：形态 2 的「限幅」复选框 #dubKeepLimit（**本轮
+ *   新加的功能**，默认关必须「与加功能前逐字节一致」= 不勾时不发那个键）、成片库 #films（此前一条
+ *   UI 用例都没有）、声音版块三处（试合成 / 导入 / 重置为内容文件默认）、主题出片的「生成工单」、
+ *   任务列表的行内「取消」（用户主动取消 ≠ 失败，文案必须中性）、启动表单的「常用组合」预设与「复制」。
+ *   ★ 重活一律用**页面内 patch window.fetch** 拦下短路（真 TTS 合成 / 真导入 / 真出片绝不触发）；
+ *     真落盘的工单（BRIEF_IDS）与真入队的任务（JOB_IDS）在 finally 里清干净。
+ *
  * 用法：
  *   node test/ui.test.mjs                 全部用例
  *   node test/ui.test.mjs --filter 批量    只跑名字里含「批量」的用例
@@ -38,6 +55,12 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 import { CFG } from '../lib/env.mjs';      // 只借常量（tmpDir / exportDir）；顶层无副作用
+import * as dub from '../lib/dub.mjs';     // 只借常量（UPLOAD_DIR）；顶层无副作用（与 dub-api.test.mjs 同款）
+
+// ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
+//   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
+//   设了这个环境变量，本进程 spawn 出的 server.mjs 会跳过写入。下面的备份/还原是第二道防线，保留。
+process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -51,6 +74,9 @@ const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开�
 const CONSOLE_ROOT = path.join(CFG.exportDir, '.console');
 const CONSOLE_LOGS = path.join(CONSOLE_ROOT, 'logs');
 const CONSOLE_INDEX = path.join(CONSOLE_ROOT, 'index.json');
+// E7 要真的上传一个极小的假 mp4（为了拿到一个真实 videoToken 走形态 2）——
+// 它落在 dub 的上传目录里，跑前按字节备份登记表、跑完按**确切路径**删文件并还原登记表。
+const DUB_INDEX_FILE = path.join(dub.UPLOAD_DIR, 'index.json');
 
 // ── 命令行 ──────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -102,6 +128,36 @@ function freePort() {
       const port = s.address().port;
       s.close(() => resolve(port));
     });
+  });
+}
+
+/** /api/dub/upload 收的是 **raw body**（不是 multipart）：文件名走 query、字节走 body。 */
+function uploadDubRaw(port, name, buf) {
+  return new Promise((resolve, reject) => {
+    const payload = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf), 'utf8');
+    const req = http.request({
+      host: '127.0.0.1', port, method: 'POST',
+      path: `/api/dub/upload?name=${encodeURIComponent(name)}`,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': payload.length,
+        Accept: 'application/json', Connection: 'close',
+      },
+      agent: false,
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let json = null;
+        try { json = JSON.parse(text); } catch { /* 不是 JSON 就算了 */ }
+        resolve({ status: res.statusCode, text, json });
+      });
+    });
+    req.setTimeout(30000, () => req.destroy(new Error('上传超时')));
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
   });
 }
 
@@ -371,6 +427,7 @@ async function waitFor(evalJs, expression, { timeoutMs = 20000, intervalMs = 250
 
 // ── 测试产物清理（只动登记过的东西）────────────────────────
 const JOB_IDS = new Set();
+const BRIEF_IDS = new Set();       // 本批新增：D4 会建一张测试工单，跑完必须删掉
 
 function cleanupJobs() {
   const rep = { removed: [], errors: [] };
@@ -398,6 +455,28 @@ function cleanupJobs() {
   return rep;
 }
 
+/** D4 建的测试工单：删掉（工单在出片跑完前不能删 → 对 409 重试几次）。必须**在停服务之前**调。 */
+async function cleanupBriefs(port) {
+  const rep = { removed: [], errors: [] };
+  if (!BRIEF_IDS.size) return rep;
+  for (const id of BRIEF_IDS) {
+    let last = null;
+    for (let i = 0; i < 20; i++) {
+      try {
+        const r = await httpRequest(port, 'DELETE', '/api/briefs/' + encodeURIComponent(id));
+        last = r;
+        if (r.status === 200) { rep.removed.push(id); last = null; break; }
+        if (r.status === 404) { last = null; break; }          // 已经被删掉了 → 当成成功
+        if (r.status !== 409) break;                           // 409 = 还在出片，等一会再删
+      } catch (e) { last = { status: 0, text: String(e.message || e) }; }
+      await sleep(500);
+    }
+    if (last) rep.errors.push(`${id}: ${last.status} ${String(last.text || '').slice(0, 100)}`);
+  }
+  BRIEF_IDS.clear();
+  return rep;
+}
+
 function cleanupTmpDirs() {
   const errors = [];
   for (const dir of TMP_ROOTS) {
@@ -405,6 +484,73 @@ function cleanupTmpDirs() {
     catch (e) { errors.push(`${dir}：${e.message}`); }
   }
   TMP_ROOTS.clear();
+  return errors;
+}
+
+// ★ F1 若本机成片库为空，会**临时**在 CFG.exportDir 下造一个不以 `_`/`.` 开头的目录放一个极小的假
+//   成片（播放器只 `preload="metadata"`，几字节即可，不需要真能解码）—— 为了触发播放器弹层。
+//   跑完按**确切路径**递归删除（登记在这里；绝不用通配符删）。
+//   G2（成片库）复用同一套：本机成片库为空时也要造假成片，绝不静默跳过。
+const CREATED_FILM_DIRS = new Set();
+
+function cleanupFilmDirs() {
+  const errors = [];
+  for (const d of CREATED_FILM_DIRS) {
+    try { fs.rmSync(d, { recursive: true, force: true }); }
+    catch (e) { errors.push(`${d}：${e.message}`); }
+  }
+  CREATED_FILM_DIRS.clear();
+  return errors;
+}
+
+// ★ G8（声音·导入）需要一个「待导入」的源文件才会渲染出「导入」按钮 —— 干净机器上源目录里
+//   全是「已导入」时造一个极小的假 mp3（落在**非 C 盘**的源目录里），跑完按**确切路径**删。
+const CREATED_VOICE_SRCS = new Set();
+
+function cleanupVoiceSrcs() {
+  const errors = [];
+  for (const p of CREATED_VOICE_SRCS) {
+    try { fs.unlinkSync(p); } catch (e) { if (e.code !== 'ENOENT') errors.push(`${p}：${e.message}`); }
+  }
+  CREATED_VOICE_SRCS.clear();
+  return errors;
+}
+
+// ★ G11 取消一条 running 的 dry-run 任务会留下编排器的**陈旧锁**（releaseLock 挂在 process 的
+//   'exit' 钩子上，被 taskkill /F 硬杀时不会执行）—— 登记「确切路径 + 期望 pid」，跑完**只删
+//   pid 完全对得上的那一个**（与 test/cases.mjs ⑥ 同款纪律；绝不用通配符）。
+const CREATED_LOCKS = new Map();     // lockPath -> pid
+
+function cleanupLocks() {
+  const errors = [];
+  for (const [p, pid] of CREATED_LOCKS) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const lockPid = Number(String(fs.readFileSync(p, 'utf8')).split('\n')[0]);
+      if (lockPid === pid) fs.unlinkSync(p);
+    } catch (e) { errors.push(`${p}：${e.message}`); }
+  }
+  CREATED_LOCKS.clear();
+  return errors;
+}
+
+// ★ E7 上传的假 mp4：按**确切路径**删掉，并把上传登记表逐字节还原（不留垃圾、不留假素材）。
+const DUB_UPLOAD_PATHS = new Set();
+let dubIndexBackup;                  // undefined = 本批没上传过；null = 跑前没有 index.json
+
+function cleanupDubUploads() {
+  const errors = [];
+  for (const p of DUB_UPLOAD_PATHS) {
+    try { fs.unlinkSync(p); } catch (e) { if (e.code !== 'ENOENT') errors.push(`${p}：${e.message}`); }
+  }
+  DUB_UPLOAD_PATHS.clear();
+  if (dubIndexBackup !== undefined) {
+    try {
+      if (dubIndexBackup === null) { try { fs.unlinkSync(DUB_INDEX_FILE); } catch { /* ignore */ } }
+      else fs.writeFileSync(DUB_INDEX_FILE, dubIndexBackup);
+    } catch (e) { errors.push(`${DUB_INDEX_FILE} 还原失败：${e.message}`); }
+    dubIndexBackup = undefined;
+  }
   return errors;
 }
 
@@ -524,6 +670,9 @@ async function main() {
   // ── 备份固定入口（测试服务会覆写）──
   const backup = new Map();
   for (const f of ENTRY_FILES) { try { backup.set(f, fs.readFileSync(f)); } catch { backup.set(f, null); } }
+  // ★ 回归钉子：本文件顶已设 LEMO_CONSOLE_NO_ENTRY_FILES=1，测试服务**不该**写这两个文件。
+  //   非 null ⇒ 跑完发现它们被动过（钉子红了，见 finally 里的比对）。不混进 runCase 的用例计数。
+  let entryTouched = null;
 
   let server = null;
   let cdp = null;
@@ -535,6 +684,7 @@ async function main() {
     const base = `http://127.0.0.1:${server.port}`;
     const get = (p) => httpRequest(server.port, 'GET', p);
     const post = (p, b) => httpRequest(server.port, 'POST', p, b);
+    const patch = (p, b) => httpRequest(server.port, 'PATCH', p, b);
 
     // 拿真实风格清单（数量断言不写死 43 —— 那会让「风格目录变了」误报成 UI 坏了）
     const demos = await get('/api/demos');
@@ -546,7 +696,17 @@ async function main() {
     state.base = base;
     state.get = get;
     state.post = post;
+    state.patch = patch;
     log(C.dim(`  风格 ${styleCount} 个；本用例用 ${state.slugA} / ${state.slugB}`));
+
+    // 声音版块：先打一次 /api/voices 把服务端缓存预热（首次要起 python，D1 才不会等太久），
+    // 并记下服务端的音色条数 —— D1 拿它当「DOM 里该渲染几条」的判据（不硬编码）。
+    const voices = await get('/api/voices');
+    need(voices.status === 200 && voices.json && voices.json.ok === true,
+      `GET /api/voices → ${voices.status} / ok=${voices.json && voices.json.ok}（音色清单读不到，「声音」版块测不了）`);
+    state.voiceCount = (voices.json.voices || []).length;
+    need(state.voiceCount > 0, '服务端返回的音色清单是空的 —— 这台机器没装 Index-TTS 参考音？');
+    log(C.dim(`  音色 ${state.voiceCount} 条（声音版块用）`));
 
     // ══ A. 渲染后 DOM（--dump-dom）══════════════════════════
     log('');
@@ -1063,10 +1223,1575 @@ async function main() {
       need(d.status === 200 && d.json.items.length === 1, `单个 slug 应返回 1 条，实际 ${d.status}/${d.json?.items?.length}`);
       notes.push('C5 /api/eta 的三种非法输入均 400；正常输入 200');
     });
+
+    // ══ D. 声音版块（音色清单 / 试听 / 选用 / 出片带 --voice）════
+    log('');
+    log(C.b('  D. 声音版块（音色渲染 · 试听请求 · 选用持久化 · 出片带音色）'));
+
+    await runCase('D1 页面里有「声音」卡片，音色条目按服务端清单渲染出来（含试听 / 选用按钮）', async () => {
+      const n = await waitFor(cdp.evalJs,
+        `document.querySelectorAll('#voiceList .voice').length || 0`, { timeoutMs: 30000 });
+      need(n === state.voiceCount,
+        `声音列表里渲染出 ${n} 个音色条目，服务端清单是 ${state.voiceCount} 个（渲染漏了或多渲染了）`);
+      const info = await cdp.evalJs(`(() => {
+        const items = [...document.querySelectorAll('#voiceList .voice')];
+        const hasBtn = (it, re) => [...it.querySelectorAll('.vacts button')].some((b) => re.test(b.textContent));
+        return {
+          hasCard: !!document.getElementById('voiceCard'),
+          title: (document.getElementById('voiceCard') || {}).textContent || '',
+          names: items.map((it) => { const n = it.querySelector('.vname'); return n ? n.textContent : null; }),
+          play: items.filter((it) => hasBtn(it, /试听|暂停/)).length,
+          pick: items.filter((it) => hasBtn(it, /选用/)).length,
+        };
+      })()`);
+      need(info.hasCard, '渲染后的 DOM 里没有 #voiceCard（「声音」卡片）');
+      need(info.title.includes('声音'), `#voiceCard 里没有「声音」标题：${info.title.slice(0, 80)}`);
+      need(info.names.every(Boolean) && new Set(info.names).size === info.names.length,
+        `音色条目的名字有缺失或重复：${JSON.stringify(info.names)}`);
+      need(info.play === info.names.length, `只有 ${info.play}/${info.names.length} 个条目有「试听」按钮`);
+      need(info.pick === info.names.length, `只有 ${info.pick}/${info.names.length} 个条目有「选用」按钮`);
+      notes.push(`D1 #voiceCard 渲染出 ${info.names.length} 条音色（= 服务端清单），每条都有「试听」「选用」`);
+    });
+
+    await runCase('D2 点「试听」真的向 /api/voices/audio 发请求（不是空按钮）', async () => {
+      // ★ app.js 用 `new Audio()` 单例播参考音，它**不在 DOM 里**，所以没法用选择器查它的 src。
+      //   改成在 HTMLMediaElement.play() 处截一次：src 一定在 play() 之前赋好（见 toggleVoiceAudio）。
+      await cdp.evalJs(`
+        window.__voiceAudioSrcs = [];
+        if (!window.__playPatched) {
+          window.__playPatched = true;
+          const orig = HTMLMediaElement.prototype.play;
+          HTMLMediaElement.prototype.play = function () {
+            try { if (this.src && this.src.indexOf('/api/voices/audio') >= 0) window.__voiceAudioSrcs.push(this.src); } catch (e) {}
+            return orig.apply(this, arguments);
+          };
+        }
+        true;
+      `);
+      const name = await cdp.evalJs(`(() => {
+        const it = document.querySelector('#voiceList .voice');
+        const b = [...it.querySelectorAll('.vacts button')].find((x) => /试听|暂停/.test(x.textContent));
+        const nm = it.querySelector('.vname').textContent;
+        b.click();
+        return nm;
+      })()`);
+      await sleep(600);            // 等一拍，让 play() 被调用
+      const srcs = await cdp.evalJs(`window.__voiceAudioSrcs || []`);
+      const hit = srcs.find((u) => u.indexOf('/api/voices/audio') >= 0 && u.indexOf(encodeURIComponent(name)) >= 0);
+      need(hit, `点「试听」(${name}) 后没有向 /api/voices/audio?name=… 发请求；截到的 src：${JSON.stringify(srcs)}`);
+      state.playSrc = hit;
+      notes.push(`D2 点「试听」(${name}) → <audio>.play() 的 src = ${hit}`);
+    });
+
+    await runCase('D3 点「选用」→ 写进 localStorage（lemo.voice）并更新「当前」条', async () => {
+      const r = await cdp.evalJs(`(() => {
+        const it = document.querySelector('#voiceList .voice');
+        const name = it.querySelector('.vname').textContent;
+        const b = [...it.querySelectorAll('.vacts button')].find((x) => x.textContent.trim() === '选用');
+        if (b) b.click();
+        return { name, ls: localStorage.getItem('lemo.voice'), hadButton: !!b };
+      })()`);
+      need(r.hadButton, `第一个音色条目的「选用」按钮不在（可能已被选中，文案变成「已选用」）`);
+      need(r.ls === r.name,
+        `点「选用」后 localStorage['lemo.voice'] = ${JSON.stringify(r.ls)}，期望 ${JSON.stringify(r.name)}`);
+      const cur = await cdp.evalJs(`document.getElementById('voiceCurrent').textContent`);
+      need(cur.includes(r.name), `「当前」条没显示刚选中的音色：${cur}`);
+      state.voiceName = r.name;
+      notes.push(`D3 选用 ${r.name} → localStorage['lemo.voice']=${r.ls}，当前条=${cur.replace(/\s+/g, ' ').slice(0, 80)}`);
+    });
+
+    await runCase('D4 出片（主题工单）真的带上当前音色：请求体带 voice，任务 opts 含 --voice', async () => {
+      need(state.voiceName, 'D3 没选出音色（前置失败），D4 无法验证音色是否随出片传递');
+
+      // ① 建一张 ready 工单：pending → ready 是状态机允许的唯一迁移；
+      //    runOpts 用 --dry-run，免得真渲染（服务端会把 --skip-sync 拼在前面）。
+      const created = await post('/api/briefs',
+        { topic: 'UI 测试：音色随主题出片传递', slug: 'engraving', lang: 'en', ratio: '9:16' });
+      need(created.status === 200 || created.status === 201,
+        `建工单失败：${created.status} ${created.text.slice(0, 160)}`);
+      const bid = created.json.brief.id;
+      BRIEF_IDS.add(bid);
+      const rd = await patch('/api/briefs/' + encodeURIComponent(bid), { status: 'ready', runOpts: ['--dry-run'] });
+      need(rd.status === 200, `把工单改成 ready 失败：${rd.status} ${rd.text.slice(0, 160)}`);
+
+      // ② 在页面里装 fetch 捕获（记录 runBrief 发出去的原始 body），再点这张工单的「出片」
+      const priorIds = new Set(((await get('/api/jobs')).json.jobs || []).map((j) => j.id));
+      const out = await cdp.evalJs(`(async () => {
+        if (!window.__runCapPatched) {
+          window.__runCapPatched = true; window.__runBodies = [];
+          const of = window.fetch;
+          window.fetch = function (u, o) {
+            try {
+              const s = String(u);
+              if (s.indexOf('/briefs/') >= 0 && s.indexOf('/run') >= 0) window.__runBodies.push({ url: s, body: o && o.body });
+            } catch (e) {}
+            return of.apply(this, arguments);
+          };
+        }
+        document.getElementById('btnRefreshBriefs').click();
+        for (let i = 0; i < 60; i++) {
+          const row = [...document.querySelectorAll('#briefs .brief')]
+            .find((n) => { const t = n.querySelector('.bid'); return t && t.textContent === ${JSON.stringify(bid)}; });
+          if (row) {
+            const btn = [...row.querySelectorAll('button')].find((b) => b.textContent.trim() === '出片');
+            if (btn) { btn.click(); return { ok: true }; }
+            return { err: 'no-run-button', cls: row.className, txt: row.textContent.slice(0, 140) };
+          }
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        return { err: 'row-not-found' };
+      })()`, { awaitPromise: true });
+      need(out.ok, `UI 里没能点到工单 ${bid} 的「出片」按钮：${JSON.stringify(out)}`);
+
+      // ③ 请求体必须带 voice（这就是 runBrief 发出去的 body —— 也是本批补的缺口 1）
+      await sleep(500);
+      const caps = await cdp.evalJs(`window.__runBodies || []`);
+      const cap = caps[caps.length - 1];
+      need(cap, '没有捕获到出片请求（POST /api/briefs/<id>/run）—— 出片按钮没走 runBrief？');
+      const body = JSON.parse(cap.body || '{}');
+      need(body.voice === state.voiceName,
+        `出片请求体里的 voice = ${JSON.stringify(body.voice)}，期望 ${JSON.stringify(state.voiceName)}（body 原文：${cap.body}）`);
+
+      // ④ 服务端真的把它拼进了命令行：新任务的 opts 必须含 `--voice <name>`
+      let job = null;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 30000) {
+        const list = ((await get('/api/jobs')).json.jobs || []);
+        job = list.find((j) => !priorIds.has(j.id));
+        if (job) break;
+        await sleep(300);
+      }
+      need(job, `点了「出片」后 30s 内 /api/jobs 没有多出新任务（工单 ${bid}）`);
+      JOB_IDS.add(job.id);
+      const opts = job.opts || [];
+      const vi = opts.indexOf('--voice');
+      need(vi >= 0, `任务的 opts 里没有 --voice：${JSON.stringify(opts)}`);
+      need(opts[vi + 1] === state.voiceName,
+        `任务 --voice 的值是 ${JSON.stringify(opts[vi + 1])}，期望 ${JSON.stringify(state.voiceName)}`);
+      notes.push(`D4 出片请求体 voice=${body.voice}；任务 opts = ${JSON.stringify(opts)}`);
+
+      // ⑤ 等这条 dry-run 跑完（别留占 GPU 的孤儿进程；也让工单能被删掉）
+      const t1 = Date.now();
+      while (Date.now() - t1 < 60000) {
+        const j = ((await get('/api/jobs')).json.jobs || []).find((x) => x.id === job.id);
+        if (j && ['done', 'failed', 'canceled'].includes(j.status)) break;
+        await sleep(500);
+      }
+    });
+    // ══ E. 文案出片面板（形态 · 断句 · 分析 · 风格 · 出片契约 · 前端拦截）══
+    //
+    // 为什么补这一节：项目新加了两大输入能力 —— ①「仅自定义文案出片」（画面工具生成、配音走
+    // 本机 Index-TTS）；②「文案 + 用户上传口播视频」（素材画面与声音**原样不动**，只叠字幕与
+    // 叠加层）。这两条功能的 HTTP 面（dub-api.test.mjs）与逻辑面（dub-align / dub-split）都已有
+    // 覆盖，唯独**用户真正点击的那条路径（这张卡片）一条都没有**。这一节补的就是它。
+    log('');
+    log(C.b('  E. 文案出片面板（形态 · 断句逐字 · 分析 · 风格 · 出片请求体 · 三条前端拦截）'));
+
+    // 服务端权威数据：断言一律以它为准，**不硬编码**任何风格 / 比例。
+    const dubStylesRes = await get('/api/dub/styles');
+    need(dubStylesRes.status === 200 && dubStylesRes.json && dubStylesRes.json.ok === true,
+      `GET /api/dub/styles → ${dubStylesRes.status} / ok=${dubStylesRes.json && dubStylesRes.json.ok}`);
+    const dubStyleList = dubStylesRes.json.styles;
+    const dubDefaultStyle = dubStylesRes.json.default;
+    const sizesRes = await get('/api/sizes');
+    need(sizesRes.status === 200 && typeof sizesRes.json.defaultRatio === 'string',
+      `GET /api/sizes → ${sizesRes.status}（拿不到 defaultRatio）`);
+    const dubDefaultRatio = sizesRes.json.defaultRatio;
+
+    // 样例文案：多句，好让「断句」真的切出多行
+    const DUB_SCRIPT = '春天一到，城市里最先醒的是树。你有多久没抬头看过它们了？这个周末，去走一条没走过的路吧。';
+
+    // 页面可能还没加载（--filter E* 时 B0 会被跳过）—— 这里兜底打开并等关键元素就绪。
+    const ensureDubPage = async () => {
+      const ready = `!!document.getElementById('dubCard') && document.querySelectorAll('#dubStyle option').length > 0 && document.querySelectorAll('#dubRatio option').length > 0`;
+      if (!(await cdp.evalJs(ready))) await cdp.goto(base + '/', 4000);
+      await waitFor(cdp.evalJs, ready, { timeoutMs: 30000 });
+    };
+    await ensureDubPage();
+
+    // ★ 出片请求体契约的捕获装置：patch window.fetch，**拦下** POST /api/dub/run（记录 body 后
+    //   返回假响应）并把 /api/jobs 也伪造成一条终态任务，让 pollDub() 能收敛。
+    //   —— 绝不让它真的创建出片任务：形态 1 会跑 TTS 烧 GPU，形态 2 需要真素材。
+    await cdp.evalJs(`(() => {
+      window.__dubRunBodies = [];
+      if (!window.__dubFetchPatched) {
+        window.__dubFetchPatched = true;
+        const of = window.fetch;
+        const fake = (obj) => ({ ok: true, status: 200, text: async () => JSON.stringify(obj) });
+        window.fetch = function (u, o) {
+          try {
+            const s = String(u);
+            const m = (o && o.method) || 'GET';
+            if (s.indexOf('/api/dub/run') >= 0 && m === 'POST') {
+              window.__dubRunBodies.push({ url: s, body: o && o.body });
+              return Promise.resolve(fake({ ok: true, job: { id: 'FAKE-DUB-JOB', status: 'queued' },
+                out: '', outName: '', artifacts: {}, style: '', keepOriginal: false, hint: '' }));
+            }
+            if (s.indexOf('/api/jobs') >= 0 && s.indexOf('/api/jobs/') < 0) {
+              return Promise.resolve(fake({ jobs: [{ id: 'FAKE-DUB-JOB', status: 'canceled', slug: 'dub' }] }));
+            }
+          } catch (e) { /* 拦不住就走真网络 */ }
+          return of.apply(this, arguments);
+        };
+      }
+      return true;
+    })()`);
+
+    /** 点「出片」并取回本次捕获到的 /api/dub/run 请求体。会先等上一条假任务收敛（按钮解禁）。 */
+    const dubRunCapture = async () => {
+      await cdp.evalJs(`window.__dubRunBodies = []; true;`);
+      await waitFor(cdp.evalJs, `document.getElementById('btnDubRun').disabled === false`, { timeoutMs: 20000 });
+      await cdp.evalJs(`document.getElementById('btnDubRun').click()`);
+      await sleep(350);
+      return await cdp.evalJs(`window.__dubRunBodies || []`);
+    };
+
+    await runCase('E1 形态切换：默认「仅文案出片」；点「文案 + 口播视频」→ 类名/aria/字段显隐都跟着变', async () => {
+      await ensureDubPage();
+      await cdp.evalJs(`(() => { const c = document.getElementById('dubCard');
+        if (c.classList.contains('mode-keep')) document.getElementById('dubModeScript').click(); return true; })()`);
+      const s0 = await cdp.evalJs(`(() => {
+        const c = document.getElementById('dubCard');
+        return {
+          script: c.classList.contains('mode-script'), keep: c.classList.contains('mode-keep'),
+          scriptSel: document.getElementById('dubModeScript').getAttribute('aria-selected'),
+          keepSel: document.getElementById('dubModeKeep').getAttribute('aria-selected'),
+          keepOnly: getComputedStyle(document.getElementById('dubKeepNote')).display,
+          scriptOnly: getComputedStyle(document.querySelector('.dub-script-only')).display,
+        };
+      })()`);
+      need(s0.script === true && s0.keep === false, `形态 1 下 #dubCard 类名不对：${JSON.stringify(s0)}`);
+      need(s0.scriptSel === 'true' && s0.keepSel === 'false', `形态 1 的 aria-selected 不对：${JSON.stringify(s0)}`);
+      need(s0.keepOnly === 'none', `形态 1 下 .dub-keep-only 应 display:none，实际「${s0.keepOnly}」`);
+      need(s0.scriptOnly !== 'none', `形态 1 下 .dub-script-only 应可见，实际「${s0.scriptOnly}」`);
+
+      await cdp.evalJs(`document.getElementById('dubModeKeep').click()`);
+      const s1 = await cdp.evalJs(`(() => {
+        const c = document.getElementById('dubCard');
+        return {
+          script: c.classList.contains('mode-script'), keep: c.classList.contains('mode-keep'),
+          keepSel: document.getElementById('dubModeKeep').getAttribute('aria-selected'),
+          keepOnly: getComputedStyle(document.getElementById('dubKeepNote')).display,
+          scriptOnly: getComputedStyle(document.querySelector('.dub-script-only')).display,
+          toast: document.getElementById('toast').textContent,
+        };
+      })()`);
+      need(s1.keep === true && s1.script === false, `形态 2 下 #dubCard 类名不对：${JSON.stringify(s1)}`);
+      need(s1.keepSel === 'true', `形态 2 的 aria-selected 不对：${JSON.stringify(s1)}`);
+      need(s1.keepOnly !== 'none', `形态 2 下 .dub-keep-only 应可见，实际「${s1.keepOnly}」`);
+      need(s1.scriptOnly === 'none', `形态 2 下 .dub-script-only 应 display:none，实际「${s1.scriptOnly}」`);
+      need(/已切到「文案 \+ 口播视频」/.test(s1.toast), `切形态没弹 toast 或文案不对：「${s1.toast}」`);
+      notes.push(`E1 形态1→2：类名/aria 正确；.dub-keep-only ${s0.keepOnly}→${s1.keepOnly}、`
+        + `.dub-script-only ${s0.scriptOnly}→${s1.scriptOnly}；toast「${s1.toast.replace(/\s+/g, ' ').slice(0, 46)}…」`);
+      await cdp.evalJs(`document.getElementById('dubModeScript').click()`);
+    });
+
+    await runCase('E2 断句预览：DOM 行数 == 服务端 count，且逐行文本与服务端 lines[].text **逐字相等**', async () => {
+      // 先用 HTTP 拿一份**权威**断句（断句规则只有一处，在前端之外）
+      const auth = await post('/api/dub/preview', { script: DUB_SCRIPT });
+      need(auth.status === 200 && auth.json && auth.json.ok === true,
+        `POST /api/dub/preview（权威结果）→ ${auth.status} ${auth.text.slice(0, 140)}`);
+      const lines = auth.json.lines;
+      need(Array.isArray(lines) && lines.length >= 2, `权威断句只有 ${lines && lines.length} 行，样例文案太短？`);
+
+      await cdp.evalJs(`(() => {
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('btnDubPreview').click();
+        return true;
+      })()`);
+      await waitFor(cdp.evalJs,
+        `document.getElementById('dubLines').hidden === false && document.querySelectorAll('#dubLines .dub-line').length > 0`,
+        { timeoutMs: 20000 });
+      const got = await cdp.evalJs(`(() => {
+        const rows = [...document.querySelectorAll('#dubLines .dub-line')];
+        return {
+          head: (document.querySelector('#dubLines .dub-lines-head') || {}).textContent || '',
+          t: rows.map((r) => r.querySelector('.dub-line-t').textContent),
+          n: rows.map((r) => r.querySelector('.dub-line-n').textContent),
+          count: document.getElementById('dubCount').textContent,
+        };
+      })()`);
+      need(got.t.length === lines.length,
+        `DOM 渲染 ${got.t.length} 行，服务端 count=${auth.json.count}（lines=${lines.length}）`);
+      need(got.count === String(lines.length), `#dubCount=「${got.count}」，期望「${lines.length}」`);
+      for (let k = 0; k < lines.length; k++) {
+        need(got.t[k] === lines[k].text,
+          `第 ${k + 1} 行文本与服务端**不逐字相等**（前端不该自己切句/改字）：\n`
+          + `    DOM   = ${JSON.stringify(got.t[k])}\n    服务端= ${JSON.stringify(lines[k].text)}`);
+        need(got.n[k] === `${String(lines[k].text).length} 字`,
+          `第 ${k + 1} 行字数标签「${got.n[k]}」与文本长度不符`);
+      }
+      notes.push(`E2 断句 ${lines.length} 行：DOM 逐字 == 服务端（#dubCount=${got.count}，head=「${got.head.replace(/\s+/g, ' ').slice(0, 40)}」）`);
+    });
+
+    await runCase('E3 分析文案：点「分析文案」→ 真的 POST /api/dub/analyze，#dubAnalysis 展开且有内容', async () => {
+      await cdp.evalJs(`(() => {
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('btnDubAnalyze').click();
+        return true;
+      })()`);
+      // ★ 等**最终态**：分析进行中时 #dubAnalysis 也已经展开（summary=「分析中…」）——
+      //   只等 hidden===false 会撞上中间态，必须等到 summary 变成「分析结果：…」。
+      await waitFor(cdp.evalJs,
+        `document.getElementById('dubAnalysis').hidden === false
+         && /^分析结果/.test(document.getElementById('dubAnalysisSum').textContent)
+         && document.getElementById('btnDubAnalyze').disabled === false`,
+        { timeoutMs: 30000 });
+      const a = await cdp.evalJs(`(() => ({
+        sum: document.getElementById('dubAnalysisSum').textContent,
+        body: document.getElementById('dubAnalysisBody').textContent,
+        segs: document.querySelectorAll('#dubAnalysisBody .dub-seg').length,
+      }))()`);
+      need(a.sum.includes('分析结果'), `#dubAnalysisSum 没写「分析结果」：「${a.sum}」`);
+      need(a.segs >= 1, `分析结果里没有段落行（.dub-seg=${a.segs}）`);
+      need(/匹配结果/.test(a.body), `分析结果里没有「匹配结果」块：${a.body.slice(0, 160)}`);
+      notes.push(`E3 #dubAnalysisSum=「${a.sum.replace(/\s+/g, ' ')}」；段落 ${a.segs} 段`);
+    });
+
+    await runCase('E4 风格下拉：选项数 == 服务端清单 + 1（auto + 不指定档），首项 value=auto', async () => {
+      const info = await cdp.evalJs(`(() => {
+        const opts = [...document.querySelectorAll('#dubStyle option')];
+        return { n: opts.length, vals: opts.map((o) => o.value), labels: opts.map((o) => o.textContent) };
+      })()`);
+      need(info.n === dubStyleList.length + 1,
+        `#dubStyle 有 ${info.n} 个选项，期望 ${dubStyleList.length + 1}（服务端清单 ${dubStyleList.length} + auto；`
+        + `「不指定」档复用清单里的 default，不额外多一项）`);
+      need(info.vals[0] === 'auto', `第一项 value 应是 auto，实际 ${JSON.stringify(info.vals[0])}`);
+      // ★ 「不指定」档的 value 必须是**空串**（出片时不传 --style）——
+      //   见 web/app.js 的 renderDubStyleOptions。曾经它复用服务端 default 的 id，
+      //   导致出片 body 多带 style、下拉提示误写「指定风格「plain-dark」」。
+      need(info.vals[1] === '',
+        `第二项（「不指定」档）value 应是空串，实际 ${JSON.stringify(info.vals[1])}`);
+      need(/不指定/.test(info.labels[1]), `第二项文案里没有「不指定」：「${info.labels[1]}」`);
+      // 默认风格（dubDefaultStyle）由「不指定」档代表，**故意不**单独列一项 ⇒ 它不在 option value 里是正常的
+      const missing = dubStyleList.map((s) => s.id)
+        .filter((id) => id !== dubDefaultStyle && !info.vals.includes(id));
+      need(missing.length === 0, `这些服务端风格在 #dubStyle 里选不到：${missing.join(', ')}`);
+      notes.push(`E4 #dubStyle ${info.n} 项（= 服务端 ${dubStyleList.length} + auto）；`
+        + `首项 auto；「不指定」档 value=${JSON.stringify(info.vals[1])}（空串 = 不传 --style）；`
+        + `默认风格 ${dubDefaultStyle} 由该档代表，未单独列项`);
+    });
+
+    await runCase('E5 出片请求体 · 形态1（auto 风格）：含 script/style:auto/显式尺寸，不含 keepOriginal', async () => {
+      await ensureDubPage();
+      const set = await cdp.evalJs(`(() => {
+        document.getElementById('dubModeScript').click();
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        const st = document.getElementById('dubStyle');
+        st.value = 'auto'; st.dispatchEvent(new Event('change', { bubbles: true }));
+        const rs = document.getElementById('dubRatio');
+        const def = [...rs.options].find((o) => o.value === ${JSON.stringify(dubDefaultRatio)});
+        if (def) { rs.value = def.value; rs.dispatchEvent(new Event('change', { bubbles: true })); }
+        return { style: st.value, ratio: rs.value };
+      })()`);
+      need(set.style === 'auto' && set.ratio === dubDefaultRatio, `表单没设成 auto/${dubDefaultRatio}：${JSON.stringify(set)}`);
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run（形态 1 也被前端拦了？）');
+      const body = JSON.parse(cap.body || '{}');
+      need(body.script === DUB_SCRIPT, `body.script 与输入的文案不一致：${JSON.stringify(body.script).slice(0, 80)}`);
+      need(body.style === 'auto', `body.style 应为 'auto'，实际 ${JSON.stringify(body.style)}`);
+      need(!('keepOriginal' in body), `形态 1 的 body 不该带 keepOriginal，实际 ${JSON.stringify(body.keepOriginal)}`);
+      need(!('videoToken' in body), `形态 1 且没选素材时不该带 videoToken，实际 ${JSON.stringify(body.videoToken)}`);
+      const sizeKeys = ['ratio', 'size'].filter((k) => k in body);
+      need(sizeKeys.length === 1, `尺寸必须**显式**带且只带一个（ratio 或 size），实际带了 ${JSON.stringify(sizeKeys)}`);
+      need(body.ratio === dubDefaultRatio,
+        `没选自定义尺寸时应显式带默认比例 ${JSON.stringify(dubDefaultRatio)}，实际 ${JSON.stringify(body.ratio)}`);
+      notes.push(`E5 形态1(auto) 请求体 = ${cap.body}`);
+    });
+
+    await runCase('E6 出片请求体 · 形态1 选「不指定」档：body **不含** style（不传 --style），下拉提示走「不指定」分支', async () => {
+      await ensureDubPage();
+      const info = await cdp.evalJs(`(() => {
+        document.getElementById('dubModeScript').click();
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        const sel = document.getElementById('dubStyle');
+        const none = [...sel.options].find((o) => /不指定/.test(o.textContent));
+        if (!none) return { err: 'no-none-option', labels: [...sel.options].map((o) => o.textContent) };
+        sel.value = none.value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+        return { ok: true, noneVal: none.value, selVal: sel.value, hint: document.getElementById('dubStyleHint').textContent };
+      })()`);
+      need(info.ok, `#dubStyle 里找不到「不指定」档：${JSON.stringify(info)}`);
+      // ★ ① 该档 value 必须是空串，且选中后**不回弹**到 auto（否则「不指定」根本选不住）。
+      need(info.noneVal === '', `「不指定」档的 value 应是空串，实际 ${JSON.stringify(info.noneVal)}`);
+      need(info.selVal === '',
+        `选中「不指定」档后 #dubStyle.value 应保持空串（不被重置成 auto），实际 ${JSON.stringify(info.selVal)}`);
+      // ★ ② 下拉提示必须走「不指定」分支 —— 钉住「提示与行为一致」。
+      //     曾经 value=plain-dark 时这里会误写「指定风格「plain-dark」」。
+      need(/不传\s*--style/.test(info.hint),
+        `「不指定」档的提示应写明「不传 --style」，实际：「${info.hint}」`);
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run（选了「不指定」档后被拦了？）');
+      const body = JSON.parse(cap.body || '{}');
+      // ★ ③ 核心断言：不传 --style —— body 里**不该有** style 键（这才是「与加这个功能之前完全一样」）。
+      need(!('style' in body),
+        `选「不指定」档后 body 不该带 style，实际带了 ${JSON.stringify(body.style)}（body=${cap.body}）`);
+      need(body.script === DUB_SCRIPT, 'body.script 与输入的文案不一致');
+      notes.push(`E6 选「不指定」档（value=${JSON.stringify(info.noneVal)}）→ body keys=[${Object.keys(body).join(', ')}]（无 style）；`
+        + `下拉提示=「${info.hint.replace(/\s+/g, ' ').slice(0, 60)}」`);
+    });
+
+    await runCase('E7 出片请求体 · 形态2（文案+口播视频）：带 keepOriginal/videoToken，不带音色/语速/停顿/尺寸/fit/原声', async () => {
+      await ensureDubPage();
+      // ① 真传一个极小的假 mp4（拿一个真实 videoToken）—— 走 /api/dub/upload，跑完按确切路径删
+      if (dubIndexBackup === undefined) {
+        try { dubIndexBackup = fs.readFileSync(DUB_INDEX_FILE); } catch { dubIndexBackup = null; }
+      }
+      const up = await uploadDubRaw(server.port, 'ui-e7.mp4', Buffer.from('FAKE-MP4-BYTES-for-ui-e7'));
+      need(up.status === 200 && up.json && up.json.ok === true,
+        `上传假 mp4 失败：${up.status} ${up.text.slice(0, 160)}`);
+      need(up.json.kind === 'video', `上传的 kind 应为 video，实际 ${up.json.kind}`);
+      DUB_UPLOAD_PATHS.add(up.json.path);
+      const token = up.json.token;
+
+      // ② 切形态 2 → 刷新素材清单 → 在「用已上传的」下拉里选中它（走真实 change 路径）
+      await cdp.evalJs(`document.getElementById('dubModeKeep').click()`);
+      const picked = await cdp.evalJs(`(async () => {
+        document.getElementById('btnDubRefresh').click();
+        for (let i = 0; i < 60; i++) {
+          const sel = document.getElementById('dubSrcSel');
+          const opt = [...sel.options].find((o) => o.value === ${JSON.stringify(token)});
+          if (opt) {
+            sel.value = ${JSON.stringify(token)};
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true, hint: document.getElementById('dubVideoHint').textContent };
+          }
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        return { ok: false, opts: [...document.getElementById('dubSrcSel').options].map((o) => o.value) };
+      })()`, { awaitPromise: true });
+      need(picked.ok, `#dubSrcSel 里没有刚上传的 token（选项=${JSON.stringify(picked.opts)}）`);
+      need(/已选/.test(picked.hint), `选中素材后 #dubVideoHint 没显示「已选」：「${picked.hint}」`);
+
+      await cdp.evalJs(`(() => {
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`);
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run（形态 2 被前端拦了？）');
+      const body = JSON.parse(cap.body || '{}');
+      need(body.keepOriginal === true, `形态 2 的 body 必须带 keepOriginal:true，实际 ${JSON.stringify(body.keepOriginal)}`);
+      need(body.videoToken === token, `body.videoToken=${JSON.stringify(body.videoToken)}，期望 ${JSON.stringify(token)}`);
+      for (const k of ['voice', 'speed', 'gap', 'size', 'ratio', 'fit', 'keepOriginalAudio']) {
+        need(!(k in body), `形态 2 的 body 不该带 ${k}，实际带了 ${JSON.stringify(body[k])}（body=${cap.body}）`);
+      }
+      notes.push(`E7 形态2 请求体 keys=[${Object.keys(body).join(', ')}]（token=${token}）`);
+      await cdp.evalJs(`document.getElementById('dubModeScript').click()`);
+    });
+
+    await runCase('E8 前端拦截 · 空文案点「出片」→ 不发 /api/dub/run，只弹「先粘贴一段文案」', async () => {
+      await ensureDubPage();
+      await cdp.evalJs(`(() => {
+        document.getElementById('dubModeScript').click();
+        const ta = document.getElementById('dubScript');
+        ta.value = '   \\n  ';
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`);
+      const caps = await dubRunCapture();
+      const toast = await cdp.evalJs(`document.getElementById('toast').textContent`);
+      need(caps.length === 0, `空文案竟然发出了 ${caps.length} 个 /api/dub/run 请求（应被前端拦住）`);
+      need(/先粘贴一段文案/.test(toast), `空文案拦截的提示不对：「${toast}」`);
+      notes.push(`E8 空文案 → 0 个 /api/dub/run 请求；toast「${toast}」`);
+    });
+
+    await runCase('E9 前端拦截 · 形态2 但没选口播视频 → 不发 /api/dub/run，提示要先上传', async () => {
+      await ensureDubPage();
+      await cdp.evalJs(`(() => {
+        const c = document.getElementById('btnDubClear'); if (c) c.click();
+        document.getElementById('dubModeKeep').click();
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`);
+      const caps = await dubRunCapture();
+      const toast = await cdp.evalJs(`document.getElementById('toast').textContent`);
+      need(caps.length === 0, `形态2 无素材竟然发出了 ${caps.length} 个 /api/dub/run 请求（应被前端拦住）`);
+      need(/口播视频/.test(toast), `形态2 无素材拦截的提示不对：「${toast}」`);
+      notes.push(`E9 形态2 无素材 → 0 个请求；toast「${toast}」`);
+      await cdp.evalJs(`document.getElementById('dubModeScript').click()`);
+    });
+
+    await runCase('E10 前端拦截 · 形态1 选「自定义尺寸」但宽高非法（奇数）→ 不发 /api/dub/run，提示不合法', async () => {
+      await ensureDubPage();
+      const bad = await cdp.evalJs(`(() => {
+        document.getElementById('dubModeScript').click();
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        const sel = document.getElementById('dubRatio');
+        const custom = [...sel.options].find((o) => /自定义/.test(o.textContent));
+        if (!custom) return { err: 'no-custom-option', opts: [...sel.options].map((o) => o.value) };
+        sel.value = custom.value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+        const w = document.getElementById('dubSizeW'), h = document.getElementById('dubSizeH');
+        w.value = '1081'; w.dispatchEvent(new Event('input', { bubbles: true }));
+        h.value = '1921'; h.dispatchEvent(new Event('input', { bubbles: true }));
+        return { ok: true, fieldHidden: document.getElementById('dubSizeField').hidden,
+                 hint: document.getElementById('dubSizeHint').textContent };
+      })()`);
+      need(bad.ok, `#dubRatio 里没有「自定义尺寸」选项：${JSON.stringify(bad)}`);
+      need(bad.fieldHidden === false, '选了自定义尺寸但 #dubSizeField 没显示出来');
+      const caps = await dubRunCapture();
+      const toast = await cdp.evalJs(`document.getElementById('toast').textContent`);
+      need(caps.length === 0, `非法自定义尺寸竟然发出了 ${caps.length} 个 /api/dub/run 请求（应被前端拦住）`);
+      need(/自定义尺寸不合法/.test(toast), `非法尺寸拦截的提示不对：「${toast}」`);
+      notes.push(`E10 非法尺寸 1081×1921 → 0 个请求；toast「${toast.replace(/\s+/g, ' ').slice(0, 70)}」`);
+      // 还原成默认比例，别把状态留给后续（或再次运行本套件时）
+      await cdp.evalJs(`(() => {
+        const sel = document.getElementById('dubRatio');
+        const def = [...sel.options].find((o) => o.value === ${JSON.stringify(dubDefaultRatio)});
+        if (def) { sel.value = def.value; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+        return true;
+      })()`);
+    });
+
+    // ══ F. 三处「整块静默失明」的 UI 版块（播放器弹层 · 窄屏侧栏 · 顶栏两个按钮）══
+    //
+    // 为什么补这一节：一次全控制台覆盖审计发现，20 个 UI 版块里有 17 个已有覆盖，唯独这三处
+    // **渲染 / 交互 / 服务端契约三档全空** —— 用户点得到、坏了没人知道：
+    //   ① #playerModal（点成片 / 任务行 ▶ 的唯一反馈路径）；
+    //   ② #btnToggleSide（窄屏下打不开侧栏 = 没法选风格）；
+    //   ③ #btnRefreshEnv / #btnSimulate（后者此前只被 `?simulate=` URL 覆盖过，按钮本身没测）。
+    // 判据一律**从源码/服务端读**（不硬编码文件名、不假设 DOM 顺序），并且每条都带一条「有牙」的
+    // 非平凡断言（transform 真的变了 / 请求真的发出去了 / 标题与视频源自洽），避免「只测类名 toggle」。
+    log('');
+    log(C.b('  F. 播放器弹层 · 窄屏侧栏 · 顶栏两个按钮（补三处 UI 盲区）'));
+
+    // 页面可能还没加载（--filter F* 时 B0 会被跳过）—— 兜底打开并等关键元素就绪。
+    const ensurePage = async () => {
+      const ready = `!!document.getElementById('playerModal') && document.querySelectorAll('.style-item').length > 0`;
+      if (!(await cdp.evalJs(ready))) await cdp.goto(base + '/', 4000);
+      await waitFor(cdp.evalJs, ready, { timeoutMs: 30000 });
+    };
+    // 容忍「导航中执行上下文被销毁 / DOM 还没解析完」的等待 —— 跨导航的断言必须用它。
+    const waitTolerant = async (expr, timeoutMs = 20000) => {
+      const t0 = Date.now();
+      let last;
+      while (Date.now() - t0 < timeoutMs) {
+        try { last = await cdp.evalJs(expr); if (last) return last; } catch { /* 导航中，重试 */ }
+        await sleep(300);
+      }
+      throw new Error(`等待条件超时（${timeoutMs}ms）：${expr}（最后一次 = ${JSON.stringify(last)}）`);
+    };
+
+    // ── 成片清单（服务端权威）：F1/F2 共用同一个目标条目，断言不硬编码文件名 ──
+    const filmsRes0 = await get('/api/films');
+    need(filmsRes0.status === 200 && filmsRes0.json && Array.isArray(filmsRes0.json.films),
+      `GET /api/films → ${filmsRes0.status}（拿不到成片清单，播放器弹层无法触发）`);
+    let filmList = filmsRes0.json.films;
+    if (!filmList.length) {
+      // 干净机器：临时造一个极小的假成片（目录名不以 `_`/`.` 开头，否则服务端会跳过）
+      const dir = path.join(CFG.exportDir, `uitest-player-${process.pid}`);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'clip.mp4'), Buffer.from('FAKE-MP4-BYTES-for-ui-f1'));
+      CREATED_FILM_DIRS.add(dir);
+      filmList = ((await get('/api/films')).json.films || []);
+    }
+    need(filmList.length > 0,
+      `成片库为空（${CFG.exportDir}），临时造假成片后仍拿不到条目 —— 播放器弹层测不了（绝不静默跳过）`);
+    const FILM = filmList[0];
+    const FILM_IS_DUB = !!(FILM.source === 'dub' || !FILM.slug);
+    const FILM_KEY = FILM_IS_DUB ? `文案出片 ${FILM.name || ''}`.trim() : String(FILM.slug);
+    const FILM_TITLE = `${FILM_KEY} / ${FILM.file}`;
+    const FILM_DUB_META = 'dub\\' + (FILM.name || '');
+    // 非 dub 条目的卡片标题是**风格中文名**（见 app.js filmTitle）—— 从服务端清单里取，不猜
+    let filmCardTitle = FILM_IS_DUB ? '文案出片' : String(FILM.slug);
+    if (!FILM_IS_DUB) {
+      const dm = await get('/api/demos');
+      const st = (dm.json.styles || []).find((s) => s.slug === FILM.slug);
+      if (st && st.nameCn) filmCardTitle = st.nameCn;
+    }
+    const FILM_MATCH_JSON = JSON.stringify({
+      fslug: filmCardTitle,
+      meta: FILM_IS_DUB ? FILM_DUB_META : FILM.file,
+    });
+
+    /** 页面里：刷新成片 → 按**内容**找到目标卡片（不依赖 DOM 顺序）→ 点它的「播放」按钮。 */
+    const clickFilmCard = async () => cdp.evalJs(`(async () => {
+      const M = ${FILM_MATCH_JSON};
+      document.getElementById('btnRefreshFilms').click();
+      for (let i = 0; i < 60; i++) {
+        const cards = [...document.querySelectorAll('#films .film')];
+        const hit = cards.find((c) => {
+          const fs_ = (c.querySelector('.fslug') || {}).textContent || '';
+          const metas = [...c.querySelectorAll('.fmeta')].map((n) => n.textContent || '');
+          return fs_ === M.fslug && metas.some((m) => m.includes(M.meta));
+        });
+        if (hit) {
+          const btn = hit.querySelector('.factions .btn');
+          (btn || hit).click();
+          return { ok: true, cards: cards.length, usedBtn: !!btn };
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return { ok: false, cards: document.querySelectorAll('#films .film').length,
+               texts: [...document.querySelectorAll('#films .film')].map((c) => (c.textContent || '').slice(0, 70)) };
+    })()`, { awaitPromise: true });
+
+    await runCase('F1 播放器弹层：点成片卡片「播放」→ #playerModal 打开，标题/视频源与该成片条目一致', async () => {
+      await ensurePage();
+      const pre = await cdp.evalJs(`document.getElementById('playerModal').hidden`);
+      need(pre === true, '前置：弹层初始应隐藏（否则说明上一条没收拾干净）');
+      const clicked = await clickFilmCard();
+      need(clicked.ok,
+        `成片库里找不到目标卡片（匹配=${FILM_MATCH_JSON}，DOM 卡片 ${clicked.cards} 张）：${JSON.stringify(clicked.texts)}`);
+      await waitFor(cdp.evalJs, `document.getElementById('playerModal').hidden === false`, { timeoutMs: 10000 });
+      const got = await cdp.evalJs(`(() => ({
+        hidden: document.getElementById('playerModal').hidden,
+        title: document.getElementById('playerTitle').textContent,
+        src: document.getElementById('player').getAttribute('src'),
+      }))()`);
+      need(got.hidden === false, '点「播放」后 #playerModal 仍 hidden —— 弹层没打开（openPlayer 没把 hidden 置 false？）');
+      // ★ 有牙：标题必须**自洽于同一个条目** —— 若 openPlayer 传错了 slug/file，这里必红
+      need(got.title === FILM_TITLE,
+        `弹层标题「${got.title}」，期望「${FILM_TITLE}」（应等于 \`slug / file\`）`);
+      need(got.src === FILM.url,
+        `#player 的 src=「${got.src}」，期望该成片的 url「${FILM.url}」（src 与标题必须指向同一个条目）`);
+      notes.push(`F1 点成片「${FILM.file}」→ 弹层打开；title=「${got.title}」；src=${got.src}`);
+    });
+
+    await runCase('F2 播放器弹层：关闭按钮 / 点背景 / Esc 三条路径都能关，且 src 被清掉', async () => {
+      await ensurePage();
+      const reopen = async () => {
+        const r = await clickFilmCard();
+        need(r.ok, `重开弹层失败：找不到成片卡片 ${JSON.stringify(r)}`);
+        await waitFor(cdp.evalJs, `document.getElementById('playerModal').hidden === false`, { timeoutMs: 10000 });
+      };
+      const stateNow = () => cdp.evalJs(`(() => ({
+        hidden: document.getElementById('playerModal').hidden,
+        src: document.getElementById('player').getAttribute('src'),
+      }))()`);
+
+      // ① 关闭按钮
+      await reopen();
+      await cdp.evalJs(`document.getElementById('btnClosePlayer').click()`);
+      await waitFor(cdp.evalJs, `document.getElementById('playerModal').hidden === true`, { timeoutMs: 8000 });
+      let s = await stateNow();
+      need(s.hidden === true, '点「关闭」后 #playerModal 仍显示');
+      need(s.src === null, `关闭后 #player 的 src 应被 removeAttribute 清掉，实际「${s.src}」`);
+
+      // ② 点背景（e.target === #playerModal）
+      await reopen();
+      await cdp.evalJs(`document.getElementById('playerModal').click()`);
+      await waitFor(cdp.evalJs, `document.getElementById('playerModal').hidden === true`, { timeoutMs: 8000 });
+      s = await stateNow();
+      need(s.hidden === true, '点弹层背景后 #playerModal 仍显示');
+      need(s.src === null, `点背景关闭后 #player 的 src 应被清掉，实际「${s.src}」`);
+
+      // ③ Esc（全局 keydown：Escape 关最上面那一层 —— 播放器是最底层兜底）
+      await reopen();
+      const topOpen = await cdp.evalJs(
+        `['helpModal','batchModal','detailDrawer'].filter((id) => { const e = document.getElementById(id); return e && !e.hidden; })`);
+      need(topOpen.length === 0, `前置：这些弹层还开着（Esc 会先关它们而不是播放器）：${topOpen.join(', ')}`);
+      await cdp.evalJs(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+      await waitFor(cdp.evalJs, `document.getElementById('playerModal').hidden === true`, { timeoutMs: 8000 });
+      s = await stateNow();
+      need(s.hidden === true, '按 Esc 后 #playerModal 仍显示（全局 keydown 没处理 Escape？）');
+      need(s.src === null, `Esc 关闭后 #player 的 src 应被清掉，实际「${s.src}」`);
+      notes.push('F2 关闭按钮 / 点背景 / Esc 三条路径都能关，且 src 都被清掉（removeAttribute）');
+    });
+
+    await runCase('F3 窄屏侧栏：「风格」按钮宽屏(1400) display:none、窄屏(500) 变可见', async () => {
+      await ensurePage();
+      await cdp.cmd('Emulation.setDeviceMetricsOverride',
+        { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const wide = await cdp.evalJs(`getComputedStyle(document.getElementById('btnToggleSide')).display`);
+      need(wide === 'none', `宽屏(1400) 下 #btnToggleSide 应 display:none，实际「${wide}」`);
+
+      await cdp.cmd('Emulation.setDeviceMetricsOverride',
+        { width: 500, height: 800, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const nar = await cdp.evalJs(`(() => ({
+        btn: getComputedStyle(document.getElementById('btnToggleSide')).display,
+        innerW: window.innerWidth,
+      }))()`);
+      need(nar.innerW <= 860, `期望窄屏 innerWidth ≤ 860，实际 ${nar.innerW}（Emulation.setDeviceMetricsOverride 没生效）`);
+      need(nar.btn !== 'none', `窄屏(500) 下 #btnToggleSide 应可见，实际 display「${nar.btn}」`);
+      // ★ 说明：CSS 写的是 `.narrow-only { display: inline-block }`，但它是 flex 项（.top-actions），
+      //   浏览器会「块化」成 block —— 所以这里断言的是「可见」（非 none），而不是字面 inline-block。
+      need(['block', 'inline-block', 'inline-flex', 'flex'].includes(nar.btn),
+        `窄屏下 #btnToggleSide 的 display 应是可见值，实际「${nar.btn}」`);
+      notes.push(`F3 宽屏 display=${wide}；窄屏(${nar.innerW}px) display=${nar.btn}（flex 项被块化）`);
+    });
+
+    await runCase('F4 窄屏侧栏：点「风格」→ #sidebar 出现 .open 且 transform 真的变了；再点收起', async () => {
+      await ensurePage();
+      await cdp.cmd('Emulation.setDeviceMetricsOverride',
+        { width: 500, height: 800, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      // 前置：确保是收起态
+      await cdp.evalJs(`(() => { const s = document.getElementById('sidebar');
+        if (s.classList.contains('open')) document.getElementById('btnToggleSide').click(); return true; })()`);
+      await sleep(450);
+      const before = await cdp.evalJs(`(() => ({
+        open: document.getElementById('sidebar').classList.contains('open'),
+        tf: getComputedStyle(document.getElementById('sidebar')).transform,
+      }))()`);
+      need(before.open === false, '前置：侧栏初始不应带 .open');
+      need(before.tf !== 'none',
+        `收起态 #sidebar 的 transform 不该是 none（应被推到屏外），实际「${before.tf}」`);
+
+      await cdp.evalJs(`document.getElementById('btnToggleSide').click()`);
+      await sleep(450);            // 等 transition(.18s) 走完，getComputedStyle 才是终值
+      const after = await cdp.evalJs(`(() => ({
+        open: document.getElementById('sidebar').classList.contains('open'),
+        tf: getComputedStyle(document.getElementById('sidebar')).transform,
+      }))()`);
+      need(after.open === true, '点「风格」后 #sidebar 没有 .open（监听没绑上？）');
+      // ★ 有牙的判据：不能只断言「类名被 toggle 了」——要证明**显隐真的变了**
+      need(after.tf !== before.tf,
+        `#sidebar 加了 .open 但 transform 没变（还是「${after.tf}」）—— 只 toggle 了类名、样式没生效`);
+      need(after.tf === 'none', `展开态 #sidebar 的 transform 期望 none，实际「${after.tf}」`);
+
+      await cdp.evalJs(`document.getElementById('btnToggleSide').click()`);
+      await sleep(450);
+      const back = await cdp.evalJs(`(() => ({
+        open: document.getElementById('sidebar').classList.contains('open'),
+        tf: getComputedStyle(document.getElementById('sidebar')).transform,
+      }))()`);
+      need(back.open === false, '再点一次「风格」没把 .open 收起');
+      need(back.tf === before.tf, `收起后 transform 应回到「${before.tf}」，实际「${back.tf}」`);
+      notes.push(`F4 侧栏 transform：收起「${before.tf}」→ 展开「${after.tf}」(.open) → 再收起「${back.tf}」`);
+      await cdp.cmd('Emulation.clearDeviceMetricsOverride');
+      await sleep(200);
+    });
+
+    await runCase('F5 顶栏「重新检测」：点它**真的**发出 GET /api/env（且带 force=1 强制重探）', async () => {
+      await ensurePage();
+      // 页面里 patch window.fetch：只**记录** /api/env 的 URL，回一份最小合法形状（不触发真·全量探测，慢）
+      await cdp.evalJs(`(() => {
+        window.__envUrls = [];
+        if (!window.__envFetchPatched) {
+          window.__envFetchPatched = true;
+          const of = window.fetch;
+          const fake = (obj) => ({ ok: true, status: 200, text: async () => JSON.stringify(obj) });
+          window.fetch = function (u, o) {
+            try {
+              const s = String(u);
+              if (s.indexOf('/api/env') >= 0) {
+                window.__envUrls.push(s);
+                return Promise.resolve(fake({ ok: true, summary: { ok: 1, warn: 0, fail: 0, total: 1 },
+                  groups: [], drift: [], checkedAt: Date.now(), cached: false, simulated: null }));
+              }
+            } catch (e) { /* 拦不住就走真网络 */ }
+            return of.apply(this, arguments);
+          };
+        }
+        window.__envUrls = [];
+        return true;
+      })()`);
+      await cdp.evalJs(`document.getElementById('btnRefreshEnv').click()`);
+      await waitFor(cdp.evalJs, `(window.__envUrls || []).length > 0`, { timeoutMs: 10000 });
+      const urls = await cdp.evalJs(`window.__envUrls || []`);
+      need(urls.some((u) => /\/api\/env/.test(u)),
+        `点「重新检测」后没看到 /api/env 请求：${JSON.stringify(urls)}`);
+      // ★ 有牙：title 写的是「重新全量探测环境」—— 必须带 force=1，否则只是读了缓存
+      need(urls.some((u) => /force=1/.test(u)),
+        `「重新检测」应带 force=1（强制重探），实际请求：${JSON.stringify(urls)}`);
+      notes.push(`F5 点「重新检测」→ 请求 ${JSON.stringify(urls)}`);
+    });
+
+    await runCase('F6 顶栏「演练」：点它进入演练态（URL+引导卡片），按 bare→partial→clean→关闭 循环', async () => {
+      await ensurePage();
+      if (await cdp.evalJs(`location.search.includes('simulate')`)) await cdp.goto(base + '/', 3500);
+      // ★ 这个按钮的实现是「改 URL 再刷新」（见 app.js:4369）——所以断言必须**跨导航**。
+      // ★ 关键竞态：`location.search` 一变就代表「导航已提交」，但新文档的 app.js 可能还没跑完
+      //   boot() 里的 bind() —— 此时再点 #btnSimulate 会点到一个**还没绑监听**的按钮（偶发 no-op，
+      //   全量跑时复现过一次：bare→partial 之后卡在 partial）。所以点击前后都等 boot() 的产物就绪。
+      const waitBooted = () => waitTolerant(
+        `document.readyState === 'complete' && document.querySelectorAll('.style-item').length > 0
+         && !!document.getElementById('btnSimulate')`);
+      const navClick = async (cond) => {
+        await waitBooted();
+        await cdp.evalJs(`document.getElementById('btnSimulate').click()`);
+        const t0 = Date.now();
+        let last;
+        while (Date.now() - t0 < 20000) {
+          try {
+            const search = await cdp.evalJs(`location.search`);
+            last = search;
+            const ok = cond.has ? String(search).includes(cond.has) : !String(search).includes(cond.hasNot);
+            if (ok) { await waitBooted(); return search; }
+          } catch { /* 导航中执行上下文被销毁，重试 */ }
+          await sleep(300);
+        }
+        throw new Error(`点「演练」后等 URL 变化超时：${JSON.stringify(cond)}，实际 ${JSON.stringify(last)}`);
+      };
+
+      const s1 = await navClick({ has: 'simulate=bare' });
+      // 导航刚提交时 app.js 可能还没跑完 —— 用容忍式等待
+      await waitTolerant(`!!document.getElementById('setupSim') && document.getElementById('setupSim').hidden === false`);
+      const sim1 = await cdp.evalJs(`(() => ({
+        sim: document.getElementById('setupSim').textContent,
+        cardHidden: document.getElementById('setupCard').hidden,
+        envNote: (document.querySelector('.env-note') || {}).textContent || '',
+      }))()`);
+      need(/bare/.test(sim1.sim), `#setupSim 没写「bare」：「${sim1.sim}」`);
+      need(sim1.cardHidden === false, '演练态下 #setupCard 应显示（「假装干净机器」的意义就在这）');
+      need(/演练模式/.test(sim1.envNote), `.env-note 没写「演练模式」：「${sim1.envNote.replace(/\s+/g, ' ').slice(0, 80)}」`);
+
+      const s2 = await navClick({ has: 'simulate=partial' });
+      const s3 = await navClick({ has: 'simulate=clean' });
+      await navClick({ hasNot: 'simulate' });                 // 第 4 次 = 退出演练
+      await waitTolerant(`document.getElementById('setupSim') && document.getElementById('setupSim').hidden === true`);
+      const out = await cdp.evalJs(`(() => ({
+        search: location.search,
+        simHidden: document.getElementById('setupSim').hidden,
+      }))()`);
+      need(!out.search.includes('simulate'), `退出演练后 URL 仍带 simulate：${out.search}`);
+      need(out.simHidden === true, '退出演练后 #setupSim 仍可见（应隐藏）');
+      notes.push(`F6 演练循环 URL：${s1} → ${s2} → ${s3} → 「${out.search || '(无 query)'}」；#setupSim 已隐藏`);
+    });
+
+    // ══ G. 剩余可点击路径（形态2 限幅开关 · 成片库 · 声音三处 · 主题工单 · 任务取消 · 预设/复制）══
+    //
+    // 为什么补这一节：一次全控制台覆盖审计点名了 10 处覆盖薄弱/为零的版块，A–F 已补掉播放器弹层 /
+    // 窄屏侧栏 / 顶栏按钮 / setup 卡片 / 文案出片面板。**这一轮补剩下的**，并覆盖一个**刚新增的
+    // 功能开关**：形态 2 的 `#dubKeepLimit`（默认关 = 与加这个功能之前逐字节一致，所以「不勾时不发
+    // 那个键」是它最要紧的契约）。成片库（#films）此前**一条 UI 用例都没有**。
+    //
+    // ★ 重活一律拦下：真 TTS 合成（#btnVoiceTest）、真导入、真出片 —— 全用**页面内 patch
+    //   window.fetch** 记录请求体后短路，绝不让它们跑起来。真出片/真上传那条路已由 E7 覆盖。
+    log('');
+    log(C.b('  G. 限幅开关 · 成片库 · 声音三处 · 主题工单 · 任务取消 · 预设/复制'));
+
+    // 全新加载：--filter G* 时 B0 不在（E 段已兜底加载过一次），这里再刷一次拿到一个
+    // **没有 E 段 fetch 桩**的干净文档 —— 否则 E 段那个把 /api/jobs 伪造成假任务列表的桩，
+    // 会让 G11（任务列表取消）永远找不到真任务行。
+    await cdp.goto(base + '/', 4000);
+    await waitFor(cdp.evalJs,
+      `!!document.getElementById('dubCard') && document.querySelectorAll('#dubStyle option').length > 0
+       && document.querySelectorAll('#dubRatio option').length > 0 && document.querySelectorAll('.style-item').length > 0`,
+      { timeoutMs: 30000 });
+
+    // G 段统一的 fetch 桩（装在最外层）：
+    //   · POST /api/dub/run        → 记录 body 并**短路**（绝不真出片；job.id='' → 前端不轮询）
+    //   · POST /api/voices/test    → 记录 body 并**短路**（绝不真跑 TTS 烧 GPU）
+    //   · POST /api/voices/import  → 记录 body 并**短路**（绝不真导入）
+    //   · POST /api/briefs         → 记录 body 后**透传真网络**（工单要真落盘，G10 才有得断言）
+    //   · GET  /api/films          → 只记录 URL，透传真网络（G4 要卡片数 == 服务端 films.length）
+    //   · DELETE /api/jobs/<id>    → 只记录 URL，透传真网络（G11 要真的取消）
+    await cdp.evalJs(`(() => {
+      window.__gRealFetch = window.fetch.bind(window);
+      window.__gFilms = []; window.__gBriefReqs = []; window.__gBriefResp = null;
+      window.__dubRunBodies = []; window.__gVoiceTest = []; window.__gVoiceImport = []; window.__gJobDel = [];
+      const fake = (obj) => ({ ok: true, status: 200, text: async () => JSON.stringify(obj) });
+      window.fetch = function (u, o) {
+        try {
+          const s = String(u);
+          const m = String((o && o.method) || 'GET').toUpperCase();
+          if (s.indexOf('/api/dub/run') >= 0 && m === 'POST') {
+            window.__dubRunBodies.push({ url: s, body: o && o.body });
+            return Promise.resolve(fake({ ok: true, job: { id: '', status: 'canceled' },
+              out: '', outName: '', artifacts: {}, style: '', keepOriginal: false, hint: '' }));
+          }
+          if (s.indexOf('/api/voices/test') >= 0 && m === 'POST') {
+            window.__gVoiceTest.push({ url: s, body: o && o.body });
+            return Promise.resolve(fake({ ok: true, job: { id: '', status: 'done' }, url: '',
+              voice: { name: 'g-fake', speed: 1.1, textChars: 0 } }));
+          }
+          if (s.indexOf('/api/voices/import') >= 0 && m === 'POST') {
+            window.__gVoiceImport.push({ url: s, body: o && o.body });
+            return Promise.resolve(fake({ ok: true, job: { id: '', status: 'done' }, out: '', name: 'g-fake', hint: '' }));
+          }
+          if (s.indexOf('/api/briefs') >= 0 && m === 'POST' && s.indexOf('/api/briefs/') < 0) {
+            window.__gBriefReqs.push({ url: s, body: o && o.body });
+            return window.__gRealFetch.apply(this, arguments).then((r) => {
+              try { r.clone().text().then((t) => { try { window.__gBriefResp = JSON.parse(t); } catch (e) {} }); } catch (e) {}
+              return r;
+            });
+          }
+          if (s.indexOf('/api/films') >= 0 && m === 'GET' && s.indexOf('/api/films/') < 0) window.__gFilms.push(s);
+          if (m === 'DELETE' && s.indexOf('/api/jobs/') >= 0) window.__gJobDel.push({ url: s, method: m });
+        } catch (e) { /* 拦不住就走真网络 */ }
+        return window.__gRealFetch.apply(this, arguments);
+      };
+      return true;
+    })()`);
+
+    // ── 成片库：服务端权威清单（G4–G6 的期望值全部从它自算，不硬编码文件名/顺序）──
+    let gFilms = ((await get('/api/films')).json || {}).films || [];
+    if (!gFilms.length) {
+      // 干净机器：临时造一个极小的假成片（目录名不以 `_`/`.` 开头，否则服务端会跳过）——
+      // 绝不静默跳过。跑完按**确切路径**递归删（登记在 CREATED_FILM_DIRS）。
+      const dir = path.join(CFG.exportDir, `uitest-films-${process.pid}`);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'clip.mp4'), Buffer.from('FAKE-MP4-BYTES-for-ui-g'));
+      CREATED_FILM_DIRS.add(dir);
+      gFilms = ((await get('/api/films')).json || {}).films || [];
+    }
+    need(gFilms.length > 0,
+      `成片库为空（${CFG.exportDir}），临时造假成片后仍拿不到条目 —— 成片库测不了（绝不静默跳过）`);
+
+    const gDemos = await get('/api/demos');
+    const gNameCn = (slug) => { const s = (gDemos.json.styles || []).find((x) => x.slug === slug); return (s && s.nameCn) || slug; };
+    const gIsDub = (f) => !!(f && (f.source === 'dub' || !f.slug));
+    const gTitle = (f) => (gIsDub(f) ? '文案出片' : gNameCn(f.slug));
+    const gIdOf = (f) => (gIsDub(f) ? `D|${f.name}|${f.file}` : `S|${gTitle(f)}|${f.file}`);
+    const gFilmKey = (f) => (gIsDub(f) ? `文案出片 ${f.name || ''}`.trim() : String(f.slug));
+    // 与 app.js:sortedFilms 同一套排序规则（期望顺序在 node 侧自算，不硬编码）
+    const gSorted = (films, sort) => films.slice().sort((a, b) => {
+      if (sort === 'size') return b.size - a.size;
+      if (sort === 'slug') return gFilmKey(a).localeCompare(gFilmKey(b)) || b.mtime - a.mtime;
+      return b.mtime - a.mtime;
+    });
+    /** 读回 #films 里每张卡片的**稳定身份**（与 gIdOf 同一套编码，不依赖 DOM 顺序）。 */
+    const gDomIds = () => cdp.evalJs(`[...document.querySelectorAll('#films .film')].map((c) => {
+      const title = (c.querySelector('.fslug') || {}).textContent || '';
+      const metas = [...c.querySelectorAll('.fmeta')].map((n) => n.textContent || '');
+      const file = metas[1] || '';
+      const dm = metas.find((m) => m.indexOf('dub\\\\') === 0);
+      return dm ? 'D|' + dm.slice(4) + '|' + file : 'S|' + title + '|' + file;
+    })`);
+    const gWaitCount = async (expr, want, timeoutMs = 15000) => {
+      const t0 = Date.now(); let last;
+      while (Date.now() - t0 < timeoutMs) {
+        last = await cdp.evalJs(expr);
+        if (last === want) return last;
+        await sleep(150);
+      }
+      throw new Error(`等待「${expr} === ${want}」超时（最后一次 = ${JSON.stringify(last)}）`);
+    };
+    /** 形态 2：切过去 + 注入一个合成 videoToken（G 只验 body 组装；真上传路径由 E7 覆盖）。 */
+    const gKeepToken = () => cdp.evalJs(`(() => {
+      document.getElementById('dubModeKeep').click();
+      const sel = document.getElementById('dubSrcSel');
+      if (![...sel.options].some((o) => o.value === 'G-TOKEN')) {
+        const o = document.createElement('option'); o.value = 'G-TOKEN'; o.textContent = 'g-token'; sel.appendChild(o);
+      }
+      sel.value = 'G-TOKEN'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return document.getElementById('dubVideoHint').textContent;
+    })()`);
+
+    await runCase('G1 出片·形态2 不勾「限幅」：body 不含 keepOriginalLimit（默认关 = 与加功能前逐字节一致）', async () => {
+      await ensureDubPage();
+      const hint = await gKeepToken();
+      need(/已选/.test(hint), `选中素材后 #dubVideoHint 没显示「已选」：「${hint}」`);
+      await cdp.evalJs(`(() => {
+        const cb = document.getElementById('dubKeepLimit');
+        if (cb) { cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)}; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`);
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run（形态 2 被前端拦了？）');
+      const body = JSON.parse(cap.body || '{}');
+      need(body.keepOriginal === true, `形态 2 的 body 必须带 keepOriginal:true，实际 ${JSON.stringify(body.keepOriginal)}`);
+      need(body.videoToken === 'G-TOKEN', `body.videoToken=${JSON.stringify(body.videoToken)}，期望 'G-TOKEN'`);
+      // ★ 有牙：不勾时**绝不能**带这个键 —— 带了服务端就会传 --keep-original-limit，音轨被重编码。
+      need(!('keepOriginalLimit' in body),
+        `不勾「限幅」时 body 不该带 keepOriginalLimit，实际带了 ${JSON.stringify(body.keepOriginalLimit)}（body=${cap.body}）`);
+      notes.push(`G1 形态2 不勾 → body keys=[${Object.keys(body).join(', ')}]（无 keepOriginalLimit）`);
+    });
+
+    await runCase('G2 出片·形态2 勾上「限幅」：body 含 keepOriginalLimit===true，且仍不含音色/语速/停顿/尺寸/fit', async () => {
+      await ensureDubPage();
+      await gKeepToken();
+      const pre = await cdp.evalJs(`(() => {
+        const cb = document.getElementById('dubKeepLimit');
+        if (!cb) return { err: 'no-checkbox' };
+        cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true }));
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)}; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return { checked: cb.checked, hint: document.getElementById('dubLimitHint').textContent };
+      })()`);
+      need(!pre.err, '#dubKeepLimit 不在（形态 2 专属的限幅开关没渲染）');
+      // ★ 提示必须诚实：勾上后要明说音轨会被重编码、不再逐字节相同
+      need(/已开/.test(pre.hint), `勾上后 #dubLimitHint 没写「已开」：「${pre.hint}」`);
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run');
+      const body = JSON.parse(cap.body || '{}');
+      need(body.keepOriginalLimit === true, `勾上后 body.keepOriginalLimit 应为 true，实际 ${JSON.stringify(body.keepOriginalLimit)}`);
+      // ★ 服务端契约：keepOriginalLimit 只在 keepOriginal=true 时才有意义（lib/dub.mjs 会 400）
+      need(body.keepOriginal === true,
+        `形态 2 必须同时带 keepOriginal:true，实际 ${JSON.stringify(body.keepOriginal)}（body=${cap.body}）`);
+      need('videoToken' in body, `body 缺 videoToken（形态 2 的成立条件）`);
+      for (const k of ['voice', 'speed', 'gap', 'size', 'ratio', 'fit']) {
+        need(!(k in body), `形态 2 的 body 不该带 ${k}，实际带了 ${JSON.stringify(body[k])}（body=${cap.body}）`);
+      }
+      notes.push(`G2 形态2 勾上 → body keys=[${Object.keys(body).join(', ')}]（keepOriginalLimit=true）；提示「${pre.hint.slice(0, 30)}…」`);
+    });
+
+    await runCase('G3 出片·形态1：限幅复选框不可见（.dub-keep-only），且形态1 的 body 不含 keepOriginalLimit', async () => {
+      await ensureDubPage();
+      const vis = await cdp.evalJs(`(() => {
+        document.getElementById('dubModeScript').click();
+        const cb = document.getElementById('dubKeepLimit');
+        const block = document.getElementById('dubLimitBlock');
+        return {
+          mode: document.getElementById('dubCard').className,
+          blockDisplay: getComputedStyle(block).display,
+          cbOffsetParentNull: cb.offsetParent === null,
+          cbVisible: !!(cb.offsetWidth || cb.offsetHeight || cb.getClientRects().length),
+        };
+      })()`);
+      need(/mode-script/.test(vis.mode), `没切到形态 1：${vis.mode}`);
+      need(vis.blockDisplay === 'none',
+        `形态 1 下 .dub-keep-only 块（#dubLimitBlock）应 display:none，实际「${vis.blockDisplay}」`);
+      need(vis.cbOffsetParentNull === true && vis.cbVisible === false,
+        `形态 1 下 #dubKeepLimit 应不可见（offsetParent=null / 无布局盒），实际 ${JSON.stringify(vis)}`);
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run（形态 1）');
+      const body = JSON.parse(cap.body || '{}');
+      // ★ 即使复选框还残留 checked（G2 勾过），形态 1 也绝不能带这个键 —— 它只在 keep 分支才该出现
+      need(!('keepOriginalLimit' in body),
+        `形态 1 的 body 不该带 keepOriginalLimit，实际 ${JSON.stringify(body.keepOriginalLimit)}（body=${cap.body}）`);
+      need(!('keepOriginal' in body), `形态 1 的 body 不该带 keepOriginal，实际 ${JSON.stringify(body.keepOriginal)}`);
+      notes.push(`G3 形态1：#dubLimitBlock display=${vis.blockDisplay}、#dubKeepLimit 无布局盒；body 无 keepOriginalLimit`);
+      await cdp.evalJs(`(() => { const cb = document.getElementById('dubKeepLimit'); if (cb) cb.checked = false; return true; })()`);
+    });
+
+    await runCase('G4 成片库·刷新：点「刷新」真的 GET /api/films，卡片数 == 服务端 films.length', async () => {
+      await cdp.evalJs(`(() => { window.__gFilms = [];
+        const s = document.getElementById('filmSearch'); s.value = ''; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+      await cdp.evalJs(`document.getElementById('btnRefreshFilms').click()`);
+      await waitFor(cdp.evalJs, `(window.__gFilms || []).length > 0`, { timeoutMs: 15000 });
+      const urls = await cdp.evalJs(`window.__gFilms || []`);
+      need(urls.some((u) => u === '/api/films' || u.indexOf('/api/films?') === 0),
+        `点「刷新」后没看到 GET /api/films 请求：${JSON.stringify(urls)}`);
+      await gWaitCount(`document.querySelectorAll('#films .film').length`, gFilms.length, 15000);
+      const info = await cdp.evalJs(`(() => ({
+        n: document.querySelectorAll('#films .film').length,
+        count: document.getElementById('filmCount').textContent,
+      }))()`);
+      need(info.n === gFilms.length, `成片卡片 ${info.n} 张，服务端 films.length=${gFilms.length}`);
+      need(info.count === `${gFilms.length}/${gFilms.length}`,
+        `#filmCount 应显示「${gFilms.length}/${gFilms.length}」，实际「${info.count}」`);
+      notes.push(`G4 刷新 → GET ${urls[urls.length - 1]}；卡片 ${info.n} 张 == 服务端 films.length`);
+    });
+
+    await runCase('G5 成片库·排序：切 #filmSort → 卡片顺序真的变（按服务端数据自算期望，不硬编码）', async () => {
+      await cdp.evalJs(`(() => { const s = document.getElementById('filmSearch');
+        s.value = ''; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+      const setSort = (v) => cdp.evalJs(`(() => { const sel = document.getElementById('filmSort');
+        sel.value = ${JSON.stringify(v)}; sel.dispatchEvent(new Event('change', { bubbles: true })); return sel.value; })()`);
+
+      const vTime = await setSort('time');
+      need(vTime === 'time', `#filmSort 没能切到 time：${vTime}`);
+      const timeIds = await gDomIds();
+      const expTime = gSorted(gFilms, 'time').map(gIdOf);
+      need(JSON.stringify(timeIds) === JSON.stringify(expTime),
+        `「时间」排序与服务端数据自算的顺序不一致：\n  DOM  = ${JSON.stringify(timeIds.slice(0, 5))}…\n  期望 = ${JSON.stringify(expTime.slice(0, 5))}…`);
+
+      const vSize = await setSort('size');
+      need(vSize === 'size', `#filmSort 没能切到 size：${vSize}`);
+      const sizeIds = await gDomIds();
+      const expSize = gSorted(gFilms, 'size').map(gIdOf);
+      need(JSON.stringify(sizeIds) === JSON.stringify(expSize),
+        `「大小」排序与服务端数据自算不一致：\n  DOM  = ${JSON.stringify(sizeIds.slice(0, 5))}…\n  期望 = ${JSON.stringify(expSize.slice(0, 5))}…`);
+      // ★ 有牙：顺序必须**真的变**（否则排序等于没生效 / 或本用例没验到东西）
+      need(JSON.stringify(sizeIds) !== JSON.stringify(timeIds), '切成「大小」后卡片顺序没变 —— 排序没生效？');
+
+      const vSlug = await setSort('slug');
+      need(vSlug === 'slug', `#filmSort 没能切到 slug：${vSlug}`);
+      const slugIds = await gDomIds();
+      need(JSON.stringify([...slugIds].sort()) === JSON.stringify([...timeIds].sort()),
+        '切排序后卡片集合变了（应只是顺序变）');
+      // slug 排序里 dub 条目的 key 以中文开头，localeCompare 的「块位置」依赖运行环境 —— 所以只对
+      // **非 dub 子序列**严格比较（纯 ASCII slug 的比较在任何 locale 下都一致）。
+      const nonDubDom = slugIds.filter((x) => x[0] === 'S');
+      const nonDubExp = gSorted(gFilms.filter((f) => !gIsDub(f)), 'slug').map(gIdOf);
+      need(JSON.stringify(nonDubDom) === JSON.stringify(nonDubExp),
+        `「风格名」排序下风格成片子序列与自算不一致：\n  DOM  = ${JSON.stringify(nonDubDom.slice(0, 5))}…\n  期望 = ${JSON.stringify(nonDubExp.slice(0, 5))}…`);
+      notes.push(`G5 排序：time/size 与服务端自算逐条一致（且 size≠time）；slug 下风格子序列正确`);
+      await setSort('time');
+    });
+
+    await runCase('G6 成片库·筛选：输入 slug 片段只剩匹配卡片；输入不存在的串 → 0 张 + 空状态', async () => {
+      await cdp.evalJs(`(() => { const sel = document.getElementById('filmSort');
+        sel.value = 'time'; sel.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      const gFilter = (q) => {
+        const qq = q.trim().toLowerCase();
+        return gFilms.filter((f) => !qq
+          || (f.slug || '').toLowerCase().includes(qq)
+          || (f.file || '').toLowerCase().includes(qq)
+          || (f.name || '').toLowerCase().includes(qq)
+          || (gIsDub(f) && '文案出片'.includes(qq)));
+      };
+      // 用一个**最长 slug** 当片段，保证是严格子集（别用 'coffee' 这种会前缀命中一堆的）
+      const longest = gFilms.slice().sort((a, b) => String(b.slug || '').length - String(a.slug || '').length)[0];
+      const frag = String(longest.slug || longest.file || '');
+      const expHit = gFilter(frag);
+      need(frag && expHit.length > 0 && expHit.length < gFilms.length,
+        `片段「${frag}」不是严格子集（命中 ${expHit.length}/${gFilms.length}）—— 换一个片段`);
+
+      const setQ = (v) => cdp.evalJs(`(() => { const s = document.getElementById('filmSearch');
+        s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('input', { bubbles: true })); return s.value; })()`);
+
+      await setQ(frag);
+      const hitIds = await gDomIds();
+      need(hitIds.length === expHit.length,
+        `输入「${frag}」后卡片 ${hitIds.length} 张，期望 ${expHit.length} 张（服务端数据自算）`);
+      const hitCount = await cdp.evalJs(`document.getElementById('filmCount').textContent`);
+      need(hitCount === `${expHit.length}/${gFilms.length}`,
+        `#filmCount 应「${expHit.length}/${gFilms.length}」，实际「${hitCount}」`);
+
+      const nope = `zzz-no-such-film-${process.pid}`;
+      await setQ(nope);
+      const zero = await cdp.evalJs(`(() => ({
+        n: document.querySelectorAll('#films .film').length,
+        empty: (document.querySelector('#films .empty') || {}).textContent || '',
+        count: document.getElementById('filmCount').textContent,
+      }))()`);
+      need(zero.n === 0, `输入不存在的串「${nope}」后仍有 ${zero.n} 张卡片`);
+      need(/没有匹配的成片/.test(zero.empty), `空状态文案不对：「${zero.empty}」`);
+      need(zero.count === `0/${gFilms.length}`, `#filmCount 应「0/${gFilms.length}」，实际「${zero.count}」`);
+      notes.push(`G6 筛选「${frag}」→ ${hitIds.length} 张（= 自算 ${expHit.length}）；不存在串 → 0 张 + 空状态`);
+      await setQ('');
+    });
+
+    await runCase('G7 声音·试合成一句：点它**真的**向 /api/voices/test 发请求（fetch 桩拦下，绝不真合成）', async () => {
+      // 保证有一条当前音色（--filter G 时 D3 没跑）—— 否则 startVoiceTest 会在前端就被拦下
+      const picked = await cdp.evalJs(`(() => {
+        const it = [...document.querySelectorAll('#voiceList .voice')]
+          .find((n) => [...n.querySelectorAll('.vacts button')].some((b) => b.textContent.trim() === '选用'));
+        if (it) [...it.querySelectorAll('.vacts button')].find((b) => b.textContent.trim() === '选用').click();
+        return { picked: !!it, ls: localStorage.getItem('lemo.voice') };
+      })()`);
+      need(picked.picked, '音色列表里找不到可「选用」的条目（声音版块没渲染好？）');
+      await cdp.evalJs(`window.__gVoiceTest = []; true;`);
+      const clicked = await cdp.evalJs(`(() => {
+        const b = document.getElementById('btnVoiceTest');
+        if (!b) return { err: 'no-btn' };
+        b.click();
+        return { ok: true };
+      })()`);
+      need(clicked.ok, '#btnVoiceTest 不在（「试合成一句」按钮没渲染）');
+      await waitFor(cdp.evalJs, `(window.__gVoiceTest || []).length > 0`, { timeoutMs: 10000 });
+      const caps = await cdp.evalJs(`window.__gVoiceTest || []`);
+      const cap = caps[caps.length - 1];
+      need(/\/api\/voices\/test(\?|$)/.test(cap.url), `试合成没打到 /api/voices/test，实际 ${cap.url}`);
+      const body = JSON.parse(cap.body || '{}');
+      need(typeof body.name === 'string' && body.name.length > 0, `试合成请求体缺 name：${cap.body}`);
+      need(Number.isFinite(Number(body.speed)), `试合成请求体缺 speed：${cap.body}`);
+      notes.push(`G7 点「试合成一句」→ POST ${cap.url}；body.name=${JSON.stringify(body.name)}（fetch 桩拦下，未真合成）`);
+    });
+
+    await runCase('G8 声音·导入音色：展开折叠区出现「导入」按钮，点它向 /api/voices/import 发请求（桩拦下，绝不真导入）', async () => {
+      // 干净机器上源目录里可能全是「已导入」→ 没有待导入项 → 没有「导入」按钮。造一个假的待导入文件
+      // （落在**非 C 盘**的音色源目录里），跑完按**确切路径**删（登记在 CREATED_VOICE_SRCS）。
+      const srcInfo = (await get('/api/voices/sources')).json;
+      need(srcInfo && srcInfo.ok === true && srcInfo.dir,
+        `GET /api/voices/sources 读不到源目录：${JSON.stringify(srcInfo).slice(0, 160)}`);
+      const tmpName = `ui-g-import-${process.pid}.mp3`;
+      const tmpPath = path.join(srcInfo.dir, tmpName);
+      if (!fs.existsSync(tmpPath)) {
+        fs.writeFileSync(tmpPath, Buffer.from('FAKE-MP3-for-ui-g8'));
+        CREATED_VOICE_SRCS.add(tmpPath);
+      }
+      await cdp.evalJs(`window.__gVoiceImport = []; true;`);
+      const opened = await cdp.evalJs(`(() => {
+        const d = document.getElementById('voiceImport');
+        if (!d) return { err: 'no-details' };
+        if (!d.open) d.querySelector('summary').click();
+        return { ok: true, open: d.open };
+      })()`);
+      need(opened.ok && opened.open, `#voiceImport 折叠区打不开：${JSON.stringify(opened)}`);
+      const clicked = await cdp.evalJs(`(async () => {
+        for (let i = 0; i < 80; i++) {
+          const row = [...document.querySelectorAll('#viList .vi-item')]
+            .find((r) => { const f = r.querySelector('.vifile'); return f && f.textContent === ${JSON.stringify(tmpName)}; });
+          if (row) {
+            const btn = [...row.querySelectorAll('.viacts button')].find((b) => /导入/.test(b.textContent));
+            if (btn) { btn.click(); return { ok: true }; }
+            return { err: 'no-import-button', txt: row.textContent.slice(0, 140) };
+          }
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        return { err: 'row-not-found', items: [...document.querySelectorAll('#viList .vi-item .vifile')].map((n) => n.textContent) };
+      })()`, { awaitPromise: true });
+      need(clicked.ok, `导入按钮没点到：${JSON.stringify(clicked)}`);
+      await waitFor(cdp.evalJs, `(window.__gVoiceImport || []).length > 0`, { timeoutMs: 10000 });
+      const caps = await cdp.evalJs(`window.__gVoiceImport || []`);
+      const cap = caps[caps.length - 1];
+      const body = JSON.parse(cap.body || '{}');
+      need(body.file === tmpName,
+        `导入请求体的 file=${JSON.stringify(body.file)}，期望 ${JSON.stringify(tmpName)}（body=${cap.body}）`);
+      notes.push(`G8 展开折叠区 → 点「导入」→ POST ${cap.url}；body.file=${JSON.stringify(body.file)}（fetch 桩拦下，未真导入）`);
+    });
+
+    await runCase('G9 声音·「重置为内容文件默认」：点它清掉本机选择（localStorage lemo.voice / lemo.speed）', async () => {
+      const before = await cdp.evalJs(`(() => {
+        const it = [...document.querySelectorAll('#voiceList .voice')]
+          .find((n) => [...n.querySelectorAll('.vacts button')].some((b) => b.textContent.trim() === '选用'));
+        if (it) [...it.querySelectorAll('.vacts button')].find((b) => b.textContent.trim() === '选用').click();
+        return { ls: localStorage.getItem('lemo.voice') };
+      })()`);
+      need(before.ls, '前置不成立：没能先选上一条音色（localStorage[\'lemo.voice\'] 仍为空）');
+      const after = await cdp.evalJs(`(() => {
+        const btn = document.querySelector('#voiceCurrent .vc-reset');
+        if (!btn) return { err: 'no-reset-btn', cur: document.getElementById('voiceCurrent').textContent };
+        btn.click();
+        return { ok: true, ls: localStorage.getItem('lemo.voice'), speed: localStorage.getItem('lemo.speed'),
+                 toast: document.getElementById('toast').textContent };
+      })()`);
+      need(after.ok, `#voiceCurrent 里没有 .vc-reset 按钮：${JSON.stringify(after)}`);
+      // ★ 实现是 saveVoicePref(key,'') → localStorage.removeItem(key)（app.js:1018）
+      need(after.ls === null,
+        `点「重置为内容文件默认」后 localStorage['lemo.voice'] 应被清掉（null），实际 ${JSON.stringify(after.ls)}`);
+      need(after.speed === null, `localStorage['lemo.speed'] 也应被清掉，实际 ${JSON.stringify(after.speed)}`);
+      need(/已重置为内容文件默认/.test(after.toast), `重置后的 toast 文案不对：「${after.toast}」`);
+      notes.push(`G9 点 .vc-reset → lemo.voice=${JSON.stringify(after.ls)} / lemo.speed=${JSON.stringify(after.speed)}；toast「${after.toast.replace(/\s+/g, ' ').slice(0, 40)}」`);
+    });
+
+    await runCase('G10 主题出片·生成工单：填主题+语言+尺寸 → 真 POST /api/briefs（体与表单一致）且 GET /api/briefs 能看到', async () => {
+      await waitFor(cdp.evalJs,
+        `document.querySelectorAll('#briefSlug option').length > 0 && document.querySelectorAll('#briefRatio option').length > 0`,
+        { timeoutMs: 20000 });
+      // 选风格（触发语言选项异步刷新 /api/langs），再等语言选项就绪（拿不到就按空 = 服务端默认）
+      await cdp.evalJs(`(() => { const s = document.getElementById('briefSlug');
+        s.value = s.options[0].value; s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+      await waitFor(cdp.evalJs, `document.querySelectorAll('#briefLang option').length > 0`, { timeoutMs: 15000 })
+        .catch(() => null);
+      const form = await cdp.evalJs(`(() => {
+        const slugSel = document.getElementById('briefSlug');
+        const langSel = document.getElementById('briefLang');
+        const ratioSel = document.getElementById('briefRatio');
+        const slug = slugSel.value;
+        const lang = langSel ? langSel.value : '';
+        const r = [...ratioSel.options].find((o) => !/自定义/.test(o.textContent)) || ratioSel.options[0];
+        ratioSel.value = r.value; ratioSel.dispatchEvent(new Event('change', { bubbles: true }));
+        const topic = 'UI 测试：G10 生成工单 ' + ${JSON.stringify(String(process.pid))} + '-' + Date.now();
+        document.getElementById('briefTopic').value = topic;
+        document.getElementById('btnBriefCreate').click();
+        return { slug, lang, ratio: ratioSel.value, topic };
+      })()`);
+      need(form.slug && form.ratio, `表单没填好：${JSON.stringify(form)}`);
+      await waitFor(cdp.evalJs, `(window.__gBriefReqs || []).length > 0`, { timeoutMs: 15000 });
+      const reqs = await cdp.evalJs(`window.__gBriefReqs || []`);
+      const cap = reqs[reqs.length - 1];
+      const body = JSON.parse(cap.body || '{}');
+      need(body.topic === form.topic, `请求体 topic=${JSON.stringify(body.topic)}，期望 ${JSON.stringify(form.topic)}`);
+      need(body.slug === form.slug, `请求体 slug=${JSON.stringify(body.slug)}，期望 ${JSON.stringify(form.slug)}`);
+      need(body.lang === form.lang, `请求体 lang=${JSON.stringify(body.lang)}，期望 ${JSON.stringify(form.lang)}`);
+      need(body.ratio === form.ratio, `请求体 ratio=${JSON.stringify(body.ratio)}，期望 ${JSON.stringify(form.ratio)}`);
+      // ★ 工单**真的落盘**了：登记进 BRIEF_IDS，由既有 cleanupBriefs(port) 在**停服务之前**删掉
+      const id = await waitFor(cdp.evalJs,
+        `(window.__gBriefResp && window.__gBriefResp.brief && window.__gBriefResp.brief.id) || ''`, { timeoutMs: 15000 });
+      BRIEF_IDS.add(id);
+      const list = await get('/api/briefs');
+      const found = ((list.json && list.json.briefs) || []).find((b) => b.id === id);
+      need(found, `GET /api/briefs 里找不到刚建的工单 ${id}`);
+      need(found.topic === form.topic, `工单 topic 回读不一致：${JSON.stringify(found.topic)}`);
+      notes.push(`G10 生成工单 ${id}（slug=${form.slug} lang=${form.lang} ratio=${form.ratio}）；GET /api/briefs 已能看到`);
+    });
+
+    await runCase('G11 任务列表·取消：点行内「取消」→ 真发 DELETE /api/jobs/:id，状态转 canceled 且文案中性（无「失败」）', async () => {
+      const slug = 'ascii-crt';
+      const lockPath = path.join(CFG.exportDir, `.${slug}.lock`);
+      // ① 真入队一条 --dry-run --skip-sync（无害长任务，约几秒；绝不真渲染/混流）
+      const r = await post('/api/run', { slug, opts: ['--dry-run', '--skip-sync'] });
+      need(r.status === 200 && r.json && r.json.job, `POST /api/run → ${r.status} ${r.text.slice(0, 160)}`);
+      const id = r.json.job.id;
+      JOB_IDS.add(id);
+
+      // ② 等它 running 并拿到 pid（顺便登记陈旧锁：取消会硬杀进程树，releaseLock 不会执行）
+      let job = null;
+      {
+        const t0 = Date.now();
+        while (Date.now() - t0 < 15000) {
+          const j = ((await get('/api/jobs')).json.jobs || []).find((x) => x.id === id);
+          if (j && j.status === 'running' && j.pid) { job = j; break; }
+          if (j && ['done', 'failed', 'canceled', 'ended'].includes(j.status)) { job = j; break; }
+          await sleep(80);
+        }
+      }
+      need(job, `/api/jobs 里找不到 ${id}`);
+      need(job.status === 'running' && Number.isInteger(job.pid) && job.pid > 0,
+        `取消前状态是 ${job.status}（期望 running 且有 pid）—— dry-run 是不是太快跑完了？`);
+      CREATED_LOCKS.set(lockPath, job.pid);
+
+      // ③ 在 #jobs 里找到这一行 → 点「取消」（DELETE 被 G 的 fetch 桩**记录**，但仍走真网络）
+      await cdp.evalJs(`window.__gJobDel = []; true;`);
+      const clicked = await cdp.evalJs(`(async () => {
+        document.getElementById('btnRefreshJobs').click();
+        for (let i = 0; i < 60; i++) {
+          const row = [...document.querySelectorAll('#jobs .job')]
+            .find((n) => { const t = n.querySelector('.jid'); return t && t.textContent === ${JSON.stringify(id)}; });
+          if (row) {
+            const st = row.querySelector('.status');
+            const btn = [...row.querySelectorAll('button')].find((b) => b.textContent.trim() === '取消');
+            if (btn) { btn.click(); return { ok: true, statusText: st ? st.textContent : '', cls: st ? st.className : '' }; }
+            return { err: 'no-cancel-button', cls: st ? st.className : '', txt: row.textContent.slice(0, 140) };
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        return { err: 'row-not-found' };
+      })()`, { awaitPromise: true });
+      need(clicked.ok, `没能在 #jobs 里点到 ${id} 的「取消」按钮：${JSON.stringify(clicked)}`);
+      need(clicked.statusText === '运行中' || clicked.statusText === '排队中',
+        `点「取消」前该行状态应是「运行中/排队中」，实际「${clicked.statusText}」`);
+
+      // ④ 真的发出 DELETE /api/jobs/<id>
+      await waitFor(cdp.evalJs, `(window.__gJobDel || []).length > 0`, { timeoutMs: 10000 });
+      const dels = await cdp.evalJs(`window.__gJobDel || []`);
+      const want = '/api/jobs/' + encodeURIComponent(id);
+      need(dels.some((d) => d.url === want),
+        `点「取消」后没看到 DELETE ${want}；实际：${JSON.stringify(dels)}`);
+
+      // ⑤ 服务端状态真的转 canceled，且**记录仍在**（取消 ≠ 删除 —— 删了会留下占 GPU 的孤儿）
+      let st2 = null;
+      {
+        const t0 = Date.now();
+        while (Date.now() - t0 < 20000) {
+          const j = ((await get('/api/jobs')).json.jobs || []).find((x) => x.id === id);
+          if (j && j.status === 'canceled') { st2 = j; break; }
+          if (j && ['done', 'failed', 'ended'].includes(j.status)) { st2 = j; break; }
+          await sleep(200);
+        }
+      }
+      need(st2, `取消后 /api/jobs 里找不到 ${id} —— running 任务被「删除」了？（取消只能置 canceled）`);
+      need(st2.status === 'canceled', `取消后状态 ${st2.status}（期望 canceled）`);
+
+      // ⑥ ★ 界面文案必须**中性**：用户主动取消 ≠ 失败，不得出现红色「失败」措辞（本项目已固化的约定）
+      const ui = await waitFor(cdp.evalJs, `(() => {
+        const row = [...document.querySelectorAll('#jobs .job')]
+          .find((n) => { const t = n.querySelector('.jid'); return t && t.textContent === ${JSON.stringify(id)}; });
+        if (!row) return null;
+        const s = row.querySelector('.status');
+        return (s && s.textContent === '已取消')
+          ? { text: s.textContent, cls: s.className, rowText: row.textContent } : null;
+      })()`, { timeoutMs: 20000 });
+      need(!/失败/.test(ui.rowText),
+        `取消后的行里出现了「失败」措辞（应中性）：${ui.rowText.replace(/\s+/g, ' ').slice(0, 140)}`);
+      need(/\bcanceled\b/.test(ui.cls) && !/\bfailed\b/.test(ui.cls),
+        `状态 class 应是 canceled 而非 failed，实际「${ui.cls}」`);
+      notes.push(`G11 取消 ${id}（${slug}）：UI 发 DELETE ${want}；服务端 → canceled 且记录仍在；行文案「${ui.text}」（中性）`);
+    });
+
+    await runCase('G12 启动表单·常用组合预设：点它只改勾选、**不**启动任务', async () => {
+      await cdp.evalJs(`(() => { for (const id of ['fSkipSync','fSkipRender','fAudioOnly','fRenderOnly','fDryRun']) {
+        const e = document.getElementById(id); if (e) e.checked = false; } return true; })()`);
+      const before = ((await get('/api/jobs')).json.jobs || []).length;
+      const res = await cdp.evalJs(`(() => {
+        const out = [];
+        for (const b of document.querySelectorAll('.preset')) {
+          b.click();
+          out.push({ id: b.dataset.preset,
+            chk: { skipSync: document.getElementById('fSkipSync').checked,
+                   skipRender: document.getElementById('fSkipRender').checked,
+                   audioOnly: document.getElementById('fAudioOnly').checked,
+                   renderOnly: document.getElementById('fRenderOnly').checked,
+                   dryRun: document.getElementById('fDryRun').checked },
+            active: b.classList.contains('active') });
+        }
+        return out;
+      })()`);
+      const by = Object.fromEntries(res.map((x) => [x.id, x]));
+      need(by.audio && by.audio.chk.skipRender === true && by.audio.chk.audioOnly === true && by.audio.chk.dryRun === false,
+        `「只调音」的勾选不对：${JSON.stringify(by.audio)}`);
+      need(by.render && by.render.chk.renderOnly === true && by.render.chk.audioOnly === false && by.render.chk.skipRender === false,
+        `「只重渲」的勾选不对：${JSON.stringify(by.render)}`);
+      need(by.dry && by.dry.chk.dryRun === true && by.dry.chk.skipSync === false,
+        `「试跑」的勾选不对：${JSON.stringify(by.dry)}`);
+      need(by.quick && Object.values(by.quick.chk).every((v) => v === false),
+        `「快速出片」应全不勾：${JSON.stringify(by.quick)}`);
+      need(res.length > 0 && res.every((x) => x.active === true),
+        `点过的预设应高亮（active），实际 ${JSON.stringify(res.map((x) => [x.id, x.active]))}`);
+      await sleep(600);   // 给「万一真入队」一点时间冒出来
+      const after = ((await get('/api/jobs')).json.jobs || []).length;
+      need(after === before, `点预设竟然入队了任务：任务数 ${before} → ${after}`);
+      notes.push(`G12 预设 quick/audio/render/dry 只改勾选且逐个高亮；任务数 ${before} 不变（不启动）`);
+    });
+
+    await runCase('G13 启动表单·复制按钮：点它不报错、按钮仍在（不断言剪贴板内容）', async () => {
+      const st = await cdp.evalJs(`(() => {
+        const f = document.getElementById('fSlug');
+        f.value = ${JSON.stringify(state.slugA)};
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+        const b = document.getElementById('btnCopyCmd');
+        return { hidden: b.hidden, cmd: document.getElementById('cmdPreview').textContent };
+      })()`);
+      need(st.hidden === false, `选了风格后 #btnCopyCmd 应可见（cmdPreview=「${st.cmd}」），实际 hidden=${st.hidden}`);
+      const clicked = await cdp.evalJs(`(() => { const b = document.getElementById('btnCopyCmd'); b.click(); return { ok: true }; })()`);
+      need(clicked.ok, '#btnCopyCmd 点击抛错');
+      // 剪贴板在无头环境可能被拒 —— 只断言「点了不报错、按钮仍在、且给了明确反馈」
+      const txt = await waitFor(cdp.evalJs,
+        `(() => { const b = document.getElementById('btnCopyCmd');
+          if (!b) return ''; const t = b.textContent;
+          return (t === '已复制' || t === '复制失败') ? t : ''; })()`, { timeoutMs: 5000 });
+      const still = await cdp.evalJs(`(() => { const b = document.getElementById('btnCopyCmd');
+        return !!b && document.body.contains(b); })()`);
+      need(still, '#btnCopyCmd 点后从 DOM 里消失了');
+      notes.push(`G13 点「复制」→ 不抛错；按钮文案「${txt}」（无头环境剪贴板可能被拒，只断言点了不报错）`);
+    });
+
+    // ══ H. 主题出片的画幅警告「一键修复」（警告从被动文本 → 可操作）══
+    //
+    // 为什么补这一节：syncBriefAspectWarn() 早就把「选的尺寸会被裁」写进了 #briefAspectWarn，
+    // 但那是**被动文本** —— 用户得自己去 #briefRatio 下拉里找正确比例再改一次，摩擦大到等于没修。
+    // 本轮把它升级成「一句说明 + 一个『改用 X』按钮」。这一节钉住：
+    //   ① 警告态**有按钮**、且按钮**真的能把尺寸改对并让警告消失**（H1/H2 —— 有牙的核心）；
+    //   ② 当前比例被该风格支持时**不警告、也没有按钮**（H3）；
+    //   ③ 警告不是**空盒子**（H4）、且多次重核**不会堆出多个按钮**（H5，幂等）。
+    // ★ 判据一律从服务端数据现取（/api/briefs 的 styles[].aspects、/api/sizes 的 defaultRatio 与 ratios），
+    //   不硬编码风格名 / 比例。★ 本节纯前端交互：只改 #briefRatio，**绝不触发任何出片**。
+    // ★ 样本前提更新（多比例改造后）：4 个白名单风格都支持默认的 9:16，样本改用「任一预设比例里不被支持的那个」
+    //   （详见下方 hBad / hBadRatio 的说明）。
+    log('');
+    log(C.b('  H. 主题出片·画幅警告的一键修复（按钮真的生效 / 不堆叠 / 不空转）'));
+
+    // 服务端权威：4 个「内容驱动」风格及其 aspects；默认输出比例。
+    const hBriefsRes = await get('/api/briefs');
+    need(hBriefsRes.status === 200 && hBriefsRes.json && Array.isArray(hBriefsRes.json.styles),
+      `GET /api/briefs → ${hBriefsRes.status}（拿不到 styles[]，本节测不了）`);
+    const hStyles = hBriefsRes.json.styles;
+    const hSizesRes = await get('/api/sizes');
+    need(hSizesRes.status === 200 && typeof hSizesRes.json.defaultRatio === 'string',
+      `GET /api/sizes → ${hSizesRes.status}（拿不到 defaultRatio）`);
+    const hRatio = hSizesRes.json.defaultRatio;      // 当前/默认比例（控制台产品默认 9:16）
+    const hSupOf = (s) => (s && s.aspects && Array.isArray(s.aspects.supported)) ? s.aspects.supported : null;
+    // 「当前比例不被支持」的风格（会触发警告）与「当前比例被支持」的风格（不警告）——都现取，不硬编码。
+    // ★ 前提已更新（多比例改造后）：4 个白名单风格**都**声明了 aspects、**都**支持默认的 9:16
+    //   ⇒ 原先「拿默认比例当不匹配样本」已不可达。#briefSlug 只列这 4 个白名单风格
+    //   （web/app.js 的 fillBriefStyles ← /api/briefs styles[] ← lib/briefs.mjs 的 BRIEF_STYLES），
+    //   **唯一**不支持 9:16 的 pixel-rpg 不是「内容驱动」风格、不在其中（其画面主体写死，主题改不动），
+    //   所以它做不了本节的样本 —— 硬塞进下拉也不行：syncBriefAspectWarn 查的是 state.briefStyles。
+    //   判据本身没变（「当前比例不被该风格支持 → 警告 + 一键修复」），改成**优先默认比例、否则取任一预设比例**：
+    //   仍是现取服务端数据（/api/sizes 的 ratios），不硬编码风格名 / 比例。
+    const hRatioIds = (hSizesRes.json.ratios || []).map((r) => r.id).filter(Boolean);
+    const hRatioOrder = [hRatio, ...hRatioIds.filter((r) => r !== hRatio)];
+    let hBad = null, hBadRatio = null;
+    for (const r of hRatioOrder) {
+      const s = hStyles.find((x) => { const sup = hSupOf(x); return sup && sup.length && !sup.includes(r); });
+      if (s) { hBad = s; hBadRatio = r; break; }
+    }
+    const hGood = hStyles.find((s) => { const sup = hSupOf(s); return sup && sup.includes(hRatio); });
+    need(hBad, `没有「不支持任何预设比例」的风格 —— H1/H2 不可达（风格清单变了？）`);
+
+    // 页面可能还没加载（--filter H* 时 B0 会被跳过）—— 兜底打开并等关键元素就绪。
+    const hReady = `document.querySelectorAll('#briefSlug option').length > 0 && document.querySelectorAll('#briefRatio option').length > 0`;
+    if (!(await cdp.evalJs(hReady))) await cdp.goto(base + '/', 4000);
+    await waitFor(cdp.evalJs, hReady, { timeoutMs: 30000 });
+
+    const hSetRatio = (r) => cdp.evalJs(`(() => { const s = document.getElementById('briefRatio');
+      s.value = ${JSON.stringify(r)}; s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+    const hPickSlug = (slug) => cdp.evalJs(`(() => {
+      const s = document.getElementById('briefSlug');
+      const has = [...s.options].some((o) => o.value === ${JSON.stringify(slug)});
+      if (has) { s.value = ${JSON.stringify(slug)}; s.dispatchEvent(new Event('change', { bubbles: true })); }
+      return { has, value: s.value };
+    })()`);
+    /** 读回警告盒子的真实状态：hidden 属性 + 实际渲染盒 + 文本（去掉按钮后）+ 按钮文案。 */
+    const hWarn = () => cdp.evalJs(`(() => {
+      const box = document.getElementById('briefAspectWarn');
+      const r = box.getBoundingClientRect();
+      const c = box.cloneNode(true); c.querySelectorAll('button').forEach((b) => b.remove());
+      return {
+        hidden: box.hidden,
+        visible: !box.hidden && r.height > 0 && r.width > 0,
+        msg: (c.textContent || '').trim(),
+        btns: [...box.querySelectorAll('button')].map((b) => b.textContent),
+      };
+    })()`);
+    /** 公共前置：把当前比例设成该风格**不支持**的那一个（hBadRatio），再选中该风格 → 进入「警告态」。 */
+    const hArmWarn = async () => {
+      await hSetRatio(hBadRatio);
+      const picked = await hPickSlug(hBad.slug);
+      need(picked.has, `#briefSlug 里没有风格 ${hBad.slug}（清单不同步）`);
+      return picked;
+    };
+
+    await runCase('H1 画幅不匹配 → 警告可见、含「裁切」、且渲染出「改用 X」按钮', async () => {
+      await hArmWarn();
+      const w = await hWarn();
+      need(w.hidden === false, `选了不支持 ${hBadRatio} 的风格 ${hBad.slug}，但 #briefAspectWarn 仍 hidden`);
+      need(w.visible, `#briefAspectWarn 没 hidden，但实际渲染盒为 0（不可见）`);
+      need(/裁切/.test(w.msg), `警告文案里没有「裁切」：「${w.msg.slice(0, 120)}」`);
+      need(w.btns.length === 1, `期望恰好 1 个按钮，实际 ${w.btns.length} 个：${JSON.stringify(w.btns)}`);
+      need(w.btns[0].includes(hSupOf(hBad)[0]), `按钮文案「${w.btns[0]}」没包含建议比例 ${hSupOf(hBad)[0]}`);
+      notes.push(`H1 风格 ${hBad.slug}（支持 ${hSupOf(hBad).join('/')}）+ 当前 ${hBadRatio} → 警告可见、按钮「${w.btns[0]}」`);
+    });
+
+    await runCase('H2 点「改用 X」→ #briefRatio 变成该风格支持的比例，警告随之消失（按钮真的生效）', async () => {
+      await hArmWarn();
+      const before = await cdp.evalJs(`document.getElementById('briefRatio').value`);
+      need(before === hBadRatio, `前置失败：#briefRatio=${before}，期望 ${hBadRatio}`);
+      const want = hSupOf(hBad)[0];
+      // ★ 点警告里的那个按钮（而不是直接改 select）—— 这才是「按钮有牙」的证明。
+      const clicked = await cdp.evalJs(`(() => {
+        const b = document.querySelector('#briefAspectWarn button');
+        if (!b) return { ok: false, reason: 'no-button' };
+        b.click(); return { ok: true, text: b.textContent };
+      })()`);
+      need(clicked.ok, `#briefAspectWarn 里没有可点的按钮：${JSON.stringify(clicked)}`);
+      const after = await cdp.evalJs(`document.getElementById('briefRatio').value`);
+      need(after === want, `点按钮后 #briefRatio=${after}，期望该风格支持的比例 ${want}`);
+      const w = await hWarn();
+      need(w.hidden === true, `尺寸已改到 ${want}（被支持），但警告没消失：${JSON.stringify(w)}`);
+      need(w.btns.length === 0, `警告已隐藏，仍残留 ${w.btns.length} 个按钮`);
+      notes.push(`H2 点「${clicked.text}」→ #briefRatio ${before} → ${after}，警告消失（未触发任何出片）`);
+    });
+
+    await runCase('H3 当前比例被该风格支持 → 不警告、也没有按钮', async () => {
+      if (!hGood) { notes.push(`H3 分支不可达：没有「支持默认比例 ${hRatio}」的风格（如实标注，未跳过断言）`); return; }
+      await hSetRatio(hRatio);
+      const picked = await hPickSlug(hGood.slug);
+      need(picked.has, `#briefSlug 里没有风格 ${hGood.slug}（清单不同步）`);
+      const w = await hWarn();
+      need(w.hidden === true, `风格 ${hGood.slug} 支持当前比例 ${hRatio}，却仍显示警告：${JSON.stringify(w)}`);
+      need(w.btns.length === 0, `不该有按钮，实际 ${w.btns.length} 个：${JSON.stringify(w.btns)}`);
+      notes.push(`H3 风格 ${hGood.slug}（支持 ${hSupOf(hGood).join('/')}）+ 当前 ${hRatio} → 无警告、无按钮`);
+    });
+
+    await runCase('H4 防空转：警告态下盒子里**确有可见文本**（不是只显示了一个空盒子）', async () => {
+      await hArmWarn();
+      const w = await hWarn();
+      need(w.hidden === false && w.visible, `前置失败：警告没显示 ${JSON.stringify(w)}`);
+      // 去掉按钮后仍有非空文本 = 真的给了说明，而不是「盒子亮了、里面没字」的假绿。
+      need(w.msg.length > 0, '#briefAspectWarn 显示了但**去按钮后没有任何文本**（空盒子）');
+      need(/裁切/.test(w.msg) && w.msg.length >= 20,
+        `警告文本太短 / 不含关键信息（疑似空转）：${JSON.stringify(w.msg)}`);
+      notes.push(`H4 警告文本（去按钮后）${w.msg.length} 字：「${w.msg.slice(0, 60)}…」`);
+    });
+
+    await runCase('H5 幂等：连续多次重核（change 事件）**不会堆出多个按钮**', async () => {
+      await hArmWarn();
+      // 连派 3 次 change（值不变）—— 每次都会走 syncBriefSizeUI → syncBriefAspectWarn。
+      // 若实现没有「先清空容器再重建」，每重核一次就多堆一个按钮。
+      await cdp.evalJs(`(() => { const s = document.getElementById('briefRatio');
+        for (let i = 0; i < 3; i++) s.dispatchEvent(new Event('change', { bubbles: true }));
+        return true; })()`);
+      const w = await hWarn();
+      need(w.hidden === false, `前置失败：重核后警告不见了 ${JSON.stringify(w)}`);
+      need(w.btns.length === 1, `重核 3 次后按钮数=${w.btns.length}，期望恰好 1 个（幂等被破坏）：${JSON.stringify(w.btns)}`);
+      notes.push(`H5 连派 3 次 change → 按钮仍为 ${w.btns.length} 个（未堆叠）`);
+    });
   } finally {
     // ── 收尾 ──
+    // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）
+    if (server) {
+      try {
+        const rep = await cleanupBriefs(server.port);
+        if (rep.removed.length) log(C.dim(`  测试工单已删除：${rep.removed.join(', ')}`));
+        if (rep.errors.length) log(C.bad(`  ⚠️ 测试工单删除失败：${rep.errors.join('；')}`));
+      } catch (e) { log(C.bad(`  ⚠️ 测试工单清理异常：${e.message}`)); }
+    }
     if (cdp && !OPT.keepBrowser) { await cdp.close(); log(C.dim('  无头 Edge 已关闭')); }
     if (server) { await stopServer(server.child); log(C.dim(`  测试服务已停止（pid ${server.child.pid}）`)); }
+
+    // ★ 回归钉子 · 取快照：**必须在还原之前**读 —— 还原会把脏值写回基线、掩盖问题。
+    //   服务已停，此刻这两个文件就是「测试跑完」的状态。
+    const postServer = new Map();
+    for (const f of ENTRY_FILES) { try { postServer.set(f, fs.readFileSync(f)); } catch { postServer.set(f, null); } }
 
     const restored = [];
     for (const [f, buf] of backup) {
@@ -1078,6 +2803,38 @@ async function main() {
     }
     if (restored.length) log(C.dim(`  固定入口已还原：${restored.join(' · ')}`));
 
+    // ★ 回归钉子：跑完（服务已停）后两个固定入口必须与**跑前备份**逐字节一致 ——
+    //   用 main() 开头读进内存的 backup Map 比对（不重新读备份）。不一致 = 测试服务写了用户入口文件。
+    //   ⚠️ 快照在还原**之前**取（见上）：否则还原会把脏值抹平，钉子永远绿（无牙）。
+    {
+      const bad = [];
+      for (const f of ENTRY_FILES) {
+        const before = backup.get(f) ?? null;
+        const after = postServer.get(f) ?? null;
+        const same = (before === null && after === null)
+          || (before !== null && after !== null && before.equals(after));
+        if (!same) bad.push({ f, before, after });
+      }
+      const show = (b) => (b === null ? '(文件不存在)' : JSON.stringify(b.toString('utf8')));
+      if (bad.length) {
+        entryTouched = bad;
+        log(C.bad('  ✗ 回归钉子：测试服务写了用户固定入口文件（没设 LEMO_CONSOLE_NO_ENTRY_FILES=1？）'));
+        for (const { f, before, after } of bad) {
+          log(C.bad(`    ${path.basename(f)}：跑前 ${show(before)} → 跑后 ${show(after)}`));
+        }
+      } else {
+        notes.push('回归钉子：测试跑完 .console-port / 打开控制台.url 与跑前逐字节一致（测试实例未写用户入口文件）');
+      }
+    }
+
+    // E7 的假上传：删文件 + 还原登记表（必须等服务停掉，免得它再写一遍）
+    try {
+      const hadDubUpload = dubIndexBackup !== undefined || DUB_UPLOAD_PATHS.size > 0;
+      const upErr = cleanupDubUploads();
+      if (upErr.length) log(C.bad(`  ⚠️ 文案出片上传清理失败：${upErr.join('；')}`));
+      else if (hadDubUpload) log(C.dim(`  文案出片测试上传已清理（文件 + 登记表）`));
+    } catch (e) { log(C.bad(`  ⚠️ 文案出片上传清理异常：${e.message}`)); }
+
     try {
       await sleep(700);                       // 等测试服务的 persistSoon 去抖走完再摘任务
       const rep = cleanupJobs();
@@ -1087,6 +2844,30 @@ async function main() {
 
     const tmpErr = cleanupTmpDirs();
     if (tmpErr.length) log(C.bad(`  ⚠️ 临时目录清理失败：${tmpErr.join('；')}`));
+
+    // F1 的临时假成片：按确切路径递归删（必须在测试服务停了之后也行，它只是只读扫描）
+    try {
+      const hadFilm = CREATED_FILM_DIRS.size > 0;
+      const filmErr = cleanupFilmDirs();
+      if (filmErr.length) log(C.bad(`  ⚠️ 临时假成片清理失败：${filmErr.join('；')}`));
+      else if (hadFilm) log(C.dim('  临时假成片已清理（确切路径递归删除）'));
+    } catch (e) { log(C.bad(`  ⚠️ 临时假成片清理异常：${e.message}`)); }
+
+    // G8 的临时「待导入」源文件：按确切路径删（落在非 C 盘的音色源目录里）
+    try {
+      const hadSrc = CREATED_VOICE_SRCS.size > 0;
+      const srcErr = cleanupVoiceSrcs();
+      if (srcErr.length) log(C.bad(`  ⚠️ 临时音色源文件清理失败：${srcErr.join('；')}`));
+      else if (hadSrc) log(C.dim('  临时音色源文件已清理（确切路径删除）'));
+    } catch (e) { log(C.bad(`  ⚠️ 临时音色源文件清理异常：${e.message}`)); }
+
+    // G11 取消 dry-run 任务留下的陈旧并发锁：只删 pid 完全对得上的那一个
+    try {
+      const hadLock = CREATED_LOCKS.size > 0;
+      const lockErr = cleanupLocks();
+      if (lockErr.length) log(C.bad(`  ⚠️ 陈旧并发锁清理失败：${lockErr.join('；')}`));
+      else if (hadLock) log(C.dim('  陈旧并发锁已清理（仅 pid 对得上的那一个）'));
+    } catch (e) { log(C.bad(`  ⚠️ 陈旧并发锁清理异常：${e.message}`)); }
   }
 
   // ── 汇总 ──
@@ -1112,7 +2893,8 @@ async function main() {
   log('─'.repeat(64));
   log('');
 
-  process.exitCode = failed.length ? 1 : 0;
+  // ★ 钉子红了也要非 0 —— 否则会被这里覆盖成 0（但**不**混进上面 59 条用例计数）。
+  process.exitCode = (failed.length || entryTouched) ? 1 : 0;
 }
 
 main().catch((e) => {

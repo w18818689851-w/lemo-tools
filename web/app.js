@@ -30,6 +30,71 @@ const state = {
   detailSlug: null,
   checked: new Set(),     // 勾选的 slug（第四批 ① 批量入队）
   batchBusy: false,       // 正在批量入队（防重复点击）
+  briefs: [],             // 主题工单（第五批 ⑤；服务端每次从磁盘现读，前端不推断状态）
+  briefStyles: [],        // 4 个内容驱动风格（白名单来自 /api/briefs，不在前端硬编码 —— 防漂移）
+  briefLang: '',          // 用户**明确选过**的语言版本（偏好）。只由下拉的 change 事件写；
+                          // 空 = 还没选过 → 用服务端给的 default（该风格有中文版就是中文版）。
+                          // ★ 不在这里回写「当前下拉的值」：否则切到一个没有中文版的风格时会把偏好
+                          //   也改成英文版，再切回来就不再默认中文版了。
+  defaultLang: 'en',      // 默认语言版本（来自 /api/briefs 的 defaultLang）—— 等于它就不传 --lang
+  langCache: new Map(),   // slug → /api/langs 结果（每 3 秒的轮询不该重复打接口）
+  // ── 输出尺寸（来自 /api/sizes，清单的权威来源是库侧 core/render/size.mjs）──
+  defaultRatio: '9:16',   // 默认比例（服务端给）—— 下拉默认选中它
+  ratios: [],             // 预设比例清单 [{id,label,w,h,pixels}]；**不在前端硬编码**
+  sizeCache: null,        // /api/sizes 结果（只打一次接口）
+  briefRatio: '',         // 用户明确选过的比例（'__custom' = 自定义像素）；空 = 还没选过 → 用默认
+  briefSizeW: '',         // 自定义宽（字符串，原样保留用户输入）
+  briefSizeH: '',         // 自定义高
+  briefBusy: false,       // 正在建工单 / 出片（防重复点击）
+  // ── 声音（配音音色）──────────────────────────────────────
+  // ★ 音色清单 / 分组 / 默认值 / 告警阈值全部来自 /api/voices，前端**不硬编码音色名**。
+  voices: null,           // /api/voices 结果；null = 还没加载完（用来显示骨架屏）
+  voiceSel: '',           // 用户选中的音色名（'' = 没选过 → 不传 --voice，用内容文件的默认）
+  voiceSpeed: '',         // 用户填的语速（'' = 没填过 → 不传 --speed）
+  voicePlaying: '',       // 正在试听的音色名（同一时刻只允许一条在播）
+  // ── 试合成一句（POST /api/voices/test，异步任务）──
+  // vt.jobId 非空 = 有任务在跑；url 在任务 done 之前是 **404**，所以不能提前喂给 <audio>。
+  vt: { jobId: '', url: '', status: '', note: '', error: '', ticks: 0 },
+  // ── 导入新音色（GET /api/voices/sources，POST /api/voices/import，异步任务）──
+  // ★ 与「试合成」同一套模式：提交拿 job.id → 轮询 /api/jobs → done 后刷新音色列表。
+  vSources: null,        // /api/voices/sources 结果；null = 还没加载（折叠区**首次展开时**才拉，避免多余请求）
+  vImport: { file: '', name: '', jobId: '', status: '', note: '', error: '', ticks: 0 },  // 当前正在导入的那一条
+  vNames: new Map(),     // 源文件 file → 用户改过的音色名（重渲染时别把用户输入冲掉）
+  voiceFlash: '',        // 导入成功后要在音色列表里高亮/滚动到的音色名
+  voiceFlashTimer: null,
+  // ── 文案出片（GET /api/dub/sources|styles，POST /api/dub/preview|analyze|upload|run）──
+  // ★ 与「试合成」「导入音色」同一套异步模式：提交拿 job.id → 轮询 /api/jobs → done 后取产物。
+  // ★ 断句**不在前端算**：/api/dub/preview 给什么就显示什么（规则只有一处，在核心工具里）。
+  // ★ 语义解析也**不在前端算**：/api/dub/analyze 转发给 lib/dub-semantic.mjs。
+  //   该模块**默认走纯规则路**（source='rules'，不加载任何模型），也可由外部注入结果
+  //   （source='external'，通常来自 WorkBuddy 智能体）。前端只负责把「系统理解成了什么」摆给用户核对。
+  dubPreview: null,      // /api/dub/preview 结果；null = 还没点过「断句预览」
+  dubPreviewBusy: false,
+  dubUploads: null,      // /api/dub/sources 结果；null = 还没加载完
+  dubVideoToken: '',     // 当前选中的口播素材 token（'' = 没选）
+  dubVideoName: '',      // 展示用（服务端清洗过的原始文件名）
+  dubUpload: { busy: false, pct: 0, name: '', error: '' },   // 上传中的进度状态
+  dubVoiceOverride: '',  // 本卡片单独覆盖的音色（'' = 跟随「声音」版块；不回写全局偏好）
+  dub: { jobId: '', status: '', note: '', error: '', out: '', outName: '', ticks: 0, url: '', notReady: false },
+  // 形态：'script' = 仅文案出片（画面由工具生成）；'keep' = 文案 + 口播视频（素材原样不动）
+  dubMode: 'script',
+  // 风格：'auto' = 按语义自动匹配；'' = 不指定（不传 --style，行为与加这个功能之前一致）；其它 = 风格 id
+  dubStyle: 'auto',
+  dubStyles: null,       // /api/dub/styles 结果；null = 还没加载
+  dubStylesBusy: false,
+  dubAnalysis: null,     // /api/dub/analyze 结果；null = 还没分析过
+  dubAnalysisBusy: false,
+  dubSrtToken: '',       // 形态 2 的可选 SRT token（'' = 不给，让工具自己对齐）
+  dubSrtName: '',
+  dubSrtUpload: { busy: false, pct: 0, name: '', error: '' },
+  // 输出尺寸（与「主题出片」同一套纪律：比例清单来自 /api/sizes，前端**不硬编码**）——
+  // '' = 用户还没选过 → 用服务端给的 defaultRatio（9:16）；'__custom' = 自定义像素
+  dubRatio: '',
+  dubSizeW: '',          // 自定义宽（字符串，原样保留用户输入）
+  dubSizeH: '',          // 自定义高
+  // 口播素材的像素尺寸：token → {w,h} | null（null = 探不到，按「不知道」处理，不提示）。
+  // ★ 尺寸不在前端猜：由 GET /api/dub/source-meta 走 WSL 侧 ffprobe 探（只探一次，见 syncDubCropWarn）。
+  dubSrcMeta: {},
 };
 
 // ── 小工具 ──────────────────────────────────────────────────
@@ -82,7 +147,15 @@ async function api(path, opts) {
   const txt = await r.text();
   let data = null;
   try { data = txt ? JSON.parse(txt) : null; } catch { data = { raw: txt }; }
-  if (!r.ok) throw new Error((data && data.error) || `HTTP ${r.status}`);
+  if (!r.ok) {
+    // ★ 消息保持原样（调用方都只读 message，行为零变化）；额外挂上 status ——
+    //   有些接口「未就绪」时返回的是自定义 error 文案（不含 "HTTP 404"），
+    //   光靠 message 正则认不出 404，得靠这个字段。
+    const err = new Error((data && data.error) || `HTTP ${r.status}`);
+    err.status = r.status;
+    err.data = data;
+    throw err;
+  }
   return data;
 }
 
@@ -919,6 +992,1924 @@ function closeDetail() {
 }
 
 
+// ── 声音（配音音色）─────────────────────────────────────────
+//
+// ★ 定位：控制台里的「声音」＝ Index-TTS 零样本克隆用的**参考音频**。
+//   换音色 = 换一条参考音，不需要训练；所以界面就是把参考音列出来让你挑一条。
+// ★ 判据全在服务端（/api/voices）：音色清单、分组、默认值、告警阈值都由它给。
+//   前端不硬编码任何音色名 —— 加了新参考音只要刷新就能看到。
+// ★ 参考音偏响 → 克隆输出更容易顶到满刻度（削波不可逆），这是项目里**真实发生过**的坑
+//   （官方 voice_05 就是因为这个被弃用），所以超阈值的条目给显眼警示（只提醒，不禁用）。
+//   ★ 文案保持**统一**：判据在服务端就一个 OR（peak 或 rms 任一超），前端不再按 peak/rms
+//   分两种说法 —— 多立一处判据迟早漂移。要更具体就只摆事实（把实测数值列出来）。
+const VOICE_KEY = 'lemo.voice';     // 选中的音色名（'' / 无 = 用内容文件的默认）
+const SPEED_KEY = 'lemo.speed';     // 语速（'' / 无 = 不传 --speed）
+
+let voiceAudio = null;              // 单例 <audio>：换一条试听前先把上一条停掉
+
+/** 读本机偏好。★ 读不到（隐私模式 / 被禁）不影响使用，只是记不住。 */
+function loadVoicePref() {
+  try {
+    state.voiceSel = localStorage.getItem(VOICE_KEY) || '';
+    state.voiceSpeed = localStorage.getItem(SPEED_KEY) || '';
+  } catch { /* 读不到就当没选过 */ }
+}
+
+function saveVoicePref(key, val) {
+  try {
+    if (val) localStorage.setItem(key, val);
+    else localStorage.removeItem(key);
+  } catch { /* 记不住就算了 */ }
+}
+
+/** 把「选中的音色 / 语速」翻成 CLI 选项。
+ *  ★ 用户若在「高级选项」的 --q 里自己写了 --voice / --speed，就**不重复追加**（以他的为准），
+ *    并把这件事作为提示返回 —— 静默覆盖用户的手写参数是最糟的行为。 */
+function voiceCliOpts(q) {
+  const opts = [];
+  const notes = [];
+  const qs = String(q || '');
+  const qHasVoice = /(^|\s)--voice(\s|$)/.test(qs);
+  const qHasSpeed = /(^|\s)--speed(\s|$)/.test(qs);
+
+  if (state.voiceSel) {
+    if (qHasVoice) notes.push(`「--q」里已写了 --voice，以它为准（忽略声音版块选的 ${state.voiceSel}）`);
+    else opts.push('--voice', state.voiceSel);
+  }
+
+  const sp = String(state.voiceSpeed || '').trim();
+  if (sp) {
+    const n = Number(sp);
+    if (!Number.isFinite(n) || n < 0.5 || n > 2) {
+      notes.push(`语速 ${sp} 超出 0.5–2 的范围，本次不传 --speed`);
+    } else if (qHasSpeed) {
+      notes.push('「--q」里已写了 --speed，以它为准');
+    } else {
+      opts.push('--speed', sp);
+    }
+  }
+  return { opts, notes };
+}
+
+/** 该不该告警：peak / rms 任一超过服务端给的阈值。阈值缺失时用契约里的默认值。 */
+function voiceLoud(v, warn) {
+  const w = warn || { peak: 0.9, rms: 0.18 };
+  const pk = Number(v.peak), rm = Number(v.rms);
+  return (Number.isFinite(pk) && pk > w.peak) || (Number.isFinite(rm) && rm > w.rms);
+}
+
+function fmtVoiceNum(v) {
+  return (v === null || v === undefined || !Number.isFinite(Number(v))) ? '' : Number(v).toFixed(2);
+}
+
+/** 当前音色条：当前用的是谁、语速多少、跟内容文件默认是否一致 + 一个「重置」按钮。 */
+function renderVoiceCurrent() {
+  const box = $('voiceCurrent');
+  if (!box) return;
+  box.textContent = '';
+
+  const d = state.voices;
+  const src = d && d.source;
+  // 默认值：优先用内容文件里记的（source），没有就用服务端给的 default
+  const defVoice = (src && src.voice) || (d && d.default) || '';
+  const defSpeed = (src && src.speed !== undefined && src.speed !== null) ? String(src.speed) : '';
+  const cur = state.voiceSel || defVoice;
+  const sp = String(state.voiceSpeed || defSpeed || '1.0');
+
+  box.appendChild(el('span', 'vc-lbl', '当前：'));
+  box.appendChild(el('span', 'vc-name', cur || '—'));
+  box.appendChild(el('span', 'vc-lbl', '　语速'));
+  box.appendChild(el('span', 'vc-name', sp));
+  if (state.voiceSel && defVoice && state.voiceSel !== defVoice) {
+    box.appendChild(el('span', 'vc-tag', `已改（内容文件默认 ${defVoice}）`));
+  }
+  // 选过的音色在列表里找不到时**如实说**（可能是参考音被移走了）—— 不悄悄改回默认
+  if (state.voiceSel && d && Array.isArray(d.voices)
+      && !d.voices.some((v) => v.name === state.voiceSel)) {
+    box.appendChild(el('span', 'vc-tag warn', '列表里没有这条音色'));
+  }
+  if (src && src.content) {
+    box.appendChild(el('span', 'vc-lbl', `　内容文件 ${src.content}`));
+  }
+
+  const reset = el('button', 'btn ghost small vc-reset', '重置为内容文件默认');
+  reset.title = defVoice
+    ? `清掉本机选择，回到内容文件里记的默认（${defVoice}${defSpeed ? '，语速 ' + defSpeed : ''}）`
+    : '清掉本机选择，回到服务端给的默认音色与 1.0 语速';
+  reset.addEventListener('click', () => {
+    state.voiceSel = '';
+    state.voiceSpeed = '';
+    saveVoicePref(VOICE_KEY, '');
+    saveVoicePref(SPEED_KEY, '');
+    if ($('fVoiceSpeed')) $('fVoiceSpeed').value = defSpeed || '1.0';
+    renderVoices();
+    renderVoiceCurrent();
+    syncPreview();
+    toast('已重置为内容文件默认音色与语速');
+  });
+  box.appendChild(reset);
+  renderVoiceSpeedHint();
+}
+
+/** 语速框的提示文字 + 越界标红。★ 不在这里写 input.value —— 用户正在打字时会被抢走光标。 */
+function renderVoiceSpeedHint() {
+  const hint = $('voiceSpeedHint');
+  const inp = $('fVoiceSpeed');
+  const d = state.voices || {};
+  const src = d.source;
+  const defSpeed = (src && src.speed !== undefined && src.speed !== null) ? String(src.speed) : '';
+  if (inp) {
+    const n = Number(inp.value);
+    inp.classList.toggle('bad', !Number.isFinite(n) || n < 0.5 || n > 2);
+  }
+  if (!hint) return;
+  const parts = [];
+  if (defSpeed) parts.push(`内容文件里记的是 ${defSpeed}（上一次用过的值）`);
+  parts.push('★ 换音色后语速要重调：不同音色的「字/秒」差别很大，实测同一句话同语速下不同音色能差 30%');
+  parts.push('中文叙事常用 1.1，常见区间 1.0–1.2（范围 0.5–2）');
+  if (src && src.voice) parts.push(`默认音色 ${src.voice}`);
+  hint.textContent = parts.join('　·　');
+}
+
+/** 试听：同一条再点 = 暂停；同一时刻只允许一条在播。 */
+function toggleVoiceAudio(v) {
+  if (!voiceAudio) {
+    voiceAudio = new Audio();
+    voiceAudio.addEventListener('ended', () => { state.voicePlaying = ''; renderVoices(); });
+    voiceAudio.addEventListener('error', () => {
+      state.voicePlaying = '';
+      renderVoices();
+      toast('试听失败：读不到这条参考音（文件可能被移走或改名）', true);
+    });
+  }
+  // 再点同一条 → 暂停
+  if (state.voicePlaying === v.name && !voiceAudio.paused) {
+    voiceAudio.pause();
+    state.voicePlaying = '';
+    renderVoices();
+    return;
+  }
+  if (!voiceAudio.paused) voiceAudio.pause();       // 换一条前先停掉上一条
+  const vtA = $('vtAudio');
+  if (vtA && !vtA.paused) vtA.pause();              // 也别和「试合成」的播放器一起响
+  voiceAudio.src = '/api/voices/audio?name=' + encodeURIComponent(v.name);
+  state.voicePlaying = v.name;
+  renderVoices();
+  voiceAudio.play().catch((e) => {
+    state.voicePlaying = '';
+    renderVoices();
+    toast('试听失败：' + (e && e.message ? e.message : '浏览器拒绝了播放'), true);
+  });
+}
+
+/** 选用：只记在本机 + 影响下一次出片；不打断任何正在跑的任务。 */
+function pickVoice(name) {
+  state.voiceSel = name;
+  saveVoicePref(VOICE_KEY, name);
+  renderVoices();
+  renderVoiceCurrent();
+  syncPreview();
+  toast(`已选用音色 ${name} —— 用于下一次出片；换音色后记得重调语速`);
+}
+
+/** 单条音色。v 的形状见契约：{name, kind, label, file, exists, secs, peak, rms} */
+function voiceItemNode(v) {
+  const d = state.voices || {};
+  const warn = d.warn || { peak: 0.9, rms: 0.18 };
+  const loud = voiceLoud(v, warn);
+  const isSel = state.voiceSel === v.name;
+  const isPlaying = state.voicePlaying === v.name;
+  const missing = v.exists === false;
+
+  const row = el('div', 'voice' + (isSel ? ' sel' : '') + (loud ? ' loud' : '') + (state.voiceFlash === v.name ? ' flash' : ''));
+  row.dataset.voice = v.name;
+
+  const main = el('div', 'vmain');
+  const head = el('div', 'vhead');
+  head.appendChild(el('span', 'vname', v.name));
+  if (isSel) head.appendChild(el('span', 'vbadge', '● 当前'));
+  if (missing) head.appendChild(el('span', 'vbadge bad', '文件缺失'));
+  else if (v.error) head.appendChild(el('span', 'vbadge bad', '读不出'));
+  main.appendChild(head);
+
+  const meta = [];
+  if (v.label) meta.push(v.label);
+  const secs = fmtVoiceNum(v.secs);
+  if (secs) meta.push(secs + 's');
+  const pk = fmtVoiceNum(v.peak);
+  const rm = fmtVoiceNum(v.rms);
+  if (pk) meta.push('peak ' + pk);
+  if (rm) meta.push('rms ' + rm);
+  main.appendChild(el('div', 'vmeta', meta.join(' · ')));
+
+  if (missing) {
+    main.appendChild(el('div', 'vwarn', '⚠️ 参考音文件不存在，试听与选用都不可用'));
+  } else if (v.error) {
+    // ★ 有 error = 库侧**读不出**这条参考音（例如 soundfile 不认这个 wav 编码）。
+    //   注意这和「peak/rms = null（没测出电平）」是两件事，所以要分开说。
+    //   ★ 只警告不禁用：读不出电平的是分析工具，不等于克隆引擎一定解不了码 ——
+    //     浏览器里多半还能播，真拿去合成才知道。让用户自己判断，别替他下结论。
+    const w = el('div', 'vwarn', `⚠️ 这条参考音读不出（${v.error}）—— 大概率当不了参考音，试听/选用可能失败`);
+    w.title = String(v.error);
+    main.appendChild(w);
+  } else if (loud) {
+    // ★ 只说**事实**：哪个值超了哪个阈值。不给「动态偏大」这类新结论 ——
+    //   库侧（tts_indextts.py 的 REF_PEAK_WARN / REF_RMS_WARN）本来就是**一个 OR 判据**，
+    //   没有「peak 是削波、rms 是动态」的分工；前端再发明一套判据就是第三处，早晚漂移。
+    const over = [];
+    const pkN = Number(v.peak), rmN = Number(v.rms);
+    if (Number.isFinite(pkN) && pkN > warn.peak) over.push(`peak ${pkN.toFixed(2)} > ${warn.peak}`);
+    if (Number.isFinite(rmN) && rmN > warn.rms) over.push(`rms ${rmN.toFixed(2)} > ${warn.rms}`);
+    main.appendChild(el('div', 'vwarn',
+      `⚠️ 参考音偏响（${over.join('、')}）—— 克隆输出可能削波，建议换一条更轻的参考音`));
+  }
+  row.appendChild(main);
+
+  const acts = el('div', 'vacts');
+  const play = el('button', 'btn ghost small', isPlaying ? '⏸ 暂停' : '▶ 试听');
+  play.disabled = missing;
+  play.title = missing ? '参考音文件不存在' : `播放 ${v.label || v.name}`;
+  play.addEventListener('click', (e) => { e.stopPropagation(); toggleVoiceAudio(v); });
+  acts.appendChild(play);
+
+  const pick = el('button', 'btn small' + (isSel ? ' primary' : ''), isSel ? '已选用' : '选用');
+  pick.disabled = missing;
+  pick.title = missing ? '参考音文件不存在' : '选中后用在下一次出片上（不会打断正在跑的任务）';
+  pick.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (isSel) { toast(`已经是当前音色：${v.name}`); return; }
+    pickVoice(v.name);
+  });
+  acts.appendChild(pick);
+
+  row.appendChild(acts);
+  return row;
+}
+
+function renderVoices() {
+  const box = $('voiceList');
+  if (!box) return;
+  box.textContent = '';
+  const cnt = $('voiceCount');
+  const d = state.voices;
+
+  // ① 还没回来 → 骨架屏（不留空白）
+  if (d === null) {
+    if (cnt) cnt.textContent = '';
+    for (let i = 0; i < 3; i++) box.appendChild(el('div', 'voice-skel'));
+    return;
+  }
+
+  const list = Array.isArray(d.voices) ? d.voices : [];
+  if (cnt) cnt.textContent = list.length ? String(list.length) : '';
+
+  // ② 空 / 错：把服务端的 error **原样**显示出来，不吞
+  if (d.ok === false || !list.length) {
+    const raw = d.error;
+    const msg = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '没有读到任何音色';
+    const e = el('div', 'voice-error');
+    e.appendChild(el('div', 've-title', '⚠️ 读不到音色列表'));
+    e.appendChild(el('div', 've-detail', msg));
+    e.appendChild(el('div', 've-hint',
+      '请检查 Index-TTS 是否装好、参考音目录是否存在（顶栏「重新检测」可看环境明细），然后点右上角「刷新」。'));
+    box.appendChild(e);
+    return;
+  }
+
+  // ③ 正常：按服务端给的分组渲染；没被任何分组收走的条目兜到「其它」
+  const byName = new Map();
+  for (const v of list) byName.set(v.name, v);
+  const groups = Array.isArray(d.groups) ? d.groups : [];
+  const seen = new Set();
+
+  const addGroup = (label, names) => {
+    if (!names.length) return;
+    const g = el('div', 'voice-group');
+    g.appendChild(el('div', 'voice-group-head', `${label}　${names.length}`));
+    for (const n of names) g.appendChild(voiceItemNode(byName.get(n)));
+    box.appendChild(g);
+  };
+
+  for (const g of groups) {
+    const names = (Array.isArray(g.items) ? g.items : []).filter((n) => byName.has(n) && !seen.has(n));
+    for (const n of names) seen.add(n);
+    addGroup(g.label || g.id || '未命名分组', names);
+  }
+  addGroup('其它', list.filter((v) => !seen.has(v.name)).map((v) => v.name));
+}
+
+async function loadVoices(force) {
+  state.voices = null;               // → 骨架屏
+  state.voicePlaying = '';
+  if (voiceAudio && !voiceAudio.paused) voiceAudio.pause();
+  renderVoices();
+  try {
+    // ★ force：导入完成后服务端清单可能被缓存过，强制现读一次（?force=1）
+    const d = await api('/api/voices' + (force ? '?force=1' : ''));
+    state.voices = d || { ok: false, error: '接口返回空' };
+  } catch (e) {
+    // 接口还没就绪 / 出错：把原始信息留给界面显示（renderVoices 会原样展示 error）
+    state.voices = { ok: false, error: e.message, voices: [], groups: [] };
+  }
+  renderVoices();
+  renderVoiceCurrent();
+  renderDubVoices();     // 「文案出片」的音色下拉也来自同一份清单，一起刷（两处选项必须一致）
+  // 语速框的初值：用户选过的 > 内容文件里记的 > 1.0
+  const src = (state.voices && state.voices.source) || null;
+  const defSpeed = (src && src.speed !== undefined && src.speed !== null) ? String(src.speed) : '';
+  if ($('fVoiceSpeed')) $('fVoiceSpeed').value = state.voiceSpeed || defSpeed || '1.0';
+  renderVoiceSpeedHint();
+}
+
+/** 导入成功后：把新音色在列表里高亮几秒，并滚到它 —— 让用户一眼看到「进去了」。 */
+function flashVoice(name) {
+  if (!name) return;
+  state.voiceFlash = name;
+  clearTimeout(state.voiceFlashTimer);
+  renderVoices();
+  const node = document.querySelector('.voice.flash');
+  if (node && node.scrollIntoView) {
+    try { node.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { node.scrollIntoView(); }
+  }
+  state.voiceFlashTimer = setTimeout(() => { state.voiceFlash = ''; renderVoices(); }, 6000);
+}
+
+// ── 试合成一句（POST /api/voices/test）──────────────────────
+//
+// ★ 为什么必须异步：单条合成约 30 秒、首次加载模型 1~2 分钟 —— 请求挂着等必被掐断。
+//   所以走服务端的后台任务队列：提交拿到 job.id → 轮询 /api/jobs → done 之后才把
+//   产物 URL 喂给 <audio>（**done 之前那个 URL 是 404**，提前塞进去只会报错）。
+// ★ 每次提交都会生成**新的** URL（文件名带时间戳），所以绝不按音色名缓存 URL。
+// ★ 这条任务也会出现在「任务列表」里（kind=setup），界面上要说明，免得被当成出片任务。
+const VT_MAX_TICKS = 750;          // 2 秒一次 × 750 ≈ 25 分钟（服务端单步超时 20 分钟）
+
+/** 当前音色的兜底：没选过就用内容文件的，再没有就用服务端默认。 */
+function voiceTestDefault() {
+  const d = state.voices || {};
+  return (d.source && d.source.voice) || d.default || '';
+}
+
+function renderVoiceTest() {
+  const box = $('vtState');
+  const btn = $('btnVoiceTest');
+  const a = $('vtAudio');
+  const vt = state.vt;
+  if (btn) {
+    btn.disabled = !!vt.jobId;
+    btn.textContent = vt.jobId ? '合成中…' : '试合成一句';
+  }
+  if (!box) return;
+  box.textContent = '';
+  if (!vt.status) return;
+
+  if (vt.error) {
+    box.appendChild(el('div', 'vt-err', '✗ ' + vt.error));
+    return;
+  }
+  const label = { queued: '排队中', running: '合成中', done: '已完成', failed: '失败', canceled: '已取消', ended: '已结束' }[vt.status] || vt.status;
+  box.appendChild(el('div', 'vt-line', `试合成：${label}${vt.note ? '　·　' + vt.note : ''}`));
+  if (vt.jobId) {
+    box.appendChild(el('div', 'vt-sub',
+      `任务 ${vt.jobId} —— 它也会出现在下面的「任务列表」里（kind=setup，不是出片任务）；实时日志可以看进度`));
+  }
+  if (vt.status === 'done' && a) a.hidden = false;
+}
+
+async function startVoiceTest() {
+  if (state.vt.jobId) { toast('已经有一个试合成在跑，等它结束再点', true); return; }
+  const name = state.voiceSel || voiceTestDefault();
+  if (!name) { toast('还没选音色 —— 先在列表里点一条「选用」', true); return; }
+
+  const sp = Number($('fVoiceSpeed') ? $('fVoiceSpeed').value : 1.1);
+  const text = $('vtText') ? $('vtText').value.trim() : '';
+  state.vt = { jobId: '', url: '', status: 'queued', note: '正在提交…', error: '', ticks: 0 };
+  renderVoiceTest();
+
+  try {
+    const r = await api('/api/voices/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        speed: Number.isFinite(sp) ? sp : 1.1,
+        ...(text ? { text } : {}),
+      }),
+    });
+    // ★ 服务端给的是**夹到 0.5–2.0 之后**的实际值，显示它而不是用户输入的值
+    state.vt = {
+      jobId: r.job.id, url: r.url || '', status: r.job.status || 'queued',
+      note: `${r.voice.name} · 语速 ${r.voice.speed} · ${r.voice.textChars} 字`, error: '', ticks: 0,
+    };
+    renderVoiceTest();
+    pollVoiceTest();
+  } catch (e) {
+    state.vt = { jobId: '', url: '', status: 'failed', note: '', error: e.message, ticks: 0 };
+    renderVoiceTest();
+    toast('试合成失败：' + e.message, true);
+  }
+}
+
+function pollVoiceTest() {
+  clearTimeout(state.vt.timer);
+  if (!state.vt.jobId) return;
+  state.vt.timer = setTimeout(async () => {
+    if (!state.vt.jobId) return;
+    if (++state.vt.ticks > VT_MAX_TICKS) {
+      const id = state.vt.jobId;
+      state.vt.jobId = '';
+      state.vt.error = `任务 ${id} 等了 25 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
+      renderVoiceTest();
+      return;
+    }
+    try {
+      const d = await api('/api/jobs');
+      const job = (d.jobs || []).find((j) => j.id === state.vt.jobId);
+      if (!job) { state.vt.note = '还没出现在任务列表里…'; renderVoiceTest(); return pollVoiceTest(); }
+      state.vt.status = job.status;
+      if (job.status === 'done') {
+        state.vt.jobId = '';
+        state.vt.note = `${state.vt.note}　·　下面这段就是克隆出来的效果`;
+        renderVoiceTest();
+        const a = $('vtAudio');
+        if (a && state.vt.url) {
+          a.src = state.vt.url;            // ★ 每次都是新 URL，不能缓存
+          a.hidden = false;
+          if (voiceAudio && !voiceAudio.paused) voiceAudio.pause();   // 别两条一起响
+          a.play().catch(() => { /* 浏览器不给自动播就让用户点播放键 */ });
+        }
+        toast('试合成完成 —— 播放器在「声音」卡片底部');
+        return;
+      }
+      // ★ 用户主动取消 ≠ 故障（与「文案出片」卡片同一套判据，见 pollDub 处说明）：中性提示，不要红色「失败」。
+      if (job.status === 'canceled') {
+        state.vt.jobId = '';
+        state.vt.error = '';
+        state.vt.note = '任务已取消（是你自己停掉的）。';
+        renderVoiceTest();
+        toast('已取消 —— 这条试合成是你自己停掉的');
+        return;
+      }
+      if (job.status === 'failed') {
+        state.vt.jobId = '';
+        state.vt.error = job.error || '合成失败（去「实时日志」看这一条任务）';
+        renderVoiceTest();
+        toast('试合成失败：' + state.vt.error, true);
+        return;
+      }
+      if (job.status === 'ended') {
+        // 'ended' = 控制台重启时这条任务还开着（见 pollDub 处说明）：立刻收尾，别白等到超时上限。
+        state.vt.jobId = '';
+        state.vt.error = '';
+        state.vt.note = '任务已结束 —— 控制台重启时它还没跑完。';
+        renderVoiceTest();
+        toast('任务已结束 —— 控制台重启时它还没跑完，已经停了');
+        return;
+      }
+      renderVoiceTest();
+      pollVoiceTest();
+    } catch (e) {
+      state.vt.note = '查任务状态失败（继续重试）：' + e.message;
+      renderVoiceTest();
+      pollVoiceTest();
+    }
+  }, 2000);
+}
+
+// ── 导入新音色（GET /api/voices/sources → POST /api/voices/import）──
+//
+// ★ 定位：源目录（服务端给，前端不写死）里放着的音频文件 → 一键变成参考音。
+//   服务端会：量电平 → 降到健康水位 → 裁 6~15 秒干净人声 → 转 44100 单声道 wav。
+//   ★ 为什么必须降电平：Index-TTS **按参考音的电平出音**，参考音顶到满刻度，
+//     克隆输出也顶到满刻度 —— 削波**不可逆**（项目里真发生过，官方 voice_05 就这么废的）。
+// ★ 异步：单条约 10~30 秒，和「试合成」走**同一套**后台任务队列（GPU 只有一块，串行排队）。
+//   所以这里也是「提交拿 job.id → 轮询 /api/jobs → done 后刷新列表」，不另发明一套。
+// ★ 折叠区默认收起，源目录清单**首次展开时才拉** —— 不导入的人不必为一个折叠区多打一次接口。
+const VI_MAX_TICKS = 750;          // 2 秒一次 × 750 ≈ 25 分钟
+
+/** 折叠区里的说明：源目录 + 为什么要降电平。路径来自服务端，全程 textContent。 */
+function renderVoiceImportIntro() {
+  const box = $('viIntro');
+  if (!box) return;
+  box.textContent = '';
+  const d = state.vSources || {};
+  const dir = d.dir || '源目录';
+
+  const p1 = el('p', 'vi-p');
+  p1.appendChild(document.createTextNode('把音频文件放进 '));
+  p1.appendChild(el('code', 'vi-path', dir));
+  p1.appendChild(document.createTextNode(
+    '，这里就会出现；导入会自动量电平、降到我标定的健康水位、裁出 6~15 秒干净人声、转成 44100 单声道 wav。'));
+  box.appendChild(p1);
+
+  const p2 = el('p', 'vi-why');
+  p2.appendChild(el('b', '', '为什么要降电平：'));
+  p2.appendChild(document.createTextNode(
+    'Index-TTS 是按参考音的电平出音的 —— 参考音顶到满刻度，克隆输出也会顶到满刻度，而削波不可逆（这个坑项目里真踩过）。'));
+  box.appendChild(p2);
+}
+
+/** 单条待导入的源文件。s 的形状见契约：{file, name, ext, size, already, refName} */
+function voiceSourceNode(s) {
+  const imp = state.vImport;
+  const busy = !!imp.jobId && imp.file === s.file;
+  const row = el('div', 'vi-item' + (busy ? ' busy' : ''));
+
+  const main = el('div', 'vimain');
+  const head = el('div', 'vihead');
+  head.appendChild(el('span', 'vifile', s.file));           // 源文件名（可能含中文）
+  if (s.ext) head.appendChild(el('span', 'vitag', s.ext));
+  main.appendChild(head);
+
+  const meta = [];
+  const sz = fmtSize(s.size);
+  if (sz) meta.push(sz);
+  if (s.refName) meta.push('→ ' + s.refName);
+  if (meta.length) main.appendChild(el('div', 'vimeta', meta.join(' · ')));
+  row.appendChild(main);
+
+  const acts = el('div', 'viacts');
+  // 建议的音色名：**服务端已算好 ASCII 名**，前端直接用，不自己转写（转写规则只该有一处）
+  const nameInp = el('input', 'input vi-name');
+  nameInp.type = 'text';
+  nameInp.value = state.vNames.has(s.file) ? state.vNames.get(s.file) : (s.name || '');
+  nameInp.placeholder = '音色名（ASCII）';
+  nameInp.title = '导入后用的音色名（ASCII）—— 服务端已给建议名，可改';
+  nameInp.setAttribute('autocomplete', 'off');
+  nameInp.disabled = busy;
+  nameInp.addEventListener('input', () => { state.vNames.set(s.file, nameInp.value); });
+  acts.appendChild(nameInp);
+
+  const btn = el('button', 'btn primary small', busy ? '导入中…' : '导入');
+  btn.disabled = busy;
+  btn.title = busy ? '正在导入，约 10~30 秒' : `把 ${s.file} 导入成参考音（约 10~30 秒）`;
+  btn.addEventListener('click', () => {
+    const nm = String(nameInp.value || '').trim();
+    if (nm) state.vNames.set(s.file, nm);
+    startVoiceImport(s.file, nm);
+  });
+  acts.appendChild(btn);
+  row.appendChild(acts);
+
+  if (busy) {
+    row.appendChild(el('div', 'vi-state',
+      `正在导入：量电平 → 降水位 → 裁 6~15 秒 → 转 44100 单声道 wav，约 10~30 秒${imp.note ? '　·　' + imp.note : ''}`));
+  }
+  return row;
+}
+
+function renderVoiceImport() {
+  renderVoiceImportIntro();
+  const box = $('viList');
+  const sum = $('viSum');
+  const hint = $('viHint');
+  if (sum) sum.textContent = '';
+  if (hint) hint.textContent = '';
+  if (!box) return;
+  box.textContent = '';
+
+  const d = state.vSources;
+
+  // ① 还没拉过 / 正在拉 → 骨架屏（不留空白）
+  if (d === null) {
+    if (hint) hint.textContent = '正在读源目录…';
+    for (let i = 0; i < 2; i++) box.appendChild(el('div', 'voice-skel'));
+    return;
+  }
+
+  // ② 出错 / 接口未就绪：把服务端的 error **原样**显示，不吞、不假装成功
+  if (d.ok === false) {
+    const raw = d.error;
+    const msg = raw ? (typeof raw === 'string' ? raw : JSON.stringify(raw)) : '接口没有返回 ok';
+    const e = el('div', 'voice-error');
+    e.appendChild(el('div', 've-title', '⚠️ 读不到待导入的源文件'));
+    e.appendChild(el('div', 've-detail', msg));
+    const notReady = /HTTP\s*404/.test(msg) || d.notReady === true;
+    e.appendChild(el('div', 've-hint', notReady
+      ? '后端接口未就绪（/api/voices/sources）—— 前端已按契约写好，等后端上线后点「刷新」即可。'
+      : '请确认源目录存在、且服务端有读目录的权限，然后点「刷新」。'));
+    box.appendChild(e);
+    return;
+  }
+
+  const list = Array.isArray(d.sources) ? d.sources : [];
+  const todo = list.filter((s) => !s.already);
+  const done = list.filter((s) => s.already);
+  if (sum) sum.textContent = todo.length ? `　${todo.length} 个待导入` : '';
+
+  // ③ 空状态
+  if (!todo.length) {
+    box.appendChild(el('div', 'vi-empty',
+      `源目录里没有新文件 —— 把 MP3 放进 ${d.dir || '源目录'} 后点「刷新」`));
+  } else {
+    for (const s of todo) box.appendChild(voiceSourceNode(s));
+  }
+
+  // ④ 已导入的**不混在待导入里**（别让用户重复导），单独折叠
+  if (done.length) {
+    const det = el('details', 'vi-done');
+    det.appendChild(el('summary', '', `已导入 ${done.length} 条（点开查看）`));
+    for (const s of done) {
+      const line = el('div', 'vi-doneline');
+      line.appendChild(el('span', 'vifile', s.file));
+      if (s.refName) line.appendChild(el('span', 'vimeta', ' → ' + s.refName));
+      det.appendChild(line);
+    }
+    box.appendChild(det);
+  }
+}
+
+/** 拉源目录清单。★ 只在折叠区展开时 / 点刷新时调用，不在页面初始化时打这个接口。 */
+async function loadVoiceSources() {
+  state.vSources = null;             // → 骨架屏
+  renderVoiceImport();
+  try {
+    const d = await api('/api/voices/sources');
+    state.vSources = d || { ok: false, error: '接口返回空' };
+  } catch (e) {
+    // ★ 接口还没就绪（404）也走这里：把原始信息交给 renderVoiceImport 原样显示。
+    //   404 时服务端可能给的是自定义文案（不含 "HTTP 404"），所以用 status 判断。
+    state.vSources = { ok: false, error: e.message, sources: [], notReady: e.status === 404 };
+  }
+  renderVoiceImport();
+}
+
+async function startVoiceImport(file, name) {
+  if (state.vImport.jobId) { toast('已经有一个导入在跑，等它结束再点', true); return; }
+  state.vImport = { file, name: name || '', jobId: '', status: 'queued', note: '正在提交…', error: '', ticks: 0 };
+  renderVoiceImport();
+
+  try {
+    const r = await api('/api/voices/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(name ? { file, name } : { file }),   // name 留空 = 让服务端用建议名
+    });
+    state.vImport = {
+      file, name: name || '', jobId: r.job.id, status: r.job.status || 'queued',
+      note: r.out ? '输出 ' + r.out : '', error: '', ticks: 0,
+    };
+    renderVoiceImport();
+    pollVoiceImport();
+  } catch (e) {
+    state.vImport = { file, name: name || '', jobId: '', status: 'failed', note: '', error: e.message, ticks: 0 };
+    renderVoiceImport();
+    toast('导入失败：' + e.message, true);
+  }
+}
+
+function pollVoiceImport() {
+  clearTimeout(state.vImport.timer);
+  if (!state.vImport.jobId) return;
+  state.vImport.timer = setTimeout(async () => {
+    if (!state.vImport.jobId) return;
+    if (++state.vImport.ticks > VI_MAX_TICKS) {
+      const id = state.vImport.jobId;
+      state.vImport.jobId = '';
+      state.vImport.error = `任务 ${id} 等了 25 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
+      renderVoiceImport();
+      return;
+    }
+    try {
+      const d = await api('/api/jobs');
+      const job = (d.jobs || []).find((j) => j.id === state.vImport.jobId);
+      if (!job) { state.vImport.note = '还没出现在任务列表里…'; renderVoiceImport(); return pollVoiceImport(); }
+      state.vImport.status = job.status;
+
+      if (job.status === 'done') {
+        const nm = state.vImport.name || '';
+        state.vImport = { file: '', name: '', jobId: '', status: 'done', note: '', error: '', ticks: 0 };
+        renderVoiceImport();
+        toast('导入完成' + (nm ? '：' + nm : '') + ' —— 已加入音色列表');
+        // 源目录（哪条已导入）+ 音色列表（新音色）都要刷新；列表用 force 绕开服务端缓存
+        await Promise.all([loadVoiceSources(), loadVoices(true)]);
+        flashVoice(nm);
+        return;
+      }
+      // ★ 用户主动取消 ≠ 故障（与「文案出片」卡片同一套判据，见 pollDub 处说明）：中性提示。
+      if (job.status === 'canceled') {
+        const nm = state.vImport.name || '';
+        state.vImport = { file: '', name: '', jobId: '', status: 'canceled', note: '', error: '', ticks: 0 };
+        renderVoiceImport();
+        toast('已取消 —— 导入' + (nm ? '（' + nm + '）' : '') + '是你自己停掉的');
+        return;
+      }
+      if (job.status === 'failed') {
+        const nm = state.vImport.name || '';
+        state.vImport = {
+          file: '', name: '', jobId: '', status: 'failed', note: '',
+          error: job.error || '导入失败（去「实时日志」看这一条任务）', ticks: 0,
+        };
+        renderVoiceImport();
+        toast('导入失败' + (nm ? '（' + nm + '）' : '') + '：' + state.vImport.error, true);
+        return;
+      }
+      if (job.status === 'ended') {
+        // 'ended' = 控制台重启时这条任务还开着（见 pollDub 处说明）：立刻收尾。
+        state.vImport = { file: '', name: '', jobId: '', status: 'ended', note: '', error: '', ticks: 0 };
+        renderVoiceImport();
+        toast('任务已结束 —— 控制台重启时它还没跑完，已经停了');
+        return;
+      }
+      renderVoiceImport();
+      pollVoiceImport();
+    } catch (e) {
+      state.vImport.note = '查任务状态失败（继续重试）：' + e.message;
+      renderVoiceImport();
+      pollVoiceImport();
+    }
+  }, 2000);
+}
+
+// ── 文案出片（/api/dub*）────────────────────────────────────
+//
+// ★ 定位：用户粘贴**自己的**文案 → 出成片。和「主题出片」正相反 ——
+//   那边的内容由外部 LLM 按风格的 STYLE.md 生成，这边**一个字都不改**。
+// ★ 三件事全部交给服务端，前端不自己算：
+//   ① 断句 —— /api/dub/preview（规则只有一处，在核心工具 dub.mjs 里；前端只负责显示）。
+//      断句错了要重跑一遍配音，所以出片前**先让用户核对**是这张卡片最有价值的一步。
+//   ② 素材 —— 上传后拿到 token；出片时只传 token，**不传路径**（路径由服务端查登记表得到）。
+//   ③ 出片 —— /api/dub/run 返回 job.id，之后轮询 /api/jobs —— 与「试合成一句」完全同一套。
+// ★ 音色默认跟随「声音」版块（同一个 localStorage 键 lemo.voice），但本卡片可以**单独覆盖**；
+//   覆盖只存在本卡片的 state 里，不回写 localStorage —— 用户在这里试一个音色，
+//   不该悄悄改掉「声音」版块的全局选择。
+// ★ 错误一律原样显示（服务端的 error 字符串），不吞、不假装成功；404 / 503 单独提示「未就绪」。
+const DUB_MAX_BYTES = 200 * 1024 * 1024;
+const DUB_EXTS = ['.mp4', '.mov', '.m4v', '.webm'];
+// 形态 2 的可选字幕时间轴（与视频走同一条上传通道，服务端按扩展名判 kind）
+const DUB_SRT_EXTS = ['.srt'];
+const DUB_MAX_TICKS = 1900;            // 2 秒一次 × 1900 ≈ 63 分钟（服务端单步超时 60 分钟）
+// ★ 尺寸**不做前端兜底表**：比例清单与「比例 → 像素」换算的唯一来源是库侧 core/render/size.mjs
+//   （控制台侧 lib/sizes.mjs 代理），经 GET /api/sizes 给出来 —— 见下面的 fillDubRatios()。
+//   读不到清单就禁用下拉并如实说明（服务端仍会按默认 9:16 出片），绝不另抄一份比例表。
+//
+// ★ 为什么这里**故意没有**「主题出片」那种画幅警告（#briefAspectWarn / syncBriefAspectWarn）？
+//   主题出片的画面来自**风格样板影片模块**（styles/<slug>/demo/film*.js），它们按 1920×1080 的
+//   绝对像素构图，所以有 FILM_META.aspects「只支持 16:9」的限制。而文案出片（形态 1）的画面是
+//   **按请求尺寸程序化生成**的 —— 见 lib/dub-core.mjs 的 bgSource(spec,{W,H,dur})（`gradients=s=${W}x${H}`），
+//   它**没有任何绝对像素常量、与风格样板影片模块无关** → aspects 那套能力判据**不适用**。
+//   ★ 所以别看到「主题出片有、文案出片没有」就当成漏了去补一个错的：这里**不该**加画幅警告/禁用。
+//   （形态 2「素材原样不动」的风险是**用户上传素材**被裁 —— 那是另一回事，已有 syncDubCropWarn 覆盖。）
+
+/** 服务端的 error 原样转成可显示文本（字符串直接用，对象/数组序列化）。 */
+function dubErrText(raw) {
+  if (raw === undefined || raw === null || raw === '') return '接口没有返回 ok';
+  return typeof raw === 'string' ? raw : JSON.stringify(raw);
+}
+
+/** 本卡片实际会用的音色：本卡片覆盖 > 「声音」版块选的 > 内容文件默认 > 服务端默认。 */
+function dubEffectiveVoice() {
+  if (state.dubVoiceOverride) return state.dubVoiceOverride;
+  return voiceTestDefault();
+}
+
+function dubExtOf(name) {
+  const m = /(\.[A-Za-z0-9]+)$/.exec(String(name || ''));
+  return m ? m[1].toLowerCase() : '';
+}
+
+// ── 渲染 ────────────────────────────────────────────────────
+function renderDubScriptHint() {
+  const box = $('dubScriptHint');
+  const ta = $('dubScript');
+  if (!box || !ta) return;
+  const n = ta.value.length;
+  const parts = [`${n} 字`];
+  if (n > 20000) parts.push('⚠️ 超过 20000 字上限，接口会拒');
+  parts.push('空行 = 强制断句；不空行则按 。！？； 切，单句超过 40 字再按 ， 二次切（最终以「断句预览」为准）');
+  box.textContent = parts.join('　·　');
+}
+
+// ── 形态（仅文案出片 / 文案 + 口播视频）──────────────────────
+//
+// ★ 形态**不是**一个纯 UI 开关，它同时决定：
+//   ① 表单显示哪些字段（CSS 类 .mode-*，见 style.css）；
+//   ② 提交给 /api/dub/run 的 body（形态 2 带 keepOriginal:true，且**不发**音色/语速/停顿/尺寸/fit）。
+// ★ 形态 2 的硬条件：必须有 videoToken —— 前端先拦一道（给出人话），服务端还会再拦一道（400）。
+function renderDubMode() {
+  const card = $('dubCard');
+  const keep = state.dubMode === 'keep';
+  if (card) {
+    card.classList.toggle('mode-keep', keep);
+    card.classList.toggle('mode-script', !keep);
+  }
+  for (const b of document.querySelectorAll('#dubMode .dub-mode-btn')) {
+    const on = b.dataset.mode === state.dubMode;
+    b.classList.toggle('is-on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  renderDubVideoHint();
+  renderDubSrtHint();
+  renderDubLimitHint();
+  syncDubCropWarn();       // 形态决定「素材会不会被缩放/裁切」—— 切形态就要重核提示
+}
+
+function setDubMode(mode) {
+  const m = mode === 'keep' ? 'keep' : 'script';
+  if (state.dubMode === m) return;
+  state.dubMode = m;
+  renderDubMode();
+  toast(m === 'keep'
+    ? '已切到「文案 + 口播视频」：素材的画面与声音不会被修改，成片时长 = 素材时长'
+    : '已切到「仅文案出片」：画面用工具生成的背景，配音走本机 Index-TTS');
+}
+
+// ── 风格（两形态共用）────────────────────────────────────────
+//
+// ★ 风格清单来自 GET /api/dub/styles —— 前端**不写死一份**：服务端从 lib/dub-semantic.mjs
+//   的 loadStyles() 取，那份才是唯一真相源；这里写死一份必然与它漂移。
+// ★ 第一项固定是「自动匹配」（'auto'，推荐）；第二项是「不指定」（value = **空串** —— 出片时
+//   不传 --style，行为与加这个功能之前完全一样）；之后是表里剩下的各个风格（默认风格由
+//   「不指定」档代表，不重复列一项）。
+// ★ 清单拿不到（模块未就绪）时**只留「不指定」**并如实说明 —— 风格没了，出片照旧。
+function renderDubStyleOptions() {
+  const sel = $('dubStyle');
+  if (!sel) return;
+  const keep = state.dubStyle;
+  sel.textContent = '';
+
+  const auto = document.createElement('option');
+  auto.value = 'auto';
+  auto.textContent = '自动匹配（按文案语义）（推荐）';
+  sel.appendChild(auto);
+
+  const d = state.dubStyles;
+  const list = (d && Array.isArray(d.styles)) ? d.styles : [];
+  const defId = (d && d.default) || 'plain-dark';
+
+  // ★ 「不指定」档的 value **必须是空串** —— 与三处判断一致：
+  //   state 注释（本文件 state.dubStyle 的说明）、发送逻辑（startDubRun 的 `state.dubStyle !== ''`）、
+  //   提示逻辑（renderDubStyleHint 的 else 分支「不传 --style」）。
+  //   ★ 曾经的写法是 `none.value = def.id`（= 服务端 default，如 plain-dark）⇒ 上面三处判断全部落空：
+  //     ① 下拉提示误写成「指定风格「plain-dark」」；
+  //     ② 出片 body 里多带一个 style=<default>；
+  //     ③ dub.mjs 因此多跑一次语义自检，还可能误报「你指定的风格 plain-dark 匹配度偏低」。
+  //     画面等价（dub.mjs 的 `let styleId = o.style || 'plain-dark'` 把 plain-dark 当基线），
+  //     但用户会看到自相矛盾的提示 —— 故修正为空串。
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = '不指定（保持现有外观，与加这个功能之前一致）';
+  sel.appendChild(none);
+
+  for (const s of list) {
+    if (s.id === defId) continue;      // 默认风格由「不指定」档代表，不重复列一项
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.desc ? `${s.cn} · ${s.id} —— ${s.desc}` : `${s.cn} · ${s.id}`;
+    sel.appendChild(o);
+  }
+
+  // ★ 兼容历史状态：曾经「不指定」档的 value 是 defId ⇒ 归一化成 ''，免得选中态丢失。
+  const keepNorm = keep === defId ? '' : keep;
+  const known = ['auto', '', ...list.map((s) => s.id)];
+  sel.value = known.includes(keepNorm) ? keepNorm : 'auto';
+  state.dubStyle = sel.value;
+  renderDubStyleHint();
+}
+
+function renderDubStyleHint() {
+  const hint = $('dubStyleHint');
+  if (!hint) return;
+  const d = state.dubStyles;
+  const parts = [];
+  if (d === null) parts.push('正在读风格清单…');
+  else if (d && d.ok === false) parts.push(`读不到风格清单：${dubErrText(d.error)}`);
+  else if (d && d.notReady) parts.push(d.note || '风格模块还没就绪');
+  else if (d) parts.push(`共 ${Array.isArray(d.styles) ? d.styles.length : 0} 个风格（默认 ${d.default}）`);
+
+  if (state.dubStyle === 'auto') {
+    parts.push('自动匹配：出片时由语义解析按文案挑一个风格'
+      + (state.dubMode === 'keep' ? '（形态 2 还会看口播表达）' : '')
+      + ' —— 点「分析文案」可以先看它会挑哪个');
+  } else if (state.dubStyle) {
+    parts.push(`指定风格「${state.dubStyle}」`);
+  } else {
+    parts.push('不指定风格：不传 --style，外观与加这个功能之前完全一样');
+  }
+  hint.textContent = parts.join('　·　');
+}
+
+// ── 分析文案（POST /api/dub/analyze，同步约 1 秒）─────────────
+//
+// ★ 这一步的全部价值是**让用户核对「系统理解得对不对」**：
+//   段落怎么切的、角色标的是什么、主题/情绪/节奏/场景读成了什么、最后挑了哪个风格。
+//   理解错了，出片再好看也是跑偏 —— 所以这些必须摆出来，而不是只给一个风格名。
+// ★ 语义模块**默认就是规则路**（source:'rules'），没有「LLM 降级」这回事；外部注入结果时
+//   source:'external'。界面**照实说**结果是从哪来的 —— 绝不把规则结果伪装成模型结果。
+function renderDubAnalysis() {
+  const box = $('dubAnalysis');
+  const sum = $('dubAnalysisSum');
+  const body = $('dubAnalysisBody');
+  if (!box || !body) return;
+
+  const a = state.dubAnalysis;
+  if (!a && !state.dubAnalysisBusy) {
+    box.hidden = true;
+    if (sum) sum.textContent = '分析结果';
+    return;
+  }
+  box.hidden = false;
+  body.textContent = '';
+
+  if (state.dubAnalysisBusy) {
+    if (sum) sum.textContent = '分析中…';
+    body.appendChild(el('div', 'dub-kv', '正在做语义解析（默认走规则，很快）…'));
+    return;
+  }
+
+  if (!a || a.ok === false) {
+    if (sum) sum.textContent = '分析失败';
+    const e = el('div', 'dub-err');
+    e.appendChild(el('div', 'dub-err-title', '⚠️ 分析文案失败'));
+    e.appendChild(el('div', 'dub-err-detail', dubErrText(a && a.error)));
+    if (a && a.notReady) {
+      e.appendChild(el('div', 'dub-err-hint',
+        '后端接口未就绪（/api/dub/analyze）—— 前端已按契约写好，等后端上线后重试即可。'));
+    }
+    body.appendChild(e);
+    return;
+  }
+
+  const byLabel = {
+    external: '外部注入（WorkBuddy 智能体）',
+    rules: '规则（默认）',
+    user: '你指定的',
+    default: '默认',
+  };
+
+  if (sum) {
+    sum.textContent = `分析结果：${a.styleId || '（没给风格）'}`
+      + `（${byLabel[a.stylePickedBy] || a.stylePickedBy || '?'}）`
+      + (a.ms !== undefined ? ` · ${a.ms}ms` : '');
+  }
+
+  // ★ 来源必须明说 —— 这是「用户能不能相信这份分析」的前提
+  if (a.source === 'rules') {
+    const w = el('div', 'dub-tag', '本次语义解析走的是规则（词表打分），不是外部注入的结果');
+    body.appendChild(w);
+  }
+
+  // ① 段落拆分：序号 · role · 文本 · 字数
+  const segs = Array.isArray(a.segments) ? a.segments : [];
+  const s1 = el('div', 'dub-sec');
+  s1.appendChild(el('div', 'dub-sec-head', `段落拆分（${segs.length} 段）`));
+  if (!segs.length) s1.appendChild(el('div', 'dub-kv', '（没有段落信息）'));
+  for (const sg of segs) {
+    const row = el('div', 'dub-seg');
+    row.appendChild(el('span', 'dub-seg-i', String(sg && sg.i !== undefined ? sg.i : '')));
+    row.appendChild(el('span', 'dub-seg-role', String((sg && sg.role) || '其他')));
+    row.appendChild(el('span', 'dub-seg-t', String((sg && sg.text) || '')));
+    row.appendChild(el('span', 'dub-seg-n', `${String((sg && sg.text) || '').length} 字`));
+    s1.appendChild(row);
+  }
+  body.appendChild(s1);
+
+  // ② 语义标签：主题 / 情绪 / 节奏 / 场景
+  const s2 = el('div', 'dub-sec');
+  s2.appendChild(el('div', 'dub-sec-head', '语义标签'));
+  const tagrow = el('div', 'dub-tagrow');
+  const theme = Array.isArray(a.theme) ? a.theme : (a.theme ? [a.theme] : []);
+  const kv = (k, v) => {
+    const w = el('span', 'dub-kv');
+    w.appendChild(el('span', 'k', k));
+    w.appendChild(document.createTextNode(String(v || '—')));
+    return w;
+  };
+  tagrow.appendChild(kv('主题', theme.length ? theme.join(' / ') : '—'));
+  tagrow.appendChild(kv('情绪', a.emotion));
+  tagrow.appendChild(kv('节奏', a.pace));
+  tagrow.appendChild(kv('场景', a.scene));
+  s2.appendChild(tagrow);
+  body.appendChild(s2);
+
+  // ③ 匹配结果：选中的风格 + 是谁选的 + 前 3 名分数
+  const s3 = el('div', 'dub-sec');
+  s3.appendChild(el('div', 'dub-sec-head', '匹配结果'));
+  const pick = el('div', 'dub-kv');
+  pick.appendChild(el('span', 'k', '选中风格'));
+  pick.appendChild(document.createTextNode(String(a.styleId || '（没给风格）')));
+  pick.appendChild(document.createTextNode(`　·　${byLabel[a.stylePickedBy] || a.stylePickedBy || '?'}`));
+  s3.appendChild(pick);
+
+  const scores = (a.scores && typeof a.scores === 'object') ? a.scores : null;
+  if (scores) {
+    const top = Object.entries(scores)
+      .filter(([, v]) => typeof v === 'number' && Number.isFinite(v))
+      .sort((x, y) => y[1] - x[1])
+      .slice(0, 3);
+    if (top.length) {
+      const line = el('div', 'dub-kv');
+      line.appendChild(el('span', 'k', '前 3 名'));
+      line.appendChild(el('span', 'dub-score',
+        top.map(([k, v]) => `${k} ${(Math.round(v * 100) / 100)}`).join('　·　')));
+      s3.appendChild(line);
+    }
+  }
+  if (a.model) s3.appendChild(el('div', 'dub-score', `模型 ${a.model}${a.ms !== undefined ? ` · ${a.ms}ms` : ''}`));
+  body.appendChild(s3);
+}
+
+async function analyzeDub() {
+  if (state.dubAnalysisBusy) return;
+  const ta = $('dubScript');
+  const script = ta ? ta.value : '';
+  if (!script.trim()) { toast('先粘贴一段文案，再点「分析文案」', true); if (ta) ta.focus(); return; }
+
+  state.dubAnalysisBusy = true;
+  state.dubAnalysis = null;
+  renderDubAnalysis();
+  const btn = $('btnDubAnalyze');
+  if (btn) { btn.disabled = true; btn.textContent = '分析中…'; }
+
+  try {
+    const d = await api('/api/dub/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script }),
+    });
+    state.dubAnalysis = d || { ok: false, error: '接口返回空' };
+  } catch (e) {
+    // ★ 404 / 503 都原样显示服务端的话，只在旁边补一句「未就绪」的指引
+    state.dubAnalysis = { ok: false, error: e.message, notReady: e.status === 404 || e.status === 503 };
+  }
+
+  state.dubAnalysisBusy = false;
+  if (btn) { btn.disabled = false; btn.textContent = '分析文案'; }
+  renderDubAnalysis();
+  const box = $('dubAnalysis');
+  if (box && !box.hidden) box.open = true;
+}
+
+function renderDubVoiceHint() {
+  const hint = $('dubVoiceHint');
+  if (!hint) return;
+  const eff = dubEffectiveVoice();
+  const parts = [];
+  parts.push(eff ? `本次会用：${eff}` : '还没选音色 —— 会用内容文件的默认音色');
+  parts.push(state.dubVoiceOverride ? '本卡片单独覆盖（不改「声音」版块）' : '跟随「声音」版块');
+  parts.push('换音色后语速要重调（不同音色的字/秒差别很大）');
+  hint.textContent = parts.join('　·　');
+}
+
+function renderDubVoices() {
+  const sel = $('dubVoice');
+  if (!sel) return;
+  const keep = sel.value;
+  sel.textContent = '';
+  const d = state.voices || {};
+  const list = Array.isArray(d.voices) ? d.voices : [];
+
+  const follow = voiceTestDefault();
+  const o0 = document.createElement('option');
+  o0.value = '';
+  o0.textContent = follow ? `跟随「声音」版块（${follow}）` : '跟随「声音」版块';
+  sel.appendChild(o0);
+
+  for (const v of list) {
+    const o = document.createElement('option');
+    o.value = v.name;
+    o.textContent = v.exists === false ? `${v.name}（参考音缺失）` : v.name;
+    if (v.exists === false) o.disabled = true;   // 缺文件的音色选了也合成不了，直接禁掉
+    sel.appendChild(o);
+  }
+
+  const want = state.dubVoiceOverride || keep || '';
+  sel.value = list.some((v) => v.name === want) ? want : '';
+  state.dubVoiceOverride = sel.value;
+  renderDubVoiceHint();
+}
+
+// ── 输出尺寸（预设比例 + 自定义像素）──────────────────────────
+//
+// ★ 与「主题出片」卡片**同一条纪律**：比例清单与「比例 → 像素」换算的唯一来源是库侧
+//   core/render/size.mjs（控制台侧 lib/sizes.mjs 代理），经服务端 GET /api/sizes 给出来 ——
+//   前端**不硬编码**任何比例。库里改了比例，刷新页面就跟着变（判据写在两处必然漂移）。
+// ★ 默认选中服务端给的 defaultRatio（9:16）。选「自定义尺寸…」时出现宽 × 高两个数字框，
+//   即时校验（偶数、MIN_SIZE–MAX_SIZE）；非法就拦住出片并给出提示。
+// ★ 出片时**显式**传 `--ratio <比例>`（连默认 9:16 也传）或 `--size <WxH>`（size 优先）。
+
+/** 自定义像素的校验结果：{ok, w, h, error}。空输入按「还没填完」处理（措辞友好）。 */
+function checkDubCustomSize() {
+  const wRaw = ($('dubSizeW') ? $('dubSizeW').value : '').trim();
+  const hRaw = ($('dubSizeH') ? $('dubSizeH').value : '').trim();
+  if (!wRaw || !hRaw) return { ok: false, error: '填宽和高两个数字（如 1080 × 1920）' };
+  if (!/^\d+$/.test(wRaw) || !/^\d+$/.test(hRaw)) return { ok: false, error: '宽和高都必须是整数' };
+  const w = Number(wRaw), h = Number(hRaw);
+  if (w < SIZE_MIN || w > SIZE_MAX || h < SIZE_MIN || h > SIZE_MAX) {
+    return { ok: false, error: `宽和高都要在 ${SIZE_MIN}–${SIZE_MAX} 之间` };
+  }
+  if (w % 2 || h % 2) return { ok: false, error: '宽和高都必须是**偶数**（H.264 编码要求，如 1080 × 1920）' };
+  return { ok: true, w, h };
+}
+
+/** 当前表单选的尺寸 → {ratio, size}（喂给 POST /api/dub/run）。自定义非法时 ok=false。 */
+function currentDubSizeChoice() {
+  const sel = $('dubRatio');
+  const v = sel ? sel.value : '';
+  if (v === CUSTOM_RATIO) {
+    const c = checkDubCustomSize();
+    return { ratio: state.defaultRatio, size: c.ok ? `${c.w}x${c.h}` : null, custom: true, ok: c.ok, error: c.error };
+  }
+  return { ratio: v || state.defaultRatio, size: null, custom: false, ok: true, error: null };
+}
+
+/** 比例下拉 / 自定义宽高 → 同步界面：显隐自定义框、按校验结果更新提示。 */
+function syncDubSizeUI() {
+  const sel = $('dubRatio');
+  const field = $('dubSizeField');
+  const hint = $('dubRatioHint');
+  const shint = $('dubSizeHint');
+  if (!sel) return;
+
+  const custom = sel.value === CUSTOM_RATIO;
+  if (field) field.hidden = !custom;
+
+  if (custom) {
+    if (!state.dubSizeW) state.dubSizeW = '1080';
+    if (!state.dubSizeH) state.dubSizeH = '1920';
+    if ($('dubSizeW') && !$('dubSizeW').value) $('dubSizeW').value = state.dubSizeW;
+    if ($('dubSizeH') && !$('dubSizeH').value) $('dubSizeH').value = state.dubSizeH;
+    const c = checkDubCustomSize();
+    if (hint) hint.textContent = '自定义像素（出片命令带 --size，优先级高于 --ratio）';
+    if (shint) {
+      shint.textContent = c.ok ? `→ ${c.w} × ${c.h}（出片命令：--size ${c.w}x${c.h}）` : c.error;
+      shint.classList.toggle('bad', !c.ok);
+    }
+    if ($('dubSizeW')) $('dubSizeW').classList.toggle('bad', !c.ok);
+    if ($('dubSizeH')) $('dubSizeH').classList.toggle('bad', !c.ok);
+  } else {
+    const r = state.ratios.find((x) => x.id === sel.value);
+    if (hint) {
+      hint.textContent = r
+        ? `${r.label || r.id}${r.pixels ? `　→ ${r.w} × ${r.h}` : ''}（出片命令：--ratio ${r.id}）`
+        : '';
+    }
+    if (shint) shint.textContent = '';
+  }
+  syncDubCropWarn();       // 输出尺寸变了 → 重核「素材会不会被裁」
+}
+
+/** 把比例下拉填好（预设 + 自定义）。**只在选项集合变了时重建**，不顶掉用户的选择。 */
+async function fillDubRatios() {
+  const sel = $('dubRatio');
+  if (!sel) return;
+  const d = await ensureSizes();
+
+  if (!d || !state.ratios.length) {
+    // 读不到清单：不硬编码兜底，只禁用下拉并如实说明（服务端仍会按默认 9:16 出片）。
+    sel.textContent = '';
+    sel.disabled = true;
+    const hint = $('dubRatioHint');
+    if (hint) hint.textContent = '读取尺寸清单失败（不选 = 服务端按默认 9:16 出片）';
+    return;
+  }
+
+  const sig = state.ratios.map((r) => r.id).join(',');
+  if (sel.dataset.sig !== sig) {
+    sel.textContent = '';
+    for (const r of state.ratios) {
+      const o = document.createElement('option');
+      o.value = r.id;
+      o.textContent = r.label || r.id;
+      o.title = `${r.label || r.id}：出片命令会带上 --ratio ${r.id}`
+        + (r.pixels ? `（${r.w} × ${r.h}）` : '');
+      sel.appendChild(o);
+    }
+    const oc = document.createElement('option');
+    oc.value = CUSTOM_RATIO;
+    oc.textContent = '自定义尺寸…';
+    oc.title = `自己填宽 × 高（偶数、${SIZE_MIN}–${SIZE_MAX}）；出片命令会带上 --size <宽x高>（优先级高于 --ratio）`;
+    sel.appendChild(oc);
+    sel.dataset.sig = sig;
+    // 默认选中服务端给的 defaultRatio（9:16）—— 用户选过就保留他的选择
+    const want = (state.dubRatio === CUSTOM_RATIO || state.ratios.some((r) => r.id === state.dubRatio))
+      ? state.dubRatio : state.defaultRatio;
+    sel.value = want || state.ratios[0].id;
+  }
+  sel.disabled = false;
+  syncDubSizeUI();
+}
+
+// ── 素材比例 × 输出比例：会不会把素材裁掉 ────────────────────────
+//
+// 背景（实测出来的产品代价）：口播素材铺画面时走的是
+//   scale=W:H:force_original_aspect_ratio=increase, crop=W:H    （dub.mjs 形态 B 唯一那条几何链）
+// 也就是**保持比例放大到铺满，再居中裁切** —— 不是拉伸、也不是留黑边。
+// 于是「素材比例」与「输出比例」差得越多，被切掉的就越多：
+//   实测 576×1024（9:16，比例 0.5625）→ 1920×1080（16:9，比例 1.7778）
+//   只剩源画面中间约 **31.6%** 的纵向带 —— 脸完整，但发顶被切。
+//
+// ★ 判据 = 「源画面能留下多少」= min(r_src, r_out) / max(r_src, r_out)（r = 宽/高）。
+//   推导：放大系数 k = max(W/sw, H/sh)，裁切后保留的那条边的占比恰好化简成上面这个比。
+//   实测校验：0.5625 / 1.7778 = 0.3164 —— 与团队量到的 31.6% 一致。
+// ★ 阈值 KEEP_MIN = 0.8（即**切掉 ≥20%** 才提示）：不提示同一比例（保留 1.0，没有代价）；
+//   预设比例里任意一组「跨比例」组合的保留值都 ≤ 0.75（最小的一对是 9:16↔3:4、16:9↔4:3 = 0.75），
+//   所以这条线对预设下拉的实际效果是「跨比例就提示，同比例不提示」；
+//   而对「自定义尺寸」它又能放过与素材比例接近的那些（例如素材 9:16 填 1000×1920，保留 0.925 → 不吵）。
+// ★ 只在**素材真的会铺画面**时才提示：dub.mjs 的 --keep-original（形态 2）明令不改画面
+//   （成片沿用素材尺寸，见 dub.mjs 里「--size / --ratio 在 --keep-original 下不生效」那一段），
+//   所以形态 2 下**没有这个风险**，不提示。
+// ★ 只提示，不改渲染行为、不禁用「出片」—— 判断权交回用户（这是团队定的处理方式）。
+const KEEP_MIN = 0.8;
+
+// ★ 文案分级线 KEEP_HEAD = 0.65：「保留得够不够多到**敢说会切到头顶**」。
+//   阈值不动（还是 0.8），只是把「会提示」这一档再分两层，避免对 3:4 说假话。
+//   依据（同一支 576×1024 竖屏素材、逐帧实测发顶）：
+//     3:4 保留 0.75 → 发顶**完整**（只裁上 12.5% + 下 12.5%，切在天花板灯与下半身）
+//     1:1 保留 0.5625 → **临界**（t=2.5s 切约 71 行；t=17.5s 只剩 8 行余量）
+//   0.65 正好落在「完整」与「临界」之间：≥0.65 不许提头顶，<0.65 才说会切头顶。
+const KEEP_HEAD = 0.65;
+
+/** 素材尺寸（token → {w,h}）。探过一次就缓存；探不到记 null（按「不知道」处理，不提示）。 */
+async function dubSrcDims(token) {
+  if (!token) return null;
+  if (token in state.dubSrcMeta) return state.dubSrcMeta[token];
+  try {
+    const d = await api('/api/dub/source-meta?token=' + encodeURIComponent(token));
+    state.dubSrcMeta[token] = (d && d.ok && d.w && d.h) ? { w: d.w, h: d.h } : null;
+  } catch {
+    // 接口不在 / WSL 没起 / 探测失败 —— 都不猜尺寸，如实按「不知道」处理（宁可不说，不吓人）
+    state.dubSrcMeta[token] = null;
+  }
+  return state.dubSrcMeta[token];
+}
+
+/** 当前表单选的输出像素（自定义非法时返回 null）。判据用 /api/sizes 给的 w/h，不硬编码比例表。 */
+function currentDubOutPixels() {
+  const sel = $('dubRatio');
+  if (!sel) return null;
+  if (sel.value === CUSTOM_RATIO) {
+    const c = checkDubCustomSize();
+    return c.ok ? { w: c.w, h: c.h } : null;
+  }
+  const r = state.ratios.find((x) => x.id === sel.value);
+  return r && r.w && r.h ? { w: r.w, h: r.h } : null;
+}
+
+/** 「源画面能留下多少」：min/max(宽高比)。1 = 完全不裁，越小切得越狠。 */
+function keepFraction(srcW, srcH, outW, outH) {
+  const rs = srcW / srcH, ro = outW / outH;
+  return Math.min(rs, ro) / Math.max(rs, ro);
+}
+
+// 竞态护栏：尺寸是异步探来的，连点两下时只让最后一次的结果上屏。
+let dubCropWarnSeq = 0;
+
+/** 按「已选素材 + 当前输出尺寸 + 当前形态」更新提示。异步（尺寸要探一次），调用方不用等。 */
+async function syncDubCropWarn() {
+  const box = $('dubCropWarn');
+  if (!box) return;
+  const seq = ++dubCropWarnSeq;
+  // ★ title 也要清：它带着「素材：xxx」这种上下文，隐藏时虽无可见影响，
+  //   但残留值会在下次显示前短暂出现，或让调试时误判当前状态。
+  const clear = () => { if (seq === dubCropWarnSeq) { box.hidden = true; box.textContent = ''; box.title = ''; } };
+
+  // 形态 2：素材原样不动（不缩放/不裁切）→ 没有这个风险
+  if (state.dubMode === 'keep') return clear();
+  const token = state.dubVideoToken;
+  if (!token) return clear();
+  const out = currentDubOutPixels();
+  if (!out) return clear();
+
+  const dims = await dubSrcDims(token);
+  if (seq !== dubCropWarnSeq) return;              // 期间用户又改了，丢弃这次结果
+  if (!dims) return clear();                       // 探不到尺寸 → 不猜、不提示
+
+  const keep = keepFraction(dims.w, dims.h, out.w, out.h);
+  if (keep >= KEEP_MIN) return clear();
+
+  const srcName = state.dubVideoName || token;
+  const srcAspect = ratioLabel(dims.w, dims.h);
+  const outAspect = ratioLabel(out.w, out.h);
+  const pct = Math.round(keep * 100);
+  // 竖屏素材配横屏输出 = 切上下（保留的是「高度」）；反过来是切左右（保留「宽度」）。
+  const cutEdge = (dims.w / dims.h) < (out.w / out.h) ? '高度' : '宽度';
+  // 裁切是**居中**的，所以两侧各吃掉一半。
+  const sidePct = Math.round((1 - keep) * 500) / 10;
+  const edgeWord = cutEdge === '高度' ? '上下' : '左右';
+  const edgeEg = cutEdge === '高度' ? '天花板、下半身' : '左右两侧背景';
+
+  // 文案要**具体、可操作**：说清是哪条素材、会怎么处理、大约切掉多少、怎么改。
+  // ★ 一律走 textContent（全文件只有风格侧栏那一处 innerHTML）—— 所以不用任何标记语法，
+  //   要强调就靠措辞，别写 **加粗**（那会原样显示成星号）。
+  // ★ 分两级（见 KEEP_HEAD 的注释）：切得狠才敢说「会切到头顶」；3:4 这类保住了发顶的，
+  //   只如实说「上下会被裁掉」，绝不提头顶 —— 那是误告。
+  const lead = `⚠️ 这条口播素材是 ${dims.w}×${dims.h}（${srcAspect}），输出却是 ${out.w}×${out.h}（${outAspect}）：`
+    + `画面会放大铺满后居中裁切，只保留素材中间约 ${pct}% 的${cutEdge}（${edgeWord}各裁掉约 ${sidePct}%）。`;
+  if (keep < KEEP_HEAD) {
+    box.textContent = lead
+      + `切掉的比较多 —— 人脸一般还在，但头顶、下巴或两侧可能被切掉。`
+      + `想避免：把「输出比例」改成和素材一致的 ${srcAspect}，或换一条人物更居中、上下留白更多的素材。`;
+  } else {
+    box.textContent = lead
+      + `人物主体一般还在，切掉的主要是画面边缘（${edgeEg}），成片通常可用。`
+      + `想更保险：把「输出比例」改成和素材一致的 ${srcAspect}，或换一条四周留白更多的素材。`;
+  }
+  box.title = `素材：${srcName}\n`
+    + `处理方式：scale=increase + crop（保持比例铺满，居中裁切；不是拉伸，也不留黑边）\n`
+    + `保留比例 = min(素材宽高比, 输出宽高比) / max(...) = ${keep.toFixed(4)}（${pct}%）\n`
+    + `提示阈值：保留 < ${KEEP_MIN}（即切掉 ≥ ${Math.round((1 - KEEP_MIN) * 100)}%）才提示；`
+    + `保留 < ${KEEP_HEAD} 才会说「会切到头顶」，${KEEP_HEAD}–${KEEP_MIN} 只说「上下会被裁掉」`
+    + ` —— 只提示，不改出片行为。`;
+  box.hidden = false;
+}
+
+/** 把宽高比写成「9:16」这种可读标签（只用于文案，不参与任何判断）。 */
+function ratioLabel(w, h) {
+  const hit = state.ratios.find((r) => r.w === w && r.h === h);
+  if (hit) return hit.id;
+  const g = gcd(w, h);
+  const a = w / g, b = h / g;
+  return (a > 40 || b > 40) ? `${(w / h).toFixed(2)}:1` : `${a}:${b}`;
+}
+
+function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+
+// ★ 素材清单现在混着两种 kind（video / srt）：两个下拉各取自己那一类。
+//   kind 由服务端给（老登记项由服务端按扩展名补），前端**不靠扩展名猜** —— 猜法迟早与后端漂移。
+function dubUploadsOfKind(kind) {
+  const d = state.dubUploads;
+  const list = (d && Array.isArray(d.uploads)) ? d.uploads : [];
+  return list.filter((u) => (u.kind || 'video') === kind);
+}
+
+function fillDubSourceSelect(sel, kind, noneLabel) {
+  sel.textContent = '';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = noneLabel;
+  sel.appendChild(none);
+
+  const d = state.dubUploads;
+  if (d === null) { none.textContent = '正在读已上传的素材…'; return { none, list: [] }; }
+
+  if (d && d.ok === false) {
+    // ★ 接口没就绪 / 出错：原样显示，不吞 —— 但「不用素材」这条正常路径照样可用
+    none.textContent = `读不到已上传素材：${dubErrText(d.error)}`;
+    return { none, list: [] };
+  }
+
+  const list = dubUploadsOfKind(kind);
+  for (const u of list) {
+    const o = document.createElement('option');
+    o.value = u.token;
+    o.textContent = `${u.name}　${fmtSize(u.size)}　${fmtTime(u.at)}`;
+    sel.appendChild(o);
+  }
+  return { none, list };
+}
+
+function renderDubSources() {
+  // ★ 「清单为空」有两种含义，不能混为一谈：
+  //   ① 清单**已读到**、里面确实没有这条 token → 素材真被删了，该清 token 并告知；
+  //   ② 清单**还没读到**（dubUploads === null，正在读）或**读失败**（ok === false）
+  //      → 此时列表也是空的，但那是「还不知道」，不是「没了」。
+  //   之前 ② 被当成 ① 处理：上传成功后 loadDubSources() 先把 dubUploads 置 null 再渲染，
+  //   于是刚写好的 token 被误判为「已删」并清掉（还弹一条误报 toast）—— 素材根本进不来。
+  //   → 只有 loaded 为真（清单确实是权威结果）时才允许走清理逻辑。
+  const loaded = state.dubUploads !== null && state.dubUploads.ok !== false;
+
+  const sel = $('dubSrcSel');
+  if (sel) {
+    const { list } = fillDubSourceSelect(sel, 'video', '（不用口播视频）');
+    const okTok = loaded && list.some((u) => u.token === state.dubVideoToken);
+    sel.value = okTok ? state.dubVideoToken : '';
+    // 选中的素材在清单里消失了（文件被删）→ 如实清掉，不硬留一个死 token
+    if (loaded && !okTok && state.dubVideoToken) {
+      state.dubVideoToken = '';
+      state.dubVideoName = '';
+      toast('之前选的口播素材已不在清单里（文件可能被删了）—— 已清除', true);
+    }
+  }
+
+  const ssel = $('dubSrtSel');
+  if (ssel) {
+    const { list } = fillDubSourceSelect(ssel, 'srt', '（不给 SRT，自动对齐）');
+    const okTok = loaded && list.some((u) => u.token === state.dubSrtToken);
+    ssel.value = okTok ? state.dubSrtToken : '';
+    if (loaded && !okTok && state.dubSrtToken) {
+      state.dubSrtToken = '';
+      state.dubSrtName = '';
+      toast('之前选的 SRT 已不在清单里（文件可能被删了）—— 已清除', true);
+    }
+  }
+
+  renderDubVideoHint();
+  renderDubSrtHint();
+  syncDubCropWarn();       // 素材清单变了（选中项可能被清掉）→ 重核提示
+}
+
+function renderDubVideoHint() {
+  const hint = $('dubVideoHint');
+  if (!hint) return;
+  if (state.dubVideoToken) {
+    hint.textContent = `已选：${state.dubVideoName || state.dubVideoToken}`;
+  } else {
+    hint.textContent = state.dubMode === 'keep'
+      ? '形态 2 必须有口播视频 —— 没选的话「出片」会被拦住'
+      : '不选 = 只给文案形态（画面用工具生成的背景）';
+  }
+}
+
+function renderDubSrtHint() {
+  const hint = $('dubSrtHint');
+  if (!hint) return;
+  hint.textContent = state.dubSrtToken
+    ? `已选：${state.dubSrtName || state.dubSrtToken}`
+    : '不给 SRT = 自动对齐（优先 ASR）';
+}
+
+// ★ 形态 2 的「限幅到交付线」开关提示：勾选时**明说**成片音轨会被重编码、不再逐字节相同。
+//   默认（不勾）时也说明默认行为 —— 用户才知道不勾 = 与素材逐字节一致。
+function renderDubLimitHint() {
+  const hint = $('dubLimitHint');
+  if (!hint) return;
+  const on = !!($('dubKeepLimit') && $('dubKeepLimit').checked);
+  hint.textContent = on
+    ? '已开：成片音轨会被重新编码 + 限幅到交付线，不再与素材逐字节相同（画面/时长/内容仍不动）。'
+    : '默认关：成片音轨与素材逐字节相同（素材自身真峰值超标时才用得到这个开关）。';
+}
+
+function renderDubUpload() {
+  const box = $('dubUploadState');
+  if (!box) return;
+  const u = state.dubUpload;
+  box.textContent = '';
+  if (!u.busy && !u.error) { box.hidden = true; return; }
+  box.hidden = false;
+
+  if (u.error) { box.appendChild(el('div', 'dub-err-detail', '✗ ' + u.error)); return; }
+
+  box.appendChild(el('div', 'dub-up-line', `正在上传 ${u.name} … ${u.pct}%`));
+  const track = el('div', 'dub-up-track');
+  const fill = el('div', 'dub-up-fill');
+  fill.style.width = `${u.pct}%`;
+  track.appendChild(fill);
+  box.appendChild(track);
+  box.appendChild(el('div', 'dub-up-note', '素材存在 D:\\lemo-films\\dub\\_uploads —— 传完就能在下面「用已上传的」里复用'));
+}
+
+function renderDubSrtUpload() {
+  const box = $('dubSrtState');
+  if (!box) return;
+  const u = state.dubSrtUpload;
+  box.textContent = '';
+  if (!u.busy && !u.error) { box.hidden = true; return; }
+  box.hidden = false;
+
+  if (u.error) { box.appendChild(el('div', 'dub-err-detail', '✗ ' + u.error)); return; }
+
+  box.appendChild(el('div', 'dub-up-line', `正在上传 ${u.name} … ${u.pct}%`));
+  const track = el('div', 'dub-up-track');
+  const fill = el('div', 'dub-up-fill');
+  fill.style.width = `${u.pct}%`;
+  track.appendChild(fill);
+  box.appendChild(track);
+}
+
+function renderDubLines() {
+  const box = $('dubLines');
+  const hint = $('dubPreviewHint');
+  const cnt = $('dubCount');
+  if (!box) return;
+  box.textContent = '';
+
+  const p = state.dubPreview;
+  if (!p) {
+    box.hidden = true;
+    if (hint) hint.textContent = '';
+    return;
+  }
+  box.hidden = false;
+
+  if (p.ok === false) {
+    const e = el('div', 'dub-err');
+    e.appendChild(el('div', 'dub-err-title', '⚠️ 断句预览失败'));
+    e.appendChild(el('div', 'dub-err-detail', dubErrText(p.error)));
+    if (p.notReady) {
+      e.appendChild(el('div', 'dub-err-hint',
+        '后端接口未就绪（/api/dub/preview）—— 前端已按契约写好，等后端上线后重试即可。'));
+    }
+    box.appendChild(e);
+    if (hint) hint.textContent = '';
+    if (cnt) cnt.textContent = '';
+    return;
+  }
+
+  const lines = Array.isArray(p.lines) ? p.lines : [];
+  const head = el('div', 'dub-lines-head');
+  head.appendChild(el('span', '', `共 ${p.count === undefined ? lines.length : p.count} 句`));
+  if (p.source === 'fallback') head.appendChild(el('span', 'dub-tag warn', '降级断句'));
+  else if (p.source) head.appendChild(el('span', 'dub-tag', `来自 ${p.source}`));
+  box.appendChild(head);
+  if (p.note) box.appendChild(el('div', 'dub-lines-note', p.note));
+
+  const list = el('div', 'dub-lines-list');
+  for (const ln of lines) {
+    const row = el('div', 'dub-line');
+    row.appendChild(el('span', 'dub-line-i', String(ln.i)));
+    row.appendChild(el('span', 'dub-line-t', String(ln.text === undefined ? '' : ln.text)));
+    row.appendChild(el('span', 'dub-line-n', `${String(ln.text || '').length} 字`));
+    list.appendChild(row);
+  }
+  box.appendChild(list);
+
+  if (hint) hint.textContent = '断句不对？在文案里用空行手动分开，再点一次「断句预览」';
+  if (cnt) cnt.textContent = String(lines.length);
+}
+
+function renderDubState() {
+  const box = $('dubState');
+  const btn = $('btnDubRun');
+  const hint = $('dubRunHint');
+  const d = state.dub;
+  const keep = state.dubMode === 'keep';
+
+  if (btn) {
+    btn.disabled = !!d.jobId;
+    btn.textContent = d.jobId ? (keep ? '出片中（叠字幕）…' : '出片中…') : '出片';
+  }
+  if (hint) {
+    // ★ 不写死「每句 30 秒」：实测同一台机器上，空载时 3 句整条 51 秒，
+    //   而另一个智能体并发抢 GPU 时同一段文案跑了 22 分钟（差 20 倍以上）。
+    //   写死一个数字，用户遇到忙的时候就会以为卡死了 —— 给区间才是诚实的。
+    // ★ 形态 2 **不跑 TTS**，所以那句「逐句合成」的提示对它不成立 —— 分开写，别糊弄。
+    if (d.jobId) {
+      hint.textContent = keep
+        ? '形态 2 不跑 TTS：素材的画面与声音原样保留，只叠字幕与风格化叠加层 —— 通常比形态 1 快得多。进度看「实时日志」'
+        : '配音是逐句合成的，通常几十秒一句；机器忙的时候可能到几分钟。模型首次加载还要 1~2 分钟 —— 别以为卡死了；进度看「实时日志」';
+    } else {
+      hint.textContent = '';
+    }
+  }
+
+  if (!box) return;
+  box.textContent = '';
+  if (!d.status) { box.hidden = true; return; }
+  box.hidden = false;
+
+  if (d.error) {
+    const e = el('div', 'dub-err');
+    e.appendChild(el('div', 'dub-err-title', '✗ 出片失败'));
+    e.appendChild(el('div', 'dub-err-detail', d.error));
+    if (d.notReady) {
+      e.appendChild(el('div', 'dub-err-hint',
+        '后端接口未就绪（/api/dub/run）—— 前端已按契约写好，等后端上线后重试即可。'));
+    }
+    box.appendChild(e);
+    return;
+  }
+
+  const label = { queued: '排队中', running: '出片中', done: '已完成', failed: '失败', canceled: '已取消', ended: '已结束' }[d.status] || d.status;
+  box.appendChild(el('div', 'dub-state-line', `出片：${label}${d.note ? '　·　' + d.note : ''}`));
+  if (d.jobId) {
+    box.appendChild(el('div', 'dub-state-sub',
+      `任务 ${d.jobId} —— 它也会出现在下面的「任务列表」里（kind=setup），实时日志可以看进度`));
+  }
+  if (d.out) box.appendChild(el('div', 'dub-state-path', `输出目录　${d.out}`));
+
+  if (d.status === 'done') {
+    const line = el('div', 'dub-done');
+    if (d.url) {
+      const play = el('button', 'btn primary small', '▶ 播放成片');
+      play.title = '在播放器弹层里打开 film.mp4';
+      play.addEventListener('click', () => openPlayer(`dub/${d.outName}`, 'film.mp4', d.url));
+      line.appendChild(play);
+      if (d.filmPath) line.appendChild(el('span', 'dub-done-path', d.filmPath));
+    } else {
+      line.appendChild(el('div', 'dub-err-detail',
+        d.filmError || '任务结束了，但没找到 film.mp4 —— 去输出目录里看一眼'));
+    }
+    box.appendChild(line);
+    if (d.filmNote) box.appendChild(el('div', 'dub-state-sub', d.filmNote));
+  }
+}
+
+// ── 断句预览 ────────────────────────────────────────────────
+async function previewDub() {
+  if (state.dubPreviewBusy) return;
+  const ta = $('dubScript');
+  const script = ta ? ta.value : '';
+  if (!script.trim()) {
+    toast('先粘贴一段文案，再点「断句预览」', true);
+    if (ta) ta.focus();
+    return;
+  }
+
+  state.dubPreviewBusy = true;
+  const btn = $('btnDubPreview');
+  if (btn) { btn.disabled = true; btn.textContent = '断句中…'; }
+  state.dubPreview = null;
+  renderDubLines();
+  if ($('dubPreviewHint')) $('dubPreviewHint').textContent = '正在向服务端要断句…';
+
+  try {
+    const d = await api('/api/dub/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script }),
+    });
+    state.dubPreview = d || { ok: false, error: '接口返回空' };
+  } catch (e) {
+    // ★ 接口没就绪（404）也走这里：把原始信息交给 renderDubLines 原样显示
+    state.dubPreview = { ok: false, error: e.message, notReady: e.status === 404 };
+  }
+
+  state.dubPreviewBusy = false;
+  if (btn) { btn.disabled = false; btn.textContent = '断句预览'; }
+  renderDubLines();
+}
+
+// ── 上传素材（口播视频 / SRT，同一条通道）────────────────────
+//
+// ★ 两种素材走的是**同一个** /api/dub/upload（服务端按扩展名判 kind 并回传）——
+//   不另开一条接口：清洗、限额、防穿越、token 登记表只有一处，才不会有一处漏了防护。
+// ★ 前端这一层也做一次扩展名/大小预检：不是安全边界（服务端才是），纯粹是**别让用户
+//   传完 200MB 才被告知格式不对**。
+function dubUploadExtsOf(kind) {
+  return kind === 'srt' ? DUB_SRT_EXTS : DUB_EXTS;
+}
+
+function uploadDubAsset(file, kind) {
+  if (!file) return;
+  const exts = dubUploadExtsOf(kind);
+  const label = kind === 'srt' ? 'SRT' : '视频';
+  const ext = dubExtOf(file.name);
+  if (!exts.includes(ext)) {
+    toast(`不支持的${label}格式「${ext || '（无扩展名）'}」—— 只收 ${exts.join(' / ')}`, true);
+    return;
+  }
+  if (file.size > DUB_MAX_BYTES) {
+    toast(`${label}过大：${fmtSize(file.size)}（上限 ${fmtSize(DUB_MAX_BYTES)}）`, true);
+    return;
+  }
+
+  const slot = kind === 'srt' ? 'dubSrtUpload' : 'dubUpload';
+  const render = kind === 'srt' ? renderDubSrtUpload : renderDubUpload;
+  if (state[slot].busy) { toast(`已经有一个${label}上传在跑，等它结束再选`, true); return; }
+
+  state[slot] = { busy: true, pct: 0, name: file.name, error: '' };
+  render();
+
+  // ★ 用 XHR 而不是 fetch：fetch 拿不到**上传**进度。200MB 的素材没进度条，用户会以为卡死。
+  //   文件名走 query（encodeURIComponent 处理中文），字节走 body —— 服务端按 raw body 收。
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/dub/upload?name=' + encodeURIComponent(file.name));
+  xhr.upload.addEventListener('progress', (e) => {
+    if (!e.lengthComputable) return;
+    state[slot].pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+    render();
+  });
+  xhr.addEventListener('load', () => {
+    let data = null;
+    try { data = JSON.parse(xhr.responseText || 'null'); } catch { data = null; }
+    if (xhr.status >= 200 && xhr.status < 300 && data && data.ok) {
+      state[slot] = { busy: false, pct: 100, name: '', error: '' };
+      if (kind === 'srt') {
+        state.dubSrtToken = data.token;
+        state.dubSrtName = data.name || file.name;
+      } else {
+        state.dubVideoToken = data.token;
+        state.dubVideoName = data.name || file.name;
+      }
+      render();
+      renderDubVideoHint();
+      renderDubSrtHint();
+      syncDubCropWarn();       // 刚选中的素材要去探一次尺寸，探回来才知道会不会被裁
+      toast(kind === 'srt'
+        ? `已上传 ${state.dubSrtName}（${fmtSize(data.size)}）—— 出片时用它当字幕时间轴`
+        : `已上传 ${state.dubVideoName}（${fmtSize(data.size)}）—— 出片时会用你的视频当画面`);
+      loadDubSources();          // 刷新两个「用已上传的」清单（这条新素材也在里面）
+      return;
+    }
+    const msg = (data && data.error) || `HTTP ${xhr.status}`;
+    state[slot] = { busy: false, pct: 0, name: '', error: msg };
+    render();
+    toast('上传失败：' + msg, true);
+  });
+  xhr.addEventListener('error', () => {
+    state[slot] = { busy: false, pct: 0, name: '', error: '网络错误：上传中断' };
+    render();
+    toast('上传失败：网络错误', true);
+  });
+  xhr.send(file);
+}
+
+function uploadDubFile(file) { uploadDubAsset(file, 'video'); }
+function uploadDubSrtFile(file) { uploadDubAsset(file, 'srt'); }
+
+async function loadDubStyles() {
+  if (state.dubStylesBusy) return;
+  state.dubStylesBusy = true;
+  try {
+    const d = await api('/api/dub/styles');
+    state.dubStyles = d || { ok: false, error: '接口返回空' };
+  } catch (e) {
+    state.dubStyles = { ok: false, error: e.message, notReady: e.status === 404 || e.status === 503 };
+  }
+  state.dubStylesBusy = false;
+  renderDubStyleOptions();
+}
+
+// 竞态护栏：sources 也是异步读的，上传完成与刷新重叠时只让最后一次的结果上屏。
+// ★ 与 syncDubCropWarn 的 dubCropWarnSeq 同一套做法：旧响应回来时若已不是最新那次请求，
+//   整个丢弃 —— 不改 state.dubUploads、不改 token、不弹 toast。
+//   否则旧清单（不含刚上传的那条）会盖掉新状态，刚写好的 token 被误判成「已删」清掉。
+let dubSourcesSeq = 0;
+
+async function loadDubSources() {
+  const seq = ++dubSourcesSeq;
+  state.dubUploads = null;             // → 「正在读已上传的素材…」
+  renderDubSources();
+  let d;
+  try {
+    d = await api('/api/dub/sources');
+    d = d || { ok: false, error: '接口返回空', uploads: [] };
+  } catch (e) {
+    d = { ok: false, error: e.message, uploads: [], notReady: e.status === 404 };
+  }
+  if (seq !== dubSourcesSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
+  state.dubUploads = d;
+  renderDubSources();
+}
+
+// ── 出片（异步任务）─────────────────────────────────────────
+async function startDubRun() {
+  if (state.dub.jobId) { toast('已经有一条出片任务在跑，等它结束再点', true); return; }
+  const ta = $('dubScript');
+  const script = ta ? ta.value : '';
+  if (!script.trim()) { toast('先粘贴一段文案', true); if (ta) ta.focus(); return; }
+
+  const keep = state.dubMode === 'keep';
+  // ★ 形态 2 的硬条件：必须有口播素材。前端先拦一道给出人话，服务端还会再拦一道（400）。
+  if (keep && !state.dubVideoToken) {
+    toast('形态 2 要先上传（或选一条已上传的）口播视频 —— 没素材就没有「保持原样」这回事', true);
+    const d = $('dubDrop');
+    if (d) d.scrollIntoView({ block: 'center' });
+    return;
+  }
+
+  // 只把**用户真的设过**的字段发出去 —— 空值让服务端用工具的默认，别用前端的猜测覆盖工具默认
+  const body = { script };
+  if (state.dubVideoToken) body.videoToken = state.dubVideoToken;
+
+  if (keep) {
+    // ★ 形态 2：素材的画面/声音/时长一律不动 —— 所以**不发**音色/语速/停顿/尺寸/fit/保留原声，
+    //   服务端那边也会据此不传 --fit。只叠字幕与叠加层。
+    body.keepOriginal = true;
+    if (state.dubSrtToken) body.srtToken = state.dubSrtToken;
+    // ★ 限幅开关：**只在勾选时**发这个键 —— 不勾就不发，服务端因此不传 --keep-original-limit，
+    //   成片音轨与素材逐字节相同（与加这个功能之前完全一致）。
+    if ($('dubKeepLimit') && $('dubKeepLimit').checked) body.keepOriginalLimit = true;
+  } else {
+    if (state.dubVoiceOverride) body.voice = state.dubVoiceOverride;
+    const speed = Number($('dubSpeed') ? $('dubSpeed').value : '');
+    if (Number.isFinite(speed)) body.speed = speed;
+    // ★ 输出尺寸：与「主题出片」同一条纪律 —— 显式传 ratio 或 size（size 优先，与 CLI 一致；
+    //   两个都不选 → 传默认比例 9:16，行为与加这个功能之前一致）。
+    //   自定义尺寸非法就在这里拦住（别让它跑到服务端才拿 400）。
+    const sc = currentDubSizeChoice();
+    if (!sc.ok) {
+      toast('自定义尺寸不合法：' + sc.error, true);
+      const f = $('dubSizeField');
+      if (f) f.scrollIntoView({ block: 'center' });
+      return;
+    }
+    if (sc.size) body.size = sc.size;
+    else if (sc.ratio) body.ratio = sc.ratio;
+    const gap = Number($('dubGap') ? $('dubGap').value : '');
+    if (Number.isFinite(gap)) body.gap = gap;
+    const fit = $('dubFit') ? $('dubFit').value : '';
+    if (fit) body.fit = fit;
+    if ($('dubKeepAudio') && $('dubKeepAudio').checked) body.keepOriginalAudio = true;
+  }
+
+  // ★ 风格：'auto' 要发（那是「按语义自动匹配」这个明确意图）；
+  //   只有用户选了「不指定」那一档时才**不发** --style —— 那才是「行为与加这个功能之前一样」。
+  if (state.dubStyle && state.dubStyle !== '') body.style = state.dubStyle;
+
+  const title = $('dubTitle') ? $('dubTitle').value.trim() : '';
+  if (title) body.title = title;
+
+  state.dub = { jobId: '', status: 'queued', note: '正在提交…', error: '', out: '', outName: '', ticks: 0, url: '', notReady: false };
+  renderDubState();
+
+  try {
+    const r = await api('/api/dub/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    state.dub = {
+      jobId: r.job.id, status: r.job.status || 'queued', note: '', error: '',
+      out: r.out || '', outName: r.outName || '',
+      filmPath: (r.artifacts && r.artifacts.film) || '',
+      // ★ 成片 URL 由服务端给（不在这里拼路径形状）—— 服务端就是「成片库」取片那条路
+      filmUrl: (r.artifacts && r.artifacts.filmUrl) || '',
+      ticks: 0, url: '', notReady: false,
+    };
+    renderDubState();
+    pollDub();
+  } catch (e) {
+    // ★ 404 = 接口还没上线；503 = 后端在线但核心工具 dub.mjs 还没就绪。
+    //   两种都**原样显示服务端的话**，只在旁边补一句「未就绪」的指引。
+    state.dub = {
+      jobId: '', status: 'failed', note: '', error: e.message,
+      out: '', outName: '', ticks: 0, url: '', notReady: e.status === 404,
+    };
+    renderDubState();
+    toast('出片失败：' + e.message, true);
+  }
+}
+
+/** 任务成功 ≠ 文件一定在。要一小段字节（Range 0-0）**真的确认**过，才给播放按钮。 */
+async function probeDubFilm(url) {
+  try {
+    const r = await fetch(url, { headers: { Range: 'bytes=0-0' } });
+    if (r.ok || r.status === 206) return { ok: true };
+    return { ok: false, error: `HTTP ${r.status}` };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+function pollDub() {
+  clearTimeout(state.dubTimer);
+  if (!state.dub.jobId) return;
+  state.dubTimer = setTimeout(async () => {
+    if (!state.dub.jobId) return;
+    if (++state.dub.ticks > DUB_MAX_TICKS) {
+      const id = state.dub.jobId;
+      state.dub.jobId = '';
+      state.dub.error = `任务 ${id} 等了 63 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
+      renderDubState();
+      return;
+    }
+    try {
+      const d = await api('/api/jobs');
+      const job = (d.jobs || []).find((j) => j.id === state.dub.jobId);
+      if (!job) { state.dub.note = '还没出现在任务列表里…'; renderDubState(); return pollDub(); }
+      state.dub.status = job.status;
+
+      if (job.status === 'done') {
+        const id = state.dub.jobId;
+        state.dub.jobId = '';
+        // URL 由服务端在提交时给出（就是「成片库」取片那条路）；没给就退回按目录名拼
+        const url = state.dub.filmUrl
+          || `/api/films/dub/${encodeURIComponent(state.dub.outName)}/${encodeURIComponent('film.mp4')}`;
+        const probe = await probeDubFilm(url);
+        if (probe.ok) {
+          state.dub.url = url;
+          state.dub.filmNote = '成片也在输出目录里（film.mp4 / film.srt / lines.json / dur.json / timeline.json）。'
+            + '★ 它同时出现在下面的「成片库」里（标着「文案出片」），也可以点「刷新」让它立刻出现。';
+        } else {
+          state.dub.filmError = `任务 ${id} 结束了，但 film.mp4 取不到（${probe.error}）—— 去输出目录里看一眼。`;
+        }
+        renderDubState();
+        // 成片库要能立刻看到这条新片（用户下一眼就会去那儿找）
+        if (probe.ok) loadFilms();
+        toast(probe.ok ? '文案出片完成 —— 播放按钮在卡片底部，也会出现在「成片库」里' : '任务结束，但成片取不到（看卡片里的提示）', !probe.ok);
+        return;
+      }
+      // ★ 用户主动取消 ≠ 故障：必须分开处理，别用红色「失败」措辞吓人（用户会以为出了 bug）。
+      //   本仓库里 status=canceled **只**可能由 cancelJob() 产生，而它只被两处调用：
+      //     ① DELETE /api/jobs/:id（server.mjs:1640）—— 用户自己点「取消」；
+      //     ② 服务进程退出时的兜底（server.mjs:1896-1897）—— 那时页面已连不上，走不到这里。
+      //   所以前端能到达的 canceled 就是「用户主动取消」，用中性提示即可。
+      if (job.status === 'canceled') {
+        state.dub.jobId = '';
+        state.dub.error = '';
+        state.dub.note = '任务已取消（是你自己停掉的，没有产出成片）—— 想重出就再点一次「出片」。';
+        renderDubState();
+        toast('已取消 —— 这条出片任务是你自己停掉的，没有产出成片');
+        return;
+      }
+      if (job.status === 'failed') {
+        state.dub.jobId = '';
+        state.dub.error = job.error || '出片失败（去「实时日志」看这一条任务）';
+        renderDubState();
+        toast('出片失败：' + state.dub.error, true);
+        return;
+      }
+      if (job.status === 'ended') {
+        // ★ 'ended' = 控制台重启时这条任务还开着（lib/jobs.mjs:152 loadHistory 标定），已经不在跑了。
+        //   原来它落进「非终态」分支 → 会一直轮询到 63 分钟上限才罢休（白等一场）；现在立刻收尾。
+        state.dub.jobId = '';
+        state.dub.error = '';
+        state.dub.note = '任务已结束 —— 控制台重启时它还没跑完，已经不在了（不会产出成片）。';
+        renderDubState();
+        toast('任务已结束 —— 控制台重启时它还没跑完，已经停了（去「任务列表」可回看日志）');
+        return;
+      }
+      renderDubState();
+      pollDub();
+    } catch (e) {
+      state.dub.note = '查任务状态失败（继续重试）：' + e.message;
+      renderDubState();
+      pollDub();
+    }
+  }, 2000);
+}
+
 // ── 启动表单 ────────────────────────────────────────────────
 function buildOpts() {
   const o = [];
@@ -941,7 +2932,10 @@ function buildOpts() {
   if ($('fAudioOnly').checked) o.push('--audio-only');
   if ($('fRenderOnly').checked) o.push('--render-only');
   if ($('fDryRun').checked) o.push('--dry-run');
-  return { slug, opts: o };
+  // 声音版块：选过音色 / 填过语速才追加（用户已在 --q 里手写就让他赢，见 voiceCliOpts）
+  const v = voiceCliOpts(q);
+  o.push(...v.opts);
+  return { slug, opts: o, voiceNotes: v.notes };
 }
 
 function syncPreview() {
@@ -1056,8 +3050,10 @@ function showLockWarn(pre, slug, opts) {
 }
 
 async function startRun(force) {
-  const { slug, opts } = buildOpts();
+  const { slug, opts, voiceNotes } = buildOpts();
   if (!slug) { toast('请先选择或输入一个风格', true); $('fSlug').focus(); return; }
+  // 声音参数有冲突（用户自己在 --q 里写了）时如实提示，不静默覆盖
+  if (voiceNotes && voiceNotes.length) toast(voiceNotes[0], true);
 
   if (!force) {
     hideLockWarn();
@@ -1207,6 +3203,7 @@ function attachLog(jobId, opts) {
       loadJobs();
       loadFilms();
       loadStylesBadges();
+      loadBriefs();     // 出片任务结束 → 对应工单的 done/failed 立刻反映出来（不用等下一次轮询）
       // 安装任务结束 → 环境可能变了，重新检测并重算安装计划（幂等：装好的项会自动消失）
       if (state.logJobKind === 'setup') { state.logJobKind = null; refreshAfterSetup(); }
     }
@@ -1285,7 +3282,7 @@ function renderJobs() {
     if (j.film) {
       const f = el('span', 'jfilm', '▶ ' + j.film);
       f.style.cursor = 'pointer';
-      f.addEventListener('click', (e) => { e.stopPropagation(); openPlayer(j.slug, j.film); });
+      f.addEventListener('click', (e) => { e.stopPropagation(); openPlayer(j.slug, j.film, jobFilmUrl(j)); });
       row.appendChild(f);
     }
 
@@ -1302,6 +3299,21 @@ function renderJobs() {
         loadJobs();
       });
       row.appendChild(c);
+    } else {
+      // ★ 终态任务（done/failed/canceled/ended）→ 「删除」而不是「取消」：
+      //   取消一个已经结束的任务语义上是错的；用户真正想要的是把这条历史清掉。
+      //   与「取消」分开措辞（见 server.mjs 的 DELETE /api/jobs/:id 按状态分派）。
+      //   样式对齐工单的删除按钮（app.js:delBrief / renderBriefs 的 del）。
+      const d = el('button', 'btn danger small', '删除');
+      d.title = '删掉这条任务记录（不会删成片）';
+      d.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm(`删除任务记录 ${j.id}（${j.slug}）？\n\n只删这条历史记录与它的日志，不删已产出的成片。`)) return;
+        try { await api('/api/jobs/' + encodeURIComponent(j.id), { method: 'DELETE' }); toast('已删除'); }
+        catch (err) { toast('删除失败：' + err.message, true); }
+        loadJobs();
+      });
+      row.appendChild(d);
     }
 
     row.addEventListener('click', () => { attachLog(j.id, j.opts); renderJobs(); });
@@ -1309,28 +3321,676 @@ function renderJobs() {
   }
 }
 
+// 竞态护栏：3 秒轮询 / SSE 结束 / 取消 / runBatch / startRun 等多处并发，
+// 只让最后一次请求的结果上屏，免得旧响应盖掉 state.jobs（刚入队的任务闪没）。
+let loadJobsSeq = 0;
+
 async function loadJobs() {
+  const seq = ++loadJobsSeq;
   try {
     const d = await api('/api/jobs');
+    if (seq !== loadJobsSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
     state.jobs = d.jobs || [];
     renderJobs();
     updateEta();     // 任务列表每 3 秒刷一次 → 「预计还需」跟着走，不用另开定时器
   } catch (e) {
+    if (seq !== loadJobsSeq) return;   // 同上：旧的失败信息也不得盖掉新状态
     $('jobs').textContent = '';
     $('jobs').appendChild(el('div', 'empty', '读取任务失败：' + e.message));
   }
 }
 
+// ── 主题出片（工单）─────────────────────────────────────────
+//
+// ★ 这一块是「主题 → 出片」的界面：控制台只负责**落工单 / 透传 runOpts / 起任务 / 显示结果**。
+//   内容由**外部 LLM（WorkBuddy）**生成 —— 所以 pending 状态要明确写出「去对话里说『处理工单』」，
+//   而不是让人在这儿干等。
+//
+// ★ 状态的唯一事实来源是服务端（GET /api/briefs，每次从磁盘现读）—— 前端不推断、不缓存判断。
+//   WorkBuddy 改完文件，这里下一次轮询（3 秒）就能看到。
+//
+// ★ 安全：工单里的主题是**用户输入**，一律走 el()/textContent，绝不 innerHTML。
+const BRIEF_STATUS_CN = { pending: '待处理', ready: '就绪', running: '出片中', done: '已出片', failed: '失败' };
+const BRIEF_STATUS_HINT = {
+  pending: '还没生成内容 —— 在对话里说「处理工单」，WorkBuddy 会按该风格的 STYLE.md 生成内容并把工单改成就绪。',
+  ready: '内容已就绪，可以出片了。',
+  running: '正在出片，进度看「实时日志」面板。',
+  done: '成片已生成。',
+  failed: '上次出片没成功，可以重试。',
+};
+
+function briefStyleLabel(slug) {
+  const s = (state.briefStyles || []).find((x) => x.slug === slug);
+  return s ? `${s.cn}（${s.slug}）` : slug;
+}
+
+/** 把 4 个白名单风格填进下拉。**只在下拉为空时填**，免得轮询每 3 秒重建一次、把用户的选择顶掉。 */
+function fillBriefStyles() {
+  const sel = $('briefSlug');
+  if (!sel || sel.options.length || !state.briefStyles.length) return;
+  for (const s of state.briefStyles) {
+    const o = document.createElement('option');
+    o.value = s.slug;
+    o.textContent = `${s.cn}（${s.slug}）`;     // 中文名 + slug：中文给人看，slug 给「处理工单」用
+    o.title = `画面主体固定为库内已有的那个（字段 ${s.subjectField}）；主题只改文案 / 配色 / 细节 / 台词。`;
+    sel.appendChild(o);
+  }
+  syncBriefLang();      // 风格就位后立刻把语言选项对上（异步，不阻塞渲染）
+}
+
+// ── 语言版本（中文版 / 英文版）──────────────────────────────
+//
+// ★ 选项**不是前端硬编码的**：语言清单来自库侧 core/lang/lang.mjs 的 LANGS，「这个风格有没有某语言版本」
+//   按编排器 --lang 的换名规则（content=X.json → X.<code>.json）探测 —— 两件事都在服务端
+//   GET /api/langs?slug= 里做完（见 lib/langs.mjs），前端只消费结果、不自己判、不写死 en/zh。
+// ★ 默认中文版（用户是中文用户，这个功能就是为中文版做的）；该风格没有中文内容文件时，服务端只返回
+//   英文版 → 这里只显示「英文版」并给一句提示（不是静默少一项）。
+// ★ 每 3 秒的工单轮询也会走到这里：按 slug 缓存结果，且只在「可选语言集合变了」时重建选项 ——
+//   绝不把用户已经选好的值顶掉。
+async function ensureLangs(slug) {
+  if (state.langCache.has(slug)) return state.langCache.get(slug);
+  try {
+    const d = await api('/api/langs?slug=' + encodeURIComponent(slug));
+    state.langCache.set(slug, d);
+    return d;
+  } catch (e) {
+    return null;      // 读不到就退化成「只有默认语言」——不阻断出片
+  }
+}
+
+async function syncBriefLang() {
+  const sel = $('briefLang');
+  const hint = $('briefLangHint');
+  if (!sel) return;
+  const slug = $('briefSlug').value;
+  if (!slug) {
+    sel.textContent = '';
+    sel.disabled = true;
+    if (hint) hint.textContent = '';
+    return;
+  }
+
+  const d = await ensureLangs(slug);
+  if (!d) {
+    sel.disabled = true;
+    if (hint) hint.textContent = '读取语言版本失败（不选语言 = 默认英文版，出片照常）';
+    return;
+  }
+
+  const codes = d.codes || [];
+  const sig = codes.join(',');
+  if (sel.dataset.sig !== sig) {                 // 只在可选集合变了时重建（不顶掉用户的选择）
+    sel.textContent = '';
+    for (const l of d.langs || []) {
+      const o = document.createElement('option');
+      o.value = l.code;
+      o.textContent = l.label || l.code;
+      o.title = `${l.label || l.code}：出片命令会带上 --lang ${l.code}`
+        + (l.files && l.files.length ? `\n该语言的内容文件：${l.files.join('、')}` : '');
+      sel.appendChild(o);
+    }
+    sel.dataset.sig = sig;
+    // 用户上次明确选过的语言优先；该风格没有就退回服务端给的默认（有中文版就是中文版）
+    const want = codes.includes(state.briefLang) ? state.briefLang : d.default;
+    sel.value = want || codes[0] || '';
+  }
+  sel.disabled = codes.length < 2;
+
+  if (hint) {
+    if (codes.length < 2) {
+      const miss = (d.unavailable || []).map((x) => x.label || x.code);
+      hint.textContent = `该风格只有${(d.langs && d.langs[0] ? d.langs[0].label : '一种')}内容文件`
+        + (miss.length ? `（没有 ${miss.join(' / ')} 的内容文件）` : '');
+    } else {
+      hint.textContent = '';
+    }
+    hint.title = d.registryError ? `语言注册表读取有问题：${d.registryError}` : '';
+  }
+}
+
+// ── 输出尺寸（预设比例 + 自定义像素）──────────────────────────
+//
+// ★ 选项**不是前端硬编码的**：比例清单与「比例 → 像素」换算的唯一来源是库侧
+//   core/render/size.mjs（控制台侧 lib/sizes.mjs 代理），经服务端 GET /api/sizes 给出来。
+//   前端只消费结果 —— 库里改了比例，这里刷新页面就跟着变。
+// ★ 默认选中服务端给的 defaultRatio（9:16）。选「自定义」时出现宽 × 高两个数字框，
+//   即时校验（偶数、MIN_SIZE–MAX_SIZE）；非法就禁用「生成工单」并给出提示。
+// ★ 出片时控制台会**显式**传 `--ratio <比例>`（连默认 9:16 也传）或 `--size <WxH>`。
+const CUSTOM_RATIO = '__custom';
+// 自定义像素的上下限。**不在这里当权威**：下面 ensureSizes() 会用 GET /api/sizes 的
+// custom.min / custom.max 覆盖它们（那一路来自库侧 core/render/size.mjs 的 MIN_SIZE / MAX_SIZE）。
+// 这两个初值只是「接口还没回来」时的占位，与库当前值一致（下限 96：16 是编造的，实测 ≤72 必崩）。
+let SIZE_MIN = 96, SIZE_MAX = 8192;
+// 比例比较的容差（相对值）——与服务端 lib/aspects.mjs 的 ASPECT_TOL 一致。
+const ASPECT_TOL = 0.02;
+
+async function ensureSizes() {
+  if (state.sizeCache) return state.sizeCache;
+  try {
+    const d = await api('/api/sizes');
+    state.sizeCache = d;
+    if (d.defaultRatio) state.defaultRatio = d.defaultRatio;
+    state.ratios = d.ratios || [];
+    // 自定义像素的上下限也由服务端给（它读库侧 size.mjs 的 MIN_SIZE / MAX_SIZE）——
+    // 前端不另存一份，库里改了下限，这里刷新即跟着改。
+    if (d.custom) {
+      if (Number.isInteger(d.custom.min)) SIZE_MIN = d.custom.min;
+      if (Number.isInteger(d.custom.max)) SIZE_MAX = d.custom.max;
+      const w = $('briefSizeW'), h = $('briefSizeH');
+      if (w) { w.min = String(SIZE_MIN); w.max = String(SIZE_MAX); }
+      if (h) { h.min = String(SIZE_MIN); h.max = String(SIZE_MAX); }
+    }
+    return d;
+  } catch (e) {
+    return null;      // 读不到就退化成「不传尺寸」——服务端按默认 9:16 处理，不阻断出片
+  }
+}
+
+/** 自定义像素的校验结果：{ok, w, h, error}。空输入按「还没填完」处理（error 非空但措辞友好）。 */
+function checkCustomSize() {
+  const wRaw = ($('briefSizeW') ? $('briefSizeW').value : '').trim();
+  const hRaw = ($('briefSizeH') ? $('briefSizeH').value : '').trim();
+  if (!wRaw || !hRaw) return { ok: false, error: '填宽和高两个数字（如 1080 × 1920）' };
+  if (!/^\d+$/.test(wRaw) || !/^\d+$/.test(hRaw)) return { ok: false, error: '宽和高都必须是整数' };
+  const w = Number(wRaw), h = Number(hRaw);
+  if (w < SIZE_MIN || w > SIZE_MAX || h < SIZE_MIN || h > SIZE_MAX) {
+    return { ok: false, error: `宽和高都要在 ${SIZE_MIN}–${SIZE_MAX} 之间` };
+  }
+  if (w % 2 || h % 2) return { ok: false, error: '宽和高都必须是**偶数**（H.264 编码要求，如 1080 × 1920）' };
+  return { ok: true, w, h };
+}
+
+/** 当前表单选的尺寸 → {ratio, size}（喂给 POST /api/briefs）。非法时 size 为 null。 */
+function currentSizeChoice() {
+  const sel = $('briefRatio');
+  const v = sel ? sel.value : '';
+  if (v === CUSTOM_RATIO) {
+    const c = checkCustomSize();
+    return { ratio: state.defaultRatio, size: c.ok ? `${c.w}x${c.h}` : null, custom: true, ok: c.ok, error: c.error };
+  }
+  return { ratio: v || state.defaultRatio, size: null, custom: false, ok: true, error: null };
+}
+
+/** 把比例下拉填好（预设 + 自定义）。**只在选项集合变了时重建**，不顶掉用户的选择。 */
+async function fillBriefRatios() {
+  const sel = $('briefRatio');
+  if (!sel) return;
+  const d = await ensureSizes();
+  const hint = $('briefRatioHint');
+
+  if (!d || !state.ratios.length) {
+    // 读不到清单：不硬编码兜底，只禁用下拉并如实说明（服务端仍会按默认 9:16 出片）。
+    sel.textContent = '';
+    sel.disabled = true;
+    if (hint) hint.textContent = '读取尺寸清单失败（不选 = 服务端按默认 9:16 出片）';
+    return;
+  }
+
+  const sig = state.ratios.map((r) => r.id).join(',');
+  if (sel.dataset.sig !== sig) {
+    sel.textContent = '';
+    for (const r of state.ratios) {
+      const o = document.createElement('option');
+      o.value = r.id;
+      o.textContent = r.label || r.id;
+      o.title = `${r.label || r.id}：出片命令会带上 --ratio ${r.id}`
+        + (r.pixels ? `（${r.w} × ${r.h}）` : '');
+      sel.appendChild(o);
+    }
+    const oc = document.createElement('option');
+    oc.value = CUSTOM_RATIO;
+    oc.textContent = '自定义尺寸…';
+    oc.title = `自己填宽 × 高（偶数、${SIZE_MIN}–${SIZE_MAX}）；出片命令会带上 --size <宽x高>（优先级高于 --ratio）`;
+    sel.appendChild(oc);
+    sel.dataset.sig = sig;
+    const want = (state.briefRatio === CUSTOM_RATIO || state.ratios.some((r) => r.id === state.briefRatio))
+      ? state.briefRatio : state.defaultRatio;
+    sel.value = want || state.ratios[0].id;
+  }
+  sel.disabled = false;
+  syncBriefSizeUI();      // 由它顺带更新构图能力警告（syncBriefAspectWarn）
+}
+
+/** 比例下拉 / 自定义宽高 → 同步界面：显隐自定义框、更新提示、按校验结果启停「生成工单」。 */
+function syncBriefSizeUI() {
+  const sel = $('briefRatio');
+  const field = $('briefSizeField');
+  const hint = $('briefRatioHint');
+  const shint = $('briefSizeHint');
+  if (!sel) return;
+
+  const custom = sel.value === CUSTOM_RATIO;
+  if (field) field.hidden = !custom;
+
+  let invalid = false;
+  if (custom) {
+    if (!state.briefSizeW) state.briefSizeW = '1080';
+    if (!state.briefSizeH) state.briefSizeH = '1920';
+    if ($('briefSizeW') && !$('briefSizeW').value) $('briefSizeW').value = state.briefSizeW;
+    if ($('briefSizeH') && !$('briefSizeH').value) $('briefSizeH').value = state.briefSizeH;
+    const c = checkCustomSize();
+    invalid = !c.ok;
+    if (hint) hint.textContent = '自定义像素（出片命令带 --size）';
+    if (shint) {
+      shint.textContent = c.ok ? `→ ${c.w} × ${c.h}（出片命令：--size ${c.w}x${c.h}）` : c.error;
+      shint.classList.toggle('bad', !c.ok);
+    }
+    if ($('briefSizeW')) $('briefSizeW').classList.toggle('bad', !c.ok);
+    if ($('briefSizeH')) $('briefSizeH').classList.toggle('bad', !c.ok);
+  } else {
+    const r = state.ratios.find((x) => x.id === sel.value);
+    if (hint) {
+      hint.textContent = r
+        ? `${r.label || r.id}${r.pixels ? `　→ ${r.w} × ${r.h}` : ''}（出片命令：--ratio ${r.id}）`
+        : '';
+    }
+    if (shint) { shint.textContent = ''; shint.classList.remove('bad'); }
+    if ($('briefSizeW')) $('briefSizeW').classList.remove('bad');
+    if ($('briefSizeH')) $('briefSizeH').classList.remove('bad');
+  }
+
+  const btn = $('btnBriefCreate');
+  if (btn) btn.disabled = state.briefBusy || invalid;
+
+  syncBriefAspectWarn();      // 尺寸一变就重核「会不会被裁」（只警告，不禁用出片）
+}
+
+// ── 影片构图能力（防呆：出片前告诉你会被裁）──────────────────
+//
+// ★ 判据**不在前端**：影片模块的 `FILM_META.aspects` 声明由服务端**读源码文本**探测（影片模块是浏览器
+//   ESM，node 不能 import）——见 lib/aspects.mjs 与 GET /api/aspects。风格下拉里那一项带的 `aspects`
+//   就是服务端算好的结果（随 GET /api/briefs 的 styles[] 一起来），前端只消费、不自己判。
+// ★ 没声明 aspects = 只支持 16:9（= 没改造过，给别的尺寸会被裁切）。
+// ★ 这里**只显示警告，不禁用「生成工单」** —— 用户有权坚持出，只是要提前知情（出了片才发现被裁才是真问题）。
+
+/** 当前表单选的尺寸 → 像素 {w,h}（自定义非法时返回 null）。 */
+function currentSizePixels() {
+  const sel = $('briefRatio');
+  if (!sel) return null;
+  if (sel.value === CUSTOM_RATIO) {
+    const c = checkCustomSize();
+    return c.ok ? { w: c.w, h: c.h } : null;
+  }
+  const r = state.ratios.find((x) => x.id === sel.value);
+  return r && r.w && r.h ? { w: r.w, h: r.h } : null;
+}
+
+/** 一组像素是否落在某个比例上（相对容差，与服务端同一条判据）。 */
+function matchesAspect(w, h, ratioId) {
+  const [a, b] = String(ratioId).split(':').map(Number);
+  if (!a || !b) return false;
+  const want = a / b;
+  return Math.abs(w / h - want) / want <= ASPECT_TOL;
+}
+
+/** 按「当前风格 + 当前尺寸」更新警告。选中的尺寸落在支持列表内 → 隐藏。 */
+function syncBriefAspectWarn() {
+  const box = $('briefAspectWarn');
+  const sel = $('briefRatio');
+  if (!box || !sel) return;
+  // ★ 幂等：本函数会被多次调用（尺寸变 / 风格变 / 清单刷新都会重核）—— **先清空容器再重建**，
+  //   否则每调用一次就多堆一个「改用 X」按钮。box.textContent='' 连文本带旧按钮一起清掉。
+  box.textContent = '';
+  const slug = $('briefSlug') ? $('briefSlug').value : '';
+  const st = (state.briefStyles || []).find((s) => s.slug === slug);
+  // 拿不到该风格的 aspects（清单还没读回来 / 服务端没给）→ 不猜、不吓人，按「不警告」处理。
+  if (!st || !st.aspects || !Array.isArray(st.aspects.supported)) { box.hidden = true; box.title = ''; return; }
+  const sup = st.aspects.supported;
+  const px = currentSizePixels();
+  let msg = '';
+  if (px && !sup.some((id) => matchesAspect(px.w, px.h, id))) {
+    const what = sel.value === CUSTOM_RATIO ? `自定义尺寸 ${px.w}×${px.h}` : `${sel.value}（${px.w}×${px.h}）`;
+    msg = `⚠️ ${st.cn}（${slug}）的影片未适配 ${what}：出这个尺寸画面会被裁切，建议改用 ${sup.join(' / ')}。`
+      + (st.aspects.declared ? '' : ' 该影片没写 aspects 声明 = 只支持 16:9。')
+      + ' 仍然可以出片 —— 只是要知道画面会被裁。';
+  }
+  if (!msg) { box.hidden = true; box.title = ''; return; }
+
+  // ★ 把「建议改用的比例」做成**可点的一键修复** —— 光给文本要用户自己去下拉里找再改一次，
+  //   摩擦大到等于没修（警告是「被动文本」时，用户实际不会去改）。
+  // ★ 比例**动态取** sup 的第一个（不写死 16:9）：现在恰好都是 16:9，但别依赖这个巧合。
+  const suggest = sup[0];
+  box.appendChild(el('span', 'baw-msg', msg));
+  const fix = el('button', 'btn ghost small baw-fix', `改用 ${suggest}`);
+  fix.type = 'button';                 // 页面里没有 <form>，仍显式声明，免得将来被当成提交按钮
+  fix.title = `把「输出尺寸」改成 ${suggest}（${st.cn} 的影片按这个比例构图）—— 只改尺寸，不会出片`;
+  fix.addEventListener('click', () => {
+    // ★ 该比例必须在当前下拉里**真的存在**才设：否则会把 select 设成空值（比不改更糟）→ 只提示。
+    if (![...sel.options].some((o) => o.value === suggest)) {
+      toast(`当前尺寸清单里没有 ${suggest}，请手动选一个该风格支持的尺寸`, true);
+      return;
+    }
+    sel.value = suggest;
+    // ★ 派发 change 让既有的监听走完：syncBriefSizeUI → syncBriefAspectWarn 会因此重核，
+    //   尺寸已落在支持列表内 → 警告随之消失。★ 这里**只改尺寸，绝不触发任何出片**。
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  box.appendChild(fix);
+
+  box.hidden = false;
+  box.title = `影片按 1920×1080 的绝对像素构图，给别的尺寸会被裁切（不是重排、也不是留黑边）。\n`
+    + `能力来自影片源码里的 FILM_META.aspects 声明（服务端读源码文本探测，${st.aspects.probe || 'text'}）。\n`
+    + `该风格已知支持：${sup.join(' / ')}。让影片支持多比例的做法见库侧 MAINTAINING.md。`;
+}
+
+async function copyTextTo(text, btn, label) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; }
+  catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch { ok = false; }
+  }
+  const old = btn.textContent;
+  btn.textContent = ok ? '已复制' : '复制失败';
+  btn.classList.toggle('copied', ok);
+  clearTimeout(btn._t);
+  btn._t = setTimeout(() => { btn.textContent = old; btn.classList.remove('copied'); }, 1300);
+  if (ok) toast(`${label}已复制到剪贴板`);
+  else toast('复制失败：浏览器拒绝了剪贴板访问，请手动选中复制', true);
+}
+
+/** 一张工单的行。状态不同 → 给不同的按钮（这是这个界面唯一「有判断」的地方，判据全是服务端给的 status）。 */
+function briefRow(b) {
+  const row = el('div', 'brief ' + b.status);
+  const line = el('div', 'brief-line');
+
+  line.appendChild(el('span', 'status ' + b.status, BRIEF_STATUS_CN[b.status] || b.status));
+  line.appendChild(el('span', 'bslug', briefStyleLabel(b.slug)));
+  const topic = el('span', 'btopic', b.topic);
+  topic.title = b.topic;
+  line.appendChild(topic);
+  line.appendChild(el('span', 'bid', b.id));
+
+  const meta = [];
+  if (b.langCn) meta.push(b.langCn);              // 语言版本（中文版 / 英文版）
+  if (b.sizeDisplay) meta.push('尺寸 ' + b.sizeDisplay);   // 输出尺寸（9:16 或自定义 1080x1920）
+  meta.push(fmtTime(Date.parse(b.createdAt)));
+  if (b.status === 'running' && b.startedAt) meta.push('已跑 ' + fmtDur(Date.parse(b.startedAt), null));
+  else if (b.startedAt && b.endedAt) meta.push('耗时 ' + fmtDur(Date.parse(b.startedAt), Date.parse(b.endedAt)));
+  if (b.runOpts && b.runOpts.length) meta.push('runOpts ' + b.runOpts.join(' '));
+  line.appendChild(el('span', 'bmeta', meta.join(' · ')));
+  line.appendChild(el('span', 'bspacer'));
+
+  if (b.status === 'pending') {
+    // 这是这个界面**最重要**的一个按钮：主题得先被 WorkBuddy 拿到手
+    const copy = el('button', 'btn ghost small', '复制主题');
+    copy.title = '把主题复制到剪贴板，粘到对话里让 WorkBuddy 处理';
+    copy.addEventListener('click', (e) => { e.stopPropagation(); copyTextTo(b.topic, copy, '主题'); });
+    line.appendChild(copy);
+  }
+  if (b.status === 'ready') {
+    const run = el('button', 'btn primary small', '出片');
+    // 命令预览要**如实**反映服务端会拼出的命令行（含语言版本与输出尺寸；
+    // 语言默认 en 不带 --lang；尺寸**总是显式**带 --ratio 或 --size）
+    const langArg = b.lang && b.lang !== state.defaultLang ? ` --lang ${b.lang}` : '';
+    const sizeArg = (b.sizeInfo && b.sizeInfo.isCustom && b.sizeInfo.valid)
+      ? ` --size ${b.sizeDisplay}`
+      : ` --ratio ${b.ratio || state.defaultRatio}`;
+    run.title = `跑 node lemo-make.mjs ${b.slug} --skip-sync ${(b.runOpts || []).join(' ')}${langArg}${sizeArg}`.trim();
+    run.addEventListener('click', (e) => { e.stopPropagation(); runBrief(b.id, run, false); });
+    line.appendChild(run);
+  }
+  if (b.status === 'running') {
+    const lg = el('button', 'btn ghost small', '看日志');
+    lg.title = '把实时日志挂到「实时日志」面板';
+    lg.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!b.jobId) return toast('这张工单没有关联的任务 id', true);
+      attachLog(b.jobId, null);
+      renderJobs();
+    });
+    line.appendChild(lg);
+  }
+  if (b.status === 'done') {
+    if (b.film && b.filmUrl) {
+      const play = el('button', 'btn ghost small', '▶ 播放');
+      play.addEventListener('click', (e) => { e.stopPropagation(); openPlayer(b.slug, b.film, briefFilmUrl(b)); });
+      line.appendChild(play);
+      line.appendChild(el('span', 'bfilm', b.film));
+    } else {
+      line.appendChild(el('span', 'bmeta', '成片文件没找到（可能被移走或改名了）'));
+    }
+  }
+  if (b.status === 'failed') {
+    const retry = el('button', 'btn primary small', '重试');
+    retry.title = '重新出片（工单回到 running；不会重新生成内容）';
+    retry.addEventListener('click', (e) => { e.stopPropagation(); runBrief(b.id, retry, true); });
+    line.appendChild(retry);
+  }
+  if (b.status !== 'running') {
+    const del = el('button', 'btn danger small', '删除');
+    del.title = '删掉这张工单（不会删成片）';
+    del.addEventListener('click', (e) => { e.stopPropagation(); delBrief(b); });
+    line.appendChild(del);
+  }
+  row.appendChild(line);
+
+  // ★ 影片构图能力警告（服务端算好的派生字段）：这张工单选的尺寸落不落在这部影片**真的能构图**的比例上。
+  //   服务端已按工单的 --film（若有）判过；这里只显示，不重复判、也**不禁用**任何按钮。
+  if (b.aspectWarning) {
+    const w = el('div', 'bwarn', '⚠️ ' + b.aspectWarning);
+    w.title = b.aspectWarningDetail || b.aspectWarning;
+    row.appendChild(w);
+  }
+
+  // 说明行：把「现在该做什么」写清楚（pending 必须说清去对话里说「处理工单」）
+  const notes = [BRIEF_STATUS_HINT[b.status] || ''];
+  if (b.error) notes.push('错误：' + b.error);
+  if (b.notes) notes.push('备注：' + b.notes);
+  if (b.contentRel) notes.push('内容 ' + b.contentRel);
+  if (b.linesRel) notes.push('台词 ' + b.linesRel);
+  const note = el('div', 'brief-note', notes.filter(Boolean).join(' · '));
+  note.title = notes.filter(Boolean).join('\n');
+  row.appendChild(note);
+  return row;
+}
+
+function renderBriefs() {
+  const box = $('briefs');
+  if (!box) return;
+  box.textContent = '';
+  $('briefCount').textContent = state.briefs.length ? String(state.briefs.length) : '';
+
+  if (!state.briefs.length) {
+    const e = el('div', 'empty');
+    e.appendChild(el('div', null, '还没有工单。'));
+    e.appendChild(el('div', 'empty-sub',
+      '在上面输入一个主题、选风格 / 语言版本 / 输出尺寸 → 点「生成工单」；然后在对话里说「处理工单」，内容就绪后回到这里点「出片」。'));
+    box.appendChild(e);
+    return;
+  }
+  for (const b of state.briefs) box.appendChild(briefRow(b));
+}
+
+// 竞态护栏：3 秒轮询 / SSE / 建工单 / 出片 / 删除等多处并发，
+// 只让最后一次请求的结果上屏，免得旧响应盖掉 briefs/briefStyles/defaultLang/defaultRatio。
+let loadBriefsSeq = 0;
+
+async function loadBriefs() {
+  const seq = ++loadBriefsSeq;
+  try {
+    const d = await api('/api/briefs');
+    if (seq !== loadBriefsSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
+    state.briefs = d.briefs || [];
+    state.briefStyles = d.styles || [];
+    if (d.defaultLang) state.defaultLang = d.defaultLang;   // 判据来自服务端，前端不写死 'en'
+    if (d.defaultRatio) state.defaultRatio = d.defaultRatio; // 默认输出比例（9:16）—— 同理不写死
+    fillBriefStyles();
+    fillBriefRatios();                                       // 尺寸下拉（选项来自 /api/sizes）
+    renderBriefs();
+    if (d.disabledReason) {
+      $('briefHint').textContent = '工单目录不可用：' + d.disabledReason;
+    }
+  } catch (e) {
+    if (seq !== loadBriefsSeq) return;   // 同上：旧的失败信息也不得盖掉新状态
+    const box = $('briefs');
+    if (!box) return;
+    box.textContent = '';
+    box.appendChild(el('div', 'empty', '读取工单失败：' + e.message));
+  }
+}
+
+async function createBriefFromForm() {
+  if (state.briefBusy) return;
+  const topic = $('briefTopic').value.trim();
+  const slug = $('briefSlug').value;
+  // 语言版本：值就是库侧 LANGS 的键（en / zh）。下拉还没填好时留空 → 服务端按默认语言处理。
+  const lang = $('briefLang') ? $('briefLang').value : '';
+  // 输出尺寸：预设比例 或 自定义像素（出片时控制台会显式传 --ratio / --size）。
+  const sizeChoice = currentSizeChoice();
+  if (!topic) { toast('先写一个主题', true); $('briefTopic').focus(); return; }
+  if (!slug) { toast('还没有可选风格（工单目录可能不可用）', true); return; }
+  if (sizeChoice.custom && !sizeChoice.ok) {
+    toast('自定义尺寸不合法：' + (sizeChoice.error || ''), true);
+    if ($('briefSizeW')) $('briefSizeW').focus();
+    return;
+  }
+
+  const btn = $('btnBriefCreate');
+  state.briefBusy = true;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '生成中…';
+  try {
+    const d = await api('/api/briefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic, slug, lang,
+        ratio: sizeChoice.ratio,
+        ...(sizeChoice.size ? { size: sizeChoice.size } : {}),
+      }),
+    });
+    $('briefTopic').value = '';
+    $('briefHint').textContent = `已建工单 ${d.brief.id}（${d.brief.langCn || d.brief.lang}，${d.brief.sizeDisplay}）—— 在对话里说「处理工单」`;
+    toast(`工单已创建（${d.brief.id}，${d.brief.langCn || d.brief.lang}，尺寸 ${d.brief.sizeDisplay}）。在对话里说「处理工单」让 WorkBuddy 生成内容`);
+    await loadBriefs();
+  } catch (e) {
+    toast('建工单失败：' + e.message, true);
+  } finally {
+    state.briefBusy = false;
+    btn.textContent = old;
+    syncBriefSizeUI();      // 由它决定按钮该不该禁用（自定义尺寸非法时仍禁用）
+  }
+}
+
+/** 出片 / 重试。retry=true 时服务端才允许 failed → running（见 server.mjs:apiBriefRun）。 */
+async function runBrief(id, btn, retry) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '启动中…';
+  try {
+    // ★ 音色 / 语速：与主表单**共用同一份本机偏好**（loadVoicePref 读的就是 VOICE_KEY / SPEED_KEY），
+    //   也共用同一处判据（voiceCliOpts 负责「--q 里手写了就让用户赢」与 0.5–2 的范围校验）——
+    //   于是「主题出片」入口出的片和「开始生成」入口出的片音色一致，不会两个入口行为不同。
+    //   ★ retry 不能被丢掉（服务端只有带它才允许 failed → running）。
+    const { opts: vOpts } = voiceCliOpts('');
+    const body = retry ? { retry: true } : {};
+    for (let i = 0; i + 1 < vOpts.length; i += 2) {
+      if (vOpts[i] === '--voice') body.voice = vOpts[i + 1];
+      else if (vOpts[i] === '--speed') body.speed = Number(vOpts[i + 1]);
+    }
+    const d = await api('/api/briefs/' + encodeURIComponent(id) + '/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const w = (d.warnings || []);
+    toast(w.length ? `已开始出片（注意：${w[0]}）` : `已开始出片：${id}`);
+    for (const s of w) $('briefHint').textContent = '⚠️ ' + s;
+    await loadBriefs();
+    await loadJobs();
+    if (d.job && d.job.id) { attachLog(d.job.id, d.job.opts); renderJobs(); }
+  } catch (e) {
+    toast('出片失败：' + e.message, true);
+    await loadBriefs();          // 409 时把最新状态拉回来（可能已被别处改过）
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+async function delBrief(b) {
+  if (!confirm(`删除工单 ${b.id}（主题：${b.topic}）？\n\n只删工单，不删成片、不删已生成的内容文件。`)) return;
+  try {
+    await api('/api/briefs/' + encodeURIComponent(b.id), { method: 'DELETE' });
+    toast('工单已删除');
+  } catch (e) {
+    toast('删除失败：' + e.message, true);
+  }
+  await loadBriefs();
+}
+
 // ── 成片库（排序 / 筛选 / 重新生成 / 打开目录）───────────────
+//
+// ★ 库里现在有**两类**条目，服务端用 source/slug 区分（见 server.mjs:apiFilms / dubFilms）：
+//   · 风格成片：`slug = 风格名` —— 能「重新生成」（把风格与上次的参数填回启动表单）、能「打开目录」。
+//   · 文案出片：`source:'dub'` + `slug:null` —— 它**没有风格 slug**，所以任何「按 slug 找风格」的
+//     操作（重新生成 / 打开目录）对它都没有意义，点了只会报错 → 这两类按钮对 dub 条目**不渲染**。
+//   ★ 不是禁用而是**不渲染**：一个点了必然报错的按钮，摆在那里就是误导。
+function filmIsDub(f) {
+  return !!(f && (f.source === 'dub' || !f.slug));
+}
+
+/** 控制台出片的产物（服务端 `jobFilms` 标了 `source:'job'`）：落在 `_jobs\<任务id>\`，不是样板片。 */
+function filmIsJob(f) {
+  return !!(f && f.source === 'job');
+}
+
+/**
+ * 控制台出片的成片 URL —— 它的路由比样板片**深一层**（`/api/films/_jobs/<任务id>/<文件>`）。
+ *
+ * ★ 为什么需要它：任务行 / 工单行的「▶ 成片」原本按 `<slug>` 拼 URL（`/api/films/<slug>/<文件>`），
+ *   那是**样板片**路由。控制台出片现在写进 `_jobs\<任务id>\`（见 lib/jobs.mjs:jobOutDir），
+ *   产物不在样板片目录里 ⇒ 照旧拼法会打开样板片（或 404）。
+ * ★ 产物不在 `_jobs` 下（用户自带 `--out` 落在别处）→ 返回 null，调用方退回既有拼法。
+ */
+function jobFilmUrl(j) {
+  if (!j || !j.film || !/\\_jobs\\/.test(String(j.film))) return null;
+  const name = String(j.film).replace(/\\/g, '/').split('/').pop();
+  return `/api/films/_jobs/${encodeURIComponent(j.id)}/${encodeURIComponent(name)}`;
+}
+
+/** 工单的成片 URL：优先用**这次任务真实产出的那份**（从 state.jobs 里按 jobId 找），退回服务端给的 filmUrl。 */
+function briefFilmUrl(b) {
+  const j = (state.jobs || []).find((x) => x.id === b.jobId);
+  return jobFilmUrl(j) || b.filmUrl;
+}
+
+/** 成片标题：dub 条目没有风格名，用「文案出片」+ 出片目录名代替。 */
+function filmTitle(f) {
+  if (filmIsDub(f)) return '文案出片';
+  const s = state.styles.find((x) => x.slug === f.slug);
+  return (s && s.nameCn) || f.slug;
+}
+
+/** 播放器标题与排序用的稳定 key（dub 条目没有 slug，用出片目录名兜底）。 */
+function filmKey(f) {
+  return filmIsDub(f) ? `文案出片 ${f.name || ''}`.trim() : String(f.slug);
+}
+
 function sortedFilms() {
   const q = (state.filmQuery || '').trim().toLowerCase();
   const list = state.films.filter((f) => !q
     || (f.slug || '').toLowerCase().includes(q)
-    || (f.file || '').toLowerCase().includes(q));
+    || (f.file || '').toLowerCase().includes(q)
+    || (f.name || '').toLowerCase().includes(q)        // dub 条目：按出片目录名（时间戳）也能搜到
+    || (filmIsDub(f) && '文案出片'.includes(q)));
   const s = state.filmSort;
   list.sort((a, b) => {
     if (s === 'size') return b.size - a.size;
-    if (s === 'slug') return String(a.slug).localeCompare(String(b.slug)) || b.mtime - a.mtime;
+    if (s === 'slug') return filmKey(a).localeCompare(filmKey(b)) || b.mtime - a.mtime;
     return b.mtime - a.mtime;                       // 默认：时间，新 → 旧
   });
   return list;
@@ -1354,32 +4014,56 @@ function renderFilms() {
   }
 
   for (const f of shown) {
-    const s = state.styles.find((x) => x.slug === f.slug);
-    const c = el('div', 'film');
+    const dub = filmIsDub(f);
+    const job = filmIsJob(f);
+    const s = dub ? null : state.styles.find((x) => x.slug === f.slug);
+    const c = el('div', 'film' + (dub ? ' dub' : ''));
 
-    c.appendChild(el('div', 'fslug', s && s.nameCn ? s.nameCn : f.slug));
+    const title = el('div', 'fslug', filmTitle(f));
+    c.appendChild(title);
     c.appendChild(el('div', 'fmeta', `${fmtSize(f.size)} · ${fmtTime(f.mtime)}`));
     c.appendChild(el('div', 'fmeta', f.file));
-    if (s && s.nameCn) c.appendChild(el('div', 'fmeta', f.slug));
+    // dub 条目：把出片目录名（含时间戳）显出来 —— 用户在资源管理器里就是按它找的
+    if (dub) c.appendChild(el('div', 'fmeta', `dub\\${f.name}`));
+    else if (s && s.nameCn) c.appendChild(el('div', 'fmeta', f.slug));
+    // ★ 控制台出片：把出片目录（= 任务 id）显出来 —— 它在 `_jobs\<任务id>\`，不是样板片目录
+    if (job) c.appendChild(el('div', 'fmeta', `_jobs\\${f.jobId}`));
 
     const acts = el('div', 'factions');
 
     const play = el('button', 'btn ghost small', '播放');
-    play.addEventListener('click', (e) => { e.stopPropagation(); openPlayer(f.slug, f.file, f.url); });
+    play.addEventListener('click', (e) => { e.stopPropagation(); openPlayer(filmKey(f), f.file, f.url); });
     acts.appendChild(play);
 
-    const regen = el('button', 'btn ghost small', '重新生成');
-    regen.title = '把这个风格和它上次用的参数填回启动表单（不会自动启动）';
-    regen.addEventListener('click', (e) => { e.stopPropagation(); regenFilm(f.slug); });
-    acts.appendChild(regen);
+    // ★ 只有「风格成片」才有重新生成 / 打开目录 —— dub 条目没有 slug，这两个操作无从下手
+    if (!dub) {
+      const regen = el('button', 'btn ghost small', '重新生成');
+      regen.title = '把这个风格和它上次用的参数填回启动表单（不会自动启动）';
+      regen.addEventListener('click', (e) => { e.stopPropagation(); regenFilm(f.slug); });
+      acts.appendChild(regen);
 
-    const open = el('button', 'btn ghost small', '打开目录');
-    open.title = `在资源管理器里打开 D:\\lemo-films\\${f.slug}`;
-    open.addEventListener('click', (e) => { e.stopPropagation(); revealDir(f.slug); });
-    acts.appendChild(open);
+      if (job) {
+        // ★ 控制台出片的落盘目录是 `_jobs\<任务id>`，与风格样板目录 `D:\lemo-films\<slug>` **不是一回事**。
+        //   这里不摆「打开目录」（它按 slug 开，会开到样板目录，误导）—— 改为如实标出真实位置。
+        const note = el('span', 'film-note', `控制台出片 · 任务 ${f.jobId}`);
+        note.title = `这条片子由控制台出片任务 ${f.jobId} 产出，落在 D:\\lemo-films\\_jobs\\${f.jobId}`
+          + '（与风格样板目录 D:\\lemo-films\\<风格> 不是一回事）。';
+        acts.appendChild(note);
+      } else {
+        const open = el('button', 'btn ghost small', '打开目录');
+        open.title = `在资源管理器里打开 D:\\lemo-films\\${f.slug}`;
+        open.addEventListener('click', (e) => { e.stopPropagation(); revealDir(f.slug); });
+        acts.appendChild(open);
+      }
+    } else {
+      // 不摆一个点了必然报错的按钮，但把「为什么没有」说清楚（用户有权知道）
+      const note = el('span', 'film-note', '无风格 slug → 不能重新生成');
+      note.title = '文案出片不是由某个风格生成的，没有可回填的风格参数；要重做请回「文案出片」卡片再出一次。';
+      acts.appendChild(note);
+    }
 
     c.appendChild(acts);
-    c.addEventListener('click', () => openPlayer(f.slug, f.file, f.url));
+    c.addEventListener('click', () => openPlayer(filmKey(f), f.file, f.url));
     box.appendChild(c);
   }
 }
@@ -1427,6 +4111,20 @@ function applyOptsToForm(opts) {
     else if (o === '--q') { $('fQ').value = val(); applied.push(o + ' ' + val()); i++; }
     else if (o === '--grain') { $('fGrain').value = val(); applied.push(o + ' ' + val()); i++; }
     else if (o === '--out') { $('fOut').value = val(); applied.push(o + ' ' + val()); i++; }
+    // 声音版块新增的两个选项：也映射回表单，否则「重新生成」会谎报「表单不支持、已忽略」
+    else if (o === '--voice') {
+      state.voiceSel = val() || '';
+      saveVoicePref(VOICE_KEY, state.voiceSel);
+      renderVoices(); renderVoiceCurrent();
+      applied.push(o + ' ' + val()); i++;
+    }
+    else if (o === '--speed') {
+      state.voiceSpeed = val() || '';
+      saveVoicePref(SPEED_KEY, state.voiceSpeed);
+      if ($('fVoiceSpeed')) $('fVoiceSpeed').value = state.voiceSpeed || '1.0';
+      renderVoiceCurrent();
+      applied.push(o + ' ' + val()); i++;
+    }
     else skipped.push(o);
   }
   return { applied, skipped };
@@ -1445,13 +4143,19 @@ async function revealDir(slug) {
   }
 }
 
+// 竞态护栏：SSE / pollDub / 手动刷新可重叠，只让最后一次请求的结果上屏。
+let loadFilmsSeq = 0;
+
 async function loadFilms() {
+  const seq = ++loadFilmsSeq;
   try {
     const d = await api('/api/films');
+    if (seq !== loadFilmsSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
     state.films = d.films || [];
     renderFilms();
     renderStyles($('search').value);
   } catch (e) {
+    if (seq !== loadFilmsSeq) return;   // 同上：旧的失败信息也不得盖掉新状态
     $('films').textContent = '';
     $('films').appendChild(el('div', 'empty', '读取成片失败：' + e.message));
   }
@@ -1479,9 +4183,14 @@ function closePlayer() {
 }
 
 // ── 风格列表徽标刷新（出片后要更新）────────────────────────
+// 竞态护栏：与 loadFilms 同一批触发点，只让最后一次请求的结果上屏。
+let loadStylesBadgesSeq = 0;
+
 async function loadStylesBadges() {
+  const seq = ++loadStylesBadgesSeq;
   try {
     const d = await api('/api/demos');
+    if (seq !== loadStylesBadgesSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
     state.styles = d.styles || [];
     state.categories = d.categories || [];      // 空 = 服务端解析失败 → renderStyles 自动退回扁平列表
     renderStyles($('search').value);
@@ -1554,7 +4263,192 @@ function bind() {
   // ⚠️ 必须包一层：直接传 startRun 会把 MouseEvent 当成 force 参数（真值）→ 预检被跳过
   $('btnRun').addEventListener('click', () => startRun(false));
   $('btnRefreshJobs').addEventListener('click', loadJobs);
+  // 主题出片（工单）
+  $('btnRefreshBriefs').addEventListener('click', loadBriefs);
+  $('btnBriefCreate').addEventListener('click', createBriefFromForm);
+  // 换风格 → 语言选项跟着换（哪个风格有哪些语言版本由服务端 /api/langs 说了算）
+  //           同时重核构图能力（不同风格支持的输出比例不同）
+  $('briefSlug').addEventListener('change', () => { syncBriefLang(); syncBriefAspectWarn(); });
+  $('briefLang').addEventListener('change', (e) => { state.briefLang = e.target.value; });
+  // 输出尺寸：换比例 → 同步界面（自定义框显隐 + 校验）；自定义宽高即时校验（非法就禁用「生成工单」）
+  $('briefRatio').addEventListener('change', (e) => {
+    state.briefRatio = e.target.value;
+    syncBriefSizeUI();
+  });
+  for (const id of ['briefSizeW', 'briefSizeH']) {
+    if (!$(id)) continue;
+    $(id).addEventListener('input', (e) => {
+      if (id === 'briefSizeW') state.briefSizeW = e.target.value.trim();
+      else state.briefSizeH = e.target.value.trim();
+      syncBriefSizeUI();
+    });
+  }
+  $('briefTopic').addEventListener('keydown', (e) => {
+    // ★ Ctrl+Enter 交给全局处理器（它跑的是「启动任务」），这里只管裸 Enter
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) createBriefFromForm();
+  });
   $('btnRefreshFilms').addEventListener('click', () => { loadFilms(); });
+  // 声音（配音音色）：刷新清单 / 语速输入（改了要立刻反映到命令预览上）
+  if ($('btnRefreshVoices')) $('btnRefreshVoices').addEventListener('click', () => loadVoices(false));
+  if ($('btnVoiceTest')) $('btnVoiceTest').addEventListener('click', startVoiceTest);
+  // 导入新音色：折叠区**首次展开时**才拉源目录（收起时不该为一个低频功能多打一次接口）
+  if ($('voiceImport')) {
+    $('voiceImport').addEventListener('toggle', (e) => {
+      if (e.target.open && state.vSources === null) loadVoiceSources();
+    });
+  }
+  if ($('btnVoiceSrcRefresh')) $('btnVoiceSrcRefresh').addEventListener('click', loadVoiceSources);
+  if ($('vtText')) $('vtText').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); startVoiceTest(); }
+  });
+  if ($('fVoiceSpeed')) {
+    $('fVoiceSpeed').addEventListener('input', (e) => {
+      state.voiceSpeed = e.target.value.trim();
+      saveVoicePref(SPEED_KEY, state.voiceSpeed);
+      renderVoiceCurrent();
+      syncPreview();
+    });
+  }
+  // 文案出片：形态切换 / 断句预览 / 风格 / 分析 / 上传素材 / 参数 / 出片
+  if ($('dubScript')) {
+    $('dubScript').addEventListener('input', () => {
+      renderDubScriptHint();
+      // ★ 文案改了 → 之前那份断句与那份分析都不再对应当前文案，**收起来**
+      //   （别让用户对着旧断句出片，也别让他拿旧分析判断「系统理解得对不对」）
+      if (state.dubPreview) { state.dubPreview = null; renderDubLines(); }
+      if (state.dubAnalysis) { state.dubAnalysis = null; renderDubAnalysis(); }
+    });
+  }
+  if ($('dubMode')) {
+    for (const b of document.querySelectorAll('#dubMode .dub-mode-btn')) {
+      b.addEventListener('click', () => setDubMode(b.dataset.mode));
+    }
+  }
+  if ($('dubStyle')) {
+    $('dubStyle').addEventListener('change', (e) => {
+      state.dubStyle = e.target.value;
+      renderDubStyleHint();
+    });
+  }
+  // 文案出片的输出尺寸（比例下拉 + 自定义宽高）——与「主题出片」同一套交互
+  if ($('dubRatio')) {
+    $('dubRatio').addEventListener('change', (e) => {
+      state.dubRatio = e.target.value;
+      syncDubSizeUI();
+    });
+  }
+  for (const id of ['dubSizeW', 'dubSizeH']) {
+    if (!$(id)) continue;
+    $(id).addEventListener('input', (e) => {
+      if (id === 'dubSizeW') state.dubSizeW = e.target.value.trim();
+      else state.dubSizeH = e.target.value.trim();
+      syncDubSizeUI();
+    });
+  }
+  if ($('btnDubAnalyze')) $('btnDubAnalyze').addEventListener('click', analyzeDub);
+  if ($('btnDubPreview')) $('btnDubPreview').addEventListener('click', previewDub);
+  if ($('btnDubRefresh')) $('btnDubRefresh').addEventListener('click', loadDubSources);
+  if ($('btnDubPick')) $('btnDubPick').addEventListener('click', () => $('dubFile').click());
+  if ($('dubFile')) {
+    $('dubFile').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      uploadDubFile(f);
+      e.target.value = '';      // 清空，好让同一个文件再选一次也能触发 change
+    });
+  }
+  if ($('dubDrop')) {
+    const drop = $('dubDrop');
+    // ★ dragover 必须 preventDefault，否则浏览器会把拖进来的视频**直接打开**（默认行为），页面就跳走了
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('over');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      uploadDubFile(f);
+    });
+    drop.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;   // 「选择文件」按钮自己处理
+      if ($('dubFile')) $('dubFile').click();
+    });
+  }
+  // SRT：与视频同一套交互（选/拖/复用已上传/清除）
+  if ($('btnDubSrtPick')) $('btnDubSrtPick').addEventListener('click', () => $('dubSrtFile').click());
+  if ($('dubSrtFile')) {
+    $('dubSrtFile').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      uploadDubSrtFile(f);
+      e.target.value = '';
+    });
+  }
+  if ($('dubSrtDrop')) {
+    const drop = $('dubSrtDrop');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('over');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      uploadDubSrtFile(f);
+    });
+    drop.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      if ($('dubSrtFile')) $('dubSrtFile').click();
+    });
+  }
+  if ($('dubSrcSel')) {
+    $('dubSrcSel').addEventListener('change', (e) => {
+      const tok = e.target.value;
+      state.dubVideoToken = tok;
+      const u = dubUploadsOfKind('video').find((x) => x.token === tok);
+      state.dubVideoName = u ? u.name : '';
+      renderDubVideoHint();
+      syncDubCropWarn();       // 换了一条素材 → 重核「会不会被裁」
+    });
+  }
+  if ($('dubSrtSel')) {
+    $('dubSrtSel').addEventListener('change', (e) => {
+      const tok = e.target.value;
+      state.dubSrtToken = tok;
+      const u = dubUploadsOfKind('srt').find((x) => x.token === tok);
+      state.dubSrtName = u ? u.name : '';
+      renderDubSrtHint();
+    });
+  }
+  if ($('btnDubClear')) {
+    $('btnDubClear').addEventListener('click', () => {
+      state.dubVideoToken = '';
+      state.dubVideoName = '';
+      if ($('dubSrcSel')) $('dubSrcSel').value = '';
+      state.dubUpload = { busy: false, pct: 0, name: '', error: '' };
+      renderDubUpload();
+      renderDubVideoHint();
+      syncDubCropWarn();       // 素材清掉了 → 提示也该跟着消失
+      toast('已清除口播素材');
+    });
+  }
+  if ($('btnDubSrtClear')) {
+    $('btnDubSrtClear').addEventListener('click', () => {
+      state.dubSrtToken = '';
+      state.dubSrtName = '';
+      if ($('dubSrtSel')) $('dubSrtSel').value = '';
+      state.dubSrtUpload = { busy: false, pct: 0, name: '', error: '' };
+      renderDubSrtUpload();
+      renderDubSrtHint();
+      toast('已清除 SRT —— 出片时自动对齐（优先 ASR）');
+    });
+  }
+  if ($('dubVoice')) {
+    $('dubVoice').addEventListener('change', (e) => {
+      state.dubVoiceOverride = e.target.value;
+      renderDubVoiceHint();
+    });
+  }
+  // ★ 形态 2 的限幅开关：只更新提示（勾选时才明说「音轨会被重编码」），不改别的。
+  if ($('dubKeepLimit')) {
+    $('dubKeepLimit').addEventListener('change', () => renderDubLimitHint());
+  }
+  if ($('btnDubRun')) $('btnDubRun').addEventListener('click', startDubRun);
   $('btnRefreshEnv').addEventListener('click', () => loadEnv(true));
   // 首次运行向导
   $('btnSetupRefresh').addEventListener('click', () => refreshAfterSetup());
@@ -1690,12 +4584,22 @@ function bind() {
 // ── 启动 ────────────────────────────────────────────────────
 async function boot() {
   initTheme();          // ★ 默认深色；只有本机明确选过浅色才切（先于渲染，避免闪一下）
+  loadVoicePref();      // ★ 先读本机声音偏好：它会进启动表单的命令预览（--voice / --speed）
   bind();
   syncPreview();
   updateBatchBar();
-  await Promise.all([loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs()]);
+  renderDubScriptHint();   // 文案字数提示（还没输入时也要显示「0 字」而不是空白）
+  renderDubMode();         // 形态（默认「仅文案出片」）—— 它决定下面显示哪些字段
+  renderDubState();        // 出片区初始收起
+  await Promise.all([
+    loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs(),
+    loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(),
+  ]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）
   setInterval(() => { loadJobs(); }, 3000);
+  // 工单也轮询：WorkBuddy 是**在控制台外面**改工单文件的（改完文件控制台看不见别的东西），
+  // 所以这里必须自己定期重读 —— 否则用户得手动点「刷新」才看得到「内容已就绪」。
+  setInterval(() => { loadBriefs(); }, 3000);
   // 环境每 60 秒刷一次（服务端缓存 30 秒）。★ 演练模式下不自动刷，免得把合成结果换成真实结果。
   if (!SIM) {
     setInterval(() => { loadEnv(false); }, 60000);

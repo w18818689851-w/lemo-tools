@@ -22,6 +22,19 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+// ── 风格特质档案（style-dna）——「主题+风格」这条通路也读**同一个**知识库（约定一）──
+// ★ 复用 lib/style-dna-reader.mjs（与 dub.mjs 是**同一个**读取入口），绝不另建一套读取。
+// ★ 只读、缺失即降级：读不到 / 坏文件 / 非法 slug → null，调用方按「无档案」继续
+//   ⇒ 档案缺失时行为与改动前逐字节一致（DNA 是增强，不是替代）。
+import { readStyleDna, summarizeStyleDna, describeStyleDna } from './lib/style-dna-reader.mjs';
+// ★ 风格 Skill 文档（11 节制作方案）—— 与 dub.mjs 共用**同一个**读取入口，不另建一套。
+import { readStyleSkill, summarizeStyleSkill, describeStyleSkill } from './lib/style-skill-reader.mjs';
+// ★ 出片前的显存预检 + 自动腾挪 —— 与 dub.mjs 的 TTS 前守卫是**同一个**接口、**同一套**语义。
+//   主题通路的 TTS 在 WSL 里跑，但显存判据（nvidia-smi）读的是 **Windows** 这张卡，
+//   所以守卫只能在 Windows 侧 JS 里调，不能塞进 WSL 的 bash 脚本（那里读不到这张卡）。
+//   调用点在下面「音频链路」之前（见那里的说明）。
+import { ensureVramFree } from './lib/vram.mjs';
 
 // ─────────────────────────── 配置 ───────────────────────────
 
@@ -706,7 +719,8 @@ async function preflight(o, demoRel) {
 function parseArgs(argv) {
   const o = {
     slug: null, fps: 24, workers: 6, out: null, venc: 'nvenc',
-    q: null, qEvents: null, grain: null,
+    q: null, qEvents: null, grain: null, lines: null, film: null, lang: null, ratio: null, size: null,
+    voice: null, speed: null,
     skipSync: false, skipAudio: false, skipRender: false,
     audioOnly: false, renderOnly: false, dryRun: false, help: false,
     noPreflight: false, manifest: null,
@@ -735,7 +749,14 @@ function parseArgs(argv) {
     else if (a === '--venc') o.venc = next('--venc');
     else if (a === '--q-events') o.qEvents = next('--q-events');
     else if (a === '--q') o.q = next('--q');
+    else if (a === '--lines') o.lines = next('--lines');
+    else if (a === '--film') o.film = next('--film');
+    else if (a === '--lang') o.lang = next('--lang');
+    else if (a === '--ratio') o.ratio = next('--ratio');
+    else if (a === '--size') o.size = next('--size');
     else if (a === '--grain') o.grain = next('--grain');
+    else if (a === '--voice') o.voice = next('--voice');
+    else if (a === '--speed') o.speed = Number(next('--speed'));
     else if (a === '--skip-sync') o.skipSync = true;
     else if (a === '--skip-audio') o.skipAudio = true;
     else if (a === '--skip-render') o.skipRender = true;
@@ -751,6 +772,28 @@ function parseArgs(argv) {
   if (!Number.isFinite(o.fps) || o.fps <= 0) fail(`--fps 必须是正数`);
   if (!Number.isInteger(o.workers) || o.workers < 1) fail(`--workers 必须是 ≥1 的整数`);
   if (o.grain !== null && !/^\d+(\.\d+)?$/.test(o.grain)) fail(`--grain 必须是非负数（0 = 不加颗粒）`);
+  // --voice：别名或音色库里的名字（也允许相对路径）。别用中文文件名 —— 控制台的选项校验
+  //   （lib/briefs.mjs:OPT_RE）只放行 ASCII，写中文名会在面板那一层就被拒。
+  if (o.voice !== null && !/^[A-Za-z0-9._][A-Za-z0-9._\/-]*$/.test(o.voice)) {
+    fail(`--voice 只能是别名 / 音色库名 / 相对路径（字母数字 . _ - /），收到：${o.voice}`);
+  }
+  // --speed：映射到 Index-TTS 的 duration_factor = 1/speed，官方可用区间 0.5–2.0。
+  if (o.speed !== null && (!Number.isFinite(o.speed) || o.speed < 0.5 || o.speed > 2)) {
+    fail(`--speed 必须在 0.5–2.0 之间（Index-TTS 的 duration_factor 就是 1/speed），收到：${o.speed}`);
+  }
+  // --lines：只能是 demo 目录下的文件名（与 build.sh 传内容文件同样的约束），
+  // 不收路径分隔符 —— 免得把编排器当成任意文件拷贝工具用。
+  if (o.lines !== null && !/^[\w.-]+\.json$/.test(o.lines)) {
+    fail(`--lines 只接受 demo 目录下的 .json 文件名（如 lines_zh.json），收到 '${o.lines}'`);
+  }
+  // --film：选片名（demo 目录下的 <name>.js，页面用 ?film=<name> 加载）。默认 film.js = 仓库自带示例片。
+  if (o.film !== null && !/^[\w-]+$/.test(o.film)) {
+    fail(`--film 只接受模块名（字母数字下划线连字符），收到 '${o.film}'`);
+  }
+  // --lang：语言代码（en / zh / …）。只做形状校验；具体有没有对应内容文件由下面的换名逻辑查。
+  if (o.lang !== null && !/^[A-Za-z][\w-]*$/.test(o.lang)) {
+    fail(`--lang 只接受语言代码（如 en / zh），收到 '${o.lang}'`);
+  }
   return o;
 }
 
@@ -798,14 +841,14 @@ function buildShArgs(slug, demoRel, needle) {
  *            本编排器只跟随渲染与事件两步，靠这个数字如实告知「换内容只换了一半」。
  * 返回 null = 无法忠实重建（出现 ${Q:+…} 这类复合变量）：调用方应一个参数都不传。
  */
-function eventsArgTemplate(slug, demoRel) {
+function posArgTemplate(slug, demoRel, needle) {
   const p = path.join(CFG.winLib, 'styles', slug, 'demo', 'build.sh');
   if (!fs.existsSync(p)) return null;
   const body = fs.readFileSync(p, 'utf8').split('\n').filter(l => !/^\s*#/.test(l));
-  const line = body.find(l => l.includes('events.mjs'));
+  const line = body.find(l => l.includes(needle));
   if (!line) return null;
   // 先截到本命令结束（后面常跟 `&& $PY $D/mix.py`，不截会被当成参数）
-  const rest = line.slice(line.indexOf('events.mjs') + 'events.mjs'.length).split(/#|&&|\|\||;|\|>?/)[0];
+  const rest = line.slice(line.indexOf(needle) + needle.length).split(/#|&&|\|\||;|\|>?/)[0];
   const toks = rest.trim().split(/\s+/).filter(Boolean)
     .map(t => t.replace(/^["']|["']$/g, ''));
   const map = { '$D': demoRel, '$S': `styles/${slug}`, '$O': `styles/${slug}`, '$OUT': `styles/${slug}`, '$W': demoRel };
@@ -824,12 +867,100 @@ function eventsArgTemplate(slug, demoRel) {
 }
 
 /**
+ * 事件脚本的位置参数模板（= posArgTemplate 取 events.mjs 那一行）。
+ *
+ * ★ 通用化说明（2026-10-02，首部「主题→视频」实拍暴露的缺陷）：
+ *   原实现只服务 events.mjs，于是 engraving 的 `$C` 只喂到了事件表与渲染两步。
+ *   同一条 `$C` 还喂 subs.py（字幕行）—— 而字幕生成器走的是 buildShArgs()，那个函数
+ *   **见到未映射的 $C 就返回 null**（担心少传一个参数会把后面的顶到前面去），
+ *   结果 subs.py 被**零参数**调用、回落到默认 content.json。
+ *   外部表现：成片画面/配音都是新主题，**只有字幕还是旧文案** —— 自相矛盾。
+ *   现在两个调用点共用同一个模板，`$C` 这类内容槽统一由 content= 值填。
+ */
+function eventsArgTemplate(slug, demoRel) {
+  return posArgTemplate(slug, demoRel, 'events.mjs');
+}
+
+/**
  * 从一份 --q / --q-events 串里取 content= 的值（不做 URL 解码：build.sh 也是原样传文件名）。
  * 取不到返回 null。
  */
 function contentOf(q) {
   const m = /(?:^|&)content=([^&]+)/.exec(q || '');
   return m ? m[1] : null;
+}
+
+/**
+ * 找出 build.sh 里「内容 → lines.json」的那条派生命令，并把内容槽换成 wanted。
+ *
+ * ★ 为什么必须补这一步（2026-10-02，首部「主题→视频」实拍暴露的缺陷）：
+ *   engraving 的 build.sh 第一步就是
+ *     `$PY -c "…json.load(open('$D/$C'))…json.dump(…, open('$D/lines.json','w'))"`
+ *   —— **配音行文本是从内容文件派生的**。编排器不跑这一步，换内容后配音文本仍来自默认
+ *   content.json ⇒ 画面是咖啡、配音还是蜜蜂。旧实现只在日志里打印一句警告，没有补救手段。
+ *   4 个内容驱动 demo 里，engraving / midcentury-toon / hologram-hud 三个都有这一行
+ *   （silkscreen-poster 无旁白，本来就不需要）。
+ *
+ * 做法：**照抄 build.sh 那一行**，只替换变量（不重新实现派生规则 —— 那才会漂移）。
+ * 变量替换表与各 demo build.sh 的赋值一致；出现表外变量就返回 null（宁可不动，也不猜）。
+ */
+function linesDerivation(slug, demoRel, wanted) {
+  const p = path.join(CFG.winLib, 'styles', slug, 'demo', 'build.sh');
+  if (!fs.existsSync(p)) return null;
+  const body = fs.readFileSync(p, 'utf8').split('\n').filter(l => !/^\s*#/.test(l) && l.trim());
+  // 派生行 = 写 lines.json 的那条；排除消费方（tts.py / asr_check.py / voices 那几行）
+  const raw = body.find(l => /lines\.json/.test(l)
+    && !/tts\.py|asr_check\.py|\bvoices\b/.test(l)
+    && /-c\s+"|\btools\/|\.mjs\b|\.py\b/.test(l));
+  if (!raw) return null;
+  let cmd = stripInlineComment(raw).trim();
+  const map = {
+    '$CONTENT': wanted, '$OUT': `styles/${slug}`, '$PY': '.venv/bin/python',
+    '$C': wanted, '$D': demoRel, '$S': `styles/${slug}`, '$O': `styles/${slug}`, '$W': demoRel,
+  };
+  // 长名字先换，避免 $C 命中 $CONTENT 的前缀
+  for (const k of ['$CONTENT', '$OUT', '$PY', '$C', '$D', '$S', '$O', '$W']) {
+    cmd = cmd.split(k).join(map[k]);
+  }
+  // 内容文件名（字面量写法，如 midcentury-toon 的 `$D/content.json`）→ wanted。
+  // **只换第一个非 lines.json 的 .json 词**：它的位置就是内容槽，后面的 .json 是输出。
+  let done = false;
+  cmd = cmd.replace(/(?<![\w.-])([\w-]+\.json)(?![\w.-])/g, m => {
+    if (done || m === 'lines.json') return m;
+    done = true;
+    return wanted;
+  });
+  if (/\$[A-Za-z_{0-9]/.test(cmd)) return null;   // 表外变量（含 ${…} / $1）→ 不猜
+  return cmd;
+}
+
+/**
+ * 把 JS 字符串安全地嵌进 shell 的**单引号**字面量（内部单引号用 '\'' 断开）。
+ * null / undefined / 空串 → ''（配合脚本里的 `export VAR=...` 保证 set -u 下也有定义）。
+ * ★ 不要用 ${VAR:-default} 那种写法：它会撞上 JS 模板字符串的插值（本文件实测语法错误）。
+ */
+function shq(s) {
+  if (s === null || s === undefined || s === '') return "''";
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+/**
+ * 去掉 shell 行的**行尾注释**，但保留引号内的 #（python 的 -c "…" 里可能有）。
+ * 只在「不在引号里 且 # 处于行首或前面是空白」时才截断。
+ */
+function stripInlineComment(s) {
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (q) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === q) q = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { q = ch; continue; }
+    if (ch === '#' && (i === 0 || /\s/.test(s[i - 1]))) return s.slice(0, i);
+  }
+  return s;
 }
 
 /**
@@ -848,6 +979,26 @@ function muxIntent(slug) {
     .trim().split(/\s+/).filter(t => /^\d+$/.test(t));
   const crf = /CRF=(\d+)/.exec(line);
   return { grain: nums.length >= 2 ? nums[nums.length - 1] : null, crf: crf ? crf[1] : null };
+}
+
+/**
+ * 从风格档案的 `sound_palette.mix_rules` 里取**该风格自述的成片颗粒**（grain）。
+ *
+ * ★ 为什么只挑这一个字段：lemo-make 是**编排器**（见文件头），画面/字幕/音频分别由各 demo
+ *   自己的 film.js / subs.py / mix.py 负责，编排器唯一能注入、且**真的会改变成片**的风格量
+ *   就是 mux 的颗粒（core/render/mux.sh 的 `noise=c0s=$GR:allf=t` 滤镜）。
+ *   而 43 份档案的 mix_rules 恰好逐风格写了它（如 hd-2d「颗粒 0」、art-deco「grain 3」）。
+ * ★ 保守解析：只认**显式**的 `grain N` / `颗粒 N`；「不加颗粒 / 无颗粒」→ 0；
+ *   其它一律 null（= 该特质不生效，调用方沿用原有来源，行为与改动前一致）。
+ * ★ 这只是**取值**，不是又一份读取逻辑 —— DNA 对象本身仍由 lib/style-dna-reader.mjs 提供。
+ */
+function dnaGrainFromMixRules(mixRules) {
+  const s = String(mixRules ?? '');
+  if (!s) return null;
+  // 明确否定（「不加颗粒」「无颗粒」「没有胶片颗粒」）→ 0
+  if (/(?:不加|无|没有|绝不加|不叠)[^，。；、]{0,8}颗粒/.test(s)) return 0;
+  const m = /(?:grain|颗粒)\s*[=:：]?\s*~?\s*(\d+(?:\.\d+)?)/i.exec(s);
+  return m ? Number(m[1]) : null;
 }
 
 /**
@@ -905,11 +1056,35 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   --venc <nvenc|libx264> 混流编码器，默认 nvenc（硬件）
   --q <k=v&k=v>          页面参数，**只透传给渲染**（video.mjs）：如 noev=1、content=x.json
                          默认按 demo 的 build.sh 渲染行取（如 tilt-shift 的 noev），取不到就不传
-                         唯一例外是 content=：demo 自带的事件脚本吃位置参数时（engraving），
-                         同一个值也会喂给事件导出 —— 复刻它 build.sh 里两步同源于 $C 的写法
+                         content= 是**唯一例外**：同一个值会喂给所有「与渲染同源」的步骤 ——
+                         事件导出（engraving 的 tools/events.mjs）、字幕源（subs.py）、
+                         以及配音行（按 build.sh 的派生行重建 lines.json）。
+                         即：content=x.json 现在是真的「整条链换内容」，不再是只换一半
   --q-events <k=v&k=v>   页面参数，**只透传给事件导出**（events.mjs）。默认不传
                          事件脚本吃位置参数时（engraving），只有 content= 这一项能传过去
+  --lines <file>         配音行文件（demo 目录下的 .json）。给了就用它覆盖 lines.json，
+                         优先级高于 content= 的自动派生。适用于「只想换台词、不换画面」
+  --film <name>          选片名：加载 demo 目录下的 <name>.js 而不是自带的 film.js
+                         （页面 ?film=<name>）。用于「同一风格下另做一部新片」
+  --lang <code>          语言版本（如 en / zh）。规则：把 content=X.json 换成 X.<code>.json，
+                         并**同时**送到渲染与事件侧。语言由内容文件的 "lang" 字段驱动
+                         （字体、字距、圆窗编号前缀、配音音色都由它决定）——
+                         所以「选语言 → 出全套对应语言的片子」是一条命令
+  --ratio <spec>         输出宽高比：9:16（默认）| 16:9 | 3:4 | 4:3 | 1:1
+  --size <WxH>           输出像素尺寸，如 1080x1920（自定义）。优先级高于 --ratio
+                         ★ 两个都不给时用默认比例 9:16（任务没指定尺寸时的默认值）。
+                         比例→像素的换算见 core/render/size.mjs（唯一来源，本文件不另写一份）
   --grain <n>            混流颗粒强度（0 = 不加）。默认按 demo 的 build.sh 取，取不到就用 mux 脚本自己的默认值
+  --voice <name>         覆盖配音音色（Index-TTS 零样本克隆的**参考音**）。取值是音色别名或音色库里的名字，
+                         如 zh_curator（官方默认）/ zh_kepu9（科普博主9）。不给就用内容文件里写的那个。
+                         想先看有哪些可选：python core/tts/tts_indextts.py --list-voices
+                         ★ 它只改 lines.json 里每行的 voice 字段，不动内容文件 —— 所以不会多出两份内容文件互相漂移
+                         ★ 若本 demo 带声线处理脚本（voice_fx.py / voice.py，如 ascii-crt / scifi-toon），
+                           配音走的是该脚本（Kokoro），--voice / --speed **不生效**（会打印 STEP_WARN），
+                           音色由该脚本决定 —— 想用 Index-TTS 音色请换用无该脚本的风格
+  --speed <n>            覆盖配音语速，0.5–2.0。映射到 Index-TTS 的 duration_factor = 1/speed。
+                         ★ 换音色后**必须重调**：不同音色「字/秒」差别很大（实测同一句话同语速下能差 30%），
+                         沿用旧语速会要么塞不进时间槽（口播重叠）、要么留下大片静音空档
   --skip-sync            跳过库同步
   --skip-audio           跳过音频（复用已有 mix.wav）
   --skip-render          跳过渲染（复用已有视频）
@@ -922,6 +1097,17 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
                          （也可用环境变量 LEMO_MANIFEST；文件不在就静默跳过检查）
   --help
 
+风格特质档案（style-dna · 约定一）
+  「主题+风格」（本编排器）与「文案+风格」「文案+口播+风格」（dub.mjs）**共用同一个知识库**：
+  lib/style-dna/<slug>.json（43 份），经**同一个**读取入口 lib/style-dna-reader.mjs 读取 ——
+  不各建一套、不各写一份读取逻辑。本通路每次出片都会读入并打印本次用到的特质。
+  ★ 本通路能真的改变成片的只有「成片颗粒」一项（来自 sound_palette.mix_rules → mux.sh 的
+    noise 滤镜）。优先级：--grain > demo 的 build.sh > **档案** > mux.sh 默认 2。
+    档案只补「前两者都没说」的空缺，绝不覆盖 demo 自己声明的值。
+  ★ 档案里其余数值特质在本通路**没有消费者**（字幕折行由各 demo 自己的 subs.py/srt.py 负责；
+    响度由 mux.sh 固定 −14 LUFS，无覆盖口）—— 打印时会如实标注，不冒充已生效。
+  ★ 档案缺失 / slug 无档案 → 一切与改动前逐字节一致（DNA 是增强，不是替代）。
+
 ⚠️ --q 为什么默认只给渲染（唯一例外是 content=）：
   各 demo 的 build.sh 里，--q 只出现在 video.mjs 那一行（29 个 events.mjs 行一个都没有）。
   noev 这类是**渲染专用**开关（画面不画事件图层），并不代表事件表该为空 ——
@@ -932,6 +1118,19 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   事件脚本不吃位置参数时（走 core/render/events.mjs），content= 传不过去 ——
   此时编排器会明确警告「画面已换内容、事件表没换，成片会不一致」，
   补救办法是显式加 --q-events content=x.json（--q-events 就是那个显式逃生口）。
+
+⚠️ content= 为什么是「整条链换内容」（2026-10-02 修正）：
+  同一条内容在 build.sh 里通常被**多个步骤**消费。旧实现只跟了渲染与事件两步，
+  实测后果（首部「主题→视频」成片）：画面是咖啡、配音是咖啡，**字幕还是上一版文案** ——
+  自相矛盾，且只在日志里留了一句警告，没有补救手段。现在 content= 会同步到：
+    · 渲染          video.mjs --q content=$C
+    · 事件表        demo 自带 events.mjs 的 $C 位置参数
+    · 字幕源        subs.py / cues.py 的 $C 位置参数（同一套位置参数模板）
+    · 配音行        lines.json —— 照抄 build.sh 那条「内容 → lines.json」的派生行重建
+  另外还有一条**时序**约束：渲染页初始化时会读 voices/dur.json 排口播时间窗，
+  而 dur.json 是 WSL 侧 TTS 的产物 ⇒ 换内容时必须**先跑配音、把 voices/*.json 回传
+  Windows，再开始渲染**（否则字幕与口播窗按旧时长算，实测偏差 0.2–1.6s）。
+  这一步由编排器自动完成，代价是音频链路少一段并行（实测 +11s / 205s）。
 
 ⚠️ 事件脚本按 demo 自带的优先：
   engraving 自带 tools/events.mjs（吃位置参数 $D [content.json]、不吃 --q）。
@@ -957,19 +1156,34 @@ async function main() {
   const demoRel = `styles/${o.slug}/demo`;
   const demoWin = path.join(CFG.winLib, demoRel);
   const demoWsl = `${CFG.wslLib}/${demoRel}`;
+  // Windows 库在 WSL 里的挂载点（/mnt/<盘符小写>/<路径>）。回传产物要用它 ——
+  // 这里从 CFG.winLib 推导，不再新增一处写死的 /mnt/d/lemo-opuscar。
+  const winLibWsl = CFG.winLib.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+  const demoWinWsl = `${winLibWsl}/${demoRel}`;
   const outDir = o.out || path.join(CFG.exportDir, o.slug);
   // mix.wav 的位置因 demo 而异（demo/ 默认、urban-sketch 在 demo/audio/、paper-lantern 在 demo/out/），
   // 所以这里不再写死一条路径：音频脚本跑完会回报实际产出路径，混流脚本也会自己三处探测。
   const mixWavCands = ['mix.wav', 'audio/mix.wav', 'out/mix.wav'].map(p => `${demoRel}/${p}`);
   const videoWsl = `${demoWsl}/out/video_gpu.mp4`;
   const finalWin = path.join(CFG.winLib, 'styles', o.slug, `${o.slug}.mp4`);
-  // 混流参数：--grain 优先，其次 build.sh 里写的，最后交给 mux 脚本自己的默认值
+  // 混流参数：--grain 优先，其次 build.sh 里写的，再次**风格档案**，最后交给 mux 脚本自己的默认值
   const intent = muxIntent(o.slug);
+  // ── 风格特质档案（style-dna）接入：本通路也读**同一个**知识库（约定一）─────────────
+  // ★ 读取入口复用 lib/style-dna-reader.mjs（与 dub.mjs 同一模块，不另建一套读取）。
+  // ★ 只读 + 缺失即降级：readStyleDna 读不到就返回 null ⇒ dna 为 null ⇒ 本块整体跳过，
+  //   行为与改动前逐字节一致（硬要求：DNA 是增强不是替代）。
+  // ★ slug 直接就是风格注册表 id（43 个内置风格一一对应），无需另建映射表。
+  const dnaRaw = readStyleDna(o.slug);
+  const dna = summarizeStyleDna(dnaRaw);
+  // 档案自述的成片颗粒 —— 本通路**唯一**能真的改变成片的风格量（进 mux.sh 的 noise 滤镜）。
+  const dnaGrain = dnaRaw ? dnaGrainFromMixRules(dnaRaw.sound_palette?.mix_rules) : null;
   // ⚠️ 判空一律用 `??`（同时盖住 null 与 undefined），不要写成 `!== null`：
   //    原实现 `o.grain !== null ? o.grain : intent.grain` 在参数悬空（值为 undefined）时会取到
   //    undefined，把 build.sh 派生的默认值顶掉 —— 这正是 `tilt-shift --q` 静默关掉 `--q noev` 的根因。
   //    parseArgs 现在会对悬空取值直接报错，这里再用 ?? 兜一道，两处都不许出现 undefined。
-  const grain = o.grain ?? intent.grain;
+  //    ★ 档案放在**最后**一位：它只补「--grain 与 build.sh 都没说」的空缺，
+  //      绝不覆盖 demo 自己声明的值（否则编排器出的画面会与它自己的 build.sh 不符）。
+  const grain = o.grain ?? intent.grain ?? dnaGrain;
   // 页面参数：--q 与 --q-events 分别只作用于渲染 / 事件导出两步（见 qIntent 的说明）。
   // ★ 渲染侧的默认值也照 build.sh 取（与 --grain 同一个思路，不猜）：
   //   tilt-shift 的渲染行自己写着 `--q noev`；不给 --q 就一个都不传的话，编排器渲出的画面会
@@ -979,10 +1193,170 @@ async function main() {
   //   用户显式给了 --q 就覆盖 build.sh 的。
   // 事件侧优先用 --q-events；没给就用 build.sh 在 events.mjs 行声明的（全仓目前都是「没有」）。
   const qIntentV = qIntent(o.slug);
-  const qRender = o.q ?? qIntentV.render;
-  const qEvents = o.qEvents ?? qIntentV.events;
+  let qRender = o.q ?? qIntentV.render;
+  // --film：把选片名并进渲染查询串（页面用 ?film=<name> 选模块）。已有 film= 就不覆盖。
+  if (o.film && !/(?:^|&)film=/.test(qRender || '')) {
+    qRender = qRender ? `${qRender}&film=${o.film}` : `film=${o.film}`;
+  }
+  let qEvents = o.qEvents ?? qIntentV.events;
+
+  // --lang：**语言版本**。语言由「内容文件」承载（内容文件里的 "lang" 字段驱动字体与配音），
+  // 所以 --lang zh 的职责就是「把 content= 换成同名的 <base>.zh.json」。
+  // 这样「选哪个语言 → 出全套对应语言的片子」就是一条命令，用户不用去记文件名。
+  // ★ 与 --film 同理：内容名必须**同时**送到事件侧，否则事件表还是另一种语言的，
+  //   字幕/配乐/画面事件层会与画面脱节（而且 cuecheck 会拿同一份错事件核成"通过"）。
+  if (o.lang && o.lang !== 'en') {
+    const base = contentOf(qRender) || contentOf(qEvents) || 'content.json';
+    if (!/\.json$/i.test(base)) fail(`--lang：content= 看起来不是 .json（收到 '${base}'）`);
+    const cand = `${base.replace(/\.json$/i, '')}.${o.lang}.json`;
+    const demoDirWin = path.join(CFG.winLib, demoRel);
+    if (!fs.existsSync(path.join(demoDirWin, cand))) {
+      const have = (() => { try { return fs.readdirSync(demoDirWin).filter(f => /^content.*\.json$/i.test(f)).join(', '); } catch { return '(读不到)'; } })();
+      fail(`--lang ${o.lang}：在 ${demoRel}/ 下找不到 ${cand}。\n`
+        + `  --lang 的规则是「把 content=X.json 换成 X.${o.lang}.json」。\n`
+        + `  该 demo 下现有的内容文件：${have}`);
+    }
+    const swap = s => (s ? s.replace(/(^|&)content=[^&]+/, (m, g1) => `${g1}content=${cand}`) : s);
+    qRender = swap(qRender);
+    qEvents = swap(qEvents);
+    info(`语言版本 ${o.lang} → 内容文件 ${cand}`);
+  }
+
+  // ── 配音引擎：由**内容文件**的 voice.engine 决定（缺省 kokoro）────────────────
+  // 为什么放在这里：Index-TTS 是本机部署的 **Windows 便携版应用**（自带 venv 与模型），
+  // 它的配音阶段与 Kokoro 走**完全不同的进程与平台**，编排器必须提前知道用哪条路。
+  // 语言由内容文件承载 ⇒ 引擎也由内容文件承载，两者同一个源头，不会各说各话。
+  // ★ 只读，不改任何文件；读不到 / 没有这个字段 ⇒ kokoro（英文与其它风格行为完全不变）。
+  let ttsEngine = 'kokoro';
+  {
+    const cname = contentOf(qRender) || contentOf(qEvents) || 'content.json';
+    try {
+      const c = JSON.parse(fs.readFileSync(path.join(CFG.winLib, demoRel, cname), 'utf8'));
+      if (c && c.voice && c.voice.engine) ttsEngine = String(c.voice.engine);
+    } catch { /* 读不到就按默认 kokoro，下面照旧 */ }
+    if (ttsEngine !== 'kokoro') info(`配音引擎 ${ttsEngine}（来自 ${cname} 的 voice.engine）`);
+  }
   // 渲染命令提前构造：--dry-run 也要能让人亲眼看到实际会传什么（--q 是分步透传的，必须可核）。
+  // ── 输出尺寸：--ratio / --size，**缺省 9:16** ────────────────────────────────
+  // 用户要求：「视频默认宽高比 9:16；可选 16:9 / 3:4 / 4:3 / 1:1 + 自定义尺寸；
+  //            任务没有明确指定输出尺寸时，自动采用默认值 9:16 导出视频。」
+  // ★ 比例→像素的换算**不在这里写第二份**：唯一来源是库里的 core/render/size.mjs
+  //   （渲染工具与编排器共用同一张表，改一处就够）。库不在或文件没就位时退回内置最小表，
+  //   保证编排器不会因为读不到库而起不来 —— 但会明确警告，不静默降级。
+  // ★ 为什么默认放在编排器而不是 takeSize：still.mjs / video.mjs 是低层工具，
+  //   全库 43 个风格的 demo/build.sh 都直接调它们且不传 --size、全按 1920x1080 构图；
+  //   把低层默认改成 9:16 会让那些示例片当场全坏。出片流程显式传尺寸才是正确的位置。
+  let outSize = null;
+  {
+    const p = path.join(CFG.winLib, 'core/render/size.mjs');
+    let M = null;
+    try { if (fs.existsSync(p)) M = await import(pathToFileURL(p).href); } catch (e) {
+      warn(`读 core/render/size.mjs 失败：${String(e.message || e).split('\n')[0]} —— 用内置表兜底`);
+    }
+    if (!M) {
+      M = {
+        RATIOS: [{ id: '9:16' }, { id: '16:9' }, { id: '3:4' }, { id: '4:3' }, { id: '1:1' }],
+        DEFAULT_RATIO: '9:16',
+        // 自定义像素的上下限。**只在读不到库时**用（正常路径 M 就是库模块，下面的 M.MIN_SIZE 直接
+        // 取库侧 core/render/size.mjs 的值 —— 改下限只改库，这里不会各说各话）。
+        // 下限 96 与库当前值一致：16 是编造的，实测 ≤72 必崩（圆窗半径缩成负数，未捕获的 IndexSizeError）。
+        MIN_SIZE: 96, MAX_SIZE: 8192,
+        parseSizeSpec(s) {
+          const v = String(s ?? '').trim();
+          const m = /^(\d+)\s*:\s*(\d+)$/.exec(v);
+          if (m) return M.RATIOS.some(r => r.id === `${+m[1]}:${+m[2]}`) ? { ratio: `${+m[1]}:${+m[2]}` } : null;
+          const q = /^(\d+)\s*[xX]\s*(\d+)$/.exec(v);
+          return q ? { w: +q[1], h: +q[2] } : null;
+        },
+        resolveSize({ ratio, size, base = 1920 } = {}) {
+          let spec = size ?? ratio;   // 下面要改写，必须是 let（写成 const 会在库缺失时抛 TypeError）
+          if (spec == null || spec === '') spec = M.DEFAULT_RATIO;
+          const pp = M.parseSizeSpec(spec); if (!pp) return null;
+          const even = n => 2 * Math.round(n / 2), ok = n => Number.isInteger(n) && n >= M.MIN_SIZE && n <= M.MAX_SIZE;
+          if (pp.w != null) return ok(pp.w) && pp.w % 2 === 0 && ok(pp.h) && pp.h % 2 === 0 ? { w: pp.w, h: pp.h } : null;
+          const [a, b] = pp.ratio.split(':').map(Number), s = base / Math.max(a, b);
+          const w = even(a * s), h = even(b * s); return ok(w) && ok(h) ? { w, h } : null;
+        },
+        formatSize: ({ w, h }) => `${w}x${h}`,
+      };
+      warn('（以上是内置兜底表；正常应走 core/render/size.mjs）');
+    }
+    // ★ 两个都要独立校验，**不能只校验「胜出的那个」**。
+    //   原实现是 `const bad = o.size ?? o.ratio` —— 于是 `--size 1080x1920 --ratio 7:5`
+    //   会静默丢弃那个拼错的 7:5（退出码 0、一个字都不提）。用户打错比例却毫无反馈，
+    //   等到某天只给 --ratio 时才发现自己一直拼错。
+    //   ⇒ 改成：**给了的都要合法**；合法性判完再按 size > ratio 定优先级（优先级语义不变）。
+    for (const [flag, val] of [['--size', o.size], ['--ratio', o.ratio]]) {
+      if (val == null || val === '') continue;
+      if (!M.parseSizeSpec(val)) {
+        fail(`${flag} 取值非法：'${val}'。\n`
+          + `  可用比例：${M.RATIOS.map(r => r.id).join(' | ')}（默认 ${M.DEFAULT_RATIO}）\n`
+          + `  或自定义像素：如 1080x1920（两个数都必须是 ${M.MIN_SIZE}–${M.MAX_SIZE} 的偶数）`);
+      }
+    }
+    outSize = M.resolveSize({ ratio: o.ratio, size: o.size });
+    // ★ 走到这里说明**格式合法但范围不合法**（例如 `64x64` 格式没问题、但低于可渲染下限）。
+    //   原实现只说「解析失败」，不说下限是多少 —— 用户得自己去翻文档才知道该填多大。
+    //   独立验证实测过这个缺口（`--size 64x64`）。这里把可用范围直接摆出来。
+    if (!outSize) {
+      const lo = M.MIN_SIZE, hi = M.MAX_SIZE;
+      fail(`--size / --ratio 的取值超出可用范围：ratio=${o.ratio ?? '(无)'} size=${o.size ?? '(无)'}。\n`
+        + (lo != null && hi != null
+          ? `  自定义像素的宽高都必须在 ${lo}–${hi} 之间、且为偶数（下限 ${lo} 来自影片版面的可渲染约束，见 core/render/size.mjs 的注释）。\n`
+          : '')
+        + `  可用比例：${M.RATIOS.map(r => r.id).join(' | ')}（默认 ${M.DEFAULT_RATIO}）`);
+    }
+    info(`输出尺寸 ${M.formatSize(outSize)}（${o.size ? `自定义 ${o.size}` : `比例 ${o.ratio || M.DEFAULT_RATIO}`}）`);
+
+    // ★ 尺寸自适应的**逐风格**闸门。
+    //   背景：出片流程默认已是 9:16，而「影片布局自适应」是**逐风格**做的 ——
+    //   实测（2026-10-02）全库只有 styles/engraving 的 film.js / film_coffee.js 做了
+    //   （它们导出 NATIVE 并用 layout(W,H) 重排），其余风格的 film.js 仍按 1920×1080 硬画。
+    //   ⇒ 在那些风格上出非 16:9 的片，**画面会被裁掉一块**（不是缩放、不是重排）。
+    //   这种失败是**静默**的：像素尺寸完全正确，只有肉眼看画面才发现。所以必须在这里喊出来。
+    //   ★ 判定用「读影片模块源码里有没有 NATIVE」这个文本特征，而不是 import 它：
+    //     影片模块是**浏览器模块**（依赖 window/document），Node 里 import 不起来。
+    //     这个启发式可能误报（漏判会把「未自适应」说成自适应），所以**只用于警告、不用于阻断**，
+    //     且文案里明说「按源码特征判断」。要绕过就显式给 --ratio 16:9。
+    if (outSize.w !== 1920 || outSize.h !== 1080) {
+      // ★ 优先读**正式声明** `FILM_META.aspects`（语义：「这部影片真的能正确构图的比例清单」，
+      //   不写 = 只支持 16:9）。探测逻辑已在 `lib/aspects.mjs` 里做好（读源码文本 + 正则，
+      //   因为影片模块是浏览器 ESM，Node 里 import 不起来），并且**控制台全链路已在用它**
+      //   （`/api/aspects`、`/api/briefs` 的 styles[].aspects、建单校验、UI 出片前警告）。
+      //   优先复用它，而不是我自己再猜一遍源码文本 —— 同一件事只该有一处判断。
+      // ★ 兜底：读不到 lib/aspects.mjs 时，退回「源码里有没有 export const NATIVE」这个启发式。
+      let verdict = null;                       // {fits, warning, detail, supported}
+      try {
+        const A = await import(new URL('./lib/aspects.mjs', import.meta.url).href);
+        verdict = A.aspectCheck({ slug: o.slug, ratio: o.ratio, size: o.size, film: o.film || null });
+      } catch { /* 拿不到就退回下面的启发式 */ }
+      if (verdict && verdict.fits === false) {
+        warn(verdict.warning || `${o.slug} 未适配 ${M.formatSize(outSize)}`);
+        if (verdict.detail) warn(`  ${verdict.detail}`);
+        warn(`  ⇒ 像素尺寸会完全正确，但画面不对 —— 请务必看画面确认。`);
+        warn(`  ⇒ 只想稳妥出片就加 --ratio 16:9。`);
+      } else if (!verdict) {
+        const filmName = o.film || 'film';
+        const filmPath = path.join(demoWin, `${filmName}.js`);
+        let adaptive = null;
+        try {
+          if (fs.existsSync(filmPath)) adaptive = /export\s+const\s+NATIVE\b/.test(fs.readFileSync(filmPath, 'utf8'));
+        } catch { /* 读不了就当判断不了 */ }
+        if (adaptive === false) {
+          warn(`本风格的影片模块（${demoRel}/${filmName}.js）看起来**没有做尺寸自适应**`);
+          warn(`  ⇒ ${M.formatSize(outSize)} 的输出很可能是把 1920×1080 的版面**裁掉一块**，而不是重排。`);
+          warn(`  ⇒ 像素尺寸会完全正确，但画面不对 —— 请务必看画面确认。`);
+          warn(`  ⇒ 只想稳妥出片就加 --ratio 16:9；要让这个风格真正支持竖屏，得照 styles/engraving/demo/film_coffee.js`);
+          warn(`     的做法改造它（导出 NATIVE，把版面搬进 layout(W,H)：位置按 fx/fy 拉伸、尺寸按 min(fx,fy) 缩放）。`);
+        } else if (adaptive === null) {
+          warn(`找不到影片模块 ${demoRel}/${filmName}.js，无法判断它是否支持 ${M.formatSize(outSize)}（继续执行）。`);
+        }
+      }
+    }
+  }
+
   const renderVArgs = ['core/render/video.mjs', demoRel, '--fps', String(o.fps), '--workers', String(o.workers),
+    '--size', `${outSize.w}x${outSize.h}`,
     '--out', path.join(demoWin, 'out', 'video_gpu.mp4')];
   if (qRender) renderVArgs.push('--q', qRender);
   // 混流脚本：demo 自带的 tools/mux.sh 优先（签名与 core 版一致），否则 core/render/mux.sh
@@ -1002,10 +1376,53 @@ async function main() {
   console.log(C.dim(`  编码   ${o.venc}    fps ${o.fps}    workers ${o.workers}`));
   // 打印**生效值**（可能是 build.sh 来的），不只打印命令行给没给
   if (qRender || qEvents) console.log(C.dim(`  页面参数 渲染 ${fmtQ(qRender)} / 事件 ${fmtQ(qEvents)}`));
+  if (o.film) console.log(C.dim(`  选片   ${o.film}（页面 ?film=${o.film}）`));
+  if (o.lang) console.log(C.dim(`  语言   ${o.lang}`));
+  // 换内容的作用范围必须显式打出来：使用者要能一眼看出「这次是整条链换，还是只换了一半」
+  const swapPeek = contentOf(qRender) || contentOf(qEvents);
+  if (swapPeek) {
+    console.log(C.dim(`  换内容 ${swapPeek} → 渲染 / 事件表 / 字幕源 / 配音行 同源切换（配音前置，再渲染）`));
+  } else if (o.lines) {
+    console.log(C.dim(`  换配音行 ${o.lines} → 覆盖 lines.json（配音前置，再渲染）`));
+  }
   console.log(C.dim(`  混流   ${demoMuxRel || 'core/render/mux.sh'}    grain ${grain !== null ? grain : '(脚本默认)'}`
     + (intent.crf ? `    CRF ${intent.crf}` : '')));
   if (!demoMuxRel && fs.existsSync(path.join(CFG.winLib, demoRel, 'mux.sh'))) {
     warn(`${demoRel}/mux.sh 存在，但它的接口不是 V A O [fps] [grain]（自成一体的拼段脚本），回退 core/render/mux.sh`);
+  }
+
+  // ── 风格 Skill 文档（style-skills）：把「这个风格怎么做」的方案位置打出来 ──────
+  // ★ 这是「选定风格后**优先调取该风格 Skill 文档**作为核心参考」在**本通路**（主题+风格）的落点。
+  //   与 dub.mjs 完全同款：经共享模块 lib/style-skill-reader.mjs 读
+  //   lib/style-skills/<slug>/SKILL.md（11 节：风格说明/画面构图/配色体系/转场规则/字幕样式/
+  //   BGM·音效特征/素材偏好/镜头节奏/制作参数清单/编排规则/当前短板与避坑要点）。
+  // ★ 只读 + **缺失即降级**：没蒸馏过的风格整块不打印 ⇒ 输出与改动前逐字节一致。
+  //   这与上面 style-dna 那块「只在真生效时才打印」的收紧是两件事：DNA 是**数值**（要判是否生效），
+  //   Skill 文档是**方案指针**（存在就该被看到）。
+  const skillSum = summarizeStyleSkill(readStyleSkill(o.slug));
+  if (skillSum) {
+    ok('风格 Skill 文档已就位（11 节制作方案）');
+    for (const L of describeStyleSkill(skillSum)) info(C.dim(`  · ${L}`));
+  }
+
+  // ── 风格特质档案（style-dna）：把「本次用到了哪些特质」打出来（干跑也看得到）──────
+  // ★ 与 dub.mjs 同款：经共享读取模块读 lib/style-dna/<slug>.json，只读、不改任何东西。
+  // ★ 但两条通路的**渲染路径不同**（见下），所以这里如实区分「真的改了画面」与「只是档案自述」：
+  //   本通路只有「成片颗粒」会进 mux.sh 的 noise 滤镜；字幕折行/响度目标在本链路上没有消费者
+  //   （字幕由各 demo 自己的 subs.py/srt.py 生成；响度由 mux.sh 固定 −14 LUFS，无覆盖口）。
+  // ★ 档案缺失时这一整块不打印（dna 为 null）⇒ 输出与改动前逐字节一致。
+  // ★★ 进一步收紧（2026-10-03）：**只在档案真的生效时才打印**。
+  //   原因：「DNA 存在时逐字节一致」与「打印证据」原本不可兼得 —— 43 份档案里有 42 份的值与
+  //   build.sh 一致（未生效），若无条件打印就会凭空多出 6 行诊断，破坏「未生效即零 diff」这个保证。
+  //   现在改为：**只有 `grain` 最终真的采用了档案值**（即 --grain 与 build.sh 都没说话、由档案补位）
+  //   才打印。于是「未生效」与「缺失」两种情况输出都逐字节不变，而真补位时仍可观察。
+  const dnaTookEffect = dna != null && dnaGrain != null && o.grain == null && intent.grain == null;
+  if (dnaTookEffect) {
+    const dnaSrc = `lib/style-dna/${dna.slug}.json`;
+    ok(`风格特质已接入出片（来自 ${dnaSrc}）`);
+    info(C.dim('  （下列为档案自述；本通路只有「成片颗粒」一项会真的改变成片）'));
+    for (const L of describeStyleDna(dna)) info(C.dim(`  · ${L}`));
+    info(`  · 成片颗粒：档案 ${dnaGrain} ⇒ **本次采用**（进 mux.sh 的 noise 滤镜，画面真的会变）`);
   }
 
   // ── 并发保护 ─────────────────────────────────────────────
@@ -1014,8 +1431,14 @@ async function main() {
   // 实测过一次：h264 报 `Invalid NAL unit size` / `Error splitting the input into NAL units`，
   // aac 报 `SBR was found before the first channel element`，**两个流同时损坏**，
   // 而编排器只看到「帧数不符 1185 vs 1435」这种间接症状。
-  const lockPath = path.join(CFG.exportDir, `.${o.slug}.lock`);
-  fs.mkdirSync(CFG.exportDir, { recursive: true });
+  // ★ 锁目录可被 LEMO_LOCK_DIR 覆盖（默认仍是导出目录，正常行为一字不变）。
+  //   为什么需要：test/briefs.test.mjs ⑥「出片全链路」会**真跑一次编排器 --dry-run**，
+  //   而只要此刻有别的进程在渲染同一个风格，它就抢不到锁、退出码 1 ⇒ 那条用例假红。
+  //   实测多次（跑出片的同时跑套件，⑥ 必然失败，耗时从 9s 涨到 88s）。
+  //   这不是「并发污染」而是**测试隔离缺陷**：测试必须能独立于真实渲染运行。
+  const lockDir = process.env.LEMO_LOCK_DIR || CFG.exportDir;
+  const lockPath = path.join(lockDir, `.${o.slug}.lock`);
+  fs.mkdirSync(lockDir, { recursive: true });
   let tookOver = false;
   try {
     fs.writeFileSync(lockPath, `${process.pid}\n${new Date().toISOString()}\n`, { flag: 'wx' });
@@ -1082,16 +1505,30 @@ async function main() {
   //   ⇒ 闸门不能建立在一个会「自洽地撒谎」的工具上。这里改成自己比对：
   //     Windows 侧用 Node 读文件算 md5（先去 CR 以对齐 WSL 的 LF），
   //     WSL 侧用一条命令输出 `md5 文件名`，两边做集合比对。
+  // ★ 核验范围：core/ 下**所有「Windows 写、WSL 也读」的子目录**，不止 core/render。
+  //   为什么扩到 tts / lang：2026-10-02 实测踩到过一次 —— 新写的 core/tts/tts_indextts.py
+  //   只在 Windows 侧存在（配音却在 WSL 跑），于是 python: can't open file 直接失败，
+  //   而且是在链路跑到一半才暴露。同一类问题 core/lang/ 也会发生（语言注册表只在 Windows 侧）。
+  //   凡是两侧都可能各有一份的目录，都要进这张表。
   {
-    const coreRel = 'core/render';
-    const winDir = path.join(CFG.winLib, coreRel);
-    const wslDir = `${CFG.wslLib}/${coreRel}`;
-    if (!fs.existsSync(winDir)) {
-      warn(`${winDir} 不存在，跳过 core/render/ 一致性闸门`);
-    } else {
+    const CORE_DIRS = ['core/render', 'core/tts', 'core/lang'];
+    const allProblems = [];
+    let checkedFiles = 0, checkedDirs = 0;
+    for (const coreRel of CORE_DIRS) {
+      const winDir = path.join(CFG.winLib, coreRel);
+      const wslDir = `${CFG.wslLib}/${coreRel}`;
+      if (!fs.existsSync(winDir)) continue;   // 该目录本就不存在：跳过（不算问题）
+      checkedDirs++;
+      // ★ 只比**代码/文本**文件。模型与字体这类二进制资产本来就按侧存在，不该算「不一致」：
+      //   实测踩到过 —— core/tts/ 下的 kokoro-v1.0.onnx / voices-v1.0.bin（约 350MB）只在 WSL 侧，
+      //   因为 Kokoro 在 WSL 跑；core/lang/fonts/*.woff2 只在 Windows 侧，因为字体由浏览器加载。
+      //   把它们算进闸门只会逼人做无意义的双份拷贝。
+      const CODE_EXT = new Set(['.py', '.mjs', '.js', '.sh', '.css', '.json', '.txt', '.md']);
+      const isCode = f => CODE_EXT.has(path.extname(f).toLowerCase());
       const winMap = {};
       for (const f of fs.readdirSync(winDir)) {
         if (f.includes('.orig-')) continue;
+        if (!isCode(f)) continue;
         const p = path.join(winDir, f);
         if (!fs.statSync(p).isFile()) continue;
         const norm = fs.readFileSync(p).toString('binary').replace(/\r\n/g, '\n');
@@ -1102,6 +1539,7 @@ async function main() {
         `for f in *; do`,
         `  case "$f" in *.orig-*) continue;; esac`,
         `  [ -f "$f" ] || continue`,
+        `  case "\${f##*.}" in py|mjs|js|sh|css|json|txt|md) ;; *) continue;; esac`,
         `  printf '%s %s\\n' "$(md5sum "$f" | cut -d' ' -f1)" "$f"`,
         `done`,
       ].join('\n');
@@ -1111,30 +1549,32 @@ async function main() {
         const m = /^([0-9a-f]{32})\s+(.+)$/.exec(line.trim());
         if (m) wslMap[m[2]] = m[1];
       }
-      const problems = [];
-      if (wr.code !== 0) problems.push(`WSL 侧取哈希失败（退出码 ${wr.code}）`);
-      if (Object.keys(wslMap).length === 0) problems.push('WSL 侧一个文件哈希都没取到');
-      if (Object.keys(winMap).length === 0) problems.push('Windows 侧一个文件都没读到');
+      if (wr.code !== 0) allProblems.push(`[${coreRel}] WSL 侧取哈希失败（退出码 ${wr.code}）—— 常见原因：该目录在 WSL 侧根本不存在`);
+      if (Object.keys(wslMap).length === 0) allProblems.push(`[${coreRel}] WSL 侧一个文件哈希都没取到`);
+      if (Object.keys(winMap).length === 0) allProblems.push(`[${coreRel}] Windows 侧一个文件都没读到`);
       const names = [...new Set([...Object.keys(winMap), ...Object.keys(wslMap)])].sort();
       for (const n of names) {
-        if (!(n in winMap)) problems.push(`仅 WSL 有: ${n}`);
-        else if (!(n in wslMap)) problems.push(`仅 Windows 有: ${n}`);
-        else if (winMap[n] !== wslMap[n]) problems.push(`内容不同: ${n}  win=${winMap[n].slice(0, 8)} wsl=${wslMap[n].slice(0, 8)}`);
+        if (!(n in winMap)) allProblems.push(`[${coreRel}] 仅 WSL 有: ${n}`);
+        else if (!(n in wslMap)) allProblems.push(`[${coreRel}] 仅 Windows 有: ${n}`);
+        else if (winMap[n] !== wslMap[n]) allProblems.push(`[${coreRel}] 内容不同: ${n}  win=${winMap[n].slice(0, 8)} wsl=${wslMap[n].slice(0, 8)}`);
       }
-      if (problems.length) {
-        console.log(problems.map(d => '    ' + d).join('\n'));
-        fail(
-          `两侧 core/render/ 不一致（${problems.length} 处），已拒绝开工。\n` +
-          '      编排器在 Windows 渲染、在 WSL 混流，渲染器版本不一致会产出难以解释的结果。\n' +
-          '      人工对齐（把 Windows 侧拷到 WSL 并去掉 CR）：\n' +
-          '        wsl.exe -d ' + CFG.wslDistro + ' -u root -- bash -c "cd /mnt/d/lemo-opuscar/core/render && \\\n' +
-          '          for f in *; do case $f in *.orig-*) continue;; esac; \\\n' +
-          '          tr -d \'\\r\' < \\"$f\\" > /home/lemo/lemo-opuscar/core/render/\\"$f\\"; done"\n' +
-          '      对齐后重跑本命令即可。'
-        );
-      }
-      ok(`core/render/ 两侧一致（独立核验 ${names.length} 个文件）`);
+      checkedFiles += names.length;
     }
+    if (allProblems.length) {
+      console.log(allProblems.map(d => '    ' + d).join('\n'));
+      fail(
+        `两侧 core/ 不一致（${allProblems.length} 处），已拒绝开工。\n` +
+        '      编排器在 Windows 渲染、在 WSL 跑音频与混流，两侧的 core/ 必须同版本，\n' +
+        '      否则会产出难以解释的结果（实测过：新脚本只在一侧 → 跑到一半才报 can not open file）。\n' +
+        '      人工对齐（把 Windows 侧拷到 WSL；文本去 CR，字体等二进制直接拷）：\n' +
+        '        wsl.exe -d ' + CFG.wslDistro + ' -u root -- bash -c "cd /mnt/d/lemo-opuscar/core && \\\n' +
+        '          find . -type f \\( -name \\*.py -o -name \\*.mjs -o -name \\*.js -o -name \\*.sh -o -name \\*.css \\) | while read f; do \\\n' +
+        '            tr -d \\"\\r\\" < \\"\\$f\\" > /home/lemo/lemo-opuscar/core/\\"\\$f\\"; done; \\\n' +
+        '          find . -type f -name \\*.woff2 | while read f; do cp -f \\"\\$f\\" /home/lemo/lemo-opuscar/core/\\"\\$f\\"; done"\n' +
+        '      对齐后重跑本命令即可。'
+      );
+    }
+    if (checkedDirs) ok(`core/ 两侧一致（核验 ${checkedDirs} 个目录 / ${checkedFiles} 个文件）`);
   }
 
   // ── 起飞前检查（按 demo 链路声明，只提示不阻断）────────────
@@ -1142,6 +1582,25 @@ async function main() {
   // 而「这个 demo 到底能不能跑」正是 dry-run 最有用的信息 —— 必须赶在它之前。
   // 位置仍在音频链路之前，且不占用 step() 的编号（不改变既有的 [N] 序列）。
   await preflight(o, demoRel);
+
+  // ── P2-1（2026-10-02）：音色/语速覆盖与配音引擎不匹配时**如实告知**，绝不静默忽略 ──────
+  //   实证：styles/ascii-crt/demo/voice_fx.py 与 styles/scifi-toon/demo/voice.py 这两个 demo 有
+  //   声线处理脚本 ⇒ 音频链路的配音步会走 `if [ -n "$VOICEFX" ]` 分支（Kokoro 的 core/tts/tts.py
+  //   + 该脚本），**不会**走 Index-TTS ⇒ 用户传的 --voice / --speed 根本不生效；更糟的是
+  //   `--voice zh_kepu9` 会被 Kokoro 当成音色名报 unknown voice，用户完全不知道为什么。
+  //   这里不试图让它支持（那是另一个功能），也不 fail（用户可能就是想跑）——只如实报出。
+  //   ★ 位置：紧跟 preflight、在 --dry-run 的 exit 之前 ⇒ **干跑也能看到这条提示**
+  //     （干跑不跑音频，放音频脚本里就永远看不到；这也正是控制台面板最容易「骗人」的地方）。
+  {
+    const demoDirWin = path.join(CFG.winLib, demoRel);
+    const fx = ['voice_fx.py', 'voice.py'].find(f => fs.existsSync(path.join(demoDirWin, f)));
+    const passed = [o.voice ? '--voice' : null, (o.speed !== null && o.speed !== undefined) ? '--speed' : null]
+      .filter(Boolean).join(' / ');
+    if (fx && passed) {
+      warn(`STEP_WARN ${passed} 对本 demo 不生效：${demoRel}/ 走的是声线处理脚本 ${fx}，`
+        + `配音引擎被该脚本接管（不是 Index-TTS），音色/语速由该脚本决定 —— 请改该脚本，或换用 Index-TTS 的风格。`);
+    }
+  }
 
   if (o.dryRun) {
     console.log(C.warn('\n--dry-run：以下步骤不会真正执行\n'));
@@ -1151,7 +1610,10 @@ async function main() {
     if (!o.skipRender) console.log(C.dim(`     $ node ${renderVArgs.join(' ')}`));
     console.log(`  4. 混流     ${(o.skipRender || o.skipAudio) ? '（依赖缺失，跳过）' : `WSL ${demoMuxRel || 'core/render/mux.sh'}（${o.venc}）→ ${finalWin}`}`);
     console.log(`  5. 导出     ${outDir}`);
-    console.log(C.dim('\n  2 与 3 会并行执行。\n'));
+    console.log(C.dim((contentOf(qRender) || contentOf(qEvents) || o.lines)
+      ? '\n  换内容/换配音行时：2 的「配音」阶段会先单独跑完并回传 voices/*.json，\n'
+        + '  之后 2 的「配乐+混音」与 3 才并行（页面要靠 dur.json 排口播时间窗）。\n'
+      : '\n  2 与 3 会并行执行。\n'));
     process.exit(0);
   }
 
@@ -1233,9 +1695,16 @@ fi
   //       （实测 ascii-crt：Windows 18:28:45 vs WSL 15:47:12）。
   //   (b) **顺序**：各 demo 的 build.sh 里 events.mjs 在 mix.py **之前**（有依赖），
   //       而音频与渲染是并行跑的 —— 所以这一步必须放在并行段**之前**，不能塞进渲染分支。
+  // ★ 包成**可重入**函数（2026-10-02 修，中文 9:16 首跑暴露）：
+  //   events/subs 的时间窗是按 voices/dur.json 排的，而 dur.json 由「配音前置」阶段重写。
+  //   旧实现只在配音**之前**导出一次 ⇒ 换内容后整片字幕仍按上一轮文案的时长排
+  //   （实测字幕比配音拖后 0.5~0.9 秒）。配音前置跑完会再调一次，把时间窗刷到真实时长上。
+  const exportEventsAndSubs = async () => {
   step('导出事件与字幕（Windows 侧，产物回传 WSL）');
   {
-    const env = { ...process.env, PATH: `${ffDir};${process.env.PATH || ''}`, LEMO_GPU: '1' };
+    // LEMO_FILM：demo 自带的事件脚本要按它自己 build.sh 那行重建位置参数（没有 film 的位置），
+    // 所以选片名走环境变量传进去，而不是加位置参数（那会把 work 顶掉）。
+    const env = { ...process.env, PATH: `${ffDir};${process.env.PATH || ''}`, LEMO_GPU: '1', LEMO_FILM: o.film || '' };
     const winHas = rel => fs.existsSync(path.join(CFG.winLib, rel));
     // 只有「本次运行新写出来的」文件才回传 WSL。两侧是独立文件系统，把 Windows 上的陈旧提交版
     // 覆盖到 WSL 去，会让配乐/混音读到一份不该更新的旧数据。
@@ -1280,9 +1749,9 @@ fi
         evArgs = [demoEvRel, ...tpl.args.map(x => (x === null ? wanted : x))];
         info(C.dim(`事件导出与渲染同源换内容（复刻 build.sh 的 ${tpl.slots.join('/')}）：content=${wanted}`));
         if (tpl.otherRefs) {
-          warn(`  该 demo 的 build.sh 还有 ${tpl.otherRefs} 行从同一个 ${tpl.slots.join('/')} 派生`
-            + '（配音行 lines.json、字幕行 subs.py、静帧行等）—— 本编排器只跟随了渲染与事件两步，'
-            + '配音与字幕文本仍来自默认内容文件，成片里这两处会与新内容不符。');
+          info(C.dim(`  该 demo 的 build.sh 还有 ${tpl.otherRefs} 行从同一个 ${tpl.slots.join('/')} 派生`
+            + '（配音行 lines.json、字幕行 subs.py、静帧行等）——'
+            + '配音行与字幕源已由本编排器同步跟随（linesDerivation + 位置参数模板），静帧未跟随。'));
         }
       } else {
         // 内容槽填不上（用户没给 content=）→ 只传 build.sh 默认分支会传的那些参数，脚本自己退到默认
@@ -1307,6 +1776,23 @@ fi
         warn(`  → 若该 demo 的渲染认 content=，则画面已换内容、事件表没换，成片会不一致。`
           + `显式加 --q-events content=${wanted} 才能两步同换。`);
         warnedContent = true;
+      }
+    }
+    // --film：选片名必须同时送到**事件侧**，否则事件表由默认 film.js 产出 —— 画面是新片、
+    // 事件表/字幕/配乐还是示例片，而成片看起来「能出」，cuecheck 还会拿同一份错事件核成「通过」。
+    // （这是「内容只换一半」的同类缺陷，只是换的维度从 content 变成了 film。）
+    if (o.film) {
+      if (demoEvRel) {
+        // demo 自带的事件脚本按**位置参数**走：它的 argv[4] 是 work、argv[5] 才是 film，
+        // 所以必须显式把 work 补上，否则 film 会被当成 work（事件表就写到 film 名字的目录里去了）。
+        evArgs.push(demoRel, o.film);
+        info(C.dim(`事件导出按选片名走（复刻它的位置参数，work=${demoRel}）：film=${o.film}`));
+      } else {
+        // core/render/events.mjs 吃 --q：把 film= 并进去（已有 --q 就追加，没有就补一个）
+        const qi = evArgs.indexOf('--q');
+        if (qi >= 0) evArgs[qi + 1] = `${evArgs[qi + 1]}&film=${o.film}`;
+        else evArgs.push('--q', `film=${o.film}`);
+        info(C.dim(`事件导出按选片名走（--q）：film=${o.film}`));
       }
     }
     // 一致性闸门：两侧实际用的 content= 必须相同，否则画面一套内容、字幕/配乐/画面事件层另一套。
@@ -1388,7 +1874,25 @@ fi
       `${demoRel}/tools/cues.py`, `${demoRel}/cues_export.py`].find(winHas);
     if (subsPyRel && !subsGen) {
       subsGenFound = subsGenFound || subsPyRel;
-      const a = buildShArgs(o.slug, demoRel, path.basename(subsPyRel)) || [];
+      // ★ 与事件导出共用同一个位置参数模板（2026-10-02 修）：engraving 的 build.sh 是
+      //   `$PY $D/tools/subs.py $C`，$C 与渲染行 `--q content=$C` 同源。
+      //   旧实现走 buildShArgs()，那个函数见到未映射的 $C 就返回 null ⇒ subs.py 零参数调用
+      //   ⇒ 字幕源回落到默认 content.json ⇒ **画面/配音换了新主题、只有字幕还是旧文案**。
+      //   现在：有内容槽就填 content= 值，没有内容槽（或用户没给 content=）就只传模板里
+      //   内容槽之前的部分 —— 后者与 build.sh 默认分支逐字节一致。
+      const subsTpl = posArgTemplate(o.slug, demoRel, path.basename(subsPyRel));
+      let a = [];
+      if (subsTpl) {
+        const cut = subsTpl.args.findIndex(x => x === null);
+        if (cut === -1) {
+          a = subsTpl.args;
+        } else if (wanted !== null) {
+          a = subsTpl.args.map(x => (x === null ? wanted : x));
+          info(C.dim(`字幕生成器与渲染同源换内容（复刻 build.sh 的 ${subsTpl.slots.join('/')}）：content=${wanted}`));
+        } else {
+          a = subsTpl.args.slice(0, cut);
+        }
+      }
       const pyScript =
         `set -o pipefail\n` +
         `cd '${CFG.wslLib}' || exit 1\n` +
@@ -1399,7 +1903,7 @@ fi
         warn(`${subsPyRel} 失败（退出码 ${pr.code}）—— 该 demo 的字幕源没有更新`);
       } else {
         subsGen = subsPyRel;
-        info(`${subsPyRel} → ok（WSL .venv）`);
+        info(`${subsPyRel} → ok（WSL .venv）${a.length ? '  args=' + a.join(' ') : ''}`);
       }
     }
 
@@ -1414,6 +1918,8 @@ fi
       info(`字幕生成器 ${subsGen} —— .srt 将在第 4 步由 srt.py 重新生成`);
     }
   }
+  };
+  await exportEventsAndSubs();
 
   // ── 3 & 4. 音频（WSL）与渲染（Windows GPU）并行 ───────────
   // 音频链路。关键点（由独立验证发现并修正）：
@@ -1422,10 +1928,46 @@ fi
   //   asr_check 与 mix.py 必然崩。正确做法（与各 demo 自己的 build.sh 一致）：
   //     有 voice_fx.py → TTS 出到 voices_raw/ → fx → voices/
   //     没有           → TTS 直接出到 voices/
-  const audioScript = `
+  // ★ 换内容时的**时序约束**（2026-10-02，首部「主题→视频」实拍暴露）：
+  //   渲染页初始化时会 fetch('voices/dur.json') 来排口播时间窗，而 dur.json 是 WSL 侧
+  //   TTS 的产物、Windows 侧那份是仓库里已提交的（默认内容专用）。
+  //   ⇒ 一旦换内容/换配音行，dur.json 必然要变，**必须先出配音、把 voices/*.json 回传
+  //     Windows，再开始渲染**，否则成片字幕与口播时间窗全按旧文案算（实测偏差 0.2–1.6s）。
+  //   全仓有 20+ 个 demo 的页面读 voices/dur.json，所以这不是 engraving 一家的问题。
+  const swapContent = contentOf(qRender) || contentOf(qEvents);
+  const textMayChange = swapContent !== null || o.lines !== null;
+  const deriveCmd = swapContent !== null ? linesDerivation(o.slug, demoRel, swapContent) : null;
+  const linesSrcWsl = o.lines ? `${CFG.wslLib}/${demoRel}/${o.lines}` : null;
+  if (textMayChange) {
+    info(C.dim(`配音行文本可能变了 → 配音先跑，voices/*.json 回传 Windows 后再渲染`
+      + (deriveCmd ? `（lines.json 由 build.sh 的派生行重建）` : '')));
+    if (swapContent !== null && !deriveCmd) {
+      warn(`该 demo 没有可复刻的「内容 → lines.json」派生行 —— 配音文本不会随 content=${swapContent} 变。`
+        + `如需换配音，请用 --lines 指定行文件，或直接跑它自带的 build.sh。`);
+    }
+  }
+
+  // phase: 'all' = 配音+配乐+混音一次跑完；'voice' = 只到配音（回传 dur.json 用）；
+  //        'rest' = 跳过配音，只跑配乐+混音（与渲染并行）。
+  const audioScriptFor = (phase) => `
 set -u
 set -o pipefail
 export PATH=/usr/local/bin:$PATH
+export LEMO_VOICE_ONLY=${phase === 'voice' ? '1' : '0'}
+export LEMO_SKIP_VOICE=${phase === 'rest' ? '1' : '0'}
+export LEMO_DERIVE_LINES=${phase === 'rest' ? "''" : shq(deriveCmd)}
+export LEMO_CONTENT=${shq(swapContent)}
+# --voice / --speed：音色与语速覆盖（空串 = 不动 lines.json 里的原值）
+export LEMO_TTS_VOICE=${shq(o.voice || '')}
+export LEMO_TTS_SPEED=${shq(o.speed === null || o.speed === undefined ? '' : String(o.speed))}
+export LEMO_LINES_SRC=${phase === 'rest' ? "''" : shq(linesSrcWsl)}
+# 配音引擎（由内容文件的 voice.engine 决定，缺省 kokoro）与两个平台各一份的 demo 路径。
+# Index-TTS 是本机 Windows 便携版：它的脚本会自重入到自带 venv 的 python，所以从 WSL 启动即可，
+# 但**传给它的输出目录必须是 Windows 路径**（那个 python 认 D:/... 不认 /mnt/d/...）；
+# 而 mix.py 跑在 WSL，所以随后还要用 /mnt 那份路径把 wav 拷回来。
+export LEMO_TTS_ENGINE=${shq(ttsEngine)}
+export LEMO_DEMO_WIN=${shq(demoWinWsl.replace(/^\/mnt\/([a-z])/, (m, d) => d.toUpperCase() + ':'))}
+export LEMO_DEMO_WIN_MNT=${shq(demoWinWsl)}
 # ★ 无缓冲：本脚本的输出要边跑边透传（见下面「输出策略」）。python 的 stdout 一旦不是 tty
 #   （这里是管道）就按 4KB 块缓冲，默认攒满 4KB 或进程退出才吐 —— 输出只有几十行时等于
 #   「退出时才吐」，子步骤之间全是静默。这里统一解掉，覆盖本脚本里所有 python 调用。
@@ -1466,6 +2008,44 @@ for sub in voices voices_raw music out .; do
     echo "  ! 警告：chown -R lemo:lemo $D/$sub 失败（若该处有 root 属主文件，后续写回会 PermissionError）"
   fi
 done
+
+# ── 换内容：重建 lines.json（配音行文本的源头）──────────────────────────────
+# 编排器在换内容时把 build.sh 里那条「内容 → lines.json」的命令**原文**传进来
+# （见 linesDerivation）。不重建的话配音文本仍来自默认 content.json ⇒
+# 画面/字幕/事件都换了新内容、只有配音还是旧的，成片自相矛盾。
+if [ -n "$LEMO_DERIVE_LINES" ]; then
+  echo "[换内容] 按 build.sh 的派生行重建 lines.json（content=$LEMO_CONTENT）"
+  if sh -c "$LEMO_DERIVE_LINES"; then
+    echo "  ✓ lines.json 已从 $LEMO_CONTENT 派生"
+  else
+    echo "STEP_WARN lines.json 派生失败 —— 配音文本可能仍是默认内容"
+  fi
+fi
+# --lines：显式指定配音行文件（优先级最高，覆盖上面的派生结果）
+if [ -n "$LEMO_LINES_SRC" ]; then
+  if cp -f "$LEMO_LINES_SRC" "$D/lines.json" 2>/dev/null; then
+    echo "[换内容] lines.json 已按 --lines 指定文件覆盖：$(basename "$LEMO_LINES_SRC")"
+  else
+    echo "STEP_WARN --lines 指定的文件拷不进来：$LEMO_LINES_SRC"
+  fi
+fi
+
+# ★ --voice / --speed：覆盖内容文件里的音色与语速（控制台「声音」版块用这条）。
+#   位置放在派生与 --lines 之后 = 优先级最高。只改 lines.json 里每行的这两个字段，
+#   不动文本/顺序/其它字段 —— 这样「换音色」不必改内容文件，也就不会多出两份内容文件互相漂移。
+if [ -n "$LEMO_TTS_VOICE" ] || [ -n "$LEMO_TTS_SPEED" ]; then
+  .venv/bin/python -c '
+import json, sys
+p, voice, speed = sys.argv[1], sys.argv[2], sys.argv[3]
+L = json.load(open(p, encoding="utf-8"))
+for x in L:
+    if voice: x["voice"] = voice
+    if speed: x["speed"] = float(speed)
+json.dump(L, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+print("  \u2713 lines.json 音色/语速已覆盖：voice=%s speed=%s（%d 条）"
+      % (voice or "(不变)", speed or "(不变)", len(L)))
+' "$D/lines.json" "$LEMO_TTS_VOICE" "$LEMO_TTS_SPEED"
+fi
 
 # ── 脚本探测 ────────────────────────────────────────────────────────────────
 # 声线后处理：voice_fx.py（ascii-crt）→ voice.py（scifi-toon，另外还写 voices/lips.json 口型包络）
@@ -1511,8 +2091,22 @@ if [ -n "$MUSIC" ] && [ "$MUSIC" = "$MIX" ]; then
 fi
 
 # ── 配音 ────────────────────────────────────────────────────────────────────
+# LEMO_SKIP_VOICE=1：配音已在「渲染前的前置阶段」跑过（换内容时必须先出 dur.json，
+# 否则 Windows 页面读到旧的 voices/dur.json，口播时间窗全错）。这里跳过，只跑配乐+混音。
+if [ "$LEMO_SKIP_VOICE" = "1" ]; then
+  echo "[配音] 跳过（已在渲染前的前置阶段完成，本次只跑配乐与混音）"
+fi
+if [ "$LEMO_SKIP_VOICE" != "1" ]; then
 if [ -f "$D/lines.json" ]; then
   if [ -n "$VOICEFX" ]; then
+    # ★ 引擎声明与实际不符的坑（实证）：本分支**优先于**下面的 indextts 分支 —— 只要 demo 有
+    #   voice_fx.py / voice.py 就走这里的 Kokoro（core/tts/tts.py），即使内容文件里写了
+    #   "engine": "indextts" 也会**静默**跑 Kokoro。更隐蔽的是这类 demo 的 lines.json 里 voice
+    #   常是 zh_curator 这种 Index-TTS 别名，喂给 Kokoro 直接报 unknown voice，用户看到的是
+    #   「音色不认识」，根本想不到是引擎没生效。不 fail（用户可能就是想用 Kokoro）：只出声说清。
+    if [ "$LEMO_TTS_ENGINE" = "indextts" ]; then
+      echo "STEP_WARN 内容文件声明 engine=indextts，但本 demo 有声线处理脚本 $(basename $VOICEFX)，Index-TTS 引擎不生效 —— 实际用的是 Kokoro（core/tts/tts.py）"
+    fi
     # TTS 的原始输出目录由声线脚本自己决定：ascii-crt 的 voice_fx.py 读 voices_raw/，
     # scifi-toon 的 voice.py 读 out/raw/。按脚本里实际写的那个字符串选目录。
     RAW="$D/voices_raw"
@@ -1537,14 +2131,105 @@ if [ -f "$D/lines.json" ]; then
     fi
     rm -f "$MARK"
   else
-    echo "[配音 1/1] TTS → voices/（该 demo 无 voice_fx.py/voice.py，按它自己 build.sh 的写法直接输出）"
-    .venv/bin/python core/tts/tts.py "$D/lines.json" "$D/voices" 2>&1 || { echo "STEP_FAIL tts(voices)"; exit 1; }
+    if [ "$LEMO_TTS_ENGINE" = "indextts" ]; then
+      # ── Index-TTS 本地（用户本机部署的 Windows 便携版）──────────────────────
+      # 与 Kokoro 的区别（三条，都是实测得来的）：
+      #   ① 它跑在 Windows：脚本自重入到便携版自带的 venv python，所以从 WSL 启动没问题，
+      #      但**输出目录必须给 Windows 路径**（LEMO_DEMO_WIN）。
+      #   ② 产物要写到**Windows 侧**的 voices/：渲染页读的就是那一份 dur.json；
+      #      写完再用 /mnt 那份路径把 wav 拷回 WSL，因为 mix.py 在 WSL 跑。
+      #   ③ 它一次进程加载模型（1~2 分钟）批量合成全部行，所以**不要**逐条调用。
+      echo "[配音 1/1] TTS → Index-TTS 本地（Windows 便携版，零样本克隆参考音）"
+      if ! .venv/bin/python core/tts/tts_indextts.py "$D/lines.json" "$LEMO_DEMO_WIN/voices" 2>&1; then
+        echo "STEP_FAIL tts_indextts"; exit 1
+      fi
+      mkdir -p "$D/voices"
+      n=0
+      for f in "$LEMO_DEMO_WIN_MNT"/voices/*.wav; do
+        [ -f "$f" ] || continue
+        cp -f "$f" "$D/voices/$(basename "$f")" && n=$((n+1))
+      done
+      if [ "$n" -gt 0 ]; then
+        echo "  ✓ 已把 $n 个 wav 回传到 WSL 的 voices/（mix.py 在 WSL 跑，要用这一份）"
+      else
+        echo "STEP_WARN 没有从 Windows 侧回传到任何 wav"
+      fi
+      # ★ dur.json 必须与**刚搬过来的这批 wav**逐条一致，而且必须落在 WSL 侧。
+      #   旧实现是「从 Windows 把 dur.json 拷过来」，依赖那一刻 Windows 侧文件已落盘 ——
+      #   实测不可靠：2026-10-02 中文 9:16 复跑时该 if 判空（没打印那行），WSL 侧的 dur.json
+      #   就停在 kokoro 时代的旧值，紧接着「回传 Windows」又把它盖回 Windows，
+      #   于是 events/字幕时间窗全按旧时长排 —— 字幕比配音拖后 0.5~0.9s，且逐条差 0.47~0.87s。
+      #   改成**直接从 WSL 侧这批 wav 重算**：不依赖任何跨侧时序假设，且天然与 wav 一致。
+      # ★ 必须**按 lines.json 的 id 过滤**，不能把 voices/*.wav 全量 glob 进来。
+      #   实测踩到过：英文版遗留的 close.wav 躺在 WSL 的 voices/ 里，重算出来的 dur.json
+      #   就多一条 "close": 5.383 —— 而 dur.json 是 events/字幕排时间窗的唯一依据。
+      #   （Windows 侧合成前也会清 stale wav，但那清的是 Windows 的 voices/，管不到这一份。）
+      .venv/bin/python -c '
+import json, os, sys, wave
+D = sys.argv[1]
+ids = [L["id"] for L in json.load(open(os.path.join(D, "lines.json"), encoding="utf-8"))]
+out = {}
+for i in ids:
+    p = os.path.join(D, "voices", i + ".wav")
+    if not os.path.isfile(p):
+        sys.exit("dur recompute: missing wav for line %r" % i)
+    w = wave.open(p)
+    out[i] = round(w.getnframes() / w.getframerate(), 3)
+    w.close()
+json.dump(out, open(os.path.join(D, "voices", "dur.json"), "w"), indent=1)
+print("  \u2713 voices/dur.json 已按 lines.json 逐条从 wav 重算（%d 条，供事件/字幕排时间窗）" % len(out))
+' "$D"
+    else
+      echo "[配音 1/1] TTS → voices/（该 demo 无 voice_fx.py/voice.py，按它自己 build.sh 的写法直接输出）"
+      .venv/bin/python core/tts/tts.py "$D/lines.json" "$D/voices" 2>&1 || { echo "STEP_FAIL tts(voices)"; exit 1; }
+    fi
   fi
   if [ -z "$(ls -A "$D/voices"/*.wav 2>/dev/null)" ]; then
     echo "STEP_FAIL voices/ 里没有 wav 产出"; exit 1
   fi
-  echo "[配音 校对] ASR（失败不致命，只警告）"
-  .venv/bin/python core/tts/asr_check.py "$D/lines.json" "$D/voices" 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"
+  # ASR 校对只对拉丁语言有意义。离线 Kokoro 的中文音质本身一般，而 asr_check 用的 whisper 小模型
+  # 对中文实测 9/9 全部 DIFF（相似度 0.20–0.57）；更要命的是它的 norm 不归一化「十/百/千」，
+  # 所以含多位数字的行即使转写正确也会 FAIL ⇒ 中文版只会刷一屏假警告，掩盖真正的失败。
+  # 判定按 lines.json 里的 lang（配音行派生自内容文件的 voice.lang，见 build.sh 第一条命令）。
+  # ★ 改成**按行**判定（2026-10-02）。旧写法是文件级 grep 'cmn'/'ja'，两个实证的坑：
+  #   ① lang 写成 zh / zh-Hans 的中文 demo 匹配不到 ⇒ 不跳过 ⇒ 中文 9/9 假 DIFF 照样刷屏；
+  #   ② 只要文件里**有一条** cmn，同文件的英文行也被一起跳过 ⇒ 漏校对。
+  #   现在要求**所有行**的 lang 都是 CJK 才跳过；有任何一行非 CJK 就照常跑
+  #   （宁可多跑一次 ASR，也不漏校对）。lang 缺失按「非 CJK」处理，同样偏保守。
+  ASR_SKIP=$(.venv/bin/python -c '
+import json, sys
+try:
+    L = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    print("0"); sys.exit(0)
+def cjk(lang):
+    return str(lang or "").lower().startswith(("zh", "cmn", "ja", "ko", "yue"))
+print("1" if L and all(cjk(x.get("lang")) for x in L) else "0")
+' "$D/lines.json")
+  if [ "$ASR_SKIP" = "1" ]; then
+    echo "[配音 校对] 跳过 ASR —— 所有行的 lang 都是 CJK（离线 ASR 对中文实测 9/9 全 DIFF，且数字归一化缺失）"
+    # ★ 跳过 ASR ⇒ asr_check.py（words.json 在配音阶段唯一的写者）没跑 ⇒ 那份 words.json 保持旧内容。
+    #   处理原则（2026-10-02，经复核后定稿）：
+    #     ① **绝不删除** —— 全库有 17 处消费方（whiteboard/film.js、paper-lantern/mix.py、
+    #        dataviz|swiss-motion/tools/words.py 等），删了它们当场读不到文件（真回归）。
+    #     ② **不回传**（见下面 backFiles）—— 文件留在原地、mtime 不变，下游读到的是「诚实的旧文件」，
+    #        而不是「被回传刷新了 mtime、伪装成新的旧文件」。这才是原来那个坑的真正解法。
+    #     ③ 只有本 demo **真有消费方**时才告警，否则一行噪音都不制造。
+    #   ⚠️ 探测用 shell 而不是 .venv/bin/python -c（后者要起解释器、写一大段 -c 更笨）。
+    #      排除 /voices/ 是因为 words.json 自己就在那儿，不算消费方。
+    WORDS_CONSUMERS=$(grep -rl "words\\.json" "$D" --include='*.js' --include='*.py' --include='*.mjs' --include='*.html' 2>/dev/null | grep -v "/voices/" | head -3)
+    if [ -n "$WORDS_CONSUMERS" ]; then
+      echo "STEP_WARN ASR 已跳过（该语言不在离线 ASR 可用范围内），voices/words.json **保持旧内容且未刷新** —— 下列文件会读到**旧的**词级时间轴，可能与本轮配音不同步："
+      echo "$WORDS_CONSUMERS" | sed "s|^$D/||" | sed "s|^|STEP_WARN   · |"
+    else
+      echo "  ✓ ASR 已跳过（本 demo 无 words.json 消费方）"
+    fi
+    # ★ 机器可判的标记：编排器据此把 words.json 从回传 Windows 的清单里剔除（见下面 backFiles）。
+    echo "ASR_SKIPPED"
+  else
+    echo "[配音 校对] ASR（失败不致命，只警告）"
+    .venv/bin/python core/tts/asr_check.py "$D/lines.json" "$D/voices" 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"
+  fi
 else
   if [ -n "$TTSOWN" ]; then
     # 与 core/tts/tts.py 互斥：走到这里说明本 demo 没有 $D/lines.json，core TTS 本就不会跑。
@@ -1557,6 +2242,16 @@ else
   else
     echo "[配音] 该 demo 无 lines.json，跳过（paper-lantern / impasto 这类用自己那套 tts.py）"
   fi
+fi
+fi
+
+# ── 配音前置阶段的出口 ──────────────────────────────────────────────────────
+# LEMO_VOICE_ONLY=1：只跑「换内容 → lines.json → 配音 → ASR」就停，让编排器把
+# voices/dur.json / words.json 回传 Windows 后再开始渲染。★ 这一步是**时序必需**，
+# 不是优化：页面 fetch('voices/dur.json') 发生在渲染页初始化时，晚于它再回传就白搭。
+if [ "$LEMO_VOICE_ONLY" = "1" ]; then
+  echo "VOICE_DONE"
+  exit 0
 fi
 
 # ── 配乐 ────────────────────────────────────────────────────────────────────
@@ -1629,15 +2324,83 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
 
   let audioP = null;
   let audioMixPath = null;   // 音频脚本回报的 mix.wav 实际路径（--skip-audio 时为 null，混流脚本自己探测）
+  const audioWarns = [];     // 音频链路的 STEP_WARN（下面统一报，不吞）
+
+  // ── 出片前显存预检 + 自动腾挪（★ 必须在 TTS **之前**）────────────────────────
+  // ★ 为什么在这里：本通路的 TTS 在 WSL 里跑（见 audioScriptFor 的配音段 → core/tts/tts_indextts.py），
+  //   而显存判据 nvidia-smi 读的是 **Windows** 这张卡 ⇒ 守卫只能在 Windows 侧 JS 里调，
+  //   不能塞进 WSL 的 bash 脚本（那里读不到这张卡）。位置在「音频链路」两个 phase 启动**之前**，
+  //   所以覆盖配音（voice）与配音+配乐+混音（all）两条路径 —— 两者都以 TTS 打头。
+  // ★ 语义与 dub.mjs 的 TTS 前守卫**完全一致**（照它做，别自创）：
+  //   预检 → 不足才自动卸载常驻模型（走 LM Studio HTTP API，不是杀进程）→ 仍不足则明确失败。
+  //   这里用默认 onShort:'require'（**硬拦**）：TTS 正是「显存不够就静默挂死一个多小时」的那一步
+  //   （见 lib/vram.mjs 头部事故），绝不许它静默挂死。
+  //   阈值沿用 INDEXTTS_MIN_FREE_MIB（与 core/tts/tts_indextts.py 的 VRAM_MIN_MIB 同名同默认值
+  //   6700）⇒ 两侧口径天然一致；设 0 两边都关。LEMO_NO_VRAM_FREE=1 只查不腾（关自动卸载）。
   if (!o.skipAudio) {
-    step('音频链路（WSL：配音 → 声线 → ASR → 配乐 → 混音）');
+    const vramRes = await ensureVramFree(Number(process.env.INDEXTTS_MIN_FREE_MIB ?? 6700),
+      { label: 'TTS 合成', relaxEnv: 'INDEXTTS_MIN_FREE_MIB' });
+    if (!vramRes.ok) fail(vramRes.message);
+  }
+
+  // ── 阶段 1/2：换内容时**必须先**把配音跑完，并把 voices/*.json 回传 Windows ────────
+  // ★ 这一步必须落在 audioP / renderP **两个 Promise 建立之前**。
+  //   旧写法把它放在 audioP 的 IIFE 里 —— 而两个 IIFE 是同时启动的，渲染并不会等它：
+  //   实测日志里 TTS 的输出与渲染进度是**交错**的，渲染页仍旧 fetch 到旧的 dur.json。
+  //   渲染页在初始化时读 voices/dur.json 排口播时间窗，晚了就白搭（偏差 0.2–1.6s），
+  //   而且会让一致性校验门「拿同一份错时长自洽地假通过」—— 必须在这里串起来。
+  let voicePhaseErr = null;
+  if (!o.skipAudio && textMayChange) {
+    step('音频链路 · 配音前置（WSL：重建 lines.json → 配音 → ASR → 回传 Windows）');
+    const v = await runWsl(audioScriptFor('voice'), { name: '_lemo-voice', stream: true });
+    if (v.code !== 0 || !/VOICE_DONE/.test(v.stdout)) {
+      const sf = /STEP_FAIL (.+)/.exec(v.stdout);
+      diagnoseMissingAssets(demoRel, `${v.stdout || ''}\n${v.stderr || ''}`);
+      voicePhaseErr = `配音前置阶段失败：${sf ? sf[1].trim() : '没有跑到 VOICE_DONE'}（退出码 ${v.code}）`;
+    } else {
+      audioWarns.push(...[...v.stdout.matchAll(/STEP_WARN (.+)/g)].map(x => x[1].trim()));
+      // voices/*.json + lines.json 回传 Windows（页面读的就是这一份）
+      // ★ 跳过 ASR 时**不回传** words.json（2026-10-02 修）。words.json 在配音阶段唯一的写者是
+      //   asr_check.py（见 core/tts/asr_check.py:116），跳过 ASR ⇒ 没重算 ⇒ 那份是上一版内容的
+      //   陈旧产物。旧实现照样把它拷回 Windows：mtime 被刷新、看起来像刚生成，而页面拿到的是
+      //   **旧词级时间**（实测 engraving 的 words.json 至今还是旧英文内容的 5 条 title,d1-d3,close）。
+      //   ★ 音频脚本跳 ASR 时**只不回传、绝不删除**（全库有 17 处消费方，如 whiteboard/film.js、
+      //     paper-lantern/mix.py；删了它们当场读不到文件）。文件留在原地、mtime 不变，下游读到的是
+      //     「诚实的旧文件」，而不是被回传刷新了 mtime、伪装成新的旧文件 —— 这才是原坑的真正解法。
+      //   判定依据是音频脚本跳 ASR 时打的 ASR_SKIPPED 标记（比匹配中文日志稳）。
+      const asrSkipped = /ASR_SKIPPED/.test(v.stdout || '');
+      const backFiles = ['dur.json', 'words_rel.json', 'lips.json'];
+      if (!asrSkipped) backFiles.splice(1, 0, 'words.json');
+      if (asrSkipped) info(C.dim('跳过 ASR → 不回传 words.json（文件保留原地、mtime 不变，避免「伪装成新的旧文件」）'));
+      const back = await runWsl(
+        [`mkdir -p '${demoWinWsl}/voices'`]
+          .concat(backFiles.map(f =>
+            `[ -f '${demoWsl}/voices/${f}' ] && cp -f '${demoWsl}/voices/${f}' '${demoWinWsl}/voices/${f}' && echo "  ✓ voices/${f} → Windows"`))
+          .concat([`[ -f '${demoWsl}/lines.json' ] && cp -f '${demoWsl}/lines.json' '${demoWinWsl}/lines.json' && echo "  ✓ lines.json → Windows"`])
+          .join('\n'),
+        { name: '_lemo-voices-back' });
+      const done = (back.stdout || '').split('\n').filter(l => l.includes('✓'));
+      if (done.length) info(C.dim(done.join('\n')));
+      else warn('配音前置阶段没有回传到任何 voices/*.json —— 渲染会按旧时长排口播窗');
+
+      // ★ dur.json 此时已是 Index-TTS 的**真实**时长 ⇒ 必须把 events/subs 的时间窗按它重排。
+      //   少了这一步，字幕仍按上一轮文案的时长排（实测拖后 0.5~0.9 秒），
+      //   而且一致性校验门会「拿同一份错时长自洽地假通过」。
+      info(C.dim('dur.json 已是配音真实时长 → 重排事件与字幕时间窗'));
+      await exportEventsAndSubs();
+    }
+  }
+
+  if (!o.skipAudio) {
+    step(`音频链路（WSL：${textMayChange ? '配乐 → 混音' : '配音 → 声线 → ASR → 配乐 → 混音'}）`);
     audioP = (async () => {
+      if (voicePhaseErr) return { ok: false, msg: voicePhaseErr };
       // ★ stream: true —— 音频链路的输出边跑边透传（全流程唯一一条「又长又安静」的 WSL 路径）。
       //   旧写法是 `await runWsl(...)` 拿到整块 r.stdout 再一次性写出来 ⇒ 配音/声线/ASR/配乐/混音
       //   的全部输出要等音频跑完（实测 352 秒）才一起冒出来，进度条看着像死了。
       //   ⚠️ 改成流式后**不能**再在下面把 r.stdout / r.stderr 整体写一遍 —— 那会重复打印一份。
       //   r.stdout / r.stderr 仍照常返回（下面要用 MIX_OK / STEP_FAIL / STEP_WARN 正则匹配）。
-      const r = await runWsl(audioScript, { name: '_lemo-audio', stream: true });
+      const r = await runWsl(audioScriptFor(textMayChange ? 'rest' : 'all'), { name: '_lemo-audio', stream: true });
       const m = /MIX_OK (\d+) (\S+)/.exec(r.stdout);
       if (r.code !== 0 || !m) {
         // 报清楚是哪一步失败的，而不是笼统的「exit N」——
@@ -1650,9 +2413,9 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
         diagnoseMissingAssets(demoRel, `${r.stdout || ''}\n${r.stderr || ''}`);
         return { ok: false, msg: `音频链路失败：${why}（退出码 ${r.code}）` };
       }
-      const warns = [...r.stdout.matchAll(/STEP_WARN (.+)/g)].map(x => x[1].trim());
+      audioWarns.push(...[...r.stdout.matchAll(/STEP_WARN (.+)/g)].map(x => x[1].trim()));
       audioMixPath = m[2];
-      return { ok: true, msg: `mix.wav ${(Number(m[1]) / 1048576).toFixed(1)} MB  ${m[2]}`, warns };
+      return { ok: true, msg: `mix.wav ${(Number(m[1]) / 1048576).toFixed(1)} MB  ${m[2]}`, warns: audioWarns };
     })();
   } else {
     step('音频链路'); info(C.dim('（--skip-audio）'));

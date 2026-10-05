@@ -14,6 +14,8 @@
 //   4. PROCESS_CASES 起两个任务（一个 sleep 120 的 wsl 步骤 + 一个 20050 行的 exe 步骤），
 //      它们会写进 .console 的 index.json / logs；跑完从索引摘掉、日志文件删掉
 //   5. WSL 侧的 /tmp 标记文件、D:\WSL 的临时脚本
+//   6. FULL_CASES 的现场 TTS 用例 —— 会在 D:\lemo-films 下建一个 `_smoke-tts-*` 输出目录，
+//      并让 dub.mjs 在共享缓存目录 `dub/_verify/` 里写一份同名抽帧目录；两者都登记进 ARTIFACTS.dirs
 //   测试服务覆写 .console-port / 打开控制台.url 的副作用由 smoke.mjs 负责备份还原。
 
 import fs from 'node:fs';
@@ -24,6 +26,11 @@ import { spawn } from 'node:child_process';
 
 // 只借 CFG 的常量（wslDistro / exportDir）。env.mjs 顶层没有任何副作用 —— 不会触发探测。
 import { CFG } from '../lib/env.mjs';
+
+// ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
+//   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
+//   设了这个环境变量，本进程（含它 import 的 smoke.mjs）spawn 出的 server.mjs 会跳过写入。
+process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 
 // ── 红线常量 ────────────────────────────────────────────────
 /** ★ 编排器的权威 md5。控制台只是包装层，绝不能改它。 */
@@ -48,7 +55,121 @@ import { CFG } from '../lib/env.mjs';
 //      ⚠️ 已知残留：score.py 这类脚本中途一个字都不打印、只在最后 dump JSON，那段是纯计算时间，
 //        没有输出可流（要改进度只能改 demo 自己的脚本，超出编排器职责）。
 //    ⚠️ 以上缺陷用 --dry-run 都测不出来（dry-run 不跑音频），必须真实出片才现形。
-export const ORCH_MD5 = 'f6a52d8c1bd82862458d7d3798c1e1c3';
+//    · f6a52d8c1bd82862458d7d3798c1e1c3 → e22161a40121413d5771787e18e8562c：
+//      **「内容只换一半」这一类缺陷的第三次出现**，由首部「主题→视频」真实出片暴露（换内容重跑后
+//      画面/配音都是新主题，只有 .srt 还是上一版）。四处修复 + 两个新选项：
+//        ① 字幕源不吃内容参数：`buildShArgs()` 见到未映射的 $C 就返回 null（担心少传一个参数会把
+//           后面的顶到前面去），于是 subs.py 被**零参数**调用、回落到默认 content.json。
+//           而 `eventsArgTemplate()` 早就有 $C 占位机制，只是**只用在 events 步骤**。
+//           → 通用化为 `posArgTemplate(slug, demoRel, needle)`，字幕生成器共用同一模板。
+//        ② Windows 侧 voices/dur.json 永不刷新：dur.json 由 WSL 的 TTS 生成，而读它排口播时间窗的
+//           页面跑在 Windows（全仓 20+ 个 demo 的页面读它）。默认内容时仓库里已提交一份正确的，
+//           **一旦换内容就必然错**（实测偏差 0.2–1.6s）。→ 换内容/换配音行时先跑「只到配音」的
+//           前置阶段（LEMO_VOICE_ONLY），把 voices/*.json 回传 Windows，**再**开始渲染。
+//        ③ 配音行不随内容派生：build.sh 第一步就是 `$PY -c "…open('$D/$C')…open('$D/lines.json','w')"`
+//           —— 配音行文本是从内容文件派生的，编排器不跑这一步。→ 新增 `linesDerivation()`：
+//           **照抄 build.sh 那一行**（不重新实现派生规则，避免漂移），只替换内容槽；在配音前置阶段执行。
+//        ④ 新增 `--lines <file>`（只换台词不换画面）与 `--film <name>`（同风格另做一部新片，
+//           页面 ?film=<name>；事件脚本经 LEMO_FILM 环境变量传，避免顶掉它的 work 位置参数）。
+//      ★ 踩坑记录：shell 的 `${VAR:-default}` **会撞上 JS 模板字符串插值**（实测
+//        `SyntaxError: Missing } in template expression`）。本文件里一律只能用 `$VAR` 形式，
+//        默认值靠 JS 侧注入 `export VAR='...'`；新增 `shq()` 做单引号安全转义。
+//      ⚠️ 同样地：这一整类缺陷用 --dry-run 都测不出来（dry-run 不跑音频），必须真实出片才现形。
+//    · e22161a40121413d5771787e18e8562c → 2cb2081dfc8d0afa34a723c67c0e96ff3：
+//      **修正上一版「配音前置」的时序缺陷**（由首部原创片的真实实拍日志暴露）：
+//      上一版把「配音前置」放在 `audioP` 的 IIFE 里，而 `audioP` 与 `renderP` 两个 IIFE 是
+//      **同时启动**的 —— 渲染并不会等它。实测日志里 TTS 的输出与渲染进度是**交错**的，
+//      渲染页仍旧 fetch 到旧的 voices/dur.json。后果有两层：
+//        ① 画面上的口播窗/字幕时间按示例片的旧时长排（偏差 0.2–1.6s）；
+//        ② 更隐蔽的是，一致性校验门的 `LINES` 也来自页面读到的 dur.json，
+//           于是它会**拿同一份错时长自洽地"假通过"**。
+//      → 把配音前置提成 `audioP`/`renderP` **两个 Promise 建立之前**的独立 await，
+//        并把失败经 `voicePhaseErr` 传给 audioP（前置失败就不再起音频/渲染）。
+//      ⚠️ 这一类缺陷 --dry-run 测不出来（dry-run 不跑音频、也不建 Promise），必须真实出片看日志时序。
+//    · 2cb2081dfc8d0afa34a723c67c0e96ff3 → 9d935da0e65cbaab114418991aee2e01：
+//      **新增「语言版本」**（用户要求：出片可选中文/英文，选哪种语言就出全套对应语言的片子）。两处：
+//        ① 新增 `--lang <code>`：规则是「把 content=X.json 换成 X.<code>.json」，并**同时**送到渲染与
+//           事件侧 —— 与 `--film` 完全同理（只送一侧会让事件表停在另一种语言，`cuecheck` 会拿同一份
+//           错事件核成"通过"）。语言本身由内容文件的 "lang" 字段承载（字体/字距/圆窗编号前缀/
+//           站点刻名/配音音色都由它驱动，见 core/lang/lang.mjs），所以 --lang 只负责"换对文件"。
+//        ② 音频脚本对 CJK 语言**主动跳过 `asr_check`**：离线 whisper 对中文实测 9/9 全 DIFF
+//           （相似度 0.20–0.57），且它的 norm 不归一化「十/百/千」，含多位数字的行即使转写正确
+//           也会 FAIL ⇒ 中文版只会刷一屏假警告、掩盖真正的失败。判定按 lines.json 里的 lang。
+//      ★ 注意：`--lang en` 时**不传**这个选项，命令行与改动前逐字节一致（英文路径零影响）。
+//    · 9d935da0e65cbaab114418991aee2e01 → 2a001d6de4baaada182cd5403a0868ad：
+//      **新增「输出尺寸」与「配音引擎」两条编排能力**（同一轮）：
+//        ① `--ratio <9:16|16:9|3:4|4:3|1:1>` / `--size <WxH>`，**缺省 9:16**
+//           （用户要求：任务没有明确指定输出尺寸时，自动采用默认值 9:16 导出视频）。
+//           比例→像素的换算**不在本文件写第二份** —— 唯一来源是库里的 core/render/size.mjs，
+//           运行时 import；读不到才退回内置最小表**并明确警告**（不静默降级）。
+//           ★ 为什么默认放编排器而不是 takeSize：still.mjs / video.mjs 是低层工具，全库 43 个
+//             风格的 demo/build.sh 都直接调它们且不传 --size、全按 1920x1080 构图；把低层默认
+//             改成 9:16 会让那些示例片当场全坏。出片流程显式传尺寸才是正确的位置。
+//        ② 配音引擎由**内容文件**的 `voice.engine` 决定（缺省 kokoro）。`indextts` 走本机
+//           Windows 便携版的 Index-TTS 2.5：脚本自重入到它自带的 venv python，所以从 WSL
+//           启动即可，但**输出目录必须给 Windows 路径**（那个 python 认 D:/ 不认 /mnt/d/），
+//           写完再把 wav 拷回 WSL 给 mix.py（mix 在 WSL 跑）。一次进程加载模型批量合成，
+//           **不要逐条调用**（逐条 = 每条都重新加载 3.2GB 模型）。
+//           ★ 与「语言」同源：语言由内容文件的 `lang` 承载，引擎由 `voice.engine` 承载。
+//    · 8c30e388208e1617e3799f507419d2e0 → 61dc5b9ddbaa6caab66ab5ab11dec488：
+//      ① **`core/` 一致性闸门扩容**：从只查 `core/render` 扩到 `core/render + core/tts + core/lang`。
+//         真因：新写的 `core/tts/tts_indextts.py` 只在 Windows 侧存在（配音却在 WSL 跑），
+//         链路跑到一半才报 `python: can't open file`。
+//         ★ 但**只比代码/文本文件**（.py/.mjs/.js/.sh/.css/.json/.txt/.md）—— 模型与字体这类
+//         二进制资产本就按侧存在（Kokoro 的 .onnx/.bin 只在 WSL、CJK 的 .woff2 只在 Windows），
+//         算进闸门只会逼人做无意义的双份拷贝。
+//      ② **尺寸自适应闸门**：非 1920×1080 输出时，读影片模块源码判断它有没有导出 `NATIVE`
+//         （自适应的标志）。没有就明确警告「很可能是把 1920×1080 的版面裁掉一块」。
+//         真因：出片流程默认已改成 9:16，而自适应是**逐风格**做的 —— 实测全库 22 个影片模块里
+//         **只有 2 个**（都在 styles/engraving：film.js / film_coffee.js）导出了 NATIVE，
+//         其余 20 个仍按 1920×1080 硬画 ⇒ 在它们上面出 9:16 会被裁掉一块。
+//         这种失败是**静默**的（像素尺寸完全正确，只有看画面才发现），所以必须喊出来。
+//         ★ 用文本特征而非 import：影片模块是浏览器模块（依赖 window/document），Node 里 import 不起来。
+//           启发式只用于警告、不阻断；文案里明说「按源码特征判断」，绕过办法是显式给 --ratio 16:9。
+//    · 61dc5b9ddbaa6caab66ab5ab11dec488 → 00b8cf1a9de4b904b9481b55ae67c0ea：
+//      **尺寸取值改为「两个都独立校验」**。原实现 `const bad = o.size ?? o.ratio` 只校验胜出的那个，
+//      于是 `--size 1080x1920 --ratio 7:5` 会**静默丢弃**拼错的 7:5（退出码 0、一字不提），
+//      用户打错比例毫无反馈。改成「给了的都要合法」，合法性判完再按 size > ratio 定优先级
+//      （优先级语义不变，独立验证已确认 `--size` 仍优先）。
+//      来源：独立验证的 G3 找茬项（实测复现）。
+//    · 00b8cf1a9de4b904b9481b55ae67c0ea → 070c8bacbdeaa582e8a3e81a6030de45：
+//      **自定义尺寸下限 16 → 96**（`MIN_SIZE` / `MAX_SIZE` 在编排器里成为唯一来源）。
+//      真因：16 是**编造的**，实测根本画不出来。影片把尺寸按 S = min(W/1920, H/1080) 统一缩放，
+//      圆窗半径 RR·S 在 S 很小时缩到接近 0，而库侧 engine/plate.js 的 roundelFrame 还要画一条
+//      内圈，半径是 `RR·S − max(3.5, …)` —— 差值算成负数 ⇒ ctx.arc() 抛 IndexSizeError，
+//      且**没人接** ⇒ 整个渲染进程退出码 1 + 栈回溯（`--size 16x16` 必现）。
+//      实测（2026-10-02）：film_coffee（RR = 84）≤72 崩、80 起正常；film.js（RR = 120）≤48 崩、
+//      56 起正常 ⇒ 几何下限 = 两者的较大值 80，留 20% 余量取 **96**（推导写在库侧 size.mjs 的
+//      MIN_SIZE 注释里，控制台 / UI / 文档都从那里读）。
+//      ★ 编排器只改了两处：内置兜底表的 ok 边界（改读 `M.MIN_SIZE` / `M.MAX_SIZE`）与那行提示文案。
+//        正常路径 M 就是库模块 ⇒ 下限直接从库读，这里不再各写一份（避免「同一张表抄两份」）。
+//    · 070c8bacbdeaa582e8a3e81a6030de45 → 268ff96dd7e442b4b34dfd5048f8c621：
+//      ① **尺寸自适应闸门改读正式声明**。原来靠 `/export\s+const\s+NATIVE\b/` 猜源码文本；
+//         现在**优先读 `FILM_META.aspects`**（语义：「这部影片真的能正确构图的比例清单」，
+//         不写 = 只支持 16:9），探测逻辑复用现成的 `lib/aspects.mjs`（动态 import；
+//         影片模块是浏览器 ESM，Node 里 import 不起来，所以它内部也是读源码文本+正则）。
+//         为什么改：同一件事只该有一处判断 —— 控制台全链路（`/api/aspects`、建单校验、
+//         UI 出片前警告）已经在用 aspects，编排器不该另猜一遍。`NATIVE` 正则降为兜底。
+//         收益：警告文案带上「能力来自 aspects 声明（text 探测：<文件>）」与修复指引，
+//         比原来只说「看起来没做自适应」有用得多。
+//      ② **超范围报错补上下限**。原实现 `--size 64x64`（格式合法但低于可渲染下限）只说
+//         「解析失败」，不说下限是多少。现在直接摆出 `96–8192` 及下限的由来。
+//         来源：独立验证实测的 UX 缺口。下限 96 的推导见 core/render/size.mjs 注释
+//         （实测 coffee 需 ≥80、bee 需 ≥56，取 80 再留 20% 余量 = 96）。
+// ★ 这是「控制台只是包装层，不能改编排器」这条红线的基线。
+//   **它拦的是「控制台的功能偷偷改了编排器」，不是「编排器永远不许变」。**
+//   如果你**有意**改了 lemo-make.mjs（例如给它加一个正式功能），更新这个常量是正确的做法，
+//   但要同时更新 test/README.md 里那张表 —— 两处不一致会让下一个人以为红线坏了。
+//   更新命令：`md5sum lemo-make.mjs`
+//   2026-10-02 更新：加了 --voice / --speed（配音音色与语速覆盖，控制台「声音」版块用）。
+//   2026-10-03 更新：接入**风格特质档案（style-dna）** —— 编排器新增 import 共享 reader、
+//     按档案取颗粒（grain）并做兜底、在档案真生效时打印一行提示，以及 HELP 文案。
+//     这是**有意给编排器加功能**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
+//   2026-10-05 更新：主题通路补上**出片前的显存守卫** —— 在「音频链路」启动前调用
+//     lib/vram.mjs 的 ensureVramFree()（与 dub.mjs 的 TTS 前守卫同一接口、同一语义：预检 → 不足才自动
+//     卸载常驻模型 → 仍不足则硬拦失败），杜绝「常驻大模型占满显存 ⇒ Index-TTS 静默挂死」。
+//     这是**有意给编排器加功能**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
+export const ORCH_MD5 = 'd5a1b91b0113d611e3211e31f31f1be0';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;
@@ -156,7 +277,13 @@ export const ARTIFACTS = {
   jobIds: new Set(),      // 测试任务 id（要删 logs/<id>.jsonl 并从 index.json 摘掉）
   lockFiles: new Set(),   // 测试造的锁文件绝对路径
   wslFiles: new Set(),    // WSL 侧的测试临时文件绝对路径
+  dirs: new Set(),        // ★ 测试自建的输出目录（递归删）。见 cleanupArtifacts 里的两道守卫 ——
+                          //   它是本项目唯一一处「递归删」，守卫不通过一律拒删并报错。
 };
+
+// ★ 测试自建目录的命名前缀。cleanupArtifacts 只认这个名字 —— 真实成片目录是
+//   `D:\lemo-films\dub\<文案名>` 或用户 `--out` 给的任意名字，绝不会以 `_smoke-` 开头。
+const TEST_DIR_PREFIX = '_smoke-';
 
 /**
  * 跑一段 WSL bash 脚本（本环境 spawnSync 一律 EBUSY，只能异步 spawn）。
@@ -223,10 +350,17 @@ export async function freshDeadPid() {
 
 /**
  * 清理测试产物。**只动登记过的东西**。
- * @returns {{jobs:string[], locks:string[], wsl:string[], errors:string[]}}
+ *
+ * ★ 目录级清理（ARTIFACTS.dirs）是本文件唯一一处 `rm -rf`，所以加了两道**同时**成立的守卫：
+ *     ① 路径必须位于已知的产物根之下（CFG.exportDir / CFG.tmpDir）；
+ *     ② basename 必须以 `_smoke-` 开头（测试专用命名）。
+ *   任一不满足 → **拒删**并把原因写进 errors（宁可留垃圾，也绝不误删用户的成片）。
+ *   守卫不靠「调用方自觉」——就算未来有人往 ARTIFACTS.dirs 里塞了真实路径，这里也拦得住。
+ *
+ * @returns {{jobs:string[], locks:string[], wsl:string[], dirs:string[], errors:string[]}}
  */
 export async function cleanupArtifacts() {
-  const rep = { jobs: [], locks: [], wsl: [], errors: [] };
+  const rep = { jobs: [], locks: [], wsl: [], dirs: [], errors: [] };
 
   for (const f of ARTIFACTS.lockFiles) {
     try { fs.unlinkSync(f); rep.locks.push(path.basename(f)); }
@@ -240,6 +374,21 @@ export async function cleanupArtifacts() {
     else rep.wsl.push(...[...ARTIFACTS.wslFiles]);
   }
   ARTIFACTS.wslFiles.clear();
+
+  for (const d of ARTIFACTS.dirs) {
+    const abs = path.resolve(d);
+    const roots = [path.resolve(CFG.exportDir), path.resolve(CFG.tmpDir)];
+    // 必须严格「在根**下面**」——根自身（abs === root）也拒掉
+    const inRoot = roots.some((r) => abs.startsWith(r + path.sep));
+    const named = path.basename(abs).startsWith(TEST_DIR_PREFIX);
+    if (!inRoot || !named) {
+      rep.errors.push(`拒删目录（守卫不通过）${abs}：inRoot=${inRoot} named=${named}`);
+      continue;
+    }
+    try { fs.rmSync(abs, { recursive: true, force: true }); rep.dirs.push(abs); }
+    catch (e) { rep.errors.push(`删目录 ${abs}：${e.message}`); }
+  }
+  ARTIFACTS.dirs.clear();
 
   if (ARTIFACTS.jobIds.size) {
     for (const id of ARTIFACTS.jobIds) {
@@ -563,6 +712,245 @@ export const SERVER_CASES = [
       assert.match(String(ok.headers['content-type'] || ''), /javascript/i, `app.js 的 Content-Type=${ok.headers['content-type']}`);
     },
   },
+
+  // ── ③+ 输出尺寸 / 语言版本 / 影片构图能力（本批新增的三条**只读**接口）──
+  //
+  // ★ 这三条接口此前**一条用例都没有**（全项目 test/ 下搜不到 langs / sizes / aspects）。
+  //   它们都是纯只读：只 import 库侧注册表 / 只扫 demo 目录 / 只读影片源码文本，不写库、不写工单。
+  //   期望值一律**独立算**（按磁盘内容文件、按长边 1920 的换算公式），不 import lib/sizes.mjs 抄输出。
+  {
+    name: '③ GET /api/sizes → 200 · defaultRatio=9:16 · 比例像素与库换算一致',
+    run: async (ctx) => {
+      const r = await ctx.get('/api/sizes');
+      assert.strictEqual(r.status, 200, `状态码 ${r.status}`);
+      const d = r.json;
+      assert.ok(d && typeof d === 'object' && !Array.isArray(d), '返回不是 JSON 对象');
+
+      // 默认比例必须是 9:16（用户要求：任务没指定尺寸时按 9:16 导出）
+      assert.strictEqual(d.defaultRatio, '9:16', `defaultRatio=${JSON.stringify(d.defaultRatio)}（期望 9:16）`);
+      assert.ok(Array.isArray(d.ratios), 'ratios 不是数组');
+
+      // ★ 期望值**独立算**：不 import lib/sizes.mjs，直接按库侧 core/render/size.mjs 文件头的推导
+      //   （长边 = 1920、s = 1920 / max(a,b)、就近取偶数）手算成一张表，再跟接口逐个比。
+      const EXPECT = {
+        '9:16': [1080, 1920], '16:9': [1920, 1080], '3:4': [1440, 1920], '4:3': [1920, 1440], '1:1': [1920, 1920],
+      };
+      assert.deepStrictEqual(d.ratios.map((x) => x.id), Object.keys(EXPECT),
+        `比例清单与顺序不对：${JSON.stringify(d.ratios.map((x) => x.id))}`);
+      assert.strictEqual(d.ratios[0].id, '9:16', `第一条不是 9:16（第一条即默认项）：${d.ratios[0]?.id}`);
+      for (const rt of d.ratios) {
+        const [w, h] = EXPECT[rt.id];
+        assert.strictEqual(rt.w, w, `${rt.id} 的宽 ${rt.w}（期望 ${w}）`);
+        assert.strictEqual(rt.h, h, `${rt.id} 的高 ${rt.h}（期望 ${h}）`);
+        assert.strictEqual(rt.pixels, `${w}x${h}`, `${rt.id} 的 pixels=${rt.pixels}（期望 ${w}x${h}）`);
+        assert.ok(typeof rt.label === 'string' && rt.label.length > 0, `${rt.id} 的 label 为空`);
+      }
+
+      // 自定义像素的合法范围（与库侧 size.mjs 的校验一致）：偶数、MIN_SIZE–MAX_SIZE。
+      // ★ 下限 96 **独立手算**，不从 lib/sizes.mjs 读 —— 测试就是要抓「库里改了值而这里没跟上」。
+      //   推导：S = min(W/1920, H/1080) 是影片的统一缩放；圆窗内圈半径 = RR·S − max(3.5, …) 必须 ≥ 0，
+      //   故 RR·S ≥ 3.5。film_coffee RR=84 ⇒ S ≥ 0.0416667 ⇒ W ≥ 80（实测 80 起正常、72 崩）；
+      //   film.js RR=120 ⇒ S ≥ 0.0291667 ⇒ W ≥ 56（实测 56 起正常、48 崩）。取大者 80 + 20% 余量 = 96。
+      assert.deepStrictEqual(d.custom, { min: 96, max: 8192, even: true, example: '1080x1920' },
+        `custom 约束不对：${JSON.stringify(d.custom)}`);
+      // 读到了库就不该有降级错误；source 指向库侧 size.mjs
+      assert.strictEqual(d.error, null, `读库失败降级了：${d.error}`);
+      assert.match(String(d.source || ''), /size\.mjs$/i, `source 不是库侧 size.mjs：${d.source}`);
+      ctx.note('③ /api/sizes：defaultRatio=9:16、5 个比例像素与独立推导一致、custom=96–8192 偶数');
+    },
+  },
+  {
+    name: '③ GET /api/langs → 400（缺/非法 slug）· 按磁盘内容文件判可用语言',
+    run: async (ctx) => {
+      // 错误路径：缺 slug / 不在白名单 → 400
+      const noSlug = await ctx.get('/api/langs');
+      assert.strictEqual(noSlug.status, 400, `缺 slug 应 400，实际 ${noSlug.status}`);
+      const badSlug = await ctx.get('/api/langs?slug=not-a-style');
+      assert.strictEqual(badSlug.status, 400, `非法 slug 应 400，实际 ${badSlug.status}`);
+
+      // ★ 期望值**独立算**：直接读 demo 目录的 content*.json，按编排器 --lang 的换名规则
+      //   （content=X.json → X.<code>.json ⇒ 有 content*.<code>.json 才算有这个语言版本）推。
+      const REGISTRY = ['en', 'zh'];   // 库侧 core/lang/lang.mjs 的 LANGS 键（en 永远可用 = 无后缀的 content.json）
+      const diskExpect = (slug) => {
+        const demoDir = path.join(CFG.winLib, 'styles', slug, 'demo');
+        const files = fs.readdirSync(demoDir).filter((f) => /^content.*\.json$/i.test(f)).sort();
+        const avail = REGISTRY.filter((c) => c === 'en'
+          || files.some((f) => f.toLowerCase().endsWith(`.${c.toLowerCase()}.json`)));
+        return { files, avail };
+      };
+
+      for (const slug of ['engraving', 'hologram-hud', 'midcentury-toon', 'silkscreen-poster']) {
+        const exp = diskExpect(slug);
+        const r = await ctx.get(`/api/langs?slug=${slug}`);
+        assert.strictEqual(r.status, 200, `${slug} 状态码 ${r.status}：${r.text.slice(0, 200)}`);
+        const d = r.json;
+        assert.strictEqual(d.slug, slug, `回显 slug 不对：${d.slug}`);
+        assert.strictEqual(d.defaultLang, 'en', `defaultLang=${d.defaultLang}（期望 en）`);
+        assert.ok(typeof d.styleCn === 'string' && d.styleCn.length > 0, `${slug} 的 styleCn 为空`);
+        assert.ok(typeof d.registrySource === 'string' && /lang\.mjs$/i.test(d.registrySource),
+          `registrySource 不是库侧 lang.mjs：${d.registrySource}`);
+        assert.strictEqual(d.registryError, null, `读库失败降级了：${d.registryError}`);
+        // 可出片的语言版本（与磁盘内容文件推导逐字一致）
+        assert.deepStrictEqual(d.codes, exp.avail,
+          `${slug} 的 codes=${JSON.stringify(d.codes)}（磁盘推导 ${JSON.stringify(exp.avail)}）`);
+        assert.deepStrictEqual(d.contentFiles, exp.files, `${slug} 的 contentFiles 与磁盘不一致`);
+        assert.ok(exp.avail.includes(d.default), `${slug} 的 default=${d.default} 不在 codes 里`);
+        // 界面偏好：有 zh 就默认 zh，否则默认 en（lib/langs.mjs 的 PREFERRED_LANG）
+        assert.strictEqual(d.default, exp.avail.includes('zh') ? 'zh' : 'en',
+          `${slug} 的 default=${d.default}（该风格有 zh=${exp.avail.includes('zh')}）`);
+        // 逐条结构
+        assert.strictEqual(d.langs.length, exp.avail.length, `${slug} langs 条数不对`);
+        for (const L of d.langs) {
+          assert.strictEqual(L.available, true, `${slug}/${L.code} 的 available 应为 true`);
+          assert.ok(typeof L.code === 'string' && L.code, `${slug} 有条目缺 code`);
+          assert.ok(typeof L.label === 'string' && L.label.length > 0, `${slug}/${L.code} 缺 label`);
+          assert.ok(typeof L.name === 'string', `${slug}/${L.code} 缺 name`);
+          assert.ok(typeof L.labelPrefix === 'string', `${slug}/${L.code} 缺 labelPrefix`);
+          assert.ok(L.tts === null || typeof L.tts === 'object', `${slug}/${L.code} 的 tts 类型不对`);
+          assert.ok(Array.isArray(L.files) && L.files.length > 0, `${slug}/${L.code} 的 files 应为非空数组`);
+        }
+        // 注册表里有、但这个风格还没有内容文件 → 归到 unavailable
+        assert.deepStrictEqual(d.unavailable.map((u) => u.code), REGISTRY.filter((c) => !exp.avail.includes(c)),
+          `${slug} 的 unavailable 不对：${JSON.stringify(d.unavailable.map((u) => u.code))}`);
+        for (const u of d.unavailable) {
+          assert.strictEqual(u.available, false, `${slug}/${u.code} 的 unavailable.available 应为 false`);
+          assert.deepStrictEqual(u.files, [], `${slug}/${u.code} 的 unavailable 不该带 files`);
+        }
+      }
+
+      // 配音引擎字段要真的透传出来：zh 走本机 Index-TTS（库侧 LANGS.zh.tts.engine='indextts'）
+      const zh = (await ctx.get('/api/langs?slug=engraving')).json.langs.find((l) => l.code === 'zh');
+      assert.ok(zh, 'engraving 应有 zh 语言版本（content_coffee.zh.json）');
+      assert.strictEqual(zh.tts && zh.tts.engine, 'indextts',
+        `zh 的 tts.engine=${JSON.stringify(zh.tts && zh.tts.engine)}（期望 indextts）`);
+      ctx.note('③ /api/langs：4 个白名单风格逐个与磁盘内容文件核对；zh 的 tts.engine=indextts');
+    },
+  },
+  {
+    name: '③ GET /api/aspects → 400（缺 slug）· 声明 5 比例 / 未声明只支持 16:9',
+    run: async (ctx) => {
+      const noSlug = await ctx.get('/api/aspects');
+      assert.strictEqual(noSlug.status, 400, `缺 slug 应 400，实际 ${noSlug.status}`);
+
+      // engraving 的两部影片都声明了全 5 个比例（读源码文本探测，不是 import 求值）
+      const eng = await ctx.get('/api/aspects?slug=engraving');
+      assert.strictEqual(eng.status, 200, `状态码 ${eng.status}`);
+      const e = eng.json;
+      assert.strictEqual(e.mode, 'style', `mode=${e.mode}（期望 style）`);
+      assert.strictEqual(e.probe, 'text', `probe=${e.probe}（期望 text —— 影片是浏览器 ESM，只能读文本）`);
+      assert.strictEqual(e.declared, true, 'engraving 应探测到 aspects 声明');
+      assert.deepStrictEqual(e.supported, ['9:16', '16:9', '3:4', '4:3', '1:1'],
+        `supported=${JSON.stringify(e.supported)}（期望库侧 RATIOS 顺序的全 5 项）`);
+      assert.deepStrictEqual(e.default, ['16:9'], `default=${JSON.stringify(e.default)}（期望 ['16:9']）`);
+      assert.ok(Array.isArray(e.films) && e.films.length >= 1, 'films 应为非空数组');
+      assert.ok(typeof e.source === 'string' && e.source.endsWith('.js'), `source=${e.source}`);
+      assert.strictEqual(e.error, null, `探测报错：${e.error}`);
+      assert.ok(typeof e.note === 'string' && e.note.includes('aspects'), `note 没说明判据：${e.note}`);
+
+      // ★★ 交叉核验：接口说「支持多比例」，**源码事实**必须真的支持。
+      //   为什么值得单加一段：aspects 是编排器与 UI 判断「这个尺寸会不会被裁切」的**唯一依据**，
+      //   而它本身是**读源码文本**探测的（影片模块是浏览器 ESM，node 不能 import）。
+      //   一旦探测与事实脱节，两边会一起错得很安静 —— 所以拿一个**独立事实**来对照：
+      //   自适应改造的标志是影片模块导出 `NATIVE` 并把版面搬进 layout(W,H)。
+      //   这里直接读源文件，**不经过 lib/aspects.mjs**（那正是被测对象，不能拿它自证）。
+      const _fs = await import('node:fs');
+      const _path = await import('node:path');
+      const engDemo = _path.join(CFG.winLib, 'styles', 'engraving', 'demo');
+      for (const f of ['film', 'film_coffee']) {
+        const src = _fs.readFileSync(_path.join(engDemo, `${f}.js`), 'utf8');
+        assert.ok(/export\s+const\s+NATIVE\b/.test(src),
+          `${f}.js 源码里没有 export const NATIVE（自适应标志），但接口说 engraving 支持 5 个比例 —— 探测与事实脱节`);
+      }
+      // 反向：被判「只支持 16:9」的风格，源码里就不该有自适应改造的标志，否则上面那条断言自相矛盾。
+      //   ★ 反向样本已换（多比例改造后）：原先拿 art-deco 当「只支持 16:9」的样本，但它已被改造成
+      //     支持 9:16（demo/film.js 里已声明 aspects: ['16:9','9:16']）—— 旧前提过期。
+      //     现在**唯一**不支持 9:16 的是 pixel-rpg（像素完整性约束：320×180 帧缓冲按整数倍最近邻放大，
+      //     9:16 的 k=0.5625 会让像素块变成 3.375px），所以拿它做反向样本。
+      //   ★ 判据按它的**真实入口**读，不是 film.js：pixel-rpg **没有** demo/film*.js，
+      //     demo/index.html 里是 `if (q.has('sheet')) import('./sheet.js'); else import('./main.js');`
+      //     ⇒ 真正上屏的是 main.js / sheet.js。自适应改造的标志（见库侧 MAINTAINING.md 的「让影片支持多比例」
+      //     范式）是「导出 NATIVE / 调 setFrame / 有 layout(W,H)」—— 这三样在它的入口里一个都不该出现。
+      //   ★ 同样直接读源文件，**不经过 lib/aspects.mjs**（那正是被测对象，不能拿它自证）。
+      const pxDemo = _path.join(CFG.winLib, 'styles', 'pixel-rpg', 'demo');
+      for (const f of ['main.js', 'sheet.js']) {   // 入口清单来自 pixel-rpg/demo/index.html 的 import()
+        const src = _fs.readFileSync(_path.join(pxDemo, f), 'utf8');
+        assert.ok(!/\bNATIVE\b/.test(src),
+          `${f} 里出现 NATIVE（自适应改造标志），但接口说 pixel-rpg 只支持 16:9 —— 探测与事实脱节`);
+        assert.ok(!/\bsetFrame\b/.test(src),
+          `${f} 里出现 setFrame（自适应改造标志），但接口说 pixel-rpg 只支持 16:9 —— 探测与事实脱节`);
+        assert.ok(!/\blayout\s*\(/.test(src),
+          `${f} 里出现 layout(（自适应改造标志），但接口说 pixel-rpg 只支持 16:9 —— 探测与事实脱节`);
+      }
+
+      // 没声明 aspects 的风格 → 只支持 16:9（默认语义），**不抛错、不 404**
+      //   ★ 清单已换（多比例改造后）：42/43 个风格都声明了 aspects，**唯一**没声明的是 pixel-rpg
+      //     —— 与上面那段反向核验同一个样本，接口口径（declared=false / 只支持 16:9）与源码事实互为对照。
+      for (const slug of ['pixel-rpg']) {
+        const r = await ctx.get(`/api/aspects?slug=${slug}`);
+        assert.strictEqual(r.status, 200, `${slug} 状态码 ${r.status}`);
+        assert.strictEqual(r.json.declared, false, `${slug} 不该有 aspects 声明`);
+        assert.deepStrictEqual(r.json.supported, ['16:9'], `${slug} 应只支持 16:9：${JSON.stringify(r.json.supported)}`);
+        assert.match(String(r.json.note || ''), /16:9/, `${slug} 的 note 应点明「只支持 16:9」`);
+      }
+
+      // 精确到某一部影片：从 style 模式探到的**模块名**里挑一个非默认的（engraving 有 film_coffee）
+      //   ★ 判据是「文件名」不是 FILM_META.id —— filmModuleAspects 拼的是 `<name>.js`。
+      const other = e.films.map((f) => f.film).find((n) => n !== 'film');
+      assert.ok(other, `engraving 应有多部影片模块：${JSON.stringify(e.films.map((f) => f.film))}`);
+      const one = await ctx.get(`/api/aspects?slug=engraving&film=${encodeURIComponent(other)}`);
+      assert.strictEqual(one.status, 200, `film=${other} 状态码 ${one.status}`);
+      assert.strictEqual(one.json.mode, 'film', `mode=${one.json.mode}（期望 film）`);
+      assert.strictEqual(one.json.films.length, 1, 'film 模式只该探一部');
+      assert.strictEqual(one.json.films[0].film, other, `films[0].film=${one.json.films[0].film}`);
+      assert.strictEqual(one.json.declared, true, `${other} 声明了 aspects`);
+
+      // 白名单外的 slug 也照答（本接口不限于 4 个工单风格），读不到 demo 就按「只支持 16:9」
+      const unknown = await ctx.get('/api/aspects?slug=definitely-no-such-style');
+      assert.strictEqual(unknown.status, 200, `未知 slug 应照答 200，实际 ${unknown.status}`);
+      assert.deepStrictEqual(unknown.json.supported, ['16:9'], '未知 slug 应按「只支持 16:9」处理');
+
+      // 非法影片模块名 → 不 404、不抛，只把 error 如实报出来并退回「只支持 16:9」
+      const evil = await ctx.get('/api/aspects?slug=engraving&film=..%2Fevil');
+      assert.strictEqual(evil.status, 200, `非法 film 名应照答 200，实际 ${evil.status}`);
+      assert.strictEqual(evil.json.mode, 'film', `mode=${evil.json.mode}`);
+      assert.ok(evil.json.error, `非法影片模块名应给出 error：${JSON.stringify(evil.json.error)}`);
+      assert.deepStrictEqual(evil.json.supported, ['16:9'], '非法影片模块名应退回「只支持 16:9」');
+      ctx.note('③ /api/aspects：engraving 5 比例、未声明风格只支持 16:9、未知 slug / 非法 film 名都不抛');
+    },
+  },
+  {
+    name: '③ 非法比例 / 非法尺寸的工单 → 400 且不落盘',
+    run: async (ctx) => {
+      const before = await ctx.get('/api/briefs');
+      assert.strictEqual(before.status, 200, `GET /api/briefs 状态码 ${before.status}`);
+      const n0 = before.json.count;
+
+      // 尺寸约束（偶数、MIN_SIZE–MAX_SIZE，下限 96）在**接口层**的表达：非法写法一律 400，且校验发生在落盘之前
+      const bad = [
+        [{ ratio: '7:5' }, '不在预设比例'],
+        [{ ratio: '9:16:1' }, '畸形比例'],
+        [{ size: '1080x1919' }, '奇数高'],
+        [{ size: '1081x1920' }, '奇数宽'],
+        [{ size: '8x8' }, '远低于 96'],
+        [{ size: '94x94' }, '低于 96（正好下一档）'],
+        [{ size: '96x94' }, '高低于 96'],
+        [{ size: '10000x10000' }, '高于 8192'],
+        [{ size: 'abc' }, '不是 WxH'],
+        [{ size: '1080' }, '只有一边'],
+      ];
+      for (const [extra, why] of bad) {
+        const r = await ctx.post('/api/briefs', { slug: 'engraving', topic: '尺寸校验用例', ...extra });
+        assert.strictEqual(r.status, 400, `${why}（${JSON.stringify(extra)}）应 400，实际 ${r.status}：${r.text.slice(0, 200)}`);
+        assert.ok(r.json && typeof r.json.error === 'string' && r.json.error, `${why} 的 400 没有 error 说明`);
+      }
+
+      // 关键：以上全是**校验前置**，一条都不该落盘
+      const after = await ctx.get('/api/briefs');
+      assert.strictEqual(after.json.count, n0, `非法请求竟然改了工单数：${n0} → ${after.json.count}`);
+      ctx.note('③ 非法比例/尺寸工单：10 种写法全部 400，工单数不变（校验在落盘之前）');
+    },
+  },
+
   {
     name: '④ dry-run 任务全链路（POST /api/run → 轮询 → SSE 日志）',
     run: async (ctx) => {
@@ -616,7 +1004,7 @@ export const SERVER_CASES = [
 
   // ── ⑥ 任务取消（HTTP 层）──────────────────────────────────
   {
-    name: '⑥ DELETE /api/jobs/:id → 任务变 canceled 且进程真的死了',
+    name: '⑥ DELETE /api/jobs/:id → running 变 canceled（记录仍在、进程真死）；终态 DELETE → 删记录',
     run: async (ctx) => {
       // ★ 为什么用 dry-run：它是**无害的长任务**（约 4.5s，只打印步骤、不渲染、不混流）。
       //   真渲染绝不能在测试里取消 —— 取消真渲染会打断 mux，且会动用户的成片目录。
@@ -657,7 +1045,9 @@ export const SERVER_CASES = [
         assert.strictEqual(d.status, 200, `DELETE 状态码 ${d.status}：${d.text.slice(0, 200)}`);
         assert.strictEqual(d.json.ok, true, `DELETE 返回 ${d.text.slice(0, 200)}`);
 
-        // 3) 状态变 canceled
+        // 3) 状态变 canceled —— ★ 且记录必须**仍在列表里**。
+        //    ★ 安全边界（关键）：DELETE 一个 running 任务 = 「取消」，**绝不能是「删除」**。
+        //    删掉正在跑的任务会留下占 GPU 的无人管子进程（孤儿）。所以这里必须能查到它。
         let s2 = null;
         const t1 = Date.now();
         while (Date.now() - t1 < 20000) {
@@ -666,7 +1056,8 @@ export const SERVER_CASES = [
           if (s2 && s2.status === 'canceled') break;
           await ctx.sleep(150);
         }
-        assert.ok(s2, `/api/jobs 里找不到 ${id}`);
+        assert.ok(s2, `取消后 /api/jobs 里找不到 ${id} —— running 任务被「删除」了？`
+          + '（安全边界违规：取消只能置 canceled，绝不能抹掉记录，否则会留下占 GPU 的孤儿进程）');
         assert.strictEqual(s2.status, 'canceled', `取消后状态 ${s2.status}（期望 canceled）`);
 
         // 4) ★ 进程真的死了（只置状态不杀进程 = 假取消，会留下占 GPU 的孤儿）
@@ -679,11 +1070,24 @@ export const SERVER_CASES = [
         assert.strictEqual(alive, false,
           `取消后 pid ${pid} 仍活着 —— 进程树没被收掉（taskkill /T 没生效？）`);
 
-        // 5) 已结束的任务不能再取消
+        // 5) ★ 语义（2026-10 有意改动）：DELETE /api/jobs/:id **按状态分派** ——
+        //      · queued / running → 取消（中止还在跑的任务，原样）；
+        //      · 终态（canceled/done/failed/ended）→ **删除记录**（从列表 + index.json 里抹掉）。
+        //    所以对上面这条**已 canceled** 的任务再 DELETE，现在返回 200 {ok,id}（不再是 400）。
+        //    与 lib/briefs.mjs:deleteBrief 同范式：终态可删、running 拒删（409）。
         const again = await ctx.del(`/api/jobs/${id}`);
-        assert.strictEqual(again.status, 400, `重复取消应 400，实际 ${again.status}：${again.text.slice(0, 200)}`);
+        assert.strictEqual(again.status, 200,
+          `终态任务 DELETE 应 200（删除记录），实际 ${again.status}：${again.text.slice(0, 200)}`);
+        assert.strictEqual(again.json.ok, true, `DELETE 终态应返回 {ok:true}，实际 ${again.text.slice(0, 200)}`);
+        assert.strictEqual(again.json.id, id, `DELETE 返回的 id 应为 ${id}，实际 ${again.json.id}`);
 
-        ctx.note(`⑥ 取消 ${id}：running(pid ${pid}) → canceled，pid 已消失；重复取消 400`);
+        // 6) ★ 记录真的从列表里消失了（不是只把状态又改了一遍）
+        const after = await ctx.get('/api/jobs');
+        const gone = !(after.json.jobs || []).some((x) => x.id === id);
+        assert.ok(gone, `删除后 /api/jobs 里仍有 ${id} —— 记录没被真正删掉`);
+
+        ctx.note(`⑥ 取消 ${id}：running(pid ${pid}) → canceled 且仍在列表、pid 已消失；`
+          + '再 DELETE → 200 删除记录（已从列表消失）');
       } finally {
         // 收掉「这条用例自己造出来的」陈旧锁 —— 只认 pid 完全对得上的那一个
         try {
@@ -697,6 +1101,39 @@ export const SERVER_CASES = [
           }
         } catch { /* 清不掉也不影响结论 */ }
       }
+    },
+  },
+
+  // ── ⑥b DELETE 不存在的 id（404 分支）──────────────────────
+  {
+    name: '⑥b DELETE /api/jobs/<不存在 id> → 404（非 200/500/裸 HTML）；空 id 走兜底',
+    run: async (ctx) => {
+      // ★ 补缺口：这条 404 分支此前**从没被测过**。
+      //   与 lib/briefs.mjs:deleteBrief「不存在 404」同范式；lib/jobs.mjs:deleteJob
+      //   在 :760 明确 `if (!job) return { ok: false, code: 404, error: ... }`。
+      //   本用例只读接口，无副作用（deleteJob 对不存在的 id 在 :759-760 就 return 了）。
+      const ghost = 'jmur-nonexistent-404probe';
+
+      // 先确认这个 id 确实不在列表里 —— 否则这条用例就变成「删一条真任务」了
+      const before = await ctx.get('/api/jobs');
+      assert.ok(!(before.json.jobs || []).some((x) => x.id === ghost),
+        `探针 id ${ghost} 竟然存在于 /api/jobs —— 请换一个绝不存在的 id`);
+
+      // 1) 不存在的 id → 404 + 可读的 JSON error（不是裸 HTML）
+      const r = await ctx.del(`/api/jobs/${ghost}`);
+      assert.strictEqual(r.status, 404,
+        `DELETE 不存在的 id 应 404，实际 ${r.status}：${r.text.slice(0, 200)}`);
+      assert.ok(r.json && typeof r.json.error === 'string' && r.json.error.length > 0,
+        `404 响应体应含可读的 { error }，实际：${r.text.slice(0, 200)}`);
+      assert.ok(r.json.error.includes(ghost),
+        `错误信息应点名缺失的 id ${ghost}，实际：${r.json.error}`);
+      assert.ok(!/^\s*</.test(r.text), `响应体疑似裸 HTML：${r.text.slice(0, 120)}`);
+
+      // 2) 边界：空 id（DELETE /api/jobs/）—— 如实记录观察到的行为，不改实现
+      const empty = await ctx.del('/api/jobs/');
+      ctx.note(`⑥b 边界：DELETE /api/jobs/（空 id）→ ${empty.status}，响应 ${empty.text.slice(0, 120)}`);
+
+      ctx.note(`⑥b DELETE 不存在 id ${ghost} → 404 ${JSON.stringify(r.json)}`);
     },
   },
 
@@ -903,6 +1340,111 @@ export const SERVER_CASES = [
       assert.strictEqual(r4.headers['content-range'], `bytes */${size}`);
 
       ctx.note(`⑨ 成片 ${(size / 1048576).toFixed(1)}MB：Range 206/416、后缀 Range、无 Range 200 均符合实现`);
+    },
+  },
+
+  // ── ③+ 声音（/api/voices*）──────────────────────────────────
+  //
+  // ★ 「声音」版块此前**一条自动化用例都没有**。这三条钉住的是：
+  //   ① 清单契约（四组齐全 + **分组 items 之和 == voices 条数**，防漏项）；
+  //   ② 参考音真的能取到字节（含 Range，因为试听要能拖进度条）；
+  //   ③ **安全性**：name 只用来在清单里查表，目录穿越无从发生（这是本功能的唯一要点）。
+  {
+    name: '③ GET /api/voices → 200 · 清单非空 · 四组齐全且 items 之和 == voices 条数',
+    run: async (ctx) => {
+      // 首次要起一个 python 进程读库侧 --list-voices，给宽一点（缓存 30s，后续很快）
+      const r = await ctx.get('/api/voices', { timeoutMs: 120000 });
+      assert.strictEqual(r.status, 200, `状态码 ${r.status}：${r.text.slice(0, 200)}`);
+      const d = r.json;
+      assert.ok(d && typeof d === 'object', '返回不是 JSON 对象');
+      assert.strictEqual(d.ok, true, `ok 应为 true，实际 ${JSON.stringify(d.ok)}（error=${JSON.stringify(d.error)}）—— 音色清单读不到？`);
+      assert.ok(Array.isArray(d.voices) && d.voices.length > 0, `voices 不是非空数组：${JSON.stringify(d.voices)}`);
+      assert.ok(Array.isArray(d.groups), `groups 不是数组：${JSON.stringify(d.groups)}`);
+
+      // 四组**恒定存在**（面板形状不该随某台机器素材多少而变）
+      const GROUP_IDS = ['alias', 'library-alias', 'official', 'library'];
+      const ids = d.groups.map((g) => g && g.id);
+      for (const gid of GROUP_IDS) {
+        assert.ok(ids.includes(gid), `缺少分组 ${gid}（实际分组：${ids.join(' / ')}）`);
+      }
+
+      // ★ 防漏项：各分组 items 数之和必须 == voices 条数（有音色没被任何分组收走就是漏了）
+      const sum = d.groups.reduce((n, g) => n + (Array.isArray(g.items) ? g.items.length : 0), 0);
+      assert.strictEqual(sum, d.voices.length,
+        `分组 items 之和 ${sum} != voices 条数 ${d.voices.length} —— 有音色没被任何分组收走（面板上会少一条）`);
+
+      // 分组里的每个名字都必须真实存在于 voices 里（分组只该引用，不该凭空造名字）
+      const names = new Set(d.voices.map((v) => v && v.name));
+      for (const g of d.groups) {
+        for (const n of (g.items || [])) {
+          assert.ok(names.has(n), `分组 ${g.id} 里的 ${JSON.stringify(n)} 不在 voices 清单里`);
+        }
+      }
+
+      // source：当前 engraving 内容文件用的音色。读不到时是 null（不算错），但读了就必须是合法形状。
+      if (d.source !== null && d.source !== undefined) {
+        assert.strictEqual(typeof d.source, 'object', `source 应是对象或 null，实际 ${JSON.stringify(d.source)}`);
+        assert.strictEqual(typeof d.source.content, 'string', `source.content 应是内容文件名，实际 ${JSON.stringify(d.source.content)}`);
+      }
+
+      ctx.state.voiceFirstAlias = (d.voices.find((v) => v && v.kind === 'alias') || d.voices[0]).name;
+      ctx.note(`③ /api/voices：${d.voices.length} 条音色；四组 items = `
+        + `${d.groups.map((g) => `${g.id}:${(g.items || []).length}`).join(' ')}；source=${JSON.stringify(d.source)}`);
+    },
+  },
+  {
+    name: '③ GET /api/voices/audio?name=<第一个别名> → 200 audio/* · 字节数 > 10000 · Range 206',
+    run: async (ctx) => {
+      // 拿第一个别名（清单里的第一条 alias，用户最可能试听的那条）
+      const list = await ctx.get('/api/voices', { timeoutMs: 120000 });
+      assert.strictEqual(list.status, 200, `状态码 ${list.status}`);
+      const voices = Array.isArray(list.json.voices) ? list.json.voices : [];
+      const first = voices.find((v) => v && v.kind === 'alias') || voices[0];
+      assert.ok(first && first.name, `清单里没有可取试听的音色：${JSON.stringify(voices.slice(0, 3))}`);
+
+      const p = '/api/voices/audio?name=' + encodeURIComponent(first.name);
+
+      // 1) 不带 Range → 200 + audio/* + 完整长度（只收 64KB 就断开：参考音几百 KB，没必要整份读）
+      const full = await ctx.get(p, { accept: '*/*', maxBytes: 65536 });
+      assert.strictEqual(full.status, 200, `状态码 ${full.status}（期望 200）：${full.text.slice(0, 200)}`);
+      assert.match(String(full.headers['content-type'] || ''), /audio\//i,
+        `Content-Type=${full.headers['content-type']}（期望 audio/*）`);
+      assert.strictEqual(full.headers['accept-ranges'], 'bytes', `Accept-Ranges=${full.headers['accept-ranges']}`);
+      const size = Number(full.headers['content-length']);
+      assert.ok(Number.isFinite(size) && size > 10000,
+        `参考音只有 ${size} 字节（期望 > 10000）—— 这条太短，验不出是真实音频字节流`);
+      assert.ok(full.truncated && full.bytes >= 65536, '测试自己没断开连接（maxBytes 没生效）');
+
+      // 2) Range bytes=0-1023 → 206 + 正确的 Content-Range（试听要能拖进度条，靠的就是它）
+      const r1 = await ctx.get(p, { accept: '*/*', headers: { Range: 'bytes=0-1023' } });
+      assert.strictEqual(r1.status, 206, `Range 请求状态码 ${r1.status}（期望 206）`);
+      assert.strictEqual(r1.headers['content-range'], `bytes 0-1023/${size}`,
+        `Content-Range=${r1.headers['content-range']}`);
+      assert.strictEqual(r1.bytes, 1024, `实际收到 ${r1.bytes} 字节（期望 1024）`);
+      assert.ok(r1.buf.subarray(0, 16).equals(full.buf.subarray(0, 16)),
+        '206 返回的字节与整份开头不一致 —— 不是同一个文件的同一段');
+
+      ctx.note(`③ /api/voices/audio（${first.name}）：${size} 字节，audio/* + Accept-Ranges + Range 206 均符合`);
+    },
+  },
+  {
+    name: '③ GET /api/voices/audio 安全性：目录穿越 / 不存在的名字 → 都 404',
+    run: async (ctx) => {
+      // ★ 判据：name **只用来在清单里查表**，查到的绝对路径才去读文件 —— name 永远不会被拼进路径。
+      //   所以 `../../windows/win.ini` 在清单里不存在 → 404，穿越无从发生。
+      const LEAK = ['[fonts]', '[extensions]', 'for 16-bit app support'];   // win.ini 的特征串
+      for (const name of ['../../../../windows/win.ini', '..\\..\\..\\windows\\win.ini']) {
+        const r = await ctx.get('/api/voices/audio?name=' + encodeURIComponent(name));
+        assert.strictEqual(r.status, 404, `name=${JSON.stringify(name)} → 状态码 ${r.status}（期望 404）：${r.text.slice(0, 160)}`);
+        for (const m of LEAK) {
+          assert.ok(!r.text.includes(m), `响应里疑似泄漏了 win.ini（命中 "${m}"）：${r.text.slice(0, 160)}`);
+        }
+      }
+      // 一个「形状合法但清单里没有」的名字 → 同样 404（不是 500、不是空文件）
+      const miss = await ctx.get('/api/voices/audio?name=' + encodeURIComponent('definitely_not_a_voice_9f3a'));
+      assert.strictEqual(miss.status, 404, `不存在的音色名 → 状态码 ${miss.status}（期望 404）：${miss.text.slice(0, 160)}`);
+      assert.ok(miss.json && typeof miss.json.error === 'string', `404 响应应带 error 说明：${miss.text.slice(0, 160)}`);
+      ctx.note('③ 声音接口安全性：目录穿越（2 种写法）与不存在的名字都 404，响应里无 win.ini 内容');
     },
   },
 ];
@@ -1366,16 +1908,251 @@ export const PROCESS_CASES = [
   },
 ];
 
-// ── --full 才跑的完整回归（约 80 秒）────────────────────────
+// ── --full 才跑的完整回归（两条合计约 3 分钟）────────────────
 export const FULL_CASES = [
   {
+    // ★★ 2026-10-03 修复一处**破坏性副作用**：本用例原来跑 `lemo-make.mjs ascii-crt --skip-sync`
+    //   **不给 `--out`** ⇒ 编排器写回默认库路径 `D:\lemo-films\ascii-crt\ascii-crt.mp4`，
+    //   **把已交付的成片覆盖掉了**（实测：交付版是 1920×1080 / 29,712,494 B，
+    //   被本用例重渲成 1080×1920 / 21,880,427 B —— 连几何都不一样）。
+    //   ⇒ 现在写进 `_smoke-` 前缀的临时目录，并登记进 ARTIFACTS.dirs（cleanupArtifacts 的两道守卫只认这个前缀）。
+    //   ★ 断言（exit 0 / MUX_OK / src_frames / out_frames）与输出目录无关，所以改 `--out` 不影响本用例的覆盖力。
     name: '⑤+ 完整回归 ascii-crt --skip-sync → exit 0 且 MUX_OK src/out = 1435',
     run: async (ctx) => {
-      const r = await runNode(['lemo-make.mjs', 'ascii-crt', '--skip-sync'], { cwd: ctx.root, timeoutMs: 600000 });
+      const outDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}orch-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      ARTIFACTS.dirs.add(outDir);   // ★ 中途断言失败也要摘干净 —— 收尾由 smoke.mjs 的 finally 统一做
+      const r = await runNode(['lemo-make.mjs', 'ascii-crt', '--skip-sync', '--out', outDir], { cwd: ctx.root, timeoutMs: 600000 });
       assert.strictEqual(r.code, 0, `完整回归退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
       assert.match(r.stdout, /MUX_OK/, `输出里没有 MUX_OK\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}`);
       assert.match(r.stdout, /src_frames=1435/, '输出里没有 src_frames=1435');
       assert.match(r.stdout, /out_frames=1435/, '输出里没有 out_frames=1435');
+    },
+  },
+  {
+    // ★ 为什么必须有这条（2026-10-03 补的缺口）：
+    //   `⑤+` 跑的是「用**预生成**配音混流出片」—— ascii-crt 的 demo 自带 voices/，
+    //   音频步根本不会调 TTS。于是**全程不碰 GPU TTS**。而 TTS 这条路径恰恰出过三次真事故
+    //   （自死锁 / 显存预检拒载 / 孤儿进程），此前只有 `--dry-run` 与参数级验证撑着，从没被真跑过。
+    // ★ 为什么用 dub.mjs 而不是 lemo-make：`targetLufs`（style-dna 的音频响度目标）这条链
+    //   **只在 dub.mjs 里接**（lemo-make 读 DNA 只取 grain）。两条链路共用同一个 TTS 执行体
+    //   （core/tts/tts_indextts.py），所以「锁 / 显存预检 / 看门狗」这三条也一并覆盖到了。
+    name: '⑤++ 现场 TTS（真跑 Index-TTS）+ style-dna 响度目标 → 锁取了又放，成片响度按 DNA 归一',
+    run: async (ctx) => {
+      const { TARGET_PEAK_PCM, TARGET_LUFS } = await import('../lib/dub-core.mjs');
+      const TTS_SLUG = 'engraving';   // 有 style-dna、且其 targetLufs ≠ 通用默认（-16）的风格
+      const TTS_TEXT = '这是一次真实的配音合成测试。';
+      const reEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // ── 前置 1：本机真的具备 Index-TTS 执行体 ──
+      const ttsPy = path.join(CFG.winLib, 'core', 'tts', 'tts_indextts.py');
+      assert.ok(fs.existsSync(ttsPy),
+        `Index-TTS 执行体不存在：${ttsPy}\n  这条用例要求本机具备 Index-TTS（现场 GPU 合成）；缺了就无法覆盖`
+        + '「现场 TTS」这条路径 —— 这是**用例无法成立**，不是被测代码坏了。');
+
+      // ── 前置 2：期望值**现读** DNA，不写死数字（改档案不该把测试改红）──
+      const { readStyleDna, summarizeStyleDna } = await import('../lib/style-dna-reader.mjs');
+      const dnaSum = summarizeStyleDna(readStyleDna(TTS_SLUG));
+      assert.ok(dnaSum, `读不到 lib/style-dna/${TTS_SLUG}.json —— 这条用例依赖它的 targetLufs`);
+      const wantLufs = dnaSum.targetLufs;
+      assert.ok(Number.isFinite(wantLufs),
+        `lib/style-dna/${TTS_SLUG}.json 没有可用的 targetLufs（读到 ${JSON.stringify(wantLufs)}），用例失去判据`);
+      assert.notStrictEqual(wantLufs, TARGET_LUFS,
+        `lib/style-dna/${TTS_SLUG}.json 的 targetLufs 恰好等于通用默认 ${TARGET_LUFS} —— 那样`
+        + '「DNA 生效」与「走默认」的输出完全相同，这条用例就失去了区分力。请换一个 targetLufs ≠ 默认的风格。');
+
+      // ── 前置 3：真锁没被别的任务占着 ──
+      //   TTS 的串行锁是**全局**的（编排器 / 控制台 / 手工跑共用一把）。被占着时本用例会一直
+      //   等锁到 LOCK_TIMEOUT（2 小时）才失败 —— 那对冒烟测试是不可接受的。所以先探再跑。
+      const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
+      const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
+      const readLock = () => { try { return fs.readFileSync(lockPath, 'utf8').trim(); } catch { return '?'; } };
+      if (fs.existsSync(lockPath)) {
+        assert.fail(`配音锁已被占用：${lockPath}（内容 "${readLock()}"）\n`
+          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS，\n'
+          + '  等它结束后再跑 --full —— 这是**环境占用**，不是被测代码坏了。');
+      }
+
+      // ── 建测试输出目录（前缀 _smoke- ⇒ cleanupArtifacts 的两道守卫才认它）──
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const outDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}tts-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      ARTIFACTS.dirs.add(outDir);   // ★ 中途断言失败也要摘干净 —— 收尾由 smoke.mjs 的 finally 统一做
+      //   ★ 还有一处容易被漏掉：dub.mjs 的「[7] 自检」会把抽帧写到共享缓存目录
+      //     `dub/_verify/<输出目录名>/`。不登记的话，每次 --full 都会在里面留一个 `_smoke-tts-*`
+      //     目录（实测攒到 6 个才发现）。名字里带 outDir 的 basename，所以是确定的，可以提前登记。
+      ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(outDir)));
+      const scriptFile = path.join(outDir, '_script.txt');
+      fs.writeFileSync(scriptFile, `${TTS_TEXT}\n`, 'utf8');
+
+      // ── 跑：真 TTS + 真出片 ──
+      //   尺寸 270x480 = 9:16 的 1/4 比例（够验几何，又不把时间耗在编码上）。
+      //   锁的存在性用**轮询**观察：TTS 全程持锁 ~30s，200ms 一次绝不会漏。
+      let sawLock = false;
+      const poll = setInterval(() => { try { if (fs.existsSync(lockPath)) sawLock = true; } catch { /* ignore */ } }, 200);
+      let r;
+      try {
+        r = await runNode(
+          ['dub.mjs', '--script', scriptFile, '--style', TTS_SLUG, '--size', '270x480', '--out', outDir],
+          { cwd: ctx.root, timeoutMs: 600000 },
+        );
+      } finally {
+        clearInterval(poll);
+      }
+      assert.strictEqual(r.code, 0,
+        `现场 TTS 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
+
+      // ── 断言 1：TTS 真的跑了（不是复用预生成配音）──
+      //   ★ 判据不能是「_tts/*.wav 还在不在」：dub.mjs 在**成功后**会清掉 _tts/ 与 _program*.wav
+      //     这些中间产物（dub.mjs:943-947）。改用 TTS 脚本自己逐条打印的那一行（由 dub.mjs
+      //     原样 echo）—— 它只在**真的合成过**才存在，且带真实时长。
+      assert.match(r.stdout, /TTS_DONE/,
+        `stdout 里没有 TTS_DONE —— 现场 TTS 没跑完\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const mLine = /^l1\s+(\d+(?:\.\d+)?)\s+(.+)$/m.exec(r.stdout);
+      assert.ok(mLine,
+        'stdout 里没有 TTS 的逐条回执行（形如 "l1 <时长> <文本>"）—— 现场合成没产出音频\n'
+        + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const ttsDur = Number(mLine[1]);
+      assert.ok(Number.isFinite(ttsDur) && ttsDur > 0.5 && ttsDur < 15,
+        `TTS 回执的时长不合理：${JSON.stringify(mLine[1])}`);
+      assert.strictEqual(mLine[2].trim(), TTS_TEXT,
+        `TTS 回执的文本与输入不一致：${JSON.stringify(mLine[2])}`);
+
+      // ── 断言 2：dur.json 有效（TTS 的时长回传）──
+      const durFile = path.join(outDir, 'dur.json');
+      assert.ok(fs.existsSync(durFile), `没有 ${durFile}`);
+      const durMap = JSON.parse(fs.readFileSync(durFile, 'utf8'));
+      const d1 = Number(durMap.l1);
+      assert.ok(Number.isFinite(d1) && d1 > 0.5 && d1 < 15,
+        `dur.json 的 l1 时长不合理：${JSON.stringify(durMap.l1)}`);
+
+      // ── 断言 3：★ style-dna 真的接进来了（这句**只在** targetLufs ≠ 通用默认时才打印）──
+      assert.match(r.stdout, new RegExp(`响度目标 ${reEsc(wantLufs)} LUFS，来自风格特质`),
+        `stdout 里没有「响度目标 ${wantLufs} LUFS，来自风格特质」—— style-dna 的 targetLufs 没接进出片链路\n`
+        + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+
+      // ── 断言 4：★ 串行锁「取了又放」──
+      assert.ok(sawLock,
+        `整个现场 TTS 过程里从没观察到配音锁（${lockPath}）—— 串行锁没生效？\n`
+        + '  Index-TTS 绝不能并发（实测 4~5 个实例会把 6 秒的合成拖到 4~7 分钟），这把锁是硬要求。');
+      assert.ok(!fs.existsSync(lockPath),
+        `跑完了但配音锁没释放：${lockPath}（内容 "${readLock()}"）\n`
+        + '  锁泄漏会把后续所有配音任务堵到 LOCK_TIMEOUT（2 小时）。');
+
+      // ── 断言 5：成片响度/峰值真的按 DNA 目标归一 ──
+      //   归一规则（`dub.mjs`，2026-10-04 起）：
+      //     · 两个目标差 ≤ 1 LU ⇒ `gain = min(峰值余量, 响度余量)`，**至少一个贴住限值**；
+      //     · 两个目标差 > 1 LU ⇒ `gain = 响度余量` + `alimiter` 限幅 ⇒ **两个都贴住限值**。
+      //   两种形态都合法，但必须**至少一个贴住限值**，否则说明增益根本没算对。
+      //   ★ 容差取 0.25 dB：成片是 AAC 有损编码，实测会把 PCM 真峰值挪 0.08~0.22 dB
+      //     （见项目约定「音频有损编码」）。卡到 0.15 会被编码抖动打成假红。
+      const TOL = 0.25;
+      const lastJson = (r.stdout.match(/^\{.*"lufs".*\}$/m) || [])[0];
+      assert.ok(lastJson, 'stdout 末尾没有机器可读的结果 JSON 行');
+      const fin = JSON.parse(lastJson);
+      // ★ 2026-10-03：判据改用**真峰值**（dub.mjs 现在会在 JSON 里给 truePeak，来自 loudnorm input_tp，
+      //   4× 过采样）。此前用的是 `peak`（astats **采样峰值**）却标成「真峰值」——
+      //   实测全量 43 部里两者最大差 1.62 dB，用采样峰值会**漏报**。
+      const finTP = typeof fin.truePeak === 'number' ? fin.truePeak : fin.peak;
+      assert.ok(finTP <= TARGET_PEAK_PCM + TOL,
+        `成片真峰值 ${finTP} dBTP（采样峰值 ${fin.peak} dBFS）超过上限 ${TARGET_PEAK_PCM}（含 AAC 编码余量 ${TOL}）`);
+      const hitLoud = Math.abs(fin.lufs - wantLufs) <= TOL;
+      const hitPeak = Math.abs(finTP - TARGET_PEAK_PCM) <= TOL;
+      assert.ok(hitLoud || hitPeak,
+        `增益没打到任何一个限值：成片响度 ${fin.lufs} LUFS（DNA 目标 ${wantLufs}）、`
+        + `真峰值 ${finTP} dBTP（上限 ${TARGET_PEAK_PCM}）—— 响度/峰值归一没生效？`);
+      assert.ok(fin.lufs <= wantLufs + TOL,
+        `成片响度 ${fin.lufs} LUFS 超过了 DNA 目标 ${wantLufs}（容差 ${TOL}）`);
+
+      // ── 断言 5b：★ 增益公式**真的把 DNA 目标当输入**（不是只打印了它）──
+      //   用 stdout 里打印的**原始测量值**反推公式，再与实发增益对比。
+      //   ★★ 2026-10-04 改：`dub.mjs` 的增益规则**变了** —— 此前是
+      //     `gain = min(峰值余量, 响度余量)`「取更保守的那个」，后果是
+      //     **峰值余量总是更保守、响度那一项被 min() 吃掉**（本机素材波峰因数 ~13–14 dB
+      //     > `targetLufs − TARGET_PEAK_PCM = 12.3 dB`）⇒ 实测成片响度只到 **−17.3 LUFS**，
+      //     离 DNA 目标 **−14** 差 **3.3 LU**。原注释把这条记成了「已知局限」，
+      //     实为**可修的缺陷**：纯增益在数学上不可能同时满足峰值与响度，必须**限幅**。
+      //   现规则：两者差 > `LUFS_SHORTFALL_LIMIT`(1.0 LU) 时 → `gain = 响度余量` 并启用
+      //     `alimiter`（只压峰、不改电平）；否则维持 `min(...)` 不变（不动既有输出）。
+      const mRaw = /拼装后 峰值 (-?[\d.]+) dBFS · 集成响度 (-?[\d.]+) LUFS/.exec(r.stdout);
+      assert.ok(mRaw, `stdout 里没有拼装后的原始测量行\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const rawPeak = Number(mRaw[1]);
+      const rawLoud = Number(mRaw[2]);
+      const mGain = /施加增益 ([+-]?[\d.]+) dB/.exec(r.stdout);
+      assert.ok(mGain, `stdout 里没有「施加增益」行\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const gainActual = Number(mGain[1]);
+      const gainPeakMargin = TARGET_PEAK_PCM - rawPeak;
+      const gainLoudMargin = wantLufs - rawLoud;
+      // ★ 这个常量必须与 `dub.mjs` 里的 `LUFS_SHORTFALL_LIMIT` 一致
+      const LUFS_SHORTFALL_LIMIT = 1.0;
+      const useLimiter = gainPeakMargin < gainLoudMargin - LUFS_SHORTFALL_LIMIT;
+      const gainExpect = useLimiter ? gainLoudMargin : Math.min(gainPeakMargin, gainLoudMargin);
+      assert.ok(Math.abs(gainActual - gainExpect) <= 0.02,
+        `施加增益 ${gainActual} dB 与规则不符：\n`
+        + `  峰值余量 ${gainPeakMargin.toFixed(3)} / 响度余量 ${gainLoudMargin.toFixed(3)}`
+        + ` ⇒ ${useLimiter ? `两者差 > ${LUFS_SHORTFALL_LIMIT} LU ⇒ 期望取响度余量并限幅` : '期望取更保守的那个'}\n`
+        + `  期望 ${gainExpect.toFixed(3)}，实际 ${gainActual.toFixed(3)}（差 ${Math.abs(gainActual - gainExpect).toFixed(3)} dB）\n`
+        + `  ★ 响度余量必须用 DNA 目标 ${wantLufs}，不是通用默认 ${TARGET_LUFS}`);
+
+      // ── 断言 5c（2026-10-04 新增）：★ 限幅路径下**响度真的打到了目标** ──
+      //   这是修那个缺陷的**结果断言** —— 只证明「公式用了 DNA 目标」还不够
+      //   （旧代码也用了，只是被 min() 吃掉、数值上没效果）。
+      //   容差 0.8 LU 是宽的：限幅只压峰、会轻微拉低集成响度（实测本机素材影响 < 0.05 LU），
+      //   但留足余量以免被不同素材的波峰因数打成假红。它仍能抓住修前那 3.3 LU 的短差。
+      if (useLimiter) {
+        assert.match(r.stdout, /峰值限幅/,
+          `这条素材两个目标差 ${(gainLoudMargin - gainPeakMargin).toFixed(2)} LU（> ${LUFS_SHORTFALL_LIMIT}）`
+          + ' ⇒ 应当走「按响度目标增益 + 峰值限幅」那条路，但 stdout 里没看到「峰值限幅」\n'
+          + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+        assert.ok(Math.abs(fin.lufs - wantLufs) <= 0.8,
+          `走了限幅路径，成片响度应当贴住 DNA 目标 ${wantLufs} LUFS，实测 ${fin.lufs} LUFS`
+          + `（差 ${Math.abs(fin.lufs - wantLufs).toFixed(2)} LU）—— 限幅没把响度顶上去？`);
+      }
+
+      // ── 断言 6：成片几何 + 音轨（用 ffprobe **独立复验**，不采信工具自述）──
+      //   音轨这条尤其重要：`_tts/*.wav` 成功后就被清掉了，所以「真合成的音频真的进了成片」
+      //   只能从成片侧独立验证。
+      const mp4 = path.join(outDir, 'film.mp4');
+      assert.ok(fs.existsSync(mp4), `没有 ${mp4}`);
+      const toWsl = (p) => `/mnt/${p[0].toLowerCase()}${p.slice(2).replace(/\\/g, '/')}`;
+      const pr = await wsl(`ffprobe -v error -show_entries stream=codec_type,width,height -show_entries format=duration -of json ${toWsl(mp4)}`);
+      let probeJson = null;
+      try { probeJson = JSON.parse(String(pr.out)); } catch { /* 下面统一报错 */ }
+      assert.ok(probeJson && Array.isArray(probeJson.streams),
+        `ffprobe 没读出流信息：${JSON.stringify(String(pr.out).slice(0, 300))}（err=${String(pr.err).slice(0, 300)}）`);
+      const vStream = probeJson.streams.find((s) => s.codec_type === 'video');
+      const aStream = probeJson.streams.find((s) => s.codec_type === 'audio');
+      assert.ok(vStream, '成片里没有视频流');
+      assert.strictEqual(`${vStream.width}x${vStream.height}`, '270x480',
+        `ffprobe 读到的成片尺寸不是 270x480：${vStream.width}x${vStream.height}`);
+      assert.ok(aStream, '成片里没有音轨 —— 现场合成的配音没进成片');
+      const fmtDur = Number(probeJson.format && probeJson.format.duration);
+      assert.ok(Number.isFinite(fmtDur) && fmtDur > 0.5 && fmtDur < 15,
+        `成片总时长不合理：${JSON.stringify(probeJson.format && probeJson.format.duration)}`);
+
+      // ── 断言 7（2026-10-04 新增）：★ 成片字幕**逐字等于文案** ──
+      //   需求把「字幕内容与文案保持一致」写成硬规则，而这条**不需要 VLM 就能机械核**：
+      //   读成片的 `film.srt`，把每条字幕的文本拼起来与输入的文案比对（都去掉空白）。
+      //   ★ 比「拼接后」而不是「逐条」：字幕怎么切句是编排的自由（切句规则可能变），
+      //     但**内容一个字都不能变**。多字、少字、改字都会让拼接结果不等。
+      //   ★ 与 `--verify-triple`（需 7B VLM、验画面语义）**互补**：那条验画面，这条验文本。
+      const srtPath = path.join(outDir, 'film.srt');
+      assert.ok(fs.existsSync(srtPath), `没有 ${srtPath}`);
+      const srtBlocks = fs.readFileSync(srtPath, 'utf8').split(/\n\s*\n/)
+        .map((b) => b.split('\n').slice(2).join(' ').trim()).filter(Boolean);
+      const stripWs2 = (s) => String(s).replace(/\s+/g, '');
+      const srtJoined = srtBlocks.map(stripWs2).join('');
+      const wantJoined = stripWs2(TTS_TEXT);
+      assert.ok(srtBlocks.length > 0, 'film.srt 里一条字幕都没有');
+      assert.strictEqual(srtJoined, wantJoined,
+        `成片字幕内容与文案不一致（去空白后比对）：\n`
+        + `  文案 ${wantJoined.length} 字：${wantJoined}\n`
+        + `  字幕 ${srtJoined.length} 字：${srtJoined}\n`
+        + `  字幕分 ${srtBlocks.length} 条：${JSON.stringify(srtBlocks)}`);
+
+      ctx.note(`⑤++ 现场 TTS 实测：成片 ${fin.lufs} LUFS / 峰值 ${fin.peak} dBFS`
+        + `（DNA 目标 ${wantLufs} LUFS，限值 ${TARGET_PEAK_PCM} dBFS，本次由${hitPeak ? '峰值' : '响度'}限住）`
+        + `；锁已观察到且已释放`);
     },
   },
 ];

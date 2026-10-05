@@ -18,7 +18,7 @@
 或   node server.mjs --port 7788 --open
 ```
 
-功能：环境状态条 · 43 个风格列表（带简介）· 启动表单（fps/workers/venc/只跑音频/只渲染/dry-run + 高级参数）· **实时日志（SSE，可中途接入）** · 任务队列与取消 · 成片库内嵌播放。
+功能：环境状态条 · 43 个风格列表（带简介）· 启动表单（fps/workers/venc/只跑音频/只渲染/dry-run + 高级参数）· **主题出片表单（选风格 + **语言版本** + **输出尺寸** → 落工单）** · **实时日志（SSE，可中途接入）** · 任务队列与取消 · 成片库内嵌播放。
 
 **端口的两条规则**（`server.mjs` 区分处理，因为原因不同）：
 - **`EACCES`**（端口落在 Windows 保留段 —— Hyper-V/WSL 随机圈走）→ **自动向后扫描**找可绑端口，并**显著打印实际用的是哪个**。这些段**每次重启都会变**，所以不硬编码备用端口。
@@ -64,6 +64,69 @@ node server.mjs --simulate-env=bare     # 让控制台假装这是一台干净�
 URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演练场景（顶栏「演练」按钮循环切）。
 演练模式下 `/api/setup/run` **仍走真实检测**，所以演练状态**不可能**触发真实安装。
 
+## HTTP 接口清单
+
+控制台服务端 `server.mjs` 的**全部** `/api` 路由。★ 权威来源是 `server.mjs` 的分发块
+（`http.createServer(...)` 里那段 `if` 链）；本表由 `scripts/check-api-docs.mjs` **双向**校验：
+**server 有而本表没有 ⇒ 闸门 FAIL**（新接口没登记）；**本表有而 server 没有 ⇒ 闸门 FAIL**（文档撒谎）。
+
+- **方法 / 路径**：参数路由写成 `:name` 形式（校验时两边都归一化成 `:id`）；`HEAD` 与 `GET` **并列**列出
+  —— 成片接口两者都支持，`HEAD` 供播放器预取元数据。
+- **类型**：`同步`（请求内直接应答）· `异步任务`（入后台串行队列、返回 job，进度走 `/api/logs/:id` 的 SSE）·
+  `静态`（直接发文件字节，支持 Range）。
+- **用途**：机械摘录该处理函数**自己的 `/** ... */` JSDoc 首句**，**不做发挥**；**没有 JSDoc 的如实写「（无注释）」**。
+
+| 方法 | 路径 | 用途 | 类型 |
+|---|---|---|---|
+| POST | `/api/run` | 入队一个出片任务（异步） | 异步任务 |
+| GET | `/api/jobs` | 任务列表 + 队列状态（同步快照） | 同步 |
+| DELETE | `/api/jobs/:id` | 取消（排队/运行中）或删除（已结束）一条任务，按状态分派 | 同步 |
+| GET | `/api/logs/:id` | 任务日志的 SSE 长连接（支持 Last-Event-ID 断线续传） | 同步 |
+| GET | `/api/precheck` | 启动前的并发预检：提示是否已有同一个 demo 在跑 | 同步 |
+| GET | `/api/eta` | 一次问一批 slug 的耗时估计（给批量入队确认弹层用） | 同步 |
+| GET | `/api/env` | 环境检测结果（默认缓存 30s，?force=1 强制重测） | 同步 |
+| GET | `/api/setup/actions` | 「首次运行向导」的数据源：当前环境该装什么、哪些能自动装 | 同步 |
+| POST | `/api/setup/run` | 真正执行一个安装动作（后台任务，日志走 /api/logs/:id 的 SSE） | 异步任务 |
+| GET | `/api/demos` | 风格（demo）清单：简介、是否带 demo、是否已出片、分类 | 同步 |
+| GET | `/api/films` | 成片库清单：一级目录下的 .mp4，外加 dub 子目录的 film.mp4 与 `_jobs\<任务id>\` 下控制台出片的 .mp4，按修改时间倒序 | 同步 |
+| GET | `/api/console` | 端口固定入口的当前状态（host / port / url + 落盘与各注册表状态） | 同步 |
+| POST | `/api/reveal` | 在资源管理器里打开某个成片目录 | 同步 |
+| GET | `/api/style/:slug` | 这个风格的 STYLE.md / DEMO.md，渲染成已转义的 HTML | 同步 |
+| GET | `/api/films/:slug/:file` | 发成片字节，支持 Range 请求（能拖进度条）；HEAD 走同一处理函数 | 静态 |
+| HEAD | `/api/films/:slug/:file` | 发成片字节，支持 Range 请求（能拖进度条）；HEAD 走同一处理函数 | 静态 |
+| GET | `/api/films/dub/:dir/:file` | 文案出片的成片字节（比一级目录深一层），支持 Range；HEAD 同 | 静态 |
+| HEAD | `/api/films/dub/:dir/:file` | 文案出片的成片字节（比一级目录深一层），支持 Range；HEAD 同 | 静态 |
+| GET | `/api/films/_jobs/:jobId/:file` | 控制台出片的成片字节（落在 `_jobs\<任务id>\`，比一级目录深一层），支持 Range；HEAD 同 | 静态 |
+| HEAD | `/api/films/_jobs/:jobId/:file` | 控制台出片的成片字节（落在 `_jobs\<任务id>\`，比一级目录深一层），支持 Range；HEAD 同 | 静态 |
+| POST | `/api/briefs` | 落一张主题工单（status=pending），内容留给外部 LLM 生成 | 同步 |
+| GET | `/api/briefs` | 工单列表 + 状态计数，并带上 UI 下拉要用的风格/语言/尺寸清单 | 同步 |
+| GET | `/api/langs` | 这个风格有哪些语言版本可以出片 | 同步 |
+| GET | `/api/sizes` | 可选输出尺寸清单（给前端渲染「输出尺寸」下拉） | 同步 |
+| GET | `/api/aspects` | 这个风格的影片真的能正确构图的比例 | 同步 |
+| GET | `/api/voices` | 音色清单 + 分组 + 目录状态 + 当前内容用的音色 | 同步 |
+| GET | `/api/voices/audio` | 参考音字节流（试听要能拖进度条，所以支持 Range） | 静态 |
+| GET | `/api/voices/sources` | 音色源目录里还没被转换成参考音的候选文件 | 同步 |
+| POST | `/api/voices/import` | 把一个源素材转成参考音（= 加一个可选音色） | 异步任务 |
+| GET | `/api/voices/test/audio/:file` | 试听产物（POST /api/voices/test 的落点） | 静态 |
+| POST | `/api/voices/test` | 用指定音色真的合成一句，让用户先听效果再决定 | 异步任务 |
+| POST | `/api/dub/upload` | 收下素材（raw body，不是 multipart） | 同步 |
+| POST | `/api/dub/preview` | 只做断句，让用户在出片前核对 | 同步 |
+| POST | `/api/dub/analyze` | 断段 + 语义标签 + 风格匹配（同步，约 1 秒） | 同步 |
+| POST | `/api/dub/run` | 文案 → 成片（异步任务） | 异步任务 |
+| GET | `/api/dub/styles` | 风格清单（供 UI 填下拉） | 同步 |
+| GET | `/api/dub/sources` | 已上传的素材（供 UI 复用上次传的那条；每条带 kind） | 同步 |
+| GET | `/api/dub/source-meta` | 口播素材的像素尺寸（宽 × 高） | 同步 |
+| GET | `/api/briefs/processable` | 给外部 LLM 读的：列出所有 pending 工单 + 每个风格的完整素材 | 同步 |
+| POST | `/api/briefs/:id/run` | 出片。只有 status=ready 能出（failed 需显式 {"retry":true}） | 异步任务 |
+| GET | `/api/briefs/:id` | 读一张工单的当前内容（每次从磁盘读，不缓存） | 同步 |
+| PATCH | `/api/briefs/:id` | 外部 LLM 的推荐回写通道（走状态机校验；直接改文件会绕过它） | 同步 |
+| DELETE | `/api/briefs/:id` | 删除一张工单（running 中的工单不允许删，回 409） | 同步 |
+
+★ 上表共 **41** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
+其余 **39** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
+`DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
+★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
+
 ## 为什么需要这一层
 
 lemo-opuscar 原本的 `build.sh` 是 POSIX 脚本，只能在 WSL 里跑。但**它的渲染在 WSL 里用不上显卡**：
@@ -108,6 +171,11 @@ lemo-make.bat ascii-crt --venc libx264       :: 回退 CPU 编码
 lemo-make.bat ascii-crt --dry-run            :: 只打印计划（含起飞前检查）
 lemo-make.bat tilt-shift --q noev=1          :: 页面参数（默认只给渲染）
 lemo-make.bat ascii-crt --no-preflight       :: 跳过起飞前检查
+lemo-make.bat engraving --lang zh            :: 语言版本（把 content=X.json 换成 X.zh.json）
+lemo-make.bat ascii-crt --ratio 9:16         :: 输出宽高比（默认 9:16）
+lemo-make.bat ascii-crt --size 1080x1920     :: 自定义像素（优先级高于 --ratio）
+lemo-make.bat engraving --voice zh_kepu9     :: 换配音音色（Index-TTS 参考音，见「音色选择」）
+lemo-make.bat engraving --voice zh_kepu9 --speed 1.1   :: 连语速一起定（0.5–2.0）
 lemo-make.bat --help
 ```
 
@@ -136,24 +204,133 @@ lemo-make.bat --help
 
 而且各 demo 的 `build.sh` 里 `events.mjs` 在 `mix.py` **之前**（有依赖），所以这一步必须放在并行段**之前**。
 
+## 四批新功能：语言版本 / 配音引擎 / 输出尺寸 / 音色选择
+
+三者的共同点：**开关都在「内容文件」或一条命令行里，且都能逐字节回归到改动前**。
+深度用法（中文断行、字体栈为什么必须带拉丁、Index-TTS 音色怎么选、控制台的裁切警告）见
+`creative/coffee/04-从零原创使用手册.md` 的 §6 / §6.5 / §7；这里只讲编排层与接口这一侧。
+
+### 语言版本 `--lang`
+
+语言**不在命令行里**，在内容文件的 `"lang"` 字段里；`--lang <code>` 只做一件事：
+**把 `content=X.json` 换成 `X.<code>.json`，并同时送到渲染侧与事件侧**（与 `--film` 同理 ——
+只送一侧会让事件表/字幕/配乐停在另一种语言，`cuecheck` 还会拿同一份错事件核成「通过」）。
+
+| | 规则 |
+|---|---|
+| `--lang zh` + `--q content=content_coffee.json` | 用 `content_coffee.zh.json`；找不到就 `fail` 并列出该 demo 现有内容文件，**不静默退回英文** |
+| `--lang en`（或不传） | **空操作**：不传 `--lang`，命令行与加语言功能之前逐字一致 |
+| `content=` 填什么 | **基名**（`content_coffee.json`），不要写 `content_coffee.zh.json`（那会去找 `.zh.zh.json`） |
+
+语言注册表是库侧 `core/lang/lang.mjs` 的 `LANGS`（**加一种语言 = 在那里加一条**），它驱动字体、字距、
+圆窗编号前缀（`FIG.` → `图`）与配音音色。控制台的语言下拉来自 `GET /api/langs?slug=<风格>`，
+它按上面这条换名规则**探测该风格真的有哪个语言版本**（没写 `.zh.json` 的风格只显示「英文版」）。
+
+★ 中文版**主动跳过离线 ASR 校对**：whisper 小模型对中文实测 **9/9 全 DIFF**（相似度 0.20–0.57），
+且它的 norm **不归一化「十/百/千」**（含多位数字的行即使转写正确也 FAIL）⇒ 只会刷一屏假警告、掩盖真正的失败。
+判定按 `lines.json` 里的 `lang`，**不是**按命令行。
+
+### 配音引擎（`voice.engine`，缺省 `kokoro`）
+
+用哪个 TTS 后端，由**内容文件**的 `voice.engine` 决定，**没有命令行开关** —— 因为语言（`lang`）和
+引擎（`voice.engine`）是同一个源头：编排器只读内容文件，不会出现「字幕已中文、配音还走英文音色」。
+
+| 引擎 | 实现 | 跑在哪 | `voice` 是什么 |
+|---|---|---|---|
+| `kokoro`（缺省） | `core/tts/tts.py` | WSL 的 `.venv` | Kokoro 音色名（`bm_fable` / `af_heart`…） |
+| `indextts` | `core/tts/tts_indextts.py` | 本机 Windows 便携版 Index-TTS 2.5 自带的 venv（脚本**自重入**过去） | **参考音频**（别名 `zh_curator` / `zh_curator_alt`，或目录里**真实存在**的 `voice_NN` / `.wav` 路径），**不是**音色名 |
+
+Index-TTS 是本机部署的零样本克隆引擎，**从 WSL 启动即可**：脚本用 `/mnt/<盘符>/…` 做存在性检查、
+借 WSL interop 起那个 Windows python，再自重入（`_LEMO_INDEXTTS_INNER=1`）；**一次进程加载模型、
+批量合成全部行**，不要逐条调用（逐条 = 每条都重新加载 3.2 GB 模型）。
+实测 9 条台词：加载 ~25 s、每条 ~30 s（RTF ≈ 6.5）、合计约 4 分钟。可配置项
+`INDEXTTS_HOME` / `INDEXTTS_PYTHON` / `INDEXTTS_APP` / `INDEXTTS_TIMEOUT`。
+★ 跨宿主路径的坑（**外层不要对 Windows 路径调 `os.path.abspath`**、**内层参数必须是 Windows 路径**）见手册 §6.5。
+
+### 输出尺寸 `--ratio` / `--size`（默认 9:16）
+
+**比例→像素换算的唯一来源是库侧 `core/render/size.mjs`**（`RATIOS` / `DEFAULT_RATIO` / `resolveSize`），
+编排器与控制台都从这里取，不各抄一份。
+
+| 比例 | 像素（长边 1920） |
+|---|---|
+| **9:16**（默认） | **1080 × 1920** |
+| 16:9 | 1920 × 1080 |
+| 3:4 | 1440 × 1920 |
+| 4:3 | 1920 × 1440 |
+| 1:1 | 1920 × 1920 |
+| 自定义 `--size WxH` | 你填的（两边都必须是 96–8192 的**偶数**，H.264 `yuv420p` 要求；下限 96 是渲染器的实测几何下限，见库侧 `core/render/size.mjs` 的 `MIN_SIZE`） |
+
+优先级 `--size` > `--ratio` > 默认（9:16）；两个都不给 = 9:16。编排器把结果**显式**以 `--size WxH`
+传给 `video.mjs`（低层渲染工具只认 `--size`，不认 `--ratio`）。
+
+★ **「默认 9:16」为什么放在编排器/控制台，而不放在低层 `takeSize`**：`still.mjs` / `video.mjs` 是低层工具，
+全库 43 个风格的 `demo/build.sh` 都直接调它们、**都不传 `--size`、全按 1920×1080 构图**；把低层默认改成
+9:16 会让那些示例片**当场全坏**。所以 `takeSize` 的默认仍是 1920×1080，「默认 9:16」只在出片流程生效。
+
+★ 影片布局的自适应是**逐风格**做的：`styles/engraving/demo/film_coffee.js` 已改造（从视口 `opts.W/H`
+重排版面，并在 `FILM_META.aspects` 声明支持的比例；1920×1080 时逐字节退化），**其它风格的影片模块
+若未改造，在非 16:9 下会被裁切**（不是重排、也不是留黑边）。控制台建单时会**读影片源码文本**探测
+`aspects`，不落在这个风格能构图的那些比例上就弹橙色警告（**只警告、不禁用**）——
+判据与自查见手册 §7.4 / §7.5。
+
+### 音色选择 `--voice` / `--speed`（2026-10-02）
+
+**Index-TTS 不认音色名，只认参考音频** —— 所以「换音色」= 换一条参考 wav，别名只是给内容文件一个稳定锚点。
+
+```bat
+lemo-make.bat engraving --voice zh_kepu9              :: 官方别名 / 音色库名 / 相对路径
+lemo-make.bat engraving --voice zh_kepu9 --speed 1.1  :: 语速 0.5–2.0（映射到 duration_factor = 1/speed）
+python core/tts/tts_indextts.py --list-voices          :: 看有哪些可选（不加载模型，秒回）
+```
+
+★ `--voice` **只改 `lines.json` 里每行的字段，不动内容文件** —— 所以不会多出两份内容文件互相漂移。
+它的实现位置在「内容派生」与 `--lines` **之后**（优先级最高）。
+
+**音色从哪来**（两级，都在 `core/tts/tts_indextts.py` 顶部配置）：
+- `INDEXTTS_REF_DIR`（默认 Index-TTS 自带的 `官方测试素材/参考音频/`）—— 13 个官方参考音 + 2 个别名
+- `INDEXTTS_VOICE_LIB`（默认 `D:/sucai/gongzuoliusucai/kelongshengyin/_ref_wav/`）—— **用户自备音色库**，
+  由声音库里的 MP3 转成 wav 后放进来；脚本会把它下面的所有 `.wav` 自动列成可选音色（子目录不计）
+
+**换音色后必须重调语速**：不同音色「字/秒」差别很大 —— 实测同一句话、同一 speed，
+`科普博主9` 比官方 `voice_12` **短 31%**。沿用旧语速会要么塞不进页面固定的口播槽位（口播重叠）、
+要么留下大片静音空档。
+
+**参考音的电平判据是「峰值」而不是 RMS**：Index-TTS 按参考音的电平出音，顶到满刻度就会把克隆输出
+顶到满刻度（**削波不可逆**）。官方 `voice_05` 就是因为 peak 1.0 导致克隆全部削波而被弃用。
+目标水位 `mean ≈ -30dB / peak ≤ -10dB`；自备素材几乎都需要先降电平（实测用户素材比官方响 15dB）。
+脚本会在合成前打印每条参考音的 `时长 / peak / rms` 并在超标时告警。
+
+**控制台「声音」版块**：列出全部音色（分组：别名 / 我的音色库 / 官方参考音 / 音色库其它），
+可**试听参考音**、**试合成一句**、**选用**；选中的音色与语速存 localStorage，
+出片时自动注入 `--voice` / `--speed`（主表单与「主题出片」两个入口都生效）。接口：
+`GET /api/voices`、`GET /api/voices/audio?name=`、`POST /api/voices/test`、`GET /api/voices/test/audio/<file>`。
+清单的**唯一真相源**是 `tts_indextts.py --list-voices`，Node 侧不另抄一份别名表。
+
+⚠️ 有 `voice_fx.py` / `voice.py` 的风格（实测 `ascii-crt`、`scifi-toon`）走的是声线处理脚本，
+**`--voice` / `--speed` 不生效**，配音音色由那个脚本决定 —— 编排器会打印 `STEP_WARN` 说明，
+不会静默忽略。
 
 ## 测试
 
 ```bash
-node test/smoke.mjs          # 冒烟测试（19 条，约 7–20 秒，不渲染）
-node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒，共 20 条）
+node test/smoke.mjs          # 冒烟测试（36 条，约 15–40 秒，不渲染；WSL 冷启动会到 1–2 分钟）
+node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒起，共 37 条）
 node test/setup.test.mjs     # 首次运行安装的纯逻辑测试（12 条，约 5 秒，不起服务、不用 WSL）
+node test/setup-api.test.mjs # 「首次运行向导」两个接口的 HTTP 契约测试（9 条，约 20 秒，★ 绝不真安装）
+node test/ui.test.mjs        # Web UI 层测试（无头 Edge 渲染 DOM + CDP 真点击，59 条）
+node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条，不起浏览器）
 ```
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `0554085abb34c50e3e1bcfe8f28ab0e1`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `314d7fc8a341b6d77189e368552291f3`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
-- **8 个 HTTP 接口** —— 含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越
+- **23 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`
 - **CLI 未受影响** —— `node lemo-make.mjs ascii-crt --skip-sync --dry-run` 仍 exit 0
 
-`test/setup.test.mjs` 单独一个入口（不并进 smoke），因为「19 条」是冻结的验收基线，数量本身就是约定。
+`test/setup.test.mjs` 单独一个入口（不并进 smoke），因为「36 条」是冻结的验收基线，数量本身就是约定。
 它专测**本地走不到的那条路**：「检测到缺失 → 生成正确的安装动作」做成纯函数
 （`planActions(envResult)`），再喂合成的「干净机器」检测结果 —— 于是每个安装分支都能被断言覆盖。
 含一条**漂移哨兵**：从 `lib/env.mjs` 源码里抽出所有 item id，逐个断言 `lib/setup.mjs` 有专门的
@@ -172,10 +349,21 @@ README.md              本文件
 test/smoke.mjs         冒烟测试入口（零依赖）
 test/cases.mjs         冒烟测试用例
 test/setup.test.mjs    首次运行安装的纯逻辑测试
+test/setup-api.test.mjs  「首次运行向导」接口的 HTTP 契约测试（零依赖，绝不真安装）
+test/ui.test.mjs       Web UI 层测试（无头 Edge + CDP）
+test/consistency.test.mjs  一致性校验门的纯逻辑测试
+consistency-check.mjs  跨 Windows/WSL 的「字幕 ↔ 语义 ↔ 画面」一致性闸门
+originality-audit.mjs  原创性审计
 server.mjs             Web 控制台服务
-lib/                   控制台的服务端模块（env / setup / jobs / store / styles）
+lib/                   控制台的服务端模块（env / setup / jobs / store / styles / briefs / langs / sizes / aspects / consistency / originality）
+lib/style-dna/         各风格的创作逻辑与作者契约
 web/                   控制台前端（index.html / app.js / style.css）
 ```
+
+`lib/langs.mjs`（语言清单）、`lib/sizes.mjs`（比例清单）、`lib/aspects.mjs`（影片构图能力）
+都是**只读代理**：权威来源在库侧（`core/lang/lang.mjs` / `core/render/size.mjs` / 影片源码里的
+`FILM_META.aspects`），控制台只动态 import / 读文本，**绝不另抄一份清单**（两处判据必然漂移）。
+读不到库时各自降级并**如实上报**（语言只剩英文版、比例只剩默认 9:16），不静默用自造的表。
 
 依赖的外部脚本（在 `D:\WSL\`）：
 - `lemo-lib-sync.sh` —— 两份库的同步（`push` / `pull` / `check`）
