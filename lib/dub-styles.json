@@ -19,7 +19,12 @@
     "★ textureRaw 已生效（8 名，与粗粒度同名 / 本就是正确的空操作，改动前就画得出来）：`none`（plain-dark / brick-toy / game-show / living-screencast / swiss-motion，正确的不叠纹理）、`paper`（engraving / silkscreen-poster / midcentury-toon / papercut-red / blueprint / paper-popup / spy-titles）、`rice-paper`（ink-wash）、`washi`（ukiyoe）、`dot-grid`（hologram-hud）、`hairline-grid`（dark-keynote）、`halftone`（risograph / halftone-dossier）、`scanlines`（ascii-crt）。另有 1 名是**同义归一**：`dotgrid`（dataviz）→ `dot-grid`，靠 `lib/dub-core.mjs` 的 `TEXTURE_SYNONYMS`。",
     "★ textureRaw 已由**别的字段**覆盖（2 名，渲染侧不改也对得上）：`vignette`（art-deco —— 该风格 `bgRecipe.vignette: 0.35` 已经把暗角画出来了，见 `lib/dub-core.mjs` 的 `if (vig > 0.001)` 分支）、`paper-grain`（paper-lantern —— 粗粒度 `texture: paper` 的 `noise=alls=9:allf=t+u` 就是纸纹颗粒）。⇒ 这两条**不列入**未实现清单。",
     "★ textureRaw 已**映射到已有分支**（2 名 / 3 风格，2026-10-05 新增回退，判据见 `lib/dub-core.mjs` 的 `TEXTURE_RAW_FALLBACK`）：`film-grain` → `grain`（rubber-hose、silent-film）、`vhs-grain` → `grain`（backrooms）。`vhs-grain` **不叠** `scanlines` —— `scanlines` 分支是 4px 横线（是扫描线、不是颗粒），而 backrooms 的 `STYLE.md:25` 明确写「No scanlines, no RGB mask」。",
-    "★ textureRaw **声明但未实现**（18 名 / 19 风格，2026-10-05 如实标注、**只标注不实现**）：`cel`（cel-anime-80s）、`crayon`（crayon-book）、`pbr-glass`（glass-product）、`pixel-post`（hd-2d）、`impasto`（impasto）、`flat-iso`（iso-infographic）、`flat-shaded-3d`（lowpoly-island）、`toon`（microgame、scifi-toon）、`ink`（one-line）、`flat`（pictogram-motion）、`pixel`（pixel-rpg）、`backlit-leather`（shadow-puppet）、`glass`（stained-glass）、`tilt-shift-blur`（tilt-shift）、`pen-wash`（urban-sketch）、`watercolor`（watercolor）、`whiteboard`（whiteboard）、`woodgrain`（woodcut）。**为什么未实现**：它们是各风格**专属的细质感名**（如 `pbr-glass` / `impasto` / `pen-wash`），`bgFilters()` 里没有对应分支；按「只复用已有分支、不发明无数据依据的参数」的口径**不猜参数**，故渲染侧保持落空。每个受影响风格自己的 `lib/style-skills/<slug>/SKILL.md` 第 11 节「已知缺陷」里都有一条对应说明（只读风格文档的人也能看到，不会被误导）。"
+    "★ textureRaw **声明但未实现**（18 名 / 19 风格，2026-10-05 如实标注、**只标注不实现**）：`cel`（cel-anime-80s）、`crayon`（crayon-book）、`pbr-glass`（glass-product）、`pixel-post`（hd-2d）、`impasto`（impasto）、`flat-iso`（iso-infographic）、`flat-shaded-3d`（lowpoly-island）、`toon`（microgame、scifi-toon）、`ink`（one-line）、`flat`（pictogram-motion）、`pixel`（pixel-rpg）、`backlit-leather`（shadow-puppet）、`glass`（stained-glass）、`tilt-shift-blur`（tilt-shift）、`pen-wash`（urban-sketch）、`watercolor`（watercolor）、`whiteboard`（whiteboard）、`woodgrain`（woodcut）。**为什么未实现**：它们是各风格**专属的细质感名**（如 `pbr-glass` / `impasto` / `pen-wash`），`bgFilters()` 里没有对应分支；按「只复用已有分支、不发明无数据依据的参数」的口径**不猜参数**，故渲染侧保持落空。每个受影响风格自己的 `lib/style-skills/<slug>/SKILL.md` 第 11 节「已知缺陷」里都有一条对应说明（只读风格文档的人也能看到，不会被误导）。",
+    "★ 机器可读的**派生口径块** = 每条 entry 自己的 `derivation` 对象（2026-10-06 新增；**只增不改**：它是**纯元数据**，渲染侧一个字都不读它，`palette`/`bgRecipe`/`subtitle`/`title`/`overlay`/`motion`/`tags`/`desc` **一个字节都没动**）。形状：`\"derivation\": {\"bg\":\"exact|proxy|fallback\",\"font\":\"exact|substituted\",\"subtitle\":\"exact|derived\",\"accent\":\"exact|substituted|absent\"}`。含义：`exact` = 该值是本风格文档/代码的**原文值**；`proxy` / `substituted` / `derived` = 该值**不是**原文值（代理取色 / 本机字体替代 / 规则推得），**知识库更新时应优先替换**；`fallback` = 落回 plain-dark 默认；`absent` = 本风格**没有**该值（`palette.accent` 为 null，不是「被替换」）。★ `accent` 比最小形状多一个 `absent`：null 既非 exact 也非 substituted，机器必须能区分，否则「没有强调色」会被读成「强调色是原文值」。\n  ★ **键名为什么是 `derivation`**：与既有的 `derived` / `derivedFrom` / `bgSameAsDefault` **同类并列、自解释**。★ 它**必须**登记进 `scripts/check-dna-coverage.mjs` 的 `DUB_METADATA` 白名单 —— 那个闸门第二节会枚举注册表**全部字段路径**（顶层键 + 每风格键 + 二级 + 三级），凡「全仓零读取 ∧ 不在白名单里」的路径一律 FAIL（实测不登记就是 `✘ derivation：44/44 个风格声明了它，但全仓零读取`，EXIT=1）。白名单就是该闸门为「**新元数据字段**」预留的人工入口（其头注释原话「**改的是清单，不是判据**」）⇒ 新增一个字段 = 加一行登记，**不改任何判据/阈值**。★ 不要用 `_notes` 承载：顶层 `_notes` 是**字符串数组**、条目里若也叫 `_notes` 就是**对象**，属「同名不同层/不同型」的 schema 债务（本项目刚为同型问题吃过亏：`LEMO_DUB_STYLES` 闸门侧与渲染侧同名不同义 ⇒ 变异验证出**假阴性**）。",
+    "★ `derivation` 的**判据**（全部只看本条自己的现有字段 `synthetic` / `derived` / `bgSameAsDefault` / `palette` / `subtitle.fontFamily` / `notes`，外加证据层 `lib/dub-visual.json`；**不引入任何新的人工判断**）—— 由 `scripts/check-derivation-caliber.mjs` **逐条重算并比对**，不一致即 FAIL：\n     · `bg = fallback` ⟺ `bgSameAsDefault === true` 或 `palette.bg` 为空；否则 `bg = proxy` ⟺ 非合成基线 ∧ notes 不含「已修（配色）」∧ `palette.bg` 与 `lib/dub-visual.json` 里该风格的 `palette.bg` **不相等**（含证据层没抽到 / 抽到的是程序化值的情形）；否则 `exact`。\n     · `font = substituted` ⟺ `subtitle.fontFamily` 是本机真实字体（本条 `_notes[5]` 的六个之一：Microsoft YaHei / SimHei / SimSun / KaiTi / DengXian / Consolas）∧ 非合成基线；否则 `exact`。\n     · `subtitle = derived` ⟺ `derived === true` ∧ notes 里出现 `WCAG`（字幕字号/颜色走「分类别默认 + WCAG 对比度规则」）；否则 `exact`。★ `derived:true` 但已整体按源码真值修正过的条目（目前只有 `one-line`）记 `exact`。\n     · `accent = absent` ⟺ `palette.accent` 为空；否则 `substituted` ⟺ 非「已修（配色）」∧ `palette.accent` 与 `lib/dub-visual.json` 里该风格的 `palette.accent` **不相等**（= 被可见性/代理替换过）；否则 `exact`。\n     ★ **为什么 `bg` / `accent` 用「与 dub-visual 不等」做判据**：`lib/dub-visual.json` 是本注册表的**证据层**（`_notes[8]`）；两者不等就说明这个色**不是**从 demo 代码逐字来的那一个 —— 或来自 STYLE.md 的示例色板（silkscreen-poster / blueprint）、或从 `bg2` 提升（microgame）、或按 `_notes[10]②` 的「`accent/bg` 一律提到 ≥4.5」规则调过（engraving / midcentury-toon / game-show / halftone-dossier / paper-popup / spy-titles / woodcut）—— 三种都属「需人工/知识库复核、应优先替换」的一路。★ 这不是猜：那 7 条的 `accent/bg` 对比度**全部落在 5.02–5.26**（规则目标 ≥4.5），而被替换掉的 demo 原值是 1.35–3.84。",
+    "★ `derivation` 的**口径分布**（2026-10-06 首版，共 44 条）：`bg` exact 37 / proxy 4（silkscreen-poster、risograph、blueprint、microgame）/ fallback 3（hologram-hud、backrooms、living-screencast）；`font` exact 1（plain-dark）/ substituted 43；`subtitle` exact 13 / derived 31；`accent` exact 32 / substituted 7（engraving、midcentury-toon、game-show、halftone-dossier、paper-popup、spy-titles、woodcut）/ absent 5（plain-dark、hologram-hud、blueprint、one-line、rubber-hose）。",
+    "★ `derivation` 的**文档守门**：凡 `fallback` / `proxy` / `substituted` / `derived` 的条目，其 `lib/style-skills/<slug>/SKILL.md` 里**必须有对应口径说明**（只读风格文档的人也不能被误导 —— 判据见 `scripts/check-derivation-caliber.mjs` 的 ③；缺说明即 FAIL，并点名该补哪一份文档）。★ 为什么要有这一条：`derivation` 让**读注册表**的人看到口径，但 `SKILL.md` 是**另一条通路**的读者（照文档干活的人）—— 两条通路必须同源，否则「机器知道是近似值、人不知道」。",
+    "★ `derivation` 的**已知局限**（如实记录，不粉饰）：① 四个轴只区分「**是不是原文值**」，**不**度量偏差大小、也不判断近似值够不够好；② `bg` / `accent` 的判据依赖 `lib/dub-visual.json` 的对应值 ⇒ **证据层一改，本字段可能变旧**（这正是闸门要抓的漂移：要么更新 `derivation`、要么更新证据层）；判据是「归一化后**严格不等**」、**无容差** —— 实测真实语料里不等的情况只有「完全相等」与「差 ≥16.5」两档（后者即上面那 7 条 accent + 4 条底色），**没有**落在中间地带的 ⇒ 目前零误报；若将来出现中间档，应加容差并在此登记。③ `font = substituted` 对**全部 43 个真实风格**成立（因为 `_notes[5]` 规定 `fontFamily` 一律填本机字体）—— 它表达的是「字体一律是替代品」，不是「只有部分风格被替代」；合成基线 plain-dark 的字体就是现网硬编码值，故记 `exact`。④ ③ 的文档判据是**存在性**判据（关键词 + 值是否出现），**不**判断说明写得对不对、够不够 —— 它是「补文档」的提醒，不是文档质量评分。⑤ 本条口径块**本身不参与渲染**，故除 `DUB_METADATA` 的一行登记外不需要任何消费者；它由 `scripts/check-derivation-caliber.mjs` 独占校验。"
   ],
   "styles": [
     {
@@ -98,7 +103,13 @@
       "derivedFrom": [
         "hardcoded-baseline"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "exact",
+        "subtitle": "exact",
+        "accent": "absent"
+      }
     },
     {
       "id": "engraving",
@@ -179,7 +190,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "substituted"
+      }
     },
     {
       "id": "silkscreen-poster",
@@ -264,7 +281,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "proxy",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "exact"
+      }
     },
     {
       "id": "hologram-hud",
@@ -346,7 +369,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": true
+      "bgSameAsDefault": true,
+      "derivation": {
+        "bg": "fallback",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "absent"
+      }
     },
     {
       "id": "midcentury-toon",
@@ -426,7 +455,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "substituted"
+      }
     },
     {
       "id": "ink-wash",
@@ -508,7 +543,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "exact"
+      }
     },
     {
       "id": "papercut-red",
@@ -591,7 +632,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "exact"
+      }
     },
     {
       "id": "risograph",
@@ -680,7 +727,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "proxy",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "exact"
+      }
     },
     {
       "id": "dark-keynote",
@@ -762,7 +815,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "exact"
+      }
     },
     {
       "id": "ascii-crt",
@@ -840,7 +899,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "exact"
+      }
     },
     {
       "id": "blueprint",
@@ -925,7 +990,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "proxy",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "absent"
+      }
     },
     {
       "id": "ukiyoe",
@@ -1006,7 +1077,13 @@
         "stylerule",
         "demo-code"
       ],
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "exact"
+      }
     },
     {
       "id": "art-deco",
@@ -1088,7 +1165,13 @@
         "chapterTransition": "wipe"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0d0b09 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "backrooms",
@@ -1168,7 +1251,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0C1016 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 ⚠ palette.bg 缺失 → 用 plain-dark 底色兜底。 知识库更新时应优先用代码抽取值替换本条的派生值。 ⚠ 本条目 dub-visual 未抽到 palette.bg（demo 里底色是程序化生成的），已按 plain-dark 底色兜底 —— **底色与默认相同**，观感差异只来自暗角/纹理/字幕/字体/转场，抽帧复核时要特别盯这一条。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。 ★ 抽帧实测（backrooms-long.png）：纯色 #0C1016 + vignette=1.10 强暗角 + 4px 扫描线（黑压黑，肉眼不可见），且无任何叠加层 —— 与 plain-dark 的差异**只剩暗角**，观感最接近基线。若要求「一眼看出不同」，这条应标为暂不支持或另配底色。差异强度：最弱。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.bg` = \"#0C1016\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
-      "bgSameAsDefault": true
+      "bgSameAsDefault": true,
+      "derivation": {
+        "bg": "fallback",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "brick-toy",
@@ -1248,7 +1337,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4f4f1 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "cel-anime-80s",
@@ -1328,7 +1423,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fff0c0 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 ⚠ palette.fg 缺失 → 按底色明暗推前景。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.fg` = \"#141414\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。） ★ **2026-10-04 已修（配色）**：本条原是派生值（底色 #fff0c0 浅米黄 + 字幕 #141414 近黑），与「雨后霓虹都市之夜」的样片**不是一回事**（见 lib/style-skills/cel-anime-80s/SKILL.md 第 11 节）。现按该风格的**源码真值**改为：bg #1f2446 / bg2 #34203f / stops [#1f2446, #2a1f4a, #34203f]（夜景楼体与天空色，demo/bg.js:46）；accent #ff4fa8（霓虹洋红，demo/bg.js:4 NEON[0]）；subtitle #fff0a0 + outline #120a1e（奶黄字 + 9px 深描边，demo/hud.js:25,27 与 SKILL.md §3/§5）。原值保留作历史。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "crayon-book",
@@ -1406,7 +1507,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4efe3 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "dataviz",
@@ -1485,7 +1592,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 caption-row：字号 36px、下边距 173px、左边距 86px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F6F3EC 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "game-show",
@@ -1564,7 +1677,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #FFF6E5 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 dark-plate（深色胶囊）派生，STYLE.md §4 写的是「white or yellow fill with an ink stroke ≈ 14 % of the font size painted under the fill」，已改判 dark-glow + 厚描边。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "substituted"
+      }
     },
     {
       "id": "glass-product",
@@ -1644,7 +1763,13 @@
         "chapterTransition": "expand"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #000000 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "halftone-dossier",
@@ -1736,7 +1861,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F4ECDD 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "substituted"
+      }
     },
     {
       "id": "hd-2d",
@@ -1818,7 +1949,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fff0c8 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。；★ 2026-10-05 修正：原 `bg=#fff0c8` 是 `cliff.js:161` 的**灯塔灯光色**（抽取把灯光色当成了背景色），夜景片会渲成浅奶油底。已按 `harbor.js:14` / `DEMO.md:52` 的真实夜空 `#050818→#101d3e→#2c4262` 改为渐变底，并连带把由「亮底→深字」WCAG 规则推得的字幕/前景色改回 `#f6f0e2`（纸白，见 `ui.js:81` 的 `textColor` 与 §3 字幕行）。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "impasto",
@@ -1898,7 +2035,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 paper-ink：字号 40px、下边距 157px、左边距 76px、描边 3px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #1a0a06 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ **2026-10-04 已修（配色）**：本条原 palette.bg #1a0a06 / bg2 #2a2224（深棕）与 bgRecipe.stops 两段深棕，与成片的雨后黄昏**完全不是一回事**（见 lib/style-skills/impasto/SKILL.md 第 11 节）。现按该文档第 3 节的精确渐变改为 bg #34507e（钴蓝）/ bg2 #d99a78（桃）/ stops [#34507e, #d99a78, #f7dca0]（金）。原值保留作历史。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "iso-infographic",
@@ -1979,7 +2122,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F2E6D0 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「The subtitle is a map label: a pale card with a small radius and an ink border, ... sans ~42 px, bottom-centre」——是**浅色卡 + 墨字**，不是深色条 + 浅字。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "living-screencast",
@@ -2059,7 +2208,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0C1016 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 ⚠ palette.bg 缺失 → 用 plain-dark 底色兜底。 知识库更新时应优先用代码抽取值替换本条的派生值。 ⚠ 本条目 dub-visual 未抽到 palette.bg（demo 里底色是程序化生成的），已按 plain-dark 底色兜底 —— **底色与默认相同**，观感差异只来自暗角/纹理/字幕/字体/转场，抽帧复核时要特别盯这一条。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。 ★ 抽帧实测（living-screencast-long.png）：纯色 #0C1016 + vignette=1.10 强暗角，但有金色 accent 元素（章节卡副标题 + 字幕上方 accentRule 线），**能看出区别**。差异强度：弱。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.bg` = \"#0C1016\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
-      "bgSameAsDefault": true
+      "bgSameAsDefault": true,
+      "derivation": {
+        "bg": "fallback",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "lowpoly-island",
@@ -2138,7 +2293,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-glow：字号 45px、下边距 157px、左边距 65px、描边 3.2px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #eef6fb 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "microgame",
@@ -2218,7 +2379,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0C1016 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 ⚠ palette.bg 缺失 → 用 plain-dark 底色兜底。 知识库更新时应优先用代码抽取值替换本条的派生值。 ⚠ 本条目 dub-visual 未抽到 palette.bg（demo 里底色是程序化生成的），已按 plain-dark 底色兜底 —— **底色与默认相同**，观感差异只来自暗角/纹理/字幕/字体/转场，抽帧复核时要特别盯这一条。 ★ 修正：dub-visual 的 palette.bg 为 null、bg2=#3d168f（demo 里高频出现 3 次），已把 #3d168f 提为底色，避免落回 plain-dark 同色。 ★ **2026-10-03 更正**：上文的「缺失 / 为 null」断言**已过期** —— 字段后来被填上了，当前实际值：`palette.bg` = \"#3d168f\"；`palette.bg` = \"#3d168f\"。（字段里的值是**真实在用**的，请以字段为准；原断言保留作历史。）",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "proxy",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "one-line",
@@ -2296,7 +2463,13 @@
         "chapterTransition": "bloom"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色已修正为 STYLE.md 明文——bg = 暖白纸 #F4EFE4（§2:17「Paper: warm white (around #F4EFE4)」）、fg = 暖黑墨 #1D1A17（§3:31「A warm black (around #1D1A17) on warm white」）；demo 侧佐证：subs.js:4 `rgba(244,239,228,0.9)`（纸色 halo = #F4EFE4）、ink.js:183 `rgba(29,26,23,…)` 与 subs.js:3（墨色 = #1D1A17）。字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 paper-ink：字号 40px、下边距 157px、左边距 76px、描边 3px）；章节卡等叠加层保守关闭，仅 accentRule=false。 ★ 修正记录（本条曾整体取错）：先前误把 bg 取成 plain-dark 兜底 #0C1016（近黑）、fg 取成 #000000、subtitle 取成 #FFFFFF，导致「暖白纸」被渲成深色片、且标题黑字压近黑底不可见；现已按 STYLE.md §2:17 / §3:31 改为纸白 #F4EFE4 + 墨黑 #1D1A17，subtitle 同步改为墨黑 #1D1A17（§4:37「Text is written…ink at ~84%」，白字压白纸不可见）。★ bgRecipe.stops 同步改为 [\"#F4EFE4\"]：bgRecipe.type=solid 时 bgSource 取 stops[0] 而非 palette.bg（见 dub-core.mjs:209），不改 stops 则底色仍是旧值。★ bgSameAsDefault 由 true 改为 false（底色不再等于 plain-dark）。★ 旧抽帧 one-line-long.png 为深底旧版，已失效，需重渲。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "exact",
+        "accent": "absent"
+      }
     },
     {
       "id": "paper-lantern",
@@ -2375,7 +2548,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0a0806 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "paper-popup",
@@ -2454,7 +2633,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fffaf0 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "substituted"
+      }
     },
     {
       "id": "pictogram-motion",
@@ -2535,7 +2720,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 dark-plate：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fbf6ec 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "pixel-rpg",
@@ -2616,7 +2807,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 pixel：字号 32px、下边距 151px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #3a4466 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "rubber-hose",
@@ -2697,7 +2894,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #F1EEE6 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "absent"
+      }
     },
     {
       "id": "scifi-toon",
@@ -2776,7 +2979,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4f1ea 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "shadow-puppet",
@@ -2857,7 +3066,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f4ead2 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "silent-film",
@@ -2936,7 +3151,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 intertitle：字号 56px、下边距 0px、左边距 86px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #0e0d0b 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "spy-titles",
@@ -3017,7 +3238,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #efe4c9 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "substituted"
+      }
     },
     {
       "id": "stained-glass",
@@ -3098,7 +3325,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #1d3a9c 相对亮度 ≤0.5（暗底→亮字）；★ 2026-10-06：底色由 #2a2a2e 改为钴蓝 #1d3a9c 后仍 ≤0.5，故 fg/subtitle 的「暗底→亮字」取向不变）；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「a parchment banderole near the bottom (curled ends, gentle sag, thin rule), IM Fell English ~44 px in dark ink」——是**羊皮纸带 + 深墨字**。 ★ 字幕配色更正（style-recon 提供硬证据）：demo 的字幕是「米白绶带 + 深棕字」（styles/stained-glass/demo/subs.js:18 底带渐变 #f3e6c6→#ecdcb6→#d9c497，subs.js:26 文字色 #3a2412，44px IM Fell English，中心 (960,968)，带宽 64）。**但 ASS 的 Sub 样式是 BorderStyle=1（只有描边+阴影，没有底带）**，字幕直接压在画面底色上 —— 所以不能照搬 demo 的「深棕字」（深棕 #3a2412 压画面深底 #2a2a2e 只有 1.5:1，会看不见）。本条目取**绶带底色 #f3e6c6** 作字色，压在画面深底上对比度 11.4:1，可读；颜色本身是代码原值（此前误填 #f3e7c6，那是 ukiyoe 的题签色 main.js:95，已更正）。 ★ 2026-10-06 修正：原 `palette.bg = #2a2a2e`（及 `bgRecipe.stops[0]`）取自 `styles/stained-glass/demo/test.js:9` 的 `S.fillStyle = '#2a2a2e'` —— 那是 knightTest/dragonTest **模型页（lightbox 测试页）**的灰底，不是成片的背景；成片里 `#2a2a2e` 一次都没出现（全库扫描：仅 test.js 1 处命中）。本风格的画面主色是钴蓝：`glass.js:7` `COL.cobalt = '#1d3a9c'`、`window.js:45` 采石格（quarries）默认用 `COL.cobalt`（`STYLE.md:33`「Backgrounds: hand-cut lozenge quarries」、`STYLE.md:39`「cobalt ground」、`DEMO.md:74`「cobalt `#1d3a9c` (dominant)」、`SKILL.md` §3「底（钴蓝，主导）」）。已把 `palette.bg` 与 `bgRecipe.stops[0]` 由 `#2a2a2e` 改为 `#1d3a9c`（bg2 `#142a70` 不变，它本来就是 §3 记录的「暗部玻璃 / 夜间窗格」深蓝）。底色仍是暗底（相对亮度 0.057 ≤ 0.5）⇒ 由 WCAG 规则推得的 `fg` / `subtitle` 取向不变（仍亮字），无需连带改动。渲帧实测见 `lib/dub-visual.json#stained-glass.evidence`。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "swiss-motion",
@@ -3177,7 +3410,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 caption-row：字号 36px、下边距 173px、左边距 86px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #EAE9E5 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "tilt-shift",
@@ -3258,7 +3497,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 light-strip：字号 40px、下边距 157px、左边距 65px、描边 0px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #8fb4d8 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。 ★ 字幕色更正：此前误填 #F3E7C6（那是 ukiyoe 的题签色），改为 demo palette 原值 #FFFFFF —— 该风格有 vignette=1.10 强暗角，字幕所在的底部被压暗，浅字直接可读，另有 4px 深描边兜底。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "urban-sketch",
@@ -3337,7 +3582,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自分类别默认，STYLE.md §4 只给了字幕形态未给 px（类别 paper-ink：字号 40px、下边距 157px、左边距 76px、描边 3px）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f5eede 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "watercolor",
@@ -3416,7 +3667,13 @@
         "chapterTransition": "bloom"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #f1e9da 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 字体修正：原按 demo 的等宽/终端字体映射到 Consolas，但 consola.ttf 只有 448 KB（同机 CJK 字体 9–19 MB），**不含中文字形**，中文字幕会 tofu 或按 fontconfig 随机回退。已改 SimHei（9.5 MB，含 CJK）。若渲染侧后续接入真正的 CJK 等宽字体（如思源黑体 Mono / NSimSun），应换回等宽并更新此条。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "whiteboard",
@@ -3497,7 +3754,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #e9ebee 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=true。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「an off-white rounded label (~90 %), a handwriting-like face, dark text, a short accent-colour marker dash」——是**米白标签 + 深字**，不是深底衬。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "exact"
+      }
     },
     {
       "id": "woodcut",
@@ -3576,7 +3839,13 @@
         "chapterTransition": "cut"
       },
       "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #EFE8D8 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
-      "bgSameAsDefault": false
+      "bgSameAsDefault": false,
+      "derivation": {
+        "bg": "exact",
+        "font": "substituted",
+        "subtitle": "derived",
+        "accent": "substituted"
+      }
     }
   ]
 }

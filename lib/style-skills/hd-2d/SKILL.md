@@ -227,7 +227,7 @@ film: The Lampbearer
 
 ### 下次迭代优先补什么
 
-- **校正 `dub-styles.json#hd-2d` 的 3 处冲突**（把浅奶油底改成夜蓝、去掉 grain、字体换成 Cormorant Garamond italic 并把 `marginVFactor` 对齐 `y = H − 88`）——这是让本风格在「文案 + 风格」通路上成立的前提。
+- ~~**校正 `dub-styles.json#hd-2d` 的 3 处冲突**（把浅奶油底改成夜蓝、去掉 grain、字体换成 Cormorant Garamond italic 并把 `marginVFactor` 对齐 `y = H − 88`）~~ ★ **2026-10-06 更新（3 处里 2 处已修）**：**底色**（浅奶油 `#fff0c8` → 夜空 `#101d3e`，见「已知缺陷」与第 3 节）与 **grain**（已改 `texture: none`）**已修**；**字体**一处**仍待** —— 本机无 Cormorant Garamond，派生通路按项目约定一律填本机真实存在的字体（见第 5 / 11 节），`marginVFactor` 亦未对齐 `y = H − 88`。
 - **给 `core/render/mux.sh` 的 `LN_TP` 加余量**（项目级，影响所有风格；`pictogram-motion` 与 `game-show` 已实测削波/超线）。
 - **修 `unblock-placeholder-audio.mjs:42` 对 `hd-2d` 的错误标注**（CC BY 4.0，不是商业版权曲）。
 - **补一个 `demo/build.sh`**，把 `DEMO.md` 的 7 步固化成一键复现。
@@ -286,7 +286,7 @@ film: The Lampbearer
 
 **自检发现的缺陷**：
 - ~~**9:16（产品默认）下右侧约 43.75% 丢失、下方整片黑**，居中字幕/卡片/对话框右端与横向移轴带一起失效（按口径推导，本次未实渲复核）。~~ **★ 2026-10-04 已修**：页面外壳等比装入（`demo/index.html`）+ `demo/film.js` 声明 aspects，9:16 下整幅画面不裁切（见第 2 节）。
-- **`dub-styles.json#hd-2d` 的 3 处冲突**：浅奶油底（应为夜蓝）、`texture: grain`（应为 grain 0）、`fontFamily: SimSun`（应为 Cormorant Garamond italic）。
+- ~~**`dub-styles.json#hd-2d` 的 3 处冲突**：浅奶油底（应为夜蓝）、`texture: grain`（应为 grain 0）、`fontFamily: SimSun`（应为 Cormorant Garamond italic）。~~ ★ **2026-10-06 更新**：前两处（**浅奶油底 → 夜空**、**`texture: grain` → `none`**）**已修**；`fontFamily: SimSun` **仍待**（本机无 Cormorant，派生通路按约定用本机字体）。
 - **`events` 导出 0 条**（画面事件表未接入编排器事件通路）。
 - **字幕走旁路**（demo 自带 `tools/srt.py`，编排器不接管）。
 - **`unblock-placeholder-audio.mjs:42` 错标**本风格的配乐为「商业版权曲」（实为 CC BY 4.0）。
