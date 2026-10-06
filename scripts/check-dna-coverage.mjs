@@ -126,10 +126,44 @@ const dnaFails = fails.length;
 //   ⇒ 将来「接线了」或「未实现清单变了」时，**改的是清单，不是判据**（照上面 WIRED/PRINT_ONLY 的风格）。
 //
 // ★ **为什么先查清单、再查消费者**（与常见写法相反，是实测逼出来的）：
-//   消费者判据是**叶名匹配**（`.leaf` / `['leaf']` / `{ …, leaf, … }`）⇒ 会撞**同名标识符**。
+//   消费者判据的**叶名匹配**（`.leaf` / `['leaf']` / `{ …, leaf, … }`）会撞**同名标识符**。
 //   实测：注册表顶层键 `version` **全仓无人读**，却被 `lemo-make.mjs:1467` 等 4 处的
 //   `process.version` 判成「有消费者」⇒ 假阴。先查清单可让「**已声明为元数据**」的字段不再
 //   依赖脆弱的叶名匹配；而**未声明**的字段照样要过消费者这一关，牙齿没掉。
+//
+// ★★ 2026-10-06 收紧：**嵌套路径的消费者判据必须感知路径上下文**（顶层键判据不动）★★
+//   由来（实测）：`derivation` 是个**纯元数据对象**（`bg`/`font`/`subtitle`/`accent` 四轴），
+//   **渲染侧一个字都不读**；但它的四条子路径全靠**叶名碰撞**被判「有消费者」⇒ **四条全是假绿**：
+//     · `derivation.bg`       ← `dub.mjs` / `lib/dub-core.mjs` 的 `.bg`（那是 `palette.bg` 等**别的**对象的）
+//     · `derivation.font`     ← **单点**：`server.mjs:136` 的 `'.woff2': 'font/woff2'`（MIME 串，与派生口径毫无关系）
+//     · `derivation.subtitle` ← `dub.mjs` / `lib/dub-core.mjs` / `lib/dub-semantic.mjs` / `lib/triple-check.mjs`
+//     · `derivation.accent`   ← `lib/briefs.mjs` / `lib/dub-core.mjs`
+//   ⇒ 叶名（`bg`/`font`/`subtitle`/`accent`）是**高频通用词**，全仓任意位置命中一次就算「有消费者」，
+//     与「这个字段路径真的被人读了吗」毫无关系。**`derivation.font` 尤其脆**：唯一依据是那一个 MIME 串，
+//     哪天 `server.mjs` 不再写 `font/woff2`，它就翻成 FAIL —— 判据的结论取决于**无关代码**，这是不可接受的。
+//
+//   判据形态（**只收紧嵌套路径**；顶层键维持叶名匹配 —— `version` 那类假阴已由清单兜住）：
+//     · 顶层键（路径**不含** `.`）：**不变** —— 叶名在**任意**运行时代码里出现即算有消费者。
+//     · 嵌套路径（路径**含** `.`）：★ 叶名命中的那个文件**还必须出现父键**（倒数第二段；如
+//       `derivation.bg` 的父键是 `derivation`、`bgRecipe.halftone.angle` 的父键是 `halftone`），
+//       且父键必须是**代码 token**（`consumerSrc` 已剥注释 ⇒ 注释里提到父键不算）。
+//       ⇒ 「叶名在**无关**文件里撞上同名标识符」这一类假绿被消掉。
+//   ★ **邻域为什么取「同文件」而不是「同行 / ±N 行」**（先测误报率再定判据，本项目铁律）：
+//     真实消费者的**父对象常被别名掉**，父键名与叶名根本不在一个表达式里 —— 实测：
+//       `lib/dub-core.mjs:465` `const r = spec.bgRecipe || {};` … `:447` `r.halftone`（隔 18 行）；
+//       `subtitle` 的消费者写作 `sub.plateColor`（`:324`）/ `sp.plateColor`（`:825`），**从不写** `subtitle.plateColor`。
+//     ⇒ 实测四种邻域的误报（把**真实有消费者**的字段判成无消费者）：
+//         同行 → 误报 **8** 条（`bgRecipe.halftone`、`bgRecipe.textureRaw`、`subtitle.plateColor`、
+//                `bgRecipe.halftone.{angle,color,field,k,step}`）；±5 行 → 误报 **4** 条；
+//         **同文件 → 误报 0 条**，且恰好杀掉 `derivation.*` 四条假绿（该父键在 28 个运行时代码文件里**零出现**）。
+//     ⇒ **「同文件」是能杀掉这一类假绿、又零误伤的最小邻域**。再收紧就会开始误伤真实字段。
+//   ★ **误报率（定稿前实测，真实注册表 67 条字段路径）**：收紧后判定变化**恰好 4 条**，全部是
+//     `derivation.*`（有消费者 → 无消费者）；**其余 63 条判定一字不变**（含 44 条嵌套路径里的 40 条）。
+//     这 4 条随即按下面的规则登记进 `DUB_METADATA`（**父键已声明为元数据 ⇒ 子键自然也非渲染字段**）
+//     ⇒ 定稿后 FAIL 0、误报 0、漏报（假绿）0（对已识别的这一类）。
+//   ★ 未采纳的替代方案（**只报告、本轮不动**）：把规则写成「父键在 `DUB_METADATA` 里 ⇒ 其子路径自动放行」，
+//     好处是将来 `derivation` 加第 5 个轴不用再补一行；代价是白名单从「**字段**清单」变成「**字段 + 前缀**清单」，
+//     颗粒度变粗。本轮按「显式登记 4 条」处理，保持白名单语义不变（更小的改动）。
 //
 // ★ 误报率（本项目铁律：先测再定判据）：首跑（加白名单前）命中 **7** 条字段路径 —— 逐条人工分类后
 //   **真「声明了没人读」0 条**、**元数据 7 条**（`visualRef` / `hasVisual` / `synthetic` / `derived` /
@@ -162,6 +196,15 @@ const DUB_METADATA = {
   'derivedFrom': '派生**来源列表**（如 hardcoded-baseline），供人工/审计',
   'bgSameAsDefault': '背景**是否与默认风格一致**的标记，供人工/审计（渲染读的是 bgRecipe 本身）',
   'derivation': '每条风格**派生口径**的机器可读标记（`bg`/`font`/`subtitle`/`accent` 四轴各取一个枚举值，说明该值是**原文值**还是**代理取色 / 本机字体替代 / 规则推得 / 落回默认**）—— 由 `scripts/check-derivation-caliber.mjs` **独占消费**（逐条机械重算并比对），**渲染侧一个字都不读它**，供人工/审计；判据写在注册表顶层 `_notes` 第 19–23 条',
+  // ★ 2026-10-06 补 4 条：`derivation` 的**子键**。依据同父键 —— **父键已声明为元数据（渲染侧零读取）⇒ 其子键自然也非渲染字段**。
+  //   为什么必须显式登记：这四条此前**全靠叶名碰撞**被判「有消费者」（= **假绿**，详见文件头「收紧」一节）——
+  //   叶名 `bg`/`font`/`subtitle`/`accent` 是高频通用词，撞上的是**别的对象**的读取点（`palette.bg` 等），
+  //   其中 `derivation.font` 是**单点**：唯一依据是 `server.mjs:136` 的 `'.woff2': 'font/woff2'`（MIME 串）。
+  //   嵌套判据收紧后它们正确地变成「无消费者」⇒ 由本清单承接（**父键在、子键就该在**，不是新增豁免）。
+  'derivation.bg': '`derivation` 的子键（派生口径的 `bg` 轴，枚举值如 `exact`/`proxy`/`absent`）—— 同父键：由 `scripts/check-derivation-caliber.mjs` 独占消费，**渲染侧一个字都不读**；★ 此前被 `dub.mjs` / `lib/dub-core.mjs` 里**别的对象**的 `.bg`（`palette.bg` 等）叶名碰撞判成「有消费者」= 假绿，嵌套判据收紧后登记于此',
+  'derivation.font': '`derivation` 的子键（派生口径的 `font` 轴）—— 同父键：非渲染字段；★★ 此前是**单点假绿**：全仓唯一「消费者」是 `server.mjs:136` 的 `\'.woff2\': \'font/woff2\'`（**MIME 类型串**，与派生口径毫无关系），哪天它没了本字段就翻 FAIL ⇒ 判据结论取决于无关代码，故显式登记',
+  'derivation.subtitle': '`derivation` 的子键（派生口径的 `subtitle` 轴）—— 同父键：非渲染字段；★ 此前被 `dub.mjs` / `lib/dub-core.mjs` / `lib/dub-semantic.mjs` / `lib/triple-check.mjs` 里 `palette.subtitle` / `subtitle.*` 等同名叶碰撞判成「有消费者」= 假绿，嵌套判据收紧后登记于此',
+  'derivation.accent': '`derivation` 的子键（派生口径的 `accent` 轴）—— 同父键：非渲染字段；★ 此前被 `lib/briefs.mjs` / `lib/dub-core.mjs` 里 `palette.accent` 的同名叶碰撞判成「有消费者」= 假绿，嵌套判据收紧后登记于此',
   'version': '注册表 **schema 版本号**（当前无兼容性判据读它；★ 实测它会被 `process.version` 这类同名碰撞误判成「有消费者」，故显式声明为元数据），供人工/审计',
   '_notes': '项目约定：`_` 前缀 = **文件内文档**（本文件是唯一可渲染消费入口的说明；含「声明但未实现的细纹理」逐名清单），非渲染字段',
 };
@@ -272,15 +315,31 @@ for (const f of consumerFiles) {
   try { consumerSrc.set(f, stripComments(fs.readFileSync(f, 'utf8'))); } catch { /* 读不到就当无内容 */ }
 }
 
-/** 有消费者？判据：叶名以「属性访问 `.leaf` / 下标 `['leaf']` / 解构或字面量 `{ …, leaf, … }`」出现。 */
+/** 有消费者？
+ *  · **顶层键**（路径**不含** `.`）：判据维持原样 —— 叶名以「属性访问 `.leaf` / 下标 `['leaf']` /
+ *    字面量 `{ …, leaf, … }`」在**任意**运行时代码里出现即算有消费者（`version` 那类同名碰撞由 `DUB_METADATA` 兜住）。
+ *  · **嵌套路径**（路径**含** `.`）：★ 收紧 —— 叶名命中的那个文件**还必须出现父键**（倒数第二段：
+ *    `derivation.bg` 的父键是 `derivation`、`bgRecipe.halftone.angle` 的父键是 `halftone`），
+ *    且父键必须是**代码 token**（`consumerSrc` 已剥注释 ⇒ 只在注释里提父键不算）。
+ *    ⇒ 「叶名在**无关**文件里撞上同名标识符」这一类假绿被消掉（实测：`derivation.*` 四条）。
+ *  · **邻域取「同文件」的依据**（实测，见文件头「收紧」一节）：真实消费者的父对象常被别名掉
+ *    （`const r = spec.bgRecipe` → `r.halftone`；`sub.plateColor`），同行 / ±5 行会误伤
+ *    **4~8** 条真实字段；「同文件」误报 **0** 且足以杀掉 `derivation.*`（其父键在运行时代码里零出现）。 */
 function dubHasConsumer(fp) {
-  const leaf = fp.split('.').pop();
+  const segs = fp.split('.');
+  const leaf = segs[segs.length - 1];
+  const parent = segs.length > 1 ? segs[segs.length - 2] : null;   // ★ 顶层键 → null ⇒ 判据不变
   const pats = [
     new RegExp(`\\.${escRe(leaf)}\\b`),
     new RegExp(`\\[\\s*['"\`]${escRe(leaf)}['"\`]\\s*\\]`),
     new RegExp(`\\{[^{}]*\\b${escRe(leaf)}\\b[^{}]*\\}`),
   ];
-  for (const s of consumerSrc.values()) if (pats.some((p) => p.test(s))) return true;
+  const parentRe = parent ? new RegExp(`\\b${escRe(parent)}\\b`) : null;
+  for (const s of consumerSrc.values()) {
+    if (!pats.some((p) => p.test(s))) continue;
+    if (parentRe && !parentRe.test(s)) continue;   // ★ 嵌套路径：父键必须同文件（且是代码）出现
+    return true;
+  }
   return false;
 }
 
