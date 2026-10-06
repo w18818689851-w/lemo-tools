@@ -750,7 +750,7 @@ async function main() {
     //
     // ★ 这条钉的是一个**真发生过的覆盖事故**：控制台起任务时从不传 `--out`
     //   （server.mjs:1675 只拼 `--skip-sync <runOpts>`），而编排器
-    //   `lemo-make.mjs:1158` 的 `outDir = o.out || <exportDir>\<slug>` ⇒ 成片直写**样板片路径**，
+    //   `lemo-make.mjs` 的 `outDir = o.out || <exportDir>\<slug>` ⇒ 成片直写**样板片路径**，
     //   把样板片覆盖掉（实测 art-deco 的样板片被覆盖成 9:16）。
     //   ⇒ 现在 lib/jobs.mjs 在**最靠近 spawn 的那一处**（buildOrchArgs）注入 `--out <exportDir>\_jobs\<任务id>`。
     // ★ 两层断言：① 命令行拼装（纯函数，廉价）；② 真走一次控制台「主题出片」入口（--dry-run，不渲染），
