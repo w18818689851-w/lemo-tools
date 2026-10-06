@@ -144,7 +144,7 @@ film: Toy Town Rush Hour
 | 音频入口 | `demo/music/score.py`（采样马林巴，骨架 + 事件 gate）+ `demo/mix.py`（环境 + 拟音 + 人声 + 闪避） |
 | 字幕入口 | `node "$D/subs.mjs"`（导 `cues.json`）+ `core/render/srt.py "$D/cues.json" "$D/../tilt-shift.srt"`（`build.sh:11-12`） |
 | 事件导出 | `node core/render/events.mjs "$D"`（本次 events 2182 dur 38，`build.sh:10`、`logs/tilt-shift.log:27`） |
-| 本风格专属参数 | **页面参数 `--q noev`（只透传给渲染，跳过事件扫描）**；调试开关 `nohud` / `nodof` / `nostep` / `az=<deg>` / `cam=x,y,z,lx,ly,lz,fov` / `aper=` / `bamp=` / `bmix=`（`DEMO.md:72`、`STYLE.md:214`） |
+| 本风格专属参数 | **页面参数 `--q noev`（只透传给渲染，跳过事件扫描）**；调试开关 `nohud` / `nodof` / `nostep` / `az=<deg>` / `cam=x,y,z,lx,ly,lz,fov` / `aper=` / `bamp=` / `bmix=`（`DEMO.md:72`） |
 | 一键复现 | `sh styles/tilt-shift/demo/build.sh`（7 步：TTS+whisper → events+字幕 → 配乐 → 混音 → 渲染 → mux → 海报/风格帧，`build.sh:1-26`） |
 | 本次编排器调用 | `node lemo-make.mjs tilt-shift --skip-sync --no-preflight --ratio 16:9`（`logs/tilt-shift.log:1`） |
 

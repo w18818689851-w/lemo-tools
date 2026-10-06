@@ -83,7 +83,7 @@ film: TRANQUILITY.LOG
 | 出现与消失方式 | **按语音逐词打出**（用 whisper 逐词时间戳），**不是淡入**（`subtitleFadeIn: 0`）；说完后停留 `max(1.4s, 说完+0.6s)`（`STYLE.md:37`、`DEMO.md:81`） |
 
 - **字幕与旁白的关系**：字幕就是**终端输出**。无声时 LOG 条可显示系统状态：`TRANSMIT [#####.....] 40%`、`SENT … AWAITING REPLY`（`DEMO.md:81`）。
-- **本风格特有的字幕禁忌**：**屏幕里「故事展示的文本」是画面不是字幕**，在 `.srt` 里记为 `[SCREEN] …`（`STYLE.md:38`、`main.js:566-571`）；LOG 条必须活在**缩放网格之外**（像状态行），不能跟着镜头缩放；不用黑底框、不用淡入、不用彩色。
+- **本风格特有的字幕禁忌**：**屏幕里「故事展示的文本」是画面不是字幕**，在 `.srt` 里记为 `[SCREEN] …`（`STYLE.md:38`、`film.js:580-583`）；LOG 条必须活在**缩放网格之外**（像状态行），不能跟着镜头缩放；不用黑底框、不用淡入、不用彩色。
 
 ---
 
@@ -138,7 +138,7 @@ film: TRANQUILITY.LOG
 | 事件导出 | `node core/render/events.mjs styles/ascii-crt/demo`（本片 **362 事件 / 9 cues**，`log:26-27`） |
 | 本风格专属参数 | 响度 -14 LUFS、grain 0；字体 VT323；图集 160px + 2.2px 描边；负片每格采样 3×6；密度 dim/normal/bold = 0.42/0.7/1.0；抖动 0.7；亮度 <0.05 留白（`DEMO.md:76`） |
 | 一键复现 | `sh styles/ascii-crt/demo/build.sh` |
-| 关键机制 | 画面/拟音/字幕/配乐全读 `main.js` 同一份时间线 `T` 与 `window.EV`；**粒子计划必须在 `window.EV` 导出前建好**（`DEMO.md:110`、`main.js:598`） |
+| 关键机制 | 画面/拟音/字幕/配乐全读 `film.js` 同一份时间线 `T` 与 `window.EV`；**粒子计划必须在 `window.EV` 导出前建好**（`DEMO.md:110`、`film.js:611`） |
 
 ---
 
@@ -146,7 +146,7 @@ film: TRANQUILITY.LOG
 
 - **内容文件字段契约**（`content_fields`）：`lines.json` 每条 `{id, t, text, voice, speed, asr?}`；demo 用 Kokoro `am_echo` speed 0.8，**4–6 条短句**（`style-dna/ascii-crt.md:175`）。配 `voices/words.json`（逐词时间戳，LOG 条逐词打字用）与 `voices/dur.json`（停留计算）。
 - **事件词汇表**：`vo{id}`（人声，从 `voices/<id>.wav` 读）、`key/space/enter/keyLight{ch}`（打字→弹簧屈曲键）、`remote{ch}`（对面字符→电传滴答）、`relay`/`degauss`、`bootline`/`ratchet{k}`/`clunk`、`modem{d}`/`modemUp{d}`、`err`/`err2`/`bel`、`zoomIn{d,soft?}`/`zoomOut{d}`、`poweroff`、`land{n}`（粒子落地→n 个一簇的高频滴答）（`style-dna/ascii-crt.md:194-206`）。
-- **时间线契约**：`main.js` 是全片时间线，导出 `window.DUR`、`window.EV`、`window.SUBS`、`window.render(t)`、`window.READY`；`tools/subs.mjs` 导出 `window.SUBS`（`style-dna/ascii-crt.md:190`）。`SUBS` 里含 `[SCREEN]` 条目（`main.js:566-571`）。
+- **时间线契约**：`film.js` 是全片时间线，导出 `window.DUR`、`window.EV`、`window.SUBS`、`window.render(t)`、`window.READY`；`tools/subs.mjs` 导出 `window.SUBS`（`style-dna/ascii-crt.md:190`）。`SUBS` 里含 `[SCREEN]` 条目（`film.js:580-583`）。
 - **新增主体怎么接入**：写一个「底片函数」——先把灰度画进与网格**严格对齐**的离屏画布（R=琥珀亮度、G=第二色亮度、B=标志位如夜面），再交给 `term.js` 的 `cellsFromImage` 按格取平均、`makeRamp`+`pick` 选字。参考实现 `art.js` 的 `paintEarthrise`/`makeCraters`/`horizonY`（`style-dna/ascii-crt.md:186`）。
 - **换主题时要改哪些文件**：① `demo/main.js`（时间线 `T`、`EV`、`SUBS`、各段落）；② `demo/lines.json` + `voices/`（文案与逐词时间戳）；③ `demo/art.js`（新的底片场景，如换成别的剪影主体）；④ `demo/music/score.py`（新谱，但仍需模拟合成器 + 100 BPM 网格）；⑤ `demo/mix.py` 的拟音事件表；⑥ `demo/term.js` 的网格列数与字符集；⑦ 第二色与其开启时刻。**`crt.js`（CRT post）与 `term.js` 的图集/密度表机制不用改。**
 - **与 `dub.mjs` 通路的关系**：本风格在「文案+风格」通路里能生效的参数是 `palette`（bg `#000000` / fg `#FFB000` / accent `#B8E0FF` —— ★ 2026-10-03 已修，原为离屏通道标记色 `#00ff00`/`#ff0000`，见第 11 节）、`bgRecipe`（solid + `scanlines` 纹理 + vignette 0.35）、`subtitle`（`fontFamily` SimHei、`fontSizeFactor` 0.042、`marginVFactor` 0.10、`outlineFactor` 0）、`title.fontSizeFactor` 0.082、`overlay.accentRule=true`、`overlay.progressBar=true`（唯一开进度条的风格）、`motion.subtitleFadeIn=0`、`motion.chapterTransition=cut`（`dub-styles.json#ascii-crt`）。
@@ -175,7 +175,7 @@ film: TRANQUILITY.LOG
 - 开机参数为 0 时仍会画中心点 → 开机前把曝光置 0 并用它乘点项（`STYLE.md:97`）。
 
 ### 踩过的坑（本机实测）
-- **懒构建的数据到不了导出器**：不在 `window.EV` 导出前先 `buildFall()`，字母掉落的拟音会全静音（`DEMO.md:110`、`main.js:598`）。
+- **懒构建的数据到不了导出器**：不在 `window.EV` 导出前先 `buildFall()`，字母掉落的拟音会全静音（`DEMO.md:110`、`film.js:611`）。
 - 地球字母穿过还看得见的句子会很乱 → 先让它们全部落到地平线之下，再从下往上「升起」（`DEMO.md:108`）。
 
 ### 下次迭代优先补什么

@@ -42,7 +42,7 @@ film: The Dragon of the East Window
 
 ### 在 9:16（产品默认）下的表现
 
-**已适配 9:16**（★ 2026-10-04 改造）——`FILM_META.aspects = ['16:9','9:16']`，字面量落在**新建的 `styles/stained-glass/demo/film.js`**（`film.js:15`）。改造点：`film.js` 导出 `NATIVE` 与 `setFrame(w,h)`（派生 `W/H/FX/FY/S = min(fx,fy)`，`film.js:12`）；`main.js` 首行读 `window.innerWidth/Height` 设 `cv.width/height` 再 `setFrame()`（`main.js:8-14`），G/S/R/O 四张画布与 WebGL 画布都跟着视口走；`scene.js` 的 `camMatrix()`（`scene.js:10`）与 `proj3()`（`scene.js:18`）把设计帧中心 `(960,540)` 换成 `(W/2,H/2)`，可见世界矩形 `hw/hh` 与 `clearRect` 一并派生（`scene.js:24-26`）；字幕绶带是**屏幕空间家什**，按「位置 ×FX/×FY、尺寸 ×S」重排（`subs.js:13`：`cx = 960*FX`、`cy = 968*FY`、`font = 44*S`、条高 `64*S`）。
+**已适配 9:16**（★ 2026-10-04 改造）——`FILM_META.aspects = ['16:9','9:16']`，字面量落在**新建的 `styles/stained-glass/demo/film.js`**（`film.js:15`）。改造点：`film.js` 导出 `NATIVE` 与 `setFrame(w,h)`（派生 `W/H/FX/FY/S = min(fx,fy)`，`film.js:12`）；`main.js` 首行读 `window.innerWidth/Height` 设 `cv.width/height` 再 `setFrame()`（`main.js:8-14`），G/S/R/O 四张画布与 WebGL 画布都跟着视口走；`scene.js` 的 `camMatrix()`（`scene.js:10`）与 `proj3()`（`scene.js:18`）把设计帧中心 `(960,540)` 换成 `(W/2,H/2)`，可见世界矩形 `hw/hh` 与 `clearRect` 一并派生（`scene.js:24-26`）；字幕绶带是**屏幕空间家什**，按「位置 ×FX/×FY、尺寸 ×S」重排（`subs.js:10-11`：`cx = 960*FX`、`cy = 968*FY`、`font = 44*S`、条高 `64*S`）。
 
 ★ **相机 zoom 不含 `S`**：世界按**原比例**居中（不拉伸、不重复乘 `FX/FY`），竖屏下自然看到更宽的纵向视野——这是本风格与「相机 `zoom *= S`」那类改造的关键差别（本风格的画面主体是**世界里的建筑**，拉伸会把玫瑰窗压成竖椭圆）。
 
@@ -79,7 +79,7 @@ film: The Dragon of the East Window
 - **有没有叠化 / 闪白 / 擦除 / 定格**：**没有溶解、没有划像、没有翻页**（`STYLE.md:76`）。允许且有特色的两种：① **定格**——光离开某一格，那一格的人物**立刻冻结**（用 `min(t, t_lightLeft)` 实现，`story.js:53`）；② **裂缝**——9 条锯齿线在 **~0.28s** 内从受击点冲出，亮着光，**0.45s 白闪 + 2 帧抖动**（`story.js:79-89`、`story.js:203`）。
 - **硬切点怎么定**：动作**落在拍上**（80 BPM，1 拍 = 0.75s）。样本片 31.8s 那一击之后**所有音乐硬切**（连混响尾巴都切掉，`DEMO.md:63`）。
 - **转场时长与缓动**：光带移动是连续的（在 ones 上 24 fps 移动）；裂缝 0.28s 冲出；重新上铅条 `WELDS = [41.75, 42.5, 43.25, 44.0, 44.6]`，成组纸片**每拍滑一次**，每次以焊接火花收尾（`story.js:90`、`story.js:115-130`）。
-- **绝对不要的转场**：溶解、划像、翻页等 UI 式转场；**任何元素的淡入**（东西是**被点亮**出现的，不是淡入的）；无来由的运镜；**让玻璃弯折或形变**（改表情只能换脸块，`STYLE.md:57`、`STYLE.md:126`）。
+- **绝对不要的转场**：溶解、划像、翻页等 UI 式转场；**任何元素的淡入**（东西是**被点亮**出现的，不是淡入的）；无来由的运镜；**让玻璃弯折或形变**（改表情只能换脸块，`STYLE.md:57`、`STYLE.md:32`）。
 
 ---
 
@@ -145,7 +145,7 @@ film: The Dragon of the East Window
 |---|---|
 | 渲染入口 | `node core/render/video.mjs styles/stained-glass/demo --fps 24 --workers 3`（本次出片编排器实际用 `--workers 6 --size 1920x1080`） |
 | 帧率 | 24 fps（人物层 8 fps 分级步进） |
-| 分辨率 / 比例 | 原生 1920×1080（16:9）；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，字面量在 `styles/stained-glass/demo/film.js:15`）。由 `main.js` 读视口 → `film.js` 的 `setFrame()`（`film.js:12`）重排：相机矩阵 / 透视投影的中心改 `(W/2,H/2)`（`scene.js:10`、`scene.js:18`，**zoom 不含 S**、世界不拉伸），字幕绶带按 `FX/FY/S`（`subs.js:13`）；16:9 时 `fx=fy=S=1` 逐字节退化成设计帧 |
+| 分辨率 / 比例 | 原生 1920×1080（16:9）；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，字面量在 `styles/stained-glass/demo/film.js:15`）。由 `main.js` 读视口 → `film.js` 的 `setFrame()`（`film.js:12`）重排：相机矩阵 / 透视投影的中心改 `(W/2,H/2)`（`scene.js:10`、`scene.js:18`，**zoom 不含 S**、世界不拉伸），字幕绶带按 `FX/FY/S`（`subs.js:10-11`）；16:9 时 `fx=fy=S=1` 逐字节退化成设计帧 |
 | 混流 | `CRF=22 sh styles/stained-glass/demo/tools/mux.sh <video> <mix.wav> <out.mp4> 24 4`（响度 −14 LUFS / TP −1.2，**颗粒 4**） |
 | 编码器 | `h264_nvenc`（本地 GPU；`LEMO_VENC=h264_nvenc`，mux.sh 走 `-preset p5 -profile high -rc vbr -cq 26 -b:v 0`） |
 | 音频入口 | `python demo/music/score.py`（D 多利亚原创配乐）→ `python demo/mix.py`（玻璃 / 铅条拟音 + 混响 + duck） |
@@ -174,7 +174,7 @@ film: The Dragon of the East Window
 ## 11. 当前短板与避坑要点
 
 ### 已知缺陷
-- **9:16 曾不可用（★ 2026-10-04 已修）**：原记「本风格无 `aspects` 声明，按 1920×1080 绝对像素构图；9:16 导出丢右侧 43.75%、下方整片黑，切掉的正好是 III / IV 两格与玫瑰右半，石带片名刻字与底部字幕横幅被下方黑边吞掉，属架构级缺陷」。**2026-10-04** 已改造 `styles/stained-glass/demo/`：新建 `film.js` 导出 `NATIVE`/`setFrame(W,H)`（派生 `W/H/FX/FY/S`）并声明 `FILM_META.aspects = ['16:9','9:16']`（`film.js:12-15`）；`main.js` 读视口尺寸并让画布跟视口（`main.js:8-14`）；`scene.js` 的 `camMatrix()`（`scene.js:10`）与 `proj3()`（`scene.js:18`）把中心改 `(W/2,H/2)`（**相机 zoom 不含 S**，世界按原比例居中）；字幕绶带按 `FX/FY/S` 重排（`subs.js:13`）。**16:9 逐字节未变**（8.475 / 28.25 / 48.025 三帧 md5 与改造前相同）；9:16 实测**不裁切、无黑边**，整扇窗完整入画，与「16:9 中心裁切」的 SSIM = 0.675 / 0.712 / 0.533（明显 < 1 ⇒ 真重排）。详见第 2 节。
+- **9:16 曾不可用（★ 2026-10-04 已修）**：原记「本风格无 `aspects` 声明，按 1920×1080 绝对像素构图；9:16 导出丢右侧 43.75%、下方整片黑，切掉的正好是 III / IV 两格与玫瑰右半，石带片名刻字与底部字幕横幅被下方黑边吞掉，属架构级缺陷」。**2026-10-04** 已改造 `styles/stained-glass/demo/`：新建 `film.js` 导出 `NATIVE`/`setFrame(W,H)`（派生 `W/H/FX/FY/S`）并声明 `FILM_META.aspects = ['16:9','9:16']`（`film.js:12-15`）；`main.js` 读视口尺寸并让画布跟视口（`main.js:8-14`）；`scene.js` 的 `camMatrix()`（`scene.js:10`）与 `proj3()`（`scene.js:18`）把中心改 `(W/2,H/2)`（**相机 zoom 不含 S**，世界按原比例居中）；字幕绶带按 `FX/FY/S` 重排（`subs.js:10-11`）。**16:9 逐字节未变**（8.475 / 28.25 / 48.025 三帧 md5 与改造前相同）；9:16 实测**不裁切、无黑边**，整扇窗完整入画，与「16:9 中心裁切」的 SSIM = 0.675 / 0.712 / 0.533（明显 < 1 ⇒ 真重排）。详见第 2 节。
 - **★ 成片真峰值 −1.12 dBTP，超 −1.2 dBTP 交付线 0.08 dB（本次新补记）**：判据用 `loudnorm` 的 `input_tp`（4× 过采样，2026-10-03 离线复测），**不是** `astats` 的采样峰值、也不是 `ebur128` 的 `Peak`（只 1 位小数）。真峰值为**负**（−1.12）⇒ **未削波**，属「仅超线」而非「削波」。**根因在下游 AAC 编码余量**：本风格走自带补丁副本 `demo/tools/mux.sh`，其 loudnorm 目标写死 `TP=-1.2`（`demo/tools/mux.sh:6,8`）、**未采用 core 版的 `LN_TP=-1.7`**（留 0.5 dB 编码余量），AAC 编码的过冲把成片真峰值顶到 −1.12。属**项目级既有缺陷，非本风格音频链所致**（本片 `mix.wav` 链本身合规）。此前 §6 只写了上限 −1.2、未记实测值，本次补记。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −1.12 dBTP → **−1.83 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。
 - **★ 字幕链在两处不一致**：编排器第 3 步（导出事件与字幕）**探测不到本 demo 的字幕生成器**，会告警「字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件」（日志第 29-30 行）；真正重新生成发生在**第 6 步（混流）**，由 demo 自带的 `demo/subs_export.py` 完成（日志第 112-115 行）。后果：如果只看第 3 步的产物，字幕是**旧文件**；排查字幕必须看第 6 步。这是本风格**独有的字幕链**，与其它走 `core/render/srt.py` 的风格不同。 ★ 2026-10-06 已修：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导 / 两处不一致』部分已消解
 - **派生通路字体与 demo 不符**：`lib/dub-styles.json#stained-glass.subtitle.fontFamily` 是 **SimSun**（中文文案用），demo 用的是 **IM Fell English**（英文）。字幕几何（`fontSizeFactor 0.04074` / `marginVFactor 0.14537`）一致，但字体气质差异明显。

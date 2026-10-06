@@ -138,7 +138,7 @@ film: Follow the Rain
 | 项 | 值 |
 |---|---|
 | 渲染入口 | `node core/render/video.mjs styles/watercolor/demo --fps 24 --workers 6 --size 1920x1080 --out styles/watercolor/demo/out/video_gpu.mp4`（本次实测） |
-| 帧率 | **24 fps**（产品导出帧率）；demo 的 `render.mjs` 原生 `FPS` 默认 **60**（`render.mjs:18`） |
+| 帧率 | **24 fps**（产品导出帧率）；demo 的 `render.mjs` 原生 `FPS` 默认 **60**（`render.mjs:27`） |
 | 分辨率 / 比例 | 原生 **1920×1080 / 16:9**（本次 `--ratio 16:9`）；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，字面量在 `demo/film.js:23`）。由 `main.js` 读视口 → `film.js` 的 `setFrame()`（`film.js:10-14`）重排：整幅画经 `fit()` 做「设计帧 → 当前帧等比装入」（`main.js:228-230`、`scene.js` 7 处 `fit(...)`），竖幅上下补纸色 + 纸纹留白；16:9 时 `FX=FY=S=1`、偏移 0，逐字节退化成设计帧 |
 | 混流 | `sh core/render/mux.sh <video_gpu.mp4> <mix.wav> styles/watercolor/watercolor.mp4 24 2`（两遍 `loudnorm I=-14 TP=-1.7`；`grain` 默认 2） |
 | 编码器 | `h264_nvenc`（本地 GPU，日志实测 `nvenc`） |
@@ -168,7 +168,7 @@ film: Follow the Rain
 - **声明的「静默」特质没有实现**。`STYLE.md:71` 把「把笔抬起来——音乐退场，只剩纸与房间」列为声音调色板的一条，但 `mix.py` 从不把音乐归零（`mus *= (1 - .38·duck)` 只做约 −4 dB 闪避），全片 113.6 s 音乐不停；70.3 s 的雾擦除段只叠了一层 `airy` 纸声。要复现这条特质必须自己加一段总线静默。
 - **mux 用了脚本默认 `grain 2`**（`noise=c0s=2:allf=t`），在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分，纸纹类风格应显式传 `grain 0`。
 - **顶部 HUD 安全边距只有 76 px（3.96% 画面宽）**，窄于常见的 5% 安全区；一旦要裁切或加边就会先吃掉区块卡。
-- **24 fps 导出**，而 `STYLE.md:48` 声明「60 fps suits the slow, fluid brush」；demo 的 `render.mjs:18` 原生默认 `FPS=60`，产品导出默认 24，笔触与摆动的连贯度被降采样。
+- **24 fps 导出**，而 `STYLE.md:48` 声明「60 fps suits the slow, fluid brush」；demo 的 `render.mjs:27` 原生默认 `FPS=60`，产品导出默认 24，笔触与摆动的连贯度被降采样。
 - **dub 通路字体与描边不符风格**：`dub-styles.json#watercolor` 把字幕映射到 **SimHei（黑体）+ 白色描边**（`outlineFactor 0.00278`），而 `STYLE.md:36-38` 要求 Cormorant Garamond 衬线斜体 + 纸色光晕、中文用 Noto Serif SC 衬线、ink 78% 无描边。该条目的 `notes` 自己承认这是「派生值 + 字体修正（原等宽字体不含中文字形）」。
 - **细纹理 `textureRaw: watercolor` 声明了但渲染未实现**：`lib/dub-styles.json#watercolor.bgRecipe.textureRaw` 是 `watercolor`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）**只把粗粒度 `bgRecipe.texture` 当主权威源**（本风格是 `rice-paper` ⇒ 宣纸噪点（`noise=alls=6:allf=t+u`）），**不读** `textureRaw` ⇒ `watercolor` 这一层质感在「文案 + 风格」通路上**从未画出来过**。为什么没实现：`bgFilters()` 里没有 `watercolor` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径**只如实标注、不猜参数**（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里）。
 

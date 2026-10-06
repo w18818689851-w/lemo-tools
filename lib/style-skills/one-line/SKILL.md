@@ -36,7 +36,7 @@ film: The Line That Never Lifted
 - **镜头数与画幅**：**全片只有一个镜头**——没有剪切，一个连续运动从第 1 帧到最后一帧。样片 47.50s / 1140 帧 / 1920×1080（16:9），24 fps（`logs/one-line.log`）。★ **2026-10-04 已适配 9:16**：影片模块 `film.js` 声明字面量 `FILM_META.aspects = ['16:9','9:16']`，从 `opts.W/opts.H` 经 `frame.js` 的 `setFrame()` 派生 `FX/FY/S` 重排版面（原先无声明、按 1920×1080 绝对像素构图）。
 - **主体位置与占比**：主体就是那根线本身。笔尖被一个软约束锁在画面中央约 **72%×66%** 的区域内（`DEMO.md:34`、`style-dna/one-line.json#shot_logic`）。跟拍点是笔尖在 **−0.55…+0.4s** 的加权平均，所以笔尖永远「稍微落后、稍微提前」地待在构图里，从不贴边。
 - **负空间 / 留白**：纸就是留白，**留白量极大**。微距段（如开场 f01、跟笔段 f05）画面里只有一条线，其余 95% 以上是空纸；只有揭示帧（f20）才把纸「用满」。片尾卡也刻意写在**空纸**上、避开最终画面（f24）。
-- **图层叠放顺序**（从底到顶）：纸（斑驳 + 纤维 + 暗角）→ 墨线（填充多边形）→ 墨点 / 泪滴墨点 → 纸齿斑点（近景时叠在墨上）→ 笔影与手影 → 字幕 / 标题 / 片尾卡（`main.js:41-75` 的 render 顺序）。所有纹理**锚定在纸上、随镜头移动**（`STYLE.md:17`）。
+- **图层叠放顺序**（从底到顶）：纸（斑驳 + 纤维 + 暗角）→ 墨线（填充多边形）→ 墨点 / 泪滴墨点 → 纸齿斑点（近景时叠在墨上）→ 笔影与手影 → 字幕 / 标题 / 片尾卡（`film.js:54-88` 的 render 顺序）。所有纹理**锚定在纸上、随镜头移动**（`STYLE.md:17`）。
 - **安全区**：字幕基线距底 100px（≈9.3% 画面高），居中；标题写在当前小品的空纸上，**标题窗口内每一帧都要检查它有没有被镜头推进去的画面撞上**（`DEMO.md:101`）。
 - **本风格不能出现的构图**：任何**填充**、任何**阴影**（除笔影/手影）、**第二种线重**、**背景美术**、画进画面的手 / 马克笔 / 橡皮（`STYLE.md:9`、`style-dna/one-line.json#shot_logic.forbidden`）。也不许出现「两个独立物件同时在场」——因为只有一根线，同一时刻只能有一个位置被画。
 
@@ -141,7 +141,7 @@ film: The Line That Never Lifted
 ## 10. 编排规则
 
 - **内容文件字段契约**：需要产出最终画面（SVG path 字符串）、章节表（时间窗、marks、holds、`style` 年龄）、旁白行、标题、强调色区间、交接时刻。demo 里分别由 `face.js` 的 `SEGS`、`story.js` 的 `DUR/VO/TITLE/HAND/END`、`lines.json` 提供（`style-dna/one-line.json#asset_contract.content_fields`）。
-- **事件词汇表**：`track`（笔速轨迹，200Hz，含速度 / 屏幕 x / 风格 / 干度 → 笔声合成）、`corners`（拐角 = 高转角 + 局部速度最低 → 候选音符起音）、`tap`（第一触 → 木嗒）、`blot`（停笔墨点 → 湿涨）、`chime`（新线开始 → 钟声）、`handoff`（交接 → 摩擦）、`vo`（人声 → 加载 `voices/<id>.wav`）、`seg`（段落起止与标记时刻 → 配乐 cue）（`main.js:77-104`）。
+- **事件词汇表**：`track`（笔速轨迹，200Hz，含速度 / 屏幕 x / 风格 / 干度 → 笔声合成）、`corners`（拐角 = 高转角 + 局部速度最低 → 候选音符起音）、`tap`（第一触 → 木嗒）、`blot`（停笔墨点 → 湿涨）、`chime`（新线开始 → 钟声）、`handoff`（交接 → 摩擦）、`vo`（人声 → 加载 `voices/<id>.wav`）、`seg`（段落起止与标记时刻 → 配乐 cue）（`film.js:91-117`）。
 - **时间线契约**：`story.js` 是时间线**唯一真值**，导出 `DUR`、`VO`、`TITLE`、`HAND`、`END`（`story.js:2-13`）。页面契约由 `main.js` 暴露 `window.render(t)` / `window.DUR` / `window.EV` / `window.SUBS` / `window.READY`；几何层 `geom.js` 导出 `buildPath`/`headAt`/`posAt`；镜头层 `cam.js` 导出 `camAt`/`worldToScreen`/`BASE`（`BASE=0.85`，z=1 时整张脸入画）。
 - **新增主体怎么接入**：新的「画」模块必须导出 `SEGS`——每段 `{id, style, t:[t0,t1], parts:[{d, tf}], slowK, marks?, holds?}`，`d` 是 SVG path 字符串、`tf` 是可选变换、`style` 是线的年龄（`child`/`teen`/`adult`/`love`/`old`/`kid`，各有基准宽 2.4/2.5/2.9/2.8/2.7/2.0）、`marks` 是音乐卡点（按弧长分数 `f` 或位置 `at:[x,y]`）、`holds` 是停顿墨点。**接入方式就是替换 `face.js` 这一个文件。**
 - **换主题时要改哪些文件**：**只改 3 个**——`face.js`（新的最终画面 + 章节表）、`story.js`（时间线真值：DUR / VO / TITLE / HAND / END）、`lines.json`（旁白脚本）。`ink.js` / `paper.js` / `cam.js` / `geom.js` / `subs.js` / `music/score.py` / `mix.py` **全部自动跟着走**，不需要动。这是本风格最关键的复用机制：**换一幅画，其余不变**（`style-dna/one-line.md:227`）。
