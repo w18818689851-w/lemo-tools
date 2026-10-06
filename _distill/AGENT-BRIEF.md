@@ -314,7 +314,7 @@ film: <样本片名>
 
 ```bash
 node D:/lemo-tools/scripts/style-skill-check.mjs --only <slug>   # 11 节契约 + 无占位符 + 每节 ≥80 字
-node D:/lemo-tools/scripts/check-skill-scores.mjs                # 评分自洽（3 项，含「正文自评 == json」）
+node D:/lemo-tools/scripts/check-skill-scores.mjs                # 评分自洽（3 项，含「正文自评 == json」）；★ **失明守卫（2026-10-06 补）**：注册表读不到 / 一个带 `_distill.json` 的风格都枚举不到 ⇒ **FAIL 并明说「本闸门已失明」**（旧版打印 `[1] 0/0 OK` = 静默假绿）；覆盖点 **`LEMO_DISTILL_ROOT`** + **`LEMO_DUB_STYLES`**
 ```
 
 必须输出 `✔` / `OK`。不通过就改到通过为止（常见：某节字数不足、占位符没清、`_distill.json` 字段缺、
@@ -328,16 +328,16 @@ node D:/lemo-tools/scripts/check-tp-prose.mjs          # SKILL.md **正文**里�
 node D:/lemo-tools/scripts/check-skill-film-fields.mjs # SKILL.md **正文**里的成片帧数/分辨率/时长 vs generatedVideo（★ 帧数=FAIL、分辨率=FAIL、时长=参考；全部读不到 generatedVideo 即判失明）
 node D:/lemo-tools/scripts/check-lra-caliber.mjs       # 43 份的 lra 是否统一 ebur128 口径
 node D:/lemo-tools/scripts/check-loudness-targets.mjs  # style-dna 能否解析出响度目标（防静默回落 −16）
-node D:/lemo-tools/scripts/check-config-notes.mjs      # dub-styles.json 的 notes 与字段是否自相矛盾
+node D:/lemo-tools/scripts/check-config-notes.mjs      # dub-styles.json 的 notes 与字段是否自相矛盾；★ **失明守卫（2026-10-06 补）**：注册表读不到 / `styles` 不是非空数组 ⇒ **FAIL 并明说「本闸门已失明」**（旧版静默假绿）；覆盖点 **`LEMO_DUB_STYLES`**
 node D:/lemo-tools/scripts/check-config-vs-doc.mjs     # 配置底色是否在该风格 §3 配色体系里
-node D:/lemo-tools/scripts/check-skill-artifacts.mjs   # json 记录的成片信息 vs 磁盘实物
+node D:/lemo-tools/scripts/check-skill-artifacts.mjs   # json 记录的成片信息 vs 磁盘实物；★ **失明守卫（2026-10-06 补）**：一个带 `_distill.json` 的风格都枚举不到（含 `--only` 拼错）⇒ **FAIL 并明说「本闸门已失明」**（旧版静默假绿）；覆盖点 **`LEMO_DISTILL_ROOT`**
 node D:/lemo-tools/scripts/check-shell-structure.mjs   # shell 脚本结构（续行被注释吃掉 / 判定块缺 exit 0）
 node D:/lemo-tools/scripts/measure-truepeak.mjs --check # 43 部成片真峰值是否都 ≤ −1.2 dBTP
 node D:/lemo-tools/scripts/check-dub-styles.mjs        # 纹理红线 + 字幕底衬（模型级）
-node D:/lemo-tools/scripts/check-doc-coverage.mjs      # 你新增的脚本有没有登记进文档（本简报 + test/README.md）
+node D:/lemo-tools/scripts/check-doc-coverage.mjs      # 你新增的脚本有没有登记进文档（本简报 + test/README.md）；★ **失明守卫（2026-10-06 补）**：`scripts/` 或 `test/` 扫到 **0 个** ⇒ **FAIL 并明说「本闸门已失明」**（旧版静默假绿）；覆盖点 **`LEMO_TOOLS_ROOT`**
 node D:/lemo-tools/scripts/check-dna-coverage.mjs      # 风格注册表的**字段消费覆盖**（三节）：① style-dna 的已接线链路没断（防风格特质静默失效）；② ★ lib/dub-styles.json 的**每条字段路径**要么「有消费者」、要么在**元数据白名单**/未实现清单里，否则 FAIL（防「注册表声明了、代码没人读」——44/44 声明 textureRaw 却零读取就是这么漏的；已剥注释，否则解释缺陷的注释会被当成消费者；排除 scripts/ 否则闸门读到自己；注册表读不到/枚举 0 条即判失明；LEMO_DUB_STYLES 可覆盖，供非破坏变异）；③ ★ **`bgRecipe.textureRaw` 的「取值级」实现状态**（2026-10-05 扩展，补的正是 ② 原先登记的「已知边界」）：**可解析名字集合 R** 从 `lib/dub-core.mjs` **源码抽**（`bgFilters()` 的 `switch (tex)` case + `TEXTURE_SYNONYMS` 键 + `TEXTURE_RAW_FALLBACK` 键 + `none`，不手抄）⇒ 判**双向**：(A) 声明但未标（值 ∉ R 而散文清单没登记）FAIL、(B) 标了但已实现（值 ∈ R 而散文清单仍列着）FAIL，另加 4 条防清单腐烂 + slug 级核对；**误报率**：原始判据首跑命中 2 名（`vignette`/`paper-grain`）**真 0 / 误 2（100%）** ⇒ 加豁免表 `TEXTURE_COVERED_BY_OTHER` 后 0/0（★ **「可解析 R」≠「已实现全集」**：31 个声明值 = R 内 11 + 未实现 18 + 豁免 2）；**失明守卫**尤其重要（判据依赖解析源码）：源码读不到/抽不到两张表/找不到 `bgFilters()` 或其 `switch (tex)`/R 为空/注册表为空/散文找不到「声明但未实现」条目 ⇒ 一律 FAIL 并明说「已失明」；覆盖点 **LEMO_DUB_CORE**（新增）+ `LEMO_DUB_STYLES`，均供非破坏变异）
-node D:/lemo-tools/scripts/check-mux-selection.mjs     # 编排器实际挑中的那个 mux 脚本口径是否完整（★ 脚本存在 ≠ 会被采用）
-node D:/lemo-tools/scripts/check-mix-candidates.mjs    # 混音文件有没有「靠前的旧占位遮蔽靠后的真混音」（★ 真实发生过事故）
+node D:/lemo-tools/scripts/check-mux-selection.mjs     # 编排器实际挑中的那个 mux 脚本口径是否完整（★ 脚本存在 ≠ 会被采用）；★ **失明守卫（2026-10-06 补）**：`styles/` 读不到 / 扫到 **0 个风格** ⇒ **FAIL 并明说「本闸门已失明」**（旧版静默假绿）；覆盖点 **`LEMO_OPUSCAR`**
+node D:/lemo-tools/scripts/check-mix-candidates.mjs    # 混音文件有没有「靠前的旧占位遮蔽靠后的真混音」（★ 真实发生过事故）；★ **失明守卫（2026-10-06 补）**：`styles/` 读不到 / 扫到 **0 个风格** ⇒ **FAIL 并明说「本闸门已失明」**（旧版静默假绿）；覆盖点 **`LEMO_STYLES_ROOT`**
 node D:/lemo-tools/scripts/check-cli-docs.mjs          # 命令行参数的用法块与实现是否对得上（★ 防「文档先于实现」）
 node D:/lemo-tools/scripts/check-lexicon-coverage.mjs  # 风格 tags ↔ 规则词表双向对齐（★ 漏登记 = 规则路永远选不中该风格；schema 不符即判 FAIL）
 node D:/lemo-tools/scripts/check-api-docs.mjs          # server.mjs 路由 ↔ README 接口表双向对齐（★ 防「文档先于实现」；任一侧解析为 0 即判失明）

@@ -1726,12 +1726,12 @@
         "styles/hd-2d/demo/cliff.js",
         "styles/hd-2d/demo/forest.js"
       ],
-      "evidence": "chars.js:8 `const C = { cloak: ramp(['#2e0b14','#521620','#7c222c','#a4333a','#c9503f'], .22), skin: ramp(['#b87a62','#dea282','#f3c9a6','#ffe2c8'], .22), ... }`（ramp() 生成 4-5 阶色阶）；cliff.js:161 灯光色 `'#fff0c8'`；forest.js:118 辉光 `glow('#ffc070', 1.25, 1.1)`",
+      "evidence": "chars.js:8 `const C = { cloak: ramp(['#2e0b14','#521620','#7c222c','#a4333a','#c9503f'], .22), skin: ramp(['#b87a62','#dea282','#f3c9a6','#ffe2c8'], .22), ... }`（ramp() 生成 4-5 阶色阶）；cliff.js:161 灯光色 `'#fff0c8'`；forest.js:118 辉光 `glow('#ffc070', 1.25, 1.1)`；★ 2026-10-05 修正：原 palette.bg=#fff0c8 取的是 cliff.js:161 的**灯光色**（本行证据已自证「灯光色」），不是背景；已按 harbor.js:14 的夜空 top/mid/hor 改为 #101d3e（bg2=#2c4262），fg/accent 改用 ui.js:81 字幕纸白 #f6f0e2 与 DEMO.md:60 UI 金 #d8c28e。",
       "palette": {
-        "bg": "#fff0c8",
-        "bg2": null,
-        "fg": "#2e0b14",
-        "accent": "#ffc070"
+        "bg": "#101d3e",
+        "bg2": "#2c4262",
+        "fg": "#f6f0e2",
+        "accent": "#d8c28e"
       },
       "texture": {
         "type": "pixel-post",

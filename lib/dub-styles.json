@@ -1772,18 +1772,20 @@
         ]
       },
       "palette": {
-        "bg": "#fff0c8",
-        "bg2": null,
-        "fg": "#2e0b14",
-        "accent": "#995500",
-        "subtitle": "#2E0B14",
+        "bg": "#101d3e",
+        "bg2": "#2c4262",
+        "fg": "#f6f0e2",
+        "accent": "#d8c28e",
+        "subtitle": "#f6f0e2",
         "subtitleOutline": "#00000000",
         "subtitleBack": "#B3000000"
       },
       "bgRecipe": {
-        "type": "solid",
+        "type": "gradient",
         "stops": [
-          "#fff0c8"
+          "#050818",
+          "#101d3e",
+          "#2c4262"
         ],
         "texture": "none",
         "vignette": 0.08,
@@ -1815,7 +1817,7 @@
         "subtitleFadeIn": 0.12,
         "chapterTransition": "cut"
       },
-      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fff0c8 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。",
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #fff0c8 相对亮度 >0.5（亮底→深字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。；★ 2026-10-05 修正：原 `bg=#fff0c8` 是 `cliff.js:161` 的**灯塔灯光色**（抽取把灯光色当成了背景色），夜景片会渲成浅奶油底。已按 `harbor.js:14` / `DEMO.md:52` 的真实夜空 `#050818→#101d3e→#2c4262` 改为渐变底，并连带把由「亮底→深字」WCAG 规则推得的字幕/前景色改回 `#f6f0e2`（纸白，见 `ui.js:81` 的 `textColor` 与 §3 字幕行）。",
       "bgSameAsDefault": false
     },
     {

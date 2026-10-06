@@ -25,7 +25,8 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const DIR = path.join(ROOT, 'lib', 'style-skills');
+// ★ 覆盖点（供非破坏变异验证）：`LEMO_DISTILL_ROOT` 与 `check-film-delivery.mjs:92` / `check-tp-prose.mjs:325` 同名同义（风格技能树）。
+const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || path.join(ROOT, 'lib', 'style-skills'));
 const FFPROBE = process.env.LEMO_FFPROBE || 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffprobe.exe';
 
 const argv = process.argv.slice(2);
@@ -72,11 +73,22 @@ async function probe(film, needFrames) {
 
 if (!fs.existsSync(FFPROBE)) { console.error(`找不到 ffprobe: ${FFPROBE}`); process.exit(2); }
 
-let slugs = fs.readdirSync(DIR).filter((s) => fs.existsSync(path.join(DIR, s, '_distill.json'))).sort();
+let slugs = [];
+try {
+  slugs = fs.readdirSync(DIR).filter((s) => fs.existsSync(path.join(DIR, s, '_distill.json'))).sort();
+} catch { /* ★ 目录读不到 ⇒ 交给下面的失明守卫（不裸抛） */ }
 if (only.length) slugs = slugs.filter((s) => only.includes(s));
 
 const rows = [];
 const fails = [];
+
+// ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
+//   判据：一个带 `_distill.json` 的风格都枚举不到（目录不存在 / `--only` 拼错 / 过滤变了）⇒
+//   一份文档都没校验过 ⇒ 判 FAIL 并明说「本闸门已失明」。否则 `fails` 为空会打印
+//   「文档记录的成片信息与实物全部一致」—— 那是**假的**。
+//   （写法照 `check-loudness-targets.mjs:64-79` / `check-config-vs-doc.mjs:108-116` 的同型守卫。）
+const blind = [];
+if (slugs.length === 0) blind.push(`\`${DIR}\` 下一个带 _distill.json 的风格都没枚举到（路径 / \`--only\` / 过滤变了？）⇒ 一份文档都没校验过`);
 for (const slug of slugs) {
   const p = path.join(DIR, slug, '_distill.json');
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -129,7 +141,7 @@ for (const slug of slugs) {
 }
 
 if (asJson) {
-  console.log(JSON.stringify({ ffprobe: FFPROBE, rows, fails }, null, 2));
+  console.log(JSON.stringify({ ffprobe: FFPROBE, rows, fails, ...(blind.length ? { blind } : {}) }, null, 2));
 } else {
   console.log('check-skill-artifacts —— 文档记录的成片信息 vs 磁盘实物');
   console.log(`  ffprobe: ${FFPROBE}`);
@@ -141,7 +153,12 @@ if (asJson) {
     console.log(`${mark}  ${String(r.slug).padEnd(22)} ${r.why || ''}`);
   }
   console.log('');
+  if (blind.length) {
+    console.log(`✘ 本闸门已失明：`);
+    for (const b of blind) console.log(`  ✘ ${b}`);
+    console.log('');
+  }
   if (fails.length) { console.log(`✗ 与实物不一致 ${fails.length} 条：`); for (const f of fails) console.log(`  - ${f}`); }
-  else console.log('✓ 文档记录的成片信息与实物全部一致。');
+  else if (!blind.length) console.log('✓ 文档记录的成片信息与实物全部一致。');
 }
-process.exit(fails.length ? 1 : 0);
+process.exit((fails.length || blind.length) ? 1 : 0);

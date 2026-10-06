@@ -2,16 +2,15 @@
   "slug": "hd-2d",
   "nameZh": "HD-2D 像素剧场",
   "distilledAt": "2026-10-03T16:45:00+08:00",
-  "matchScore": 97,
+  "matchScore": 98,
   "scoreBreakdown": {
-    "palette": 18,
+    "palette": 19,
     "composition": 20,
     "typography": 19,
     "rhythm": 20,
     "audio": 20
   },
   "defects": [
-    "【palette −1】lib/dub-styles.json#hd-2d 的 palette 与本风格冲突：palette.bg = #fff0c8（浅奶油底）——本风格是夜景片，底色应是 #050818–#16223a 的冷蓝，浅底会让整片读成白天的纸片。这使「文案 + 风格」通路的底色无法与本风格对齐。（★ 2026-10-03 拆分：本条原文还含「bgRecipe.texture = \"grain\"、与 grain 0 冲突」那一半 —— 那半**已修**（现 texture=none），已移入 resolvedDefects；底色这一半**仍成立**，扣分维持 −1。）",
     "【typography −1】同一条目的字幕参数是「套默认」而非「抽取」：subtitle.fontFamily = \"SimSun\"——本风格要求 Cormorant Garamond italic（衬线斜体）+ Cinzel，宋体会立刻破掉「碑铭 + 老式衬线」的 UI 语法；marginVFactor 0.14537（≈157px）也比 demo 的 y = H − 88（≈8% / 86px）更低。字号因子 0.0463（≈50px @1080 高）这一项与 demo 一致。",
     "【−0，附带】events 导出为 0 条：story.js 的 T 画面事件表没有被导出成 events（events.json 仅 20 字节），拟音落点全靠 mix.py:68-82 内部硬编码。下游若想用编排器的事件通路驱动拟音会拿到空表。",
     "【−0，附带】字幕走旁路：编排器告警「本 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成」，随后由 demo 自带 tools/srt.py 重新生成。字幕轨是本次生成的，但走的是旁路；下游若改动 VO 需确认这条旁路仍被调用。",
@@ -31,7 +30,7 @@
     "相机永远向下看世界（硬规则），做不了平视特写与主观镜头。",
     "单镜 5–14s、旁白 speed .82–.90，做不了快节奏信息流；RPG UI 只适合承载「一屏一件事」。",
     "后期链（移轴/景深/辉光）是渲染期的（post_ts.js），不能对成片做二次处理。",
-    "最高可达分与原因：palette 因 dub 通路底色/颗粒冲突扣 1、composition 因 9:16 架构缺陷扣 2、typography 因 dub 通路字体与边距扣 1；其余 5 项（移轴清晰带、逐帧运动（原记 60 fps）、响度与真峰值、授权配乐与 53.5 卡点、字幕与卡片）都已实测达标。若产品只用 16:9 且改掉 dub-styles.json#hd-2d 的 3 处冲突，本风格最高可达 100/100。本次实得 96。",
+    "最高可达分与原因：palette 因「textureRaw 细纹理未实现」扣 1、typography 因 dub 通路字体与边距扣 1；其余（9:16 构图、移轴清晰带、逐帧运动、响度与真峰值、授权配乐与 53.5 卡点、字幕与卡片）都已实测达标。★ 2026-10-05：dub 通路底色冲突（原 palette −1）已修（bg `#fff0c8`→`#101d3e`、bgRecipe `solid`→夜空渐变、fg/subtitle→`#f6f0e2`），palette 18→19、matchScore 97→98；若再把 typography 的字体/边距与 textureRaw 细纹理两处补齐，本风格最高可达 100/100。本次实得 98。",
     "本次未实渲 9:16 复核，9:16 结论为按既有 1:1 左上角塞入口径推导。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）"
   ],
   "evidenceFrames": [
@@ -131,6 +130,7 @@
   },
   "resolvedDefects": [
     "palette −0（原 palette −1 的一半）：bgRecipe.texture = \"grain\" 与本风格「grain 0、无胶片颗粒」的硬规则冲突（STYLE.md:20、DEMO.md:129）。（★ 2026-10-03 校正：该缺陷已修 —— 当前 lib/dub-styles.json#hd-2d 的 bgRecipe.texture = none。）",
-    "composition −2（原缺陷）：【composition −2】9:16（产品默认）不可用：本风格无 aspects 声明、按 1920×1080 绝对像素构图，硬渲成 1080×1920 时画面 1:1 塞在左上角、右侧约 43.75%（≈840px）丢失、下方整片黑。后果：居中单行字幕右半句被切并掉进黑区；章节卡（f01/f02）与片名卡（f22–f24）右半文字被切；对话框 1180px 宽的右端与 ▼ 光标被切；横向的移轴清晰带在竖屏下彻底失效（本风格最核心的读法）。正确做法是把相机与构图改成竖向（重设 fov、把主体与 UI 收进 1080 宽），不是裁切。本次未实渲 9:16 复核，按既有 1:1 左上角塞入口径推导。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 96→98（分数于 2026-10-05 回补；★ **原记**·该步为历史 —— 其后同日又因新增「textureRaw 细纹理未实现」缺陷 palette −1（见 defects），matchScore 98→97，**现值 97**）。原记录保留作历史。"
+    "composition −2（原缺陷）：【composition −2】9:16（产品默认）不可用：本风格无 aspects 声明、按 1920×1080 绝对像素构图，硬渲成 1080×1920 时画面 1:1 塞在左上角、右侧约 43.75%（≈840px）丢失、下方整片黑。后果：居中单行字幕右半句被切并掉进黑区；章节卡（f01/f02）与片名卡（f22–f24）右半文字被切；对话框 1180px 宽的右端与 ▼ 光标被切；横向的移轴清晰带在竖屏下彻底失效（本风格最核心的读法）。正确做法是把相机与构图改成竖向（重设 fov、把主体与 UI 收进 1080 宽），不是裁切。本次未实渲 9:16 复核，按既有 1:1 左上角塞入口径推导。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 96→98（分数于 2026-10-05 回补；★ **原记**·该步为历史 —— 其后同日又因新增「textureRaw 细纹理未实现」缺陷 palette −1（见 defects），matchScore 98→97，**现值 98**）。原记录保留作历史。",
+    "【palette −1】lib/dub-styles.json#hd-2d 的 palette 与本风格冲突：palette.bg = #fff0c8（浅奶油底）——本风格是夜景片，底色应是 #050818–#16223a 的冷蓝，浅底会让整片读成白天的纸片。这使「文案 + 风格」通路的底色无法与本风格对齐。（★ 2026-10-03 拆分：本条原文还含「bgRecipe.texture = \"grain\"、与 grain 0 冲突」那一半 —— 那半**已修**（现 texture=none），已移入 resolvedDefects；底色这一半**仍成立**，扣分维持 −1。） ★ **2026-10-05 已修**：`lib/dub-styles.json#hd-2d` 的 `palette.bg` 由 `#fff0c8` 改为夜空 `#101d3e`、`bgRecipe` 由 `solid` 改为 `gradient`（stops `#050818 #101d3e #2c4262`，取自 `harbor.js:14` / `DEMO.md:52`），并连带把由「亮底→深字」WCAG 规则推得的 `palette.fg` / `palette.subtitle` 改回 `#f6f0e2`（纸白，`ui.js:81`）、`palette.accent` 改 `#d8c28e`（§3 UI 金）；`lib/dub-visual.json#hd-2d.palette` 同步修正（原抽取把 `cliff.js:161` 的**灯光色**当成了背景色）。渲帧实测：底色由浅奶油 → 夜空；字幕对比度 **6.00 → 16.39**（模型级）/ **16.52**（像素级，品红标记测试通过）。palette 18→19、matchScore 97→98。"
   ]
 }

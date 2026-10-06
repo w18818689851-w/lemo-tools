@@ -27,8 +27,31 @@
  */
 import fs from 'node:fs';
 
-const CFG = 'D:/lemo-tools/lib/dub-styles.json';
-const cfg = JSON.parse(fs.readFileSync(CFG, 'utf8'));
+// ★ 覆盖点（供非破坏变异验证）：与 `check-dna-coverage.mjs:153` 的 `LEMO_DUB_STYLES` 同名同义。
+const CFG = process.env.LEMO_DUB_STYLES || 'D:/lemo-tools/lib/dub-styles.json';
+
+// ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
+//   判据（与 `check-dna-coverage.mjs:149` 同一组）：**注册表读不到 / 解析失败 / `styles` 不是非空数组** ⇒
+//   一条 `notes` 都没检查过 ⇒ 下面那句「未发现 notes 与字段自相矛盾」是**假的**（`for` 循环根本没跑）
+//   ⇒ 判 FAIL 并明说「本闸门已失明」。写法照 `check-lexicon-coverage.mjs:57-75` 的同型守卫。
+let cfg = null;
+const blind = [];
+try {
+  cfg = JSON.parse(fs.readFileSync(CFG, 'utf8'));
+} catch (e) {
+  blind.push(`${CFG} 读不到 / 不是 JSON（${(e && e.message) || e}）`);
+}
+if (cfg && (!Array.isArray(cfg.styles) || !cfg.styles.length)) {
+  const got = cfg.styles === undefined ? 'undefined（缺字段）'
+    : Array.isArray(cfg.styles) ? '空数组' : `${typeof cfg.styles}（疑似改了 schema？）`;
+  blind.push(`${CFG} 的 \`styles\` 不是**非空数组**（实得：${got}）⇒ 一条 notes 都没检查过`);
+}
+if (blind.length) {
+  console.log(`\n✘ 本闸门已失明：`);
+  for (const b of blind) console.log(`  ✘ ${b}`);
+  console.log(`\n[闸门] notes 自相矛盾 **已失明** ✘`);
+  process.exit(1);
+}
 
 const MARK_RE = /★\s*\*\*?\s*\d{4}-\d{2}-\d{2}\s*更正/;
 

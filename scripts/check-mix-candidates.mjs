@@ -27,7 +27,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-const STYLES = 'D:/lemo-opuscar/styles';
+// ★ 覆盖点（供非破坏变异验证）：与 `check-aspect-declaration.mjs:56` / `check-dub-styles.mjs:46` 的 `LEMO_STYLES_ROOT` 同名同义。
+const STYLES = process.env.LEMO_STYLES_ROOT || 'D:/lemo-opuscar/styles';
 const FF = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe';
 const CANDS = ['demo/mix.wav', 'demo/audio/mix.wav', 'demo/out/mix.wav'];
 const SILENT_DB = -70;
@@ -50,9 +51,20 @@ async function meanVolume(f) {
   return m[1] === '-inf' ? -Infinity : Number(m[1]);
 }
 
-const slugs = fs.readdirSync(STYLES, { withFileTypes: true })
-  .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
-  .map((e) => e.name).sort();
+// ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
+//   判据：`styles/` **读不到 / 扫到 0 个风格** ⇒ 一个候选混音都没检查过 ⇒ 判 FAIL 并明说
+//   「本闸门已失明」。否则 `fails` 为空会打印「所有多候选的混音都逐字节相同」—— 那是**假的**。
+//   （写法照 `check-loudness-targets.mjs:64-79` / `check-config-vs-doc.mjs:108-116` 的同型守卫。）
+const blind = [];
+let slugs = [];
+try {
+  slugs = fs.readdirSync(STYLES, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
+    .map((e) => e.name).sort();
+} catch (e) {
+  blind.push(`\`${STYLES}\` 读不到（${(e && e.message) || e}）⇒ 一个混音候选都没检查过`);
+}
+if (!blind.length && slugs.length === 0) blind.push(`\`${STYLES}\` 下扫到 0 个风格目录（路径 / 过滤变了？）⇒ 一个混音候选都没检查过`);
 
 const fails = [];
 const multi = [];
@@ -91,9 +103,14 @@ if (fails.length) {
   console.log(`\n✘ ${fails.length} 处遮蔽隐患：`);
   for (const f of fails) console.log(`  ✘ ${f}`);
   console.log('\n修法：把靠后的那份（真正被音频链写入的）复制到靠前的位置，让候选顺序不再改变结果。');
-} else {
+} else if (!blind.length) {
   console.log('\n✓ 所有多候选的混音都逐字节相同，且被挑中的不是静音。');
 }
 
-console.log(`\n[闸门] 遮蔽隐患 ${fails.length} 处 ${fails.length ? '✘' : 'OK'}；多候选 ${multi.length} 个`);
-process.exitCode = fails.length ? 1 : 0;
+if (blind.length) {
+  console.log(`\n✘ 本闸门已失明：`);
+  for (const b of blind) console.log(`  ✘ ${b}`);
+}
+
+console.log(`\n[闸门] 遮蔽隐患 ${fails.length} 处${blind.length ? '、**已失明**' : ''} ${(fails.length || blind.length) ? '✘' : 'OK'}；多候选 ${multi.length} 个`);
+process.exitCode = (fails.length || blind.length) ? 1 : 0;

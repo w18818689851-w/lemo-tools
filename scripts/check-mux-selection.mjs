@@ -31,7 +31,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OPUSCAR = 'D:/lemo-opuscar';
+// ★ 覆盖点（供非破坏变异验证）：与 `check-esm-import-paths.mjs:43` / `check-render-venc.mjs:89` 的 `LEMO_OPUSCAR` 同名同义。
+const OPUSCAR = process.env.LEMO_OPUSCAR || 'D:/lemo-opuscar';
 const STYLES = path.join(OPUSCAR, 'styles');
 const CORE = path.join(OPUSCAR, 'core', 'render', 'mux.sh');
 
@@ -47,10 +48,21 @@ function pickMux(slug) {
   return { file: CORE, own: false };
 }
 
-const slugs = fs.readdirSync(STYLES, { withFileTypes: true })
-  .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
-  .map((e) => e.name)
-  .sort();
+// ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
+//   判据：`styles/` **读不到 / 扫到 0 个风格** ⇒ 一个混流脚本都没检查过 ⇒ 判 FAIL 并明说
+//   「本闸门已失明」。否则 `fails` 为空会打印「所有被挑中的脚本都满足四项口径」—— 那是**假的**。
+//   （写法照 `check-config-vs-doc.mjs:108-116` / `check-loudness-targets.mjs:64-79` 的同型守卫。）
+const blind = [];
+let slugs = [];
+try {
+  slugs = fs.readdirSync(STYLES, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
+    .map((e) => e.name)
+    .sort();
+} catch (e) {
+  blind.push(`\`${STYLES}\` 读不到（${(e && e.message) || e}）⇒ 一个混流脚本都没检查过`);
+}
+if (!blind.length && slugs.length === 0) blind.push(`\`${STYLES}\` 下扫到 0 个风格目录（路径 / 过滤变了？）⇒ 一个混流脚本都没检查过`);
 
 const fails = [];
 const rows = [];
@@ -98,9 +110,14 @@ for (const r of fell) console.log(`  · ${r.slug.padEnd(20)} ${r.skipped}`);
 if (fails.length) {
   console.log(`\n✘ 被挑中的脚本有 ${fails.length} 个缺项：`);
   for (const f of fails) console.log(`  ✘ ${f}`);
-} else {
+} else if (!blind.length) {
   console.log('\n✓ 所有「被编排器挑中」的混流脚本都满足四项口径要求。');
 }
 
-console.log(`\n[闸门] 被挑中脚本缺项 ${fails.length} 个 ${fails.length ? '✘' : 'OK'}；走自带 mux ${own.length}/${rows.length}`);
-process.exitCode = fails.length ? 1 : 0;
+if (blind.length) {
+  console.log(`\n✘ 本闸门已失明：`);
+  for (const b of blind) console.log(`  ✘ ${b}`);
+}
+
+console.log(`\n[闸门] 被挑中脚本缺项 ${fails.length} 个${blind.length ? '、**已失明**' : ''} ${(fails.length || blind.length) ? '✘' : 'OK'}；走自带 mux ${own.length}/${rows.length}`);
+process.exitCode = (fails.length || blind.length) ? 1 : 0;

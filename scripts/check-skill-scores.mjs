@@ -29,9 +29,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = 'D:/lemo-tools';
-const DIR = path.join(ROOT, 'lib', 'style-skills');
-const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'lib', 'dub-styles.json'), 'utf8'));
-const bySlug = Object.fromEntries(cfg.styles.map((s) => [s.slug, s]));
+// ★ 覆盖点（供非破坏变异验证）：`LEMO_DISTILL_ROOT` 与 `check-film-delivery.mjs:92` / `check-tp-prose.mjs:325`
+//   同名同义（风格技能树）；`LEMO_DUB_STYLES` 与 `check-dna-coverage.mjs:153` 同名同义（注册表）。
+const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || path.join(ROOT, 'lib', 'style-skills'));
+const DUB_STYLES = process.env.LEMO_DUB_STYLES || path.join(ROOT, 'lib', 'dub-styles.json');
+
+// ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
+//   判据（与 `check-dna-coverage.mjs:149` 同一组）：**注册表读不到 / 解析失败 / 一个带
+//   `_distill.json` 的风格都枚举不到** ⇒ ①②③ 三条判据一条都没执行过 ⇒ 判 FAIL 并明说
+//   「本闸门已失明」。否则会打印 `[1] 0/0 OK` —— 那是**假的**。
+//   （写法照 `check-lexicon-coverage.mjs:57-75` 的同型守卫。）
+const blind = [];
+let cfg = null;
+try {
+  cfg = JSON.parse(fs.readFileSync(DUB_STYLES, 'utf8'));
+} catch (e) {
+  blind.push(`${DUB_STYLES} 读不到 / 不是 JSON（${(e && e.message) || e}）`);
+}
+const bySlug = Object.fromEntries((cfg && Array.isArray(cfg.styles) ? cfg.styles : []).map((s) => [s.slug, s]));
 const KEYS = ['palette', 'composition', 'typography', 'rhythm', 'audio'];
 
 const TEXTURES = ['none', 'paper', 'grain', 'scanlines', 'halftone', 'rice-paper', 'dot-grid', 'hairline-grid', 'washi'];
@@ -43,7 +58,19 @@ const FONTS = ['SimHei', 'SimSun', 'KaiTi', 'DengXian', 'Microsoft YaHei', 'Cons
 const HIST_MARK = /已修|已改为|已改成|已移入|移入 resolvedDefects|原为|原记|原先|曾是|曾为|曾是值|校正|拆分/;
 const around = (txt, m) => txt.slice(Math.max(0, m.index - 80), m.index + m[0].length + 80);
 
-const slugs = fs.readdirSync(DIR).filter((s) => fs.existsSync(path.join(DIR, s, '_distill.json'))).sort();
+let slugs = [];
+try {
+  slugs = fs.readdirSync(DIR).filter((s) => fs.existsSync(path.join(DIR, s, '_distill.json'))).sort();
+} catch (e) {
+  blind.push(`\`${DIR}\` 读不到（${(e && e.message) || e}）`);
+}
+if (!blind.length && slugs.length === 0) blind.push(`\`${DIR}\` 下一个带 _distill.json 的风格都没枚举到（路径 / 过滤变了？）⇒ ①②③ 三条判据一条都没执行`);
+if (blind.length) {
+  console.log(`\n✘ 本闸门已失明：`);
+  for (const b of blind) console.log(`  ✘ ${b}`);
+  console.log(`\n[闸门] 评分自洽性 **已失明** ✘`);
+  process.exit(1);
+}
 let badScore = 0, fail = 0, mixed = 0, claims = 0, scoreMismatch = 0, scoreMissing = 0;
 
 for (const slug of slugs) {

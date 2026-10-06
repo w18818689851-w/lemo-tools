@@ -1914,8 +1914,8 @@ fi
 
     if (!subsGen) {
       warn(subsGenFound
-        ? `${subsGenFound} 没能跑成 —— 字幕源没有重新生成，.srt 将沿用仓库里已提交的旧文件`
-        : '该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件');
+        ? `${subsGenFound} 没能跑成 —— 本编排器未重新生成字幕源；.srt 是否更新取决于第 6 步混流（该 demo 若自带 srt 生成器则由它产出）`
+        : '该 demo 没有本编排器支持的字幕生成器 —— 本编排器不生成字幕源；.srt 是否更新取决于第 6 步混流（该 demo 若自带 srt 生成器则由它产出）');
       info(C.dim('（已探测 tools/subs.mjs / subs.mjs / tools/export.mjs / tools/subs.py / subs.py /' +
         ' tools/cues.py / cues_export.py；cues.mjs、tools/cues.mjs 是 stdout 重定向写法、' +
         'build.sh 内联等尚未支持；另 4 个 demo 的 srt 由自带的 srt 生成器直接产出，见混流步）'));
@@ -2596,7 +2596,7 @@ if [ "$SRT_OWN_OK" != "1" ]; then
       echo "  ! 警告：字幕生成失败（不影响成片产出）"
     fi
   else
-    echo "  ! 警告：本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成"
+    echo "  ! 警告：本 demo 没有本次新生成的字幕源（第 3 步编排器未产出、demo 自带 srt 生成器本次也没产出）—— .srt 沿用仓库里已提交的旧文件，未重新生成"
   fi
 fi
 

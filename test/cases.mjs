@@ -183,7 +183,12 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     LEMO_MANIFEST / LEMO_LOCK_DIR 习惯；默认值即原值 ⇒ 不设变量时行为逐字节不变。
 //     这是**有意改编排器**（只加覆盖点，不动任何逻辑），基线值随之更新
 //     （红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = '65ddab4495bdf52a4aab78b4a51f8457';
+//   2026-10-06 更新：**字幕告警措辞与第 6 步对齐**（E 类）。第 3 步原说「字幕源不重新生成，
+//     .srt 将沿用旧文件」，但第 6 步可能由 demo 自带的 srt 生成器产出新字幕 ⇒ 该断言会**误导**
+//     （诊断里 3 条「告警误导」）。现第 3 步改为「本编排器不生成字幕源；.srt 是否更新取决于第 6 步」，
+//     第 6 步补明「（第 3 步编排器未产出、demo 自带 srt 生成器本次也没产出）」。**纯措辞，不改逻辑/行为**。
+//     这是**有意改编排器**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
+export const ORCH_MD5 = 'dfa990043fa1b8368a7011fbc03c1ad0';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;
