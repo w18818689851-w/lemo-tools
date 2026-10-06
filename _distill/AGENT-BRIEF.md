@@ -572,3 +572,18 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    `git -C D:/lemo-opuscar log --oneline -- styles/<slug>/index.html`（单笔 ⇒ 无后续适配提交）即证伪；
    实渲探针另证 9:16 下左上 1080×1080 裁切与 16:9 **逐字节相同**（= 裁切，非 contain）。
    ★ 判据：**没有核法的机制断言 = 编造**（同第 1 条）。
+11. ★ **行号引用优先写「符号名 / 节标题」，不写 `<文件>:<行号>`**（2026-10-06 立，治「散文里插一段 ⇒ 后面行号全废」）。
+   本会话**连撞三次**同一形态：只要有人在被引文件**上方插/删行**，所有指向它的 `<文件>:<行号>` 就**静默失效**。
+   ★ 尤其**散文**（`DEMO.md` / `STYLE.md` / `MAINTAINING.md`）——**插一段就整体下移**：实测
+   `styles/art-deco/DEMO.md` 插了 2 行 ⇒ `lib/style-skills/art-deco/SKILL.md` 的 5 处 pitfall 引用
+   （`:61 :164 :171 :175 :176`）**全部错位**，而**修之前 5 个闸门全是 exit 0**。
+   ★ 写法：优先引**节标题**（`` `DEMO.md` 的「Pitfalls tied to this demo's props」段 ``）或**函数名/符号名**
+   （`` `engine/wb.js` 的 `INK` ``、`` `scr()` ``、`` `measure_film()` ``）—— 这类锚**不随行号漂**。
+   ★ 若确实要写行号：**改完被引文件必须回头 grep 一遍所有指向它的行号引用**（不是只 grep 你刚改的那处）：
+   `grep -rn "DEMO\.md:[0-9]" D:/lemo-tools/lib D:/lemo-tools/_distill D:/lemo-opuscar --include=*.md`，
+   再逐条 `sed -n '<n>p' <被引文件>` **看内容对不对**。★ **别机械按「插了几行」加减**：实测同一批引用的
+   真实位移与「插入行数」可以差 1，而**差一行的引用照样指向另一句读得通的话** ⇒ 最难发现。
+   ★ **别把 `check-ref-lines.mjs` 当充分判据**：实测它扫 **3795 处**引用，其中只有 **38 处（≈1%）**
+   进入 (c) 内容比对，其余只查「文件在不在 / 行号超没超范围」⇒
+   **「行号移位但仍在范围内」这一类它一处都抓不到**（本次这几处修之前它一直 exit 0）。它只筛「明显失效」，
+   不是「引用正确」的证明。

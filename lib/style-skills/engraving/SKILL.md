@@ -170,7 +170,7 @@ film: The Honeybee, Plate VII
 
 ### ★ 三处旧文档错误声称（已按新源码改正）
 1. ~~「无 `aspects` 声明，只按 1920×1080 硬坐标」~~ ⇒ **错**。新源 `film.js:43` 明写 `aspects: ['16:9','9:16','3:4','4:3','1:1']`，并有 `layout(W,H)`（`film.js:22-33`）做**多比例重排**；1920×1080 时 `fx=fy=S=1` 逐字节退化，所以旧样片看不出差别，但**改造是真的**。
-2. ~~「demo 自带字体无含 CJK 的手写/衬线字体」~~ ⇒ **错**。引擎 `plate.js` 新增 `setFonts()`（`:15`）+ `fontSpec()`（`:70`）**字体栈支持**与 **CJK 断行**（`wrapCJK`，`:149-229`，含行首/行尾**禁则**与 `Intl.Segmenter` 分词）；共享层 `core/lang/lang.mjs:40-55` 提供 zh 字族（`"Bodoni Moda", "Noto Serif SC"` + `"LXGW WenKai"`），`core/lang/fonts-zh.css` 提供两张 OFL 子集，`index.html:4` 与 `main.js:5,12,15` 都已接线。**唯一保留的小缺口**：本样片用的 `film.js`（蜜蜂）**没有**调用 `setFonts`，仍是拉丁默认字族；真正接线的是 `film_coffee.js:281`（`plate.setFonts(L.fonts)`）。做中文题材请走 `film_coffee.js`，或给 `film.js` 补同一行。
+2. ~~「demo 自带字体无含 CJK 的手写/衬线字体」~~ ⇒ **错**。引擎 `plate.js` 新增 `setFonts()`（`:15`）+ `fontSpec()`（`:70`）**字体栈支持**与 **CJK 断行**（`wrapCJK`，`:149-229`，含行首/行尾**禁则**与 `Intl.Segmenter` 分词）；共享层 `core/lang/lang.mjs:40-55` 提供 zh 字族（`"Bodoni Moda", "Noto Serif SC"` + `"LXGW WenKai"`），`core/lang/fonts-zh.css` 提供两张 OFL 子集，`index.html:4` 与 `main.js:5,12,15` 都已接线。**唯一保留的小缺口**：本样片用的 `film.js`（蜜蜂）**没有**调用 `setFonts`，仍是拉丁默认字族；真正接线的是 `film_coffee.js:282`（`plate.setFonts(L.fonts)`）。做中文题材请走 `film_coffee.js`，或给 `film.js` 补同一行。
 3. ~~「下次迭代：给 `style.json` 补 `aspects` 或提供 9:16 重排方案」~~ ⇒ **已不需要**。9:16 **就是本项目的产品默认输出比例**，而本风格已正确支持它；★ 但**样板片按原生 16:9 出**（2026-10-04 重渲为 **1920×1080**，抽帧为 16:9 且构图完整）。旧建议「补 9:16 重排」会**直接误导**下游——照它做等于把已经做好的事情再拆一遍。
 
 ### ★ 本次最大教训：WSL 副本长期过期 ⇒ 成片来自旧源

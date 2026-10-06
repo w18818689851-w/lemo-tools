@@ -18,7 +18,7 @@
   ],
   "assetGaps": [
     "依赖一个画好的主体模块（导出 {ink, regions, focus}，ink 必须以 ol0 首笔画打头）；demo 内置 bee / scallop / coffee / chart 四个主体 + details.js / details_coffee.js 两套放大图，新主题仍须自备主体几何。",
-    "★ **2026-10-04 更正**（原记录保留作历史）：本条原写「demo 自带 OFL 字体（Bodoni Moda / Pinyon Script），但无含 CJK 的手写/衬线字体，中文题材需自备近似字体」—— 与现状不符。引擎已支持字体栈与 CJK：plate.js:15 `setFonts()` / plate.js:70 `fontSpec()`，CJK 断行 `wrapCJK`（plate.js:149-229，含行首/行尾禁则 + Intl.Segmenter 分词）；共享层 core/lang/lang.mjs:40-55 提供 zh 字族（roman `\"Bodoni Moda\", \"Noto Serif SC\"` + script `\"LXGW WenKai\"`），core/lang/fonts-zh.css 提供两张 OFL 子集，index.html:4 与 main.js:5,12,15 已接线。**真正保留的缺口**：本样片用的 film.js（蜜蜂）未调用 setFonts，仍是拉丁默认字族；已接线的是 film_coffee.js:281（plate.setFonts(L.fonts)）。中文题材请走 film_coffee.js，或给 film.js 补同一行。"
+    "★ **2026-10-04 更正**（原记录保留作历史）：本条原写「demo 自带 OFL 字体（Bodoni Moda / Pinyon Script），但无含 CJK 的手写/衬线字体，中文题材需自备近似字体」—— 与现状不符。引擎已支持字体栈与 CJK：plate.js:15 `setFonts()` / plate.js:70 `fontSpec()`，CJK 断行 `wrapCJK`（plate.js:149-229，含行首/行尾禁则 + Intl.Segmenter 分词）；共享层 core/lang/lang.mjs:40-55 提供 zh 字族（roman `\"Bodoni Moda\", \"Noto Serif SC\"` + script `\"LXGW WenKai\"`），core/lang/fonts-zh.css 提供两张 OFL 子集，index.html:4 与 main.js:5,12,15 已接线。**真正保留的缺口**：本样片用的 film.js（蜜蜂）未调用 setFonts，仍是拉丁默认字族；已接线的是 film_coffee.js:282（plate.setFonts(L.fonts)）。中文题材请走 film_coffee.js，或给 film.js 补同一行。"
   ],
   "limits": [
     "慢风格，20–60s 区间，一次只讲一个主体 + 1–4 条细节；不适合快节奏与并列多观点。",

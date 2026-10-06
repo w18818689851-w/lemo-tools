@@ -58,7 +58,7 @@ film: Midnight at the Starlight Hotel
 | 字幕底 | 漆面黑 ~88%（`#B3000000` 叠底） | 字幕卡底条 | `STYLE.md:34` · `dub-styles.json#art-deco` |
 
 - **明度 / 对比规则**：三常量——暖黑地、金线金属、象牙白；**一个饱和强调色只留给主角/故事追随的那件东西**，它是唯一大饱和面，任何宽景里眼睛都能找到它；冷宝石色只做次级面、面积绝不与强调色竞争（`STYLE.md:22-28`）。
-- **禁止出现的颜色**：中性灰黑（必须是暖黑）、三位 hex（会破坏调色，曾把祖母绿扇子变蓝紫，`DEMO.md:95`）；禁止第二个大饱和色相。
+- **禁止出现的颜色**：中性灰黑（必须是暖黑）、三位 hex（会破坏调色，曾把祖母绿扇子变蓝紫，`DEMO.md:97`）；禁止第二个大饱和色相。
 - **同一画面最多几个色相**：金 + 暖黑 + 象牙白为基，最多再进 **1 个**强调色相（+可选 1 个宝石副色，面积很小）。
 
 ---
@@ -150,7 +150,7 @@ film: Midnight at the Starlight Hotel
 - **内容文件字段契约**（`content_fields`）：`lines.json` 每条 `{id, text, voice, speed, pitch?, sub?, asr?}`；单行口播 ≤4.5s；人声分 `radio`（`bm_fable`，speed 0.96–1.02）与 `boy`（`am_puck`，speed 0.86、pitch +4）两类（`style-dna/art-deco.md:96`、`lines.json`）。
 - **事件词汇表**：`shot{name}`（镜头切换，供声音分层）、`vo{id}`（人声，mix.py 从 `voices/<id>.wav` 读）；动作拟音按材料（黄铜/青铜/铁/银/木/纸/刀闸/继电器/电梯叮/烟花哨）由 `mix.py` 按 `T` 的命名时刻生成（`style-dna/art-deco.md:99`）。
 - **时间线契约**：`timeline.js` 导出 `BPM/B/BAR/K_BPM`、段表 `SEC`、命名同步点 `T`、台词起点 `LINES`；`film.js` 导出 `renderFilm(g,t,Q)`、`DUR`、`SHOTS`（`[t0,t1,fn,name]`）、`TR`、`subs()`、`events()`；页面契约 `window.READY / window.render(t) / window.DUR / window.EV`（`style-dna/art-deco.md:98`）。
-- **新增主体怎么接入**：任意路径走 `D.drawShape(g, pts, {color, halo, trail, glints, part})`（喷绘金填充或 `color` 单色 + 金关键线 + 可选太阳纹光晕/速度线尾/闪光）；母题用 `sunburst / archFrame / fan / fishScale / chevrons / sparkle / speedLines`；招牌用 `B.buildSign(text)` → `B.drawSign(g, sign, x, y, scale, {lit})`；镜头用 `cam.js` 的 `makeCam` + `cardTransform`（`DEMO.md:101-118`）。
+- **新增主体怎么接入**：任意路径走 `D.drawShape(g, pts, {color, halo, trail, glints, part})`（喷绘金填充或 `color` 单色 + 金关键线 + 可选太阳纹光晕/速度线尾/闪光）；母题用 `sunburst / archFrame / fan / fishScale / chevrons / sparkle / speedLines`；招牌用 `B.buildSign(text)` → `B.drawSign(g, sign, x, y, scale, {lit})`；镜头用 `cam.js` 的 `makeCam` + `cardTransform`（`DEMO.md:103-120`）。
 - **换主题时要改哪些文件**：① `demo/timeline.js`（BPM/段表/同步点/台词起点）；② `demo/lines.json`（文案+音色）；③ `demo/film.js` 的 `SHOTS/TR/subs`（镜头与转场编排）；④ `demo/scenes/*`（场景）；⑤ `demo/chars.js`（人物，或删掉走无人版）；⑥ `music/score.py` 与 `mix.py` 的 cue 表；⑦ 调色板里唯一的强调色。**引擎（`engine/deco.js`/`type.js`/`bulbs.js`/`cam.js`）不用改**。
 - **与 `dub.mjs` 通路的关系**：本风格在「文案+风格」通路里能生效的参数是 `palette`（bg `#0d0b09` / accent `#c9a24b` / 字幕底 `#B3000000`）、`bgRecipe`（`#0d0b09`→`#0a0e16` 渐变 + vignette 0.35）、`subtitle`（`fontSizeFactor` 0.03796、`marginVFactor` 0.14537、bold）、`title`（`fontSizeFactor` 0.1）、`overlay.accentRule=true`；`chapterCards/lowerThird/progressBar` 均关闭（`dub-styles.json#art-deco`）。**注意该条为 `derived:true` 派生值**，不是逐行手抽。**字体口径**：通路按 `lib/dub-styles.json._notes[5]` 的约定把 `subtitle.fontFamily` 填成**本机真实存在的字体** —— 本条是 `DengXian`（等线）；本节第 5 行点名的 Josefin Sans / Limelight / Poiret One / Italiana **本机都没有**（OFL，只在 `styles/art-deco/demo/fonts/` 里），故字形观感与样片**有差**（等线是几何无衬线，接近但不等于 Josefin Sans）。
 
@@ -161,19 +161,19 @@ film: Midnight at the Starlight Hotel
 ### 已知缺陷
 - **9:16 曾不适配（★ 2026-10-04 已修）**：原记「无 `aspects` 声明，会被 1:1 塞左上角、右侧 ~43.75% 丢失、字幕卡（宽 1500px）被切」。**2026-10-04** 已改造 `styles/art-deco/demo/`：新增 `frame.js`（`NATIVE` / `setFrame(w,h)` / `W,H,FX,FY,S`，`frame.js:15-18`），`film.js` 声明 `FILM_META.aspects = ['16:9','9:16']`（`demo/film.js:20`）并在 `renderFilm` 里铺同色留白 → 裁到设计帧 → 整幅等比装入（`demo/film.js:107-113`），字幕改画在当前帧（`demo/film.js:145-151`），`main.js` 按视口设 canvas 并调 `setFrame`（`main.js:7-8`）。★ **本风格是满幅 16:9 画面、没有画框/片门**，布景在原生视场下已竖直填满，所以落到「**等比装入 + 同色留白**」这一档（不是重排）——中轴与构图逐像素保留。**16:9 逐字节未变**（15%/50%/85% 三帧 md5 与改造前完全一致）；9:16 实测不裁切、字幕完整（见第 2 节）。★ 陷阱：变换**必须裁到设计帧**——镜头会故意画到 1920×1080 之外（高塔、溢出边），不裁的话它们会溢到留白区（首版实测塔身一直顶到 1080×1920 的顶端）。
 - **本次出片走了 `--skip-sync`**（`log:1`），且 `tools/dump_timeline.mjs` 在 Windows 侧**失败（退出码 1）**，日志明示「依赖 timeline.json 的配乐/混音可能失败」（`log:27`）——但本次配乐/混音实际仍跑通（`log:82-85`），说明 WSL 侧有可用 `timeline.json`。这是本次唯一的告警。
-- 情绪峰值镜头曾把主角放到 1/4 画幅高度显得太小（已补特写，`DEMO.md:94`）。
+- 情绪峰值镜头曾把主角放到 1/4 画幅高度显得太小（已补特写，`DEMO.md:96`）。
 
 ### 素材缺口
 - 本风格**全程序化绘制，无外部素材缺口**；唯一缺口是「新主题需要的原创交响爵士配乐」——若无法产出原创谱，需退化为通用爵士 bed，会削弱「音乐就是情节」这一核心。
 
 ### 能力限制
 - 灯泡招牌由字形骨架生成，曲线字形（G/S/R）在 Zhang–Suen 细化后会出现阶梯像素，必须用**交叉数**判链并把链端在 ~14px 内焊合（`STYLE.md:89`）。
-- 纯黑底上的金点会触发 `blackdetect`，必须把背景太阳纹楔形与辉光抬亮（`DEMO.md:93`）。
+- 纯黑底上的金点会触发 `blackdetect`，必须把背景太阳纹楔形与辉光抬亮（`DEMO.md:95`）。
 - 鱼鳞母题易读成砖墙，必须逐行下移半圆、叠压上一行、再加内弧（`STYLE.md:91`）。
 
 ### 踩过的坑（本机实测）
-- 三位 hex 会把祖母绿扇子渲成蓝紫（`DEMO.md:95`）。
-- 门扇压在「平涂内景」上会读成空白帧——现在只画门扇、合在实时画面上（`DEMO.md:92`）。
+- 三位 hex 会把祖母绿扇子渲成蓝紫（`DEMO.md:97`）。
+- 门扇压在「平涂内景」上会读成空白帧——现在只画门扇、合在实时画面上（`DEMO.md:94`）。
 - 时期喇叭失真过重时「five minutes to midnight」在整混里听不清，已降低 drive（`DEMO.md:51`）。
 
 ### 下次迭代优先补什么
