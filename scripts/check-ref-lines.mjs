@@ -145,6 +145,81 @@
  *   ★ **快照性**：审计给的例子（`art-deco/SKILL.md:84` 引 `style-dna/art-deco.md:16`）在本轮跑时
  *     **已被另一个智能体改成 `:41`**（现指向真内容）⇒ 语料在动，本清单是**某一时刻的快照**，不是永久名单。
  *
+ * ── ★★ 2026-10-07 扩扫描范围：纳入 `lib/style-skills/<slug>/_distill.json` ──────────────
+ *   **盲区**：`DOCS` 此前**只含 `.md`**，而 `_distill.json` 的 `defects` / `resolvedDefects` /
+ *   `limits` / `assetGaps` 文本里**确实有**同样的 `` `<路径>:<行号>` `` 引用
+ *   ⇒ 那些引用**没有任何闸门在管**（`.json` 里的引用此前是**零覆盖**）。
+ *
+ *   **实测（纳入前 → 纳入后，同一台机同一时刻）**：文档 **137 → 180** 份；引用 **3796 → 3813**
+ *   （**+17**）；解析到文件 **3561 → 3575**（+14）；进入 (c) **38 → 41**（+3）；
+ *   logs 豁免 **229 → 232**（+3）；**FAIL 0 → 0**。
+ *   ⇒ 新增 17 处**全部通过 (a)(b)(d)**；逐条人工核对 **14 条有效 / 2 条真失效（弱）**
+ *   （见下「`_distill.json` 命中清单」）⇒ **本次纳入的误报率 0**（0 命中即 0 误报）。
+ *
+ *   ★★ **判据口径：按「JSON 解析出的字符串值」判，不按「文件物理行」—— 但实测两者等价，
+ *   故实现上不改主循环（仍按物理行扫）。** 理由：
+ *     ① **语义单位**：一条 defect 是**一个完整段落**；JSON 里换行写作**转义的 `\n`（两个字符）**，
+ *        所以「文件物理行」是**序列化产物**，与作者写的段落不是一回事（一条 defect 若跨物理行，
+ *        物理行口径会把它的引用归到**错的出处行**上）。
+ *     ② **实测等价**：43 份 `_distill.json` 共 **2510** 个字符串值，**每一个都完整落在单个物理行内**
+ *        （`JSON.stringify(…, 2)` 把 `\n` 转义 ⇒ **1 值 = 1 物理行**）；用「解析值」口径与「物理行」
+ *        口径跑出来的引用集合**逐条相同（17 = 17，出处与内容全一致）**。
+ *     ③ ⇒ **不为 JSON 写第二套解析器**：那是**新增的复杂度**，且会让 JSON 的判据与 `.md` 的判据
+ *        **分叉**（本闸门的价值恰恰在于「一处判据、全语料同口径」）。
+ *     ★ **已知取舍**：若将来某份 `_distill.json` 被压成一行（或多行混排），物理行口径下
+ *       `where` 报的出处行号会**不再等于**那一条 defect 所在行 —— 但**四条判据本身**全部作用在
+ *       **被引的外部文件**上，**不受影响**，只是「出处」列的可读性下降。
+ *
+ *   ★★ **为什么 (a)(b)(c)(d) 对 `.json` 照样适用**：`_distill.json` 里的引用**目标是别的文件**
+ *   （`.mjs` / `.js` / `.md` / `.txt`），**不是 JSON 自己** ⇒ 四条判据全部作用在**被引的外部文件**上：
+ *   (a) 那个文件在不在、(b) 行号在不在它范围内、(d) 它那一行有没有内容、
+ *   (c) 小句里的高置信片段在不在它那一行。与「引用写在 `.md` 还是 `.json` 里」**无关**。
+ *   ★ `.json` 唯一的特有差异是**转义**（`\n` / `\\` / `\"`）—— 但**反引号不是 JSON 的转义字符**，
+ *   所以 `` `<路径>:<行号>` `` 在 JSON 里**原样存在、无需反转义**（实测 17 处全是这种原样形态）。
+ *
+ *   ★★ **裸引用（不加反引号）明确不纳入 —— 先测再定，实测否决**：
+ *   `_distill.json` 里还有 **390 处**「不带反引号的 `<路径>:<行号>`」（如 `sfx.py:9`、`mux.sh:115`）。
+ *   按 (a)(b)(d) 判 ⇒ 命中 **3** 处，逐条核对 **误报 2/3（精度 ≈ 33%）**：
+ *     ① `hd-2d/_distill.json` 的 `D:/lemo-tools/scripts/unblock-placeholder-audio.mjs:52`
+ *        ⇒ 探针正则把盘符 `D:` 当分隔符吃掉 ⇒ **假 (a)**（真文件、真行号 `:52`，**该引用是有效的**）；
+ *     ② `scifi-toon/_distill.json` 的 `sfx.py:9` ⇒ 判 (a) FAIL，而 `core/audio/sfx.py:9`
+ *        **确实存在、且第 9 行正是它引的那句注释** ⇒ 这是**已知局限**（按文件名不搜 `core/`）的**误报**；
+ *     ③ `pictogram-motion/_distill.json` 的 `mux.sh:115` ⇒ 解析到**同名的错文件**
+ *        （`styles/pictogram-motion/demo/mux.sh`，22 行），而**不是**同一小句自己写明的
+ *        `core/render/mux.sh` ⇒ 判 FAIL 的**理由与落点都是错的**
+ *        （虽然那条引用**真的**漂了：`noise=c0s` 在 `core/render/mux.sh:173`）。
+ *   ⇒ 失败是**判据结构性**的：裸引用拿不到「同小句路径感知」（`siblingPaths` **只收反引号片段**），
+ *     所以 ③ 这类「小句里写了全路径、引用本身只写 basename」必然解析到错文件。
+ *     ⇒ **不纳入**。★ 正确修法是**让引用带反引号**（或先给裸引用补上路径感知）—— **那是另一件事**。
+ *     ★ 这也**纠正**了任务书举的那一例：**`hd-2d` 那条根本不是反引号引用**，所以**本次改动管不到它**
+ *     （它至今仍是盲区，且**现在已经是对的 `:52`**，没有真失效可修）；而这个盲区**在 `.md` 里同样存在**
+ *     （见下「已知局限」第 2 条：解析器只认反引号包裹的引用）。
+ *
+ * ── ★★ `_distill.json` 命中清单（2026-10-07 快照，**逐条人读**）────────────────────────
+ *   ★ 这 17 处引用**全部通过 (a)(b)(d)**（闸门 0 FAIL）。下面是我**人工读「内容对不对」**的结论 ——
+ *     (c) 只在其中 3 处生效（且都通过），剩下 11 处的「内容对不对」本闸门**本来就看不见**（见已知局限）。
+ *   · **有效 12 条**：`cel-anime-80s` 的 `demo/bg.js:46`（夜景三色 `#2a1f4a`/`#1f2446`/`#34203f` 都在该行）、
+ *     `demo/hud.js:25,27`（`:25` = `strokeStyle='#120a1e'`+`lineWidth=9`、`:27` = `fillStyle='#fff0a0'`）；
+ *     `hd-2d` 的 `harbor.js:14`（`sky({top:'#050818', mid:'#101d3e', hor:'#2c4262'})`）、
+ *     `DEMO.md:52`（同三色）、`cliff.js:161`（`PointLight('#fff0c8')` = 正文说的「灯光色」）；
+ *     `pixel-rpg` 的 `STYLE.md:74`（`−14 LUFS, grain 0`）、`DEMO.md:60`（`Mix to −14 LUFS`）；
+ *     `stained-glass` 的 `demo/test.js:9`（`S.fillStyle='#2a2a2e'`）、`glass.js:7`（`cobalt: '#1d3a9c'`）、
+ *     `window.js:45`（采石格默认 `COL.cobalt`）、`STYLE.md:33,39`（`:39` = `cobalt ground`）、
+ *     `DEMO.md:74`（`cobalt \`#1d3a9c\` (dominant)`）。
+ *   · **真失效（弱）2 条** ★ **已报未改**（按任务约定不动 `_distill.json`；改它要过 `check-skill-scores`，另事）：
+ *     ① `hd-2d/_distill.json` 引 `ui.js:81`，正文拿它当 `#f6f0e2`（纸白）的**依据**；而 `ui.js:81` 是
+ *        `function subtitle(t, v) {` —— 色值 `#f6f0e2` 在 **第 88 行**（同一函数体内，差 7 行）
+ *        ⇒ 读者在 81 行**看不到那个色值**。(d) 抓不到（81 行**有内容**）、(c) 未生效
+ *        （该小句里只有引用自身，没有高置信片段）⇒ **本闸门看不见**（与 (d) 清单 ⑪ 同形）。
+ *     ② `cel-anime-80s/_distill.json` 引 `demo/bg.js:4`，正文写「accent `#ff4fa8`（霓虹洋红，
+ *        `demo/bg.js:4` NEON[0]）」；而 `bg.js:4` 是 `export const NEON = ['#ff3fa4', …]`
+ *        ⇒ **`NEON[0]` 是 `#ff3fa4`，不是 `#ff4fa8`**（`#ff4fa8` 在 `bg.js` 的 **48/122/201** 行）
+ *        ⇒ 引用**位置**（NEON 数组）对，但正文的**取值与出处标注与源码不符**。
+ *        (c) 抓不到：`#ff4fa8` 与引用**不在同一小句**（中间隔着 `（霓虹洋红，`）。
+ *   · **未纳入但顺手记下的裸引用真失效 3 条**（★ 只是**报告**，本闸门**不管**它们）：
+ *     `pictogram-motion/_distill.json` 的 `core/render/mux.sh:23`（`GR="${5:-2}"` 实在 **36** 行）、
+ *     `mux.sh:115`（`noise=c0s` 实在 **173** 行）、`demo/mux.sh:12`（`noise=c0s=4` 实在 **19** 行）。
+ *
  * ── ★ 豁免（只列 backlog、**不判 FAIL**）──────────────────────────────────────
  *   路径匹配 `(^|/)logs?/` 或 `.log$` 的引用 —— 运行期产物：`_distill/logs/*.log` 在**两个仓都被
  *   `.gitignore` 排除**（实测 `git check-ignore` 命中 `*.log` / `_distill/*`），**不随仓库分发**，
@@ -176,8 +251,15 @@
  * ── 已知局限 ────────────────────────────────────────────────────────────────
  *   · **(c) 覆盖面窄**：真实语料 3652 处引用里只有 **37 处**落在 (c) 的判据内 —— 因为多数引用
  *     的小句里根本没有「高置信代码片段」（只有别的引用、路径、slug 或散文）。**这是有意的取舍**：
+ *     ★ 2026-10-07 纳入 `.json` 后的同口径数字：**3813 处 / 41 处**（占比同样 ≈1%）。
  *     宁可少判、不可乱报。(c) **不是**「所有引用都比对内容」。
  *   · 启发式（非 AST）：解析器只认**反引号包裹**的引用；写在正文里不加反引号的 `foo.js:12` **看不见**。
+ *     ★ 2026-10-07 实测：`_distill.json` 里这类**裸引用有 390 处**（是**反引号引用 17 处**的 23 倍），
+ *     **明确不纳入**（按 (a)(b)(d) 判得 3 命中 / **误报 2**，见上「扩扫描范围」段的实测）——
+ *     即本次纳入只覆盖该语料的**一小部分**引用，别把「`_distill.json` 已纳入」读成「它的引用全被管住」。
+ *   · ★ **`.json` 的出处行号口径**：`_distill.json` 按**物理行**扫（与 `.md` 同口径），
+ *     靠「`JSON.stringify` 把 `\n` 转义 ⇒ 1 字符串值 = 1 物理行」保证与「按字符串值判」等价（实测 2510/2510）。
+ *     若该文件被压成一行，`where` 的行号会失真（**判据不受影响**，见上）。
  *   · **多义引用**（非风格级文档里的 `demo/test.js:9`）**不判 FAIL**，只列出 —— 需要人读上下文。
  *   · 风格源码树里**被重构成多模块**的老文档（实测 `ascii-crt` / `one-line` / `scifi-toon` 等
  *     把 `main.js` 拆成了若干模块）会报大量「行号超范围」：那是**真失效**，但**修法是重写引用**，
@@ -214,6 +296,8 @@ const DISTILL = path.resolve(process.env.LEMO_DISTILL_ROOT || path.join(ROOT, 'l
 const LIST_BACKLOG = process.argv.includes('--list-backlog');
 
 // ── 扫描范围（★ 显式列表，不用「全仓 md」那种会拖进噪声的 glob）─────────────
+//   ★ 2026-10-07：除 `.md` 外**再纳入 `lib/style-skills/<slug>/_distill.json`** ——
+//     它是**唯一**没被任何闸门管着的 `<路径>:<行号>` 引用宿主（见头注释「扩扫描范围」段）。
 const styleSlugs = (() => {
   try { return fs.readdirSync(STYLES, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); }
   catch { return []; }
@@ -226,6 +310,9 @@ const DOCS = [
   path.join(ROOT, 'test', 'README.md'),
   path.join(ROOT, '_distill', 'AGENT-BRIEF.md'),
   ...skillSlugs.map((s) => path.join(DISTILL, s, 'SKILL.md')),
+  // ★ 2026-10-07：`_distill.json` 的 defects / resolvedDefects / limits … 里**确实有**同样的
+  //   `` `<路径>:<行号>` `` 引用，而它此前**完全不在扫描范围内**（实测新增 17 处，见头注释）。
+  ...skillSlugs.map((s) => path.join(DISTILL, s, '_distill.json')),
   path.join(OPUSCAR, 'MAINTAINING.md'),
   path.join(OPUSCAR, 'TECHNIQUE.md'),
   path.join(OPUSCAR, 'core', 'README.md'),
@@ -518,7 +605,7 @@ if (refCount > 0 && resolvedCount === 0) blind.push(`找到 ${refCount} 处引�
 const byKind = (k) => fails.filter((f) => f.kind.startsWith(k));
 console.log('散文里的 `<路径>:<行号>` 引用闸门\n');
 console.log(`扫描：${DOCS.length} 份文档（test/README.md、_distill/AGENT-BRIEF.md、${skillSlugs.length} 份 SKILL.md、`);
-console.log(`      MAINTAINING/TECHNIQUE/core/README、${styleSlugs.length}×2 份 STYLE|DEMO.md）`);
+console.log(`      ${DOCS.filter((p) => p.endsWith('_distill.json')).length} 份 _distill.json、MAINTAINING/TECHNIQUE/core/README、${styleSlugs.length}×2 份 STYLE|DEMO.md）`);
 console.log(`引用：${refCount} 处；解析到文件 ${resolvedCount} 处；其中 ${cApplied} 处进入 (c) 内容比对\n`);
 
 const SHOW = { '(a)': '(a) 文件不存在', '(b)': '(b) 行号超范围', '(c)': '(c) 内容对不上', '(d)': '(d) 被引行没有内容（空行/分隔线/围栏/幻影行）' };

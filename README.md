@@ -207,26 +207,28 @@ lemo-make.bat --help
 ## 编排器与 `build.sh` 的差异清单
 
 编排器**不是** `build.sh` 的逐行复刻 —— 它按**候选清单探测** demo 自带的脚本（`for c in …; do [ -f ] && break; done`）。
-因此**有些 `build.sh` 步骤编排器不跑**。这张表如实登记（2026-10-06 逐条核对 `styles/*/demo/build.sh`），
-并说明各自影响。★ 影响分三级：**成片内容**（不跑 ⇒ 成片内容与 `build.sh` 不一致）/ **只影响交付图**
-（成片本身不变，`poster.jpg`、`stills/*.jpg` 会陈旧）/ **纯自检**（不跑只是少一道校验，成片一字不变）。
+因此**有些 `build.sh` 步骤编排器不跑**。这张表如实登记（2026-10-06 首核，2026-10-07 复核），
+并说明各自影响。★ 影响分四级：**成片内容**（不跑 ⇒ 成片内容与 `build.sh` 不一致）/ **只影响交付图**
+（成片本身不变，`poster.jpg`、`stills/*.jpg` 会陈旧）/ **纯自检**（不跑只是少一道校验，成片一字不变）/
+**已核实无差异**（确定性生成物，不跑与跑逐字节相同）。
 
 | 步骤（相对 `demo/`，`core/` 的相对库根） | 影响 | 涉及的风格 | 说明 |
 |---|---|---|---|
 | `tools/pitch.py` | **成片内容** | art-deco | ★ **已修（2026-10-06）**：编排器**现在会跑它**（原先漏跑 ⇒ 门童两句 +4 半音静默丢失）。列在此处只为标记「这一类缺口确实存在过」 |
-| `tools/trim_cmd.py` | **成片内容** | microgame | 裁剪人声 wav |
-| `tools/export_cues.mjs` | **成片内容** | urban-sketch | 导出 cues（画面 / 字幕的时间窗） |
-| `tools/words.py` | **成片内容** | dataviz / swiss-motion | 生成词级时间轴 `words.json`（逐词高亮） |
-| `tools/video_png.mjs` | **成片内容** | risograph | 导出逐帧 PNG |
-| `models/gen_volt.mjs` + `models/gen_kite.mjs` | **成片内容** | hologram-hud | 生成 volt / kite 素材 |
-| `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变） |
+| `tools/trim_cmd.py` | **成片内容** | microgame | ★ **已修（2026-10-07）**：编排器**现在会跑它**（原先漏跑 ⇒ 4 个命令词带元音尾巴、`dur.json` 停在未裁剪时长）。位置同 `pitch.py`：配音之后、ASR / 回传之前 |
+| `tools/export_cues.mjs` | **成片内容** | urban-sketch | ★ **已修（2026-10-07）**：编排器**现在会跑它**（Windows 侧 `exportEventsAndSubs()` 第 ①-b 步，产物 `audio/cues.json` 回传 WSL 供 `audio/foley.py` 直读）。原先漏跑 ⇒ 拟音按旧画面笔画/轨迹排 |
+| `tools/words.py` | **成片内容** | dataviz / swiss-motion | ★ **已修（2026-10-07）**：编排器**现在会跑它**（`asr_check.py` 之后、`VOICE_DONE` 之前；产物 `voices/words_rel.json` 由页面 `main.js` 直读驱动逐词高亮）。原先漏跑 ⇒ 逐词时间轴陈旧 5~6 天 |
+| `tools/video_png.mjs` | **成片内容** | risograph | ★ **未修（有意）**：它是**换渲染器**（PNG 无损中间片）而非追加一步，且**不接受 `--size`** ⇒ 直接接上会静默丢画幅。实现方案见本节末尾 |
+| `models/gen_volt.mjs` + `models/gen_kite.mjs` | 已核实**无差异** | hologram-hud | 生成 volt / kite 素材。2026-10-07 实测重跑产物与入库版**逐字节相同**（md5 volt `b25a8e24…` / kite `9f1badb7…`）⇒ 确定性生成物，**不跑与跑无差异**，故不为它改编排器 |
+| `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变）。2026-10-07 已量化（见下） |
 | `tools/still.mjs` | 只影响交付图 | rubber-hose | 同上 |
 | `tools/cuecheck.py` | 纯自检 | 12 个：art-deco / dark-keynote / dataviz / engraving / hologram-hud / iso-infographic / microgame / midcentury-toon / silent-film / silkscreen-poster / whiteboard / woodcut | 配乐卡点 ↔ 画面时间网格自检 |
 | `tools/final_asr.py` | 纯自检 | 6 个：dark-keynote / hologram-hud / iso-infographic / microgame / rubber-hose / woodcut | 成片终检（ASR 比对） |
 | `check_mix.py`（`demo/` 或 `demo/tools/`） | 纯自检 | 2 个：blueprint / glass-product | 混音自检 |
 
 **这些差异是机器可检的**（2026-10-06 起）：`lemo-make.mjs` 的 `ORCH_SKIP_STEPS` 登记表 + `reportOrchSkipSteps()`，
-会在**起飞前检查**里按上表报出本 demo 命中的步骤（`★ 影响成片内容` / `○ 只影响交付图` / `· 仅少一道自检`）。
+会在**起飞前检查**里按上表报出本 demo 命中的步骤（`★ 影响成片内容` / `○ 只影响交付图` /
+`· 仅少一道自检` / `· 已核实：不跑与跑无差异`）。
 **只提示、绝不阻断**（不 fail、不改退出码），且**不依赖** `demo-manifest-all.json` —— 声明缺失/损坏时照样有效
 （这补的正是「声明里 `assets_required` 多为空 ⇒ 漏跑的步骤根本不出现在任何报告里」那个**全静默**盲区）。
 用 `--no-preflight` 可整块关掉。
@@ -234,7 +236,72 @@ lemo-make.bat --help
 ★ **为什么这些不写进 `orchestratorRuns()` 的 `runs[]`**：`runs[]` 的语义是「编排器本次**会执行**它」
 （它是音频脚本与「第 3 步」候选循环的镜像），把**不执行**的步骤写进去会让起飞前检查把它们当成「会跑」而
 **静默** —— 与「让缺口可见」正好相反。所以单列一张登记表，报之前再核「脚本真在本 demo 里」**且**
-「`orchestratorRuns()` 确实返回 false」，于是将来某一步被编排器补上时它会**自动**不再报（`pitch.py` 就是第一例）。
+「`orchestratorRuns()` 确实返回 false」，于是将来某一步被编排器补上时它会**自动**不再报
+（`pitch.py` 是第一例；2026-10-07 补进编排器的 `trim_cmd.py` / `export_cues.mjs` / `words.py` 是第二、三、四例，
+它们已从登记表里**移除**，`runs[]` 镜像则同步**加入**）。
+
+★ **`tools/video_png.mjs`（risograph）为什么不接 —— 以及真要接该怎么做**：
+它在 `build.sh:12` **替换** `core/render/video.mjs`：
+`node $D/tools/video_png.mjs $D --fps 24 --workers 3 --out $D/out/video24.mp4`。
+它用 **PNG 截图 + `yuv444p` 无损中间片**（`video.mjs` 用 JPEG q95 + `yuv420p`），画质不同、耗时更长。
+问题在于它的参数解析（`video_png.mjs:15-20`）**只认 `--fps / --workers / --q / --out / --from / --to`，
+不接受 `--size`**，而编排器的渲染行是硬编码的 `core/render/video.mjs` + `--size WxH` +
+`--out out/video_gpu.mp4` ⇒ 若只是「把 `renderVArgs` 换成 `video_png.mjs`」，`--size` 会被**静默丢掉**、
+画幅不对（9:16 尤其明显）；且它默认输出名是 `out/video24.mp4`（`build.sh:12`），
+与编排器下游要读的 `out/video_gpu.mp4` **对不上**（`mux.sh` 会找不到输入）。
+**真要接**需要三步（本轮**未做**，因为要动 `D:/lemo-opuscar` 的脚本，超出本次允许改动的范围）：
+① 给 `video_png.mjs` 补 `--size`（照 `core/render/video.mjs` 的 `takeSize` 语义接上 viewport）；
+② 在编排器里把它做成**替换**而不是追加（探测 `$D/tools/video_png.mjs` 存在时改走它）；
+③ 补一条「替换后仍要产出 `out/video_gpu.mp4`」的断言（或显式把 `--out` 指到 `video_gpu.mp4`）。
+在此之前，**它仍留在登记表里**（`impact: content`），
+让缺口保持可见 —— 要逐字节复现 risograph 的 `build.sh`，请直接跑它自带的 `build.sh`。
+
+★ **静帧（`core/render/still.mjs`）陈旧度已量化（2026-10-07）**：只影响交付图，**成片不变**，故不为它加
+编排器步骤（风险高、收益低）。实测做法与结论如下（原始数据见 `D:/lemo-tmp/agent-orchgap/`）：
+
+- **方法**：对 **7 个**风格各按它**自己 `build.sh` 里那条产出 `stills/styleframe.jpg` 的原始命令**
+  （`t` 与 `--q` 逐字照抄）重渲一张到临时目录，与已入库的那张做逐像素比对。
+  样本：`stained-glass`(40.6, nosub=1) · `art-deco`(41.9, nosub=1) · `microgame`(50.2, nosub=1) ·
+  `dataviz`(37.62, nosub=1) · `risograph`(28.8, nosub=1) · `ascii-crt`(39.4, nosub=1) ·
+  `blueprint`(31.0, nosub)。
+- **三条对照（必须先做，否则结论不成立）**：① **渲染器确定性** —— 同一条命令独立跑两遍，**7/7 逐字节相同**
+  （后来又补跑一遍 3/3 亦逐字节相同）⇒ 后面量到的差异不是渲染抖动；② **`voices/` 混淆项** —— Windows 侧这几个
+  demo 大多没有 `voices/`（渲染页 `fetch('voices/dur.json')` 404），把当前 `voices/` 临时补进去再渲，
+  **7/7 仍逐字节相同** ⇒ 差异与 `voices/` 无关（这些 `--q` 都带 `nosub`，字幕本来就关着）；
+  ③ **光栅化后端（关键对照）** —— 把同一帧在 `LEMO_GPU=0`（软件光栅化，`core/render/browser.mjs:12-14`
+  就不传 `--enable-gpu`）下重渲，与 `LEMO_GPU=1`（默认，ANGLE/D3D11）**逐字节不同**，且差的**量级与
+  「新渲 vs 已入库」完全同级**：
+
+  | 风格 | 新渲(GPU开) vs 已入库 | GPU 开 vs GPU 关（**只换后端、源码一字未改**） |
+  |---|---|---|
+  | stained-glass | 1.965 / 5.47% | **2.314 / 6.61%** |
+  | microgame | 2.722 / 9.82% | **2.496 / 10.19%** |
+  | dataviz | 0.876 / 1.53% | **0.894 / 0.75%** |
+
+  ⇒ 即「**什么都没改、只换光栅化后端**」就能造出与 A/B 同量级（stained-glass、microgame 甚至更大）的差异。
+- **量化结果**（新渲 vs 已入库）：
+
+  | 风格 | 平均绝对差 /255 | 像素差 >8/255 | >32/255 | 最大通道差 |
+  |---|---|---|---|---|
+  | stained-glass | 1.965 | 5.47% | 0.07% | 149 |
+  | art-deco | 1.807 | 4.11% | **1.64%** | 161 |
+  | microgame | 2.722 | **9.82%** | 0.83% | 220 |
+  | dataviz | 0.876 | 1.53% | 0.38% | 197 |
+  | risograph | 1.216 | 2.48% | 0.13% | 172 |
+  | ascii-crt | 1.989 | 6.43% | 0.47% | 133 |
+  | blueprint | 0.943 | 2.50% | 0.28% | 143 |
+
+- **结论（如实说明，与直觉相反）**：**7/7 都与已入库的不一致**，但**逐张目视核对后，画面内容是一致的**
+  —— 同一构图、同一文字、同一姿态、同一组数据；差异**集中在光栅化层**（`microgame` 的天空半调网点相位、
+  `dataviz` 的标题字渲染、`art-deco` 的辉光/边缘、`stained-glass` 的整体曝光），且差异分布是**局部集中**
+  而非全画面均匀薄层。结合对照 ③，这批差异**不足以判定「交付图内容陈旧」**：其量级可被「仅切换光栅化后端」
+  完全解释（最可能是 headless-shell / GPU 驱动或 `core/render/browser.mjs` 的启动参数在这批图生成之后变过；
+  本闸门**无从区分**「源码变了」与「渲染器/驱动变了」）。因此只能下**较弱但确定**的结论：
+  「**已入库的交付图在当前渲染管线下不可逐字节复现**」，**不能**说它们与当前源码不一致。
+  ⇒ 处置：**不为它加编排器步骤**；但若你要求交付图与当前源码**逐字节**一致，请重跑各 demo 自己的
+  `build.sh`（或手动跑那条 `still.mjs` 命令）。★ `hd-2d` **不在这 7 个里**：它没有 `build.sh`、
+  `DEMO.md` 里也没有产出 `stills/styleframe.jpg` 的那条命令 ⇒ **无法复现、也就无法比对**（它的
+  `stills/styleframe.jpg` 缺可追溯的生成命令，这本身是一条值得记的缺口）。
 
 ★ **不要拿 `demo-manifest-all.json` 的 `steps` 字段自动比**：编排器**直接调用**的 `core/` 脚本
 （`core/render/events.mjs`、`srt.py`、`video.mjs`、`mux.sh`、`core/tts/tts.py` …）都不在 `runs[]` 镜像里

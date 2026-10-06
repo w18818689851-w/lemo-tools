@@ -202,7 +202,39 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     补的正是「声明里 assets_required 多为空 ⇒ 漏跑静默」那个盲区。
 //     这是**有意改编排器**（补一个真缺口 + 让同类缺口可见，不削弱任何校验），基线值随之更新
 //     （红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = 'caab495c8104130732266e5d1bf2db8b';
+//   2026-10-07 更新：**补上三个「build.sh 有、编排器漏跑、且影响成片内容」的步骤**（逐条核实确证）。
+//     (a) `tools/trim_cmd.py`（全库仅 microgame）—— 音频链「配音」段内、`voices/*.wav` 非空校验与
+//         pitch.py **之后**、ASR / 回传 Windows **之前**新增一步候选探测（照 pitch.py 同一个形状，
+//         **不写死 slug**）。它按 lines.json 的 `trim` 字段裁掉命令词首尾多余的词（Kokoro 念单个词
+//         会带元音尾巴：Pump → "Pompey"），**改写三样**：裁剪后的 wav、`voices/dur.json`（时长变短）、
+//         `lines.json.asr.json`。位置硬约束同 pitch.py：dur.json 是「配音 → 回传 → 渲染」的时序判据，
+//         且必须落在 LEMO_SKIP_VOICE 块之内（否则 'rest' 相位会二次裁剪）。
+//         附带把 ASR 的**输入行文件**换成 `$D/lines.json.asr.json`（**仅当本步真跑过**）—— microgame
+//         的 build.sh 用的就是它；拿原始 lines.json 去比会把「已裁到只剩 Pump」的音频和「Pump, now!」
+//         比 ⇒ 4 条假 DIFF。words.json 本身与 asr 字段无关，故这条只影响校对措辞。
+//     (b) `tools/export_cues.mjs`（全库仅 urban-sketch）—— Windows 侧 `exportEventsAndSubs()` 的
+//         第 ①-b 步（紧跟 events.mjs，与 build.sh 同序）：开页面读 window.STROKES/TRACK()/EV/DUR，
+//         写 `demo/audio/cues.json`，那是 WSL 侧 `audio/foley.py:12` 的**直读输入**（决定拟音轨的
+//         全部时间与声像）。它**开页面 ⇒ 只能在 Windows 侧跑**，产物必须显式回传 WSL —— 已把
+//         `${demoRel}/audio/cues.json` 加进回传清单。失败 `fail()`（不静默）。
+//     (c) `tools/words.py`（全库仅 dataviz / swiss-motion）—— 音频链内、`asr_check.py` **之后**、
+//         `VOICE_DONE` / 回传之前：读 lines.json + `voices/words.json`（asr_check 刚写的那份），
+//         按字符位置比例把 whisper 词起点映射到原文单词上，写 `voices/words_rel.json` —— 两个风格的
+//         页面 main.js 直读它驱动字幕**逐词出现**。实测陈旧证据：WSL 侧 words_rel.json 停在 9/30，
+//         而 words.json 已是 10/6（dataviz）/ 10/5（swiss-motion）⇒ 编排器从未跑过它。
+//         只在 ASR **真跑了**的分支里跑；跳 ASR 时 `words_rel.json` 与 `words.json` **一并**从回传
+//         清单里剔除（同源派生，同一个「不刷新 mtime、避免伪装成新的旧文件」理由）。
+//     ★ 同步改了 orchestratorRuns() 的 runs[] 镜像（加入这三个脚本路径），否则起飞前检查会把它们
+//       继续报成「编排器漏跑」；同时从 `ORCH_SKIP_STEPS` 登记表里**移除**这三条（它们已被编排器跑）。
+//     ★ 另两条**判断为不改编排器**（如实登记，不硬做）：
+//        · `tools/video_png.mjs`（risograph）是**换渲染器**（PNG 无损中间片）而非追加一步，且它
+//          **不接受 --size**（编排器渲染行硬编码 core/render/video.mjs + --size）⇒ 直接接上会静默
+//          丢画幅。风险过高，本轮不接，仍留在登记表里（impact: content）+ README 给实现方案。
+//        · `models/gen_volt.mjs` / `gen_kite.mjs`（hologram-hud）：重跑产物与入库版**逐字节相同**
+//          （实测 md5 一致）⇒ 不跑无差异，登记表 impact 由 content 降为新增的 `none` 档。
+//     这是**有意改编排器**（补三个真缺口 + 如实降级一条误报，不削弱任何校验），基线值随之更新
+//     （红线本身保留，见 test/README.md 那张表）。
+export const ORCH_MD5 = '58e2bcbae682b4167444f0dd66445771';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

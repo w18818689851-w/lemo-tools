@@ -500,6 +500,12 @@ function orchestratorRuns(slug, demoRel, script) {
     // ★ 2026-10-06 补：变调后处理 pitch.py（音频脚本里「配音之后、ASR/回传之前」新增的那一步）。
     //   镜像必须同步改，否则起飞前检查会把「art-deco 的 pitch.py」继续报成「编排器漏跑」。
     `${d}/tools/pitch.py`,
+    // ★ 2026-10-07 补：三个「build.sh 有、旧编排器漏跑、且**影响成片内容**」的步骤。镜像必须同步，
+    //   否则起飞前检查会把它们继续报成「编排器漏跑」（ORCH_SKIP_STEPS 里已不再登记它们）：
+    //     trim_cmd.py       —— 音频脚本「配音之后、ASR 之前」（裁人声 wav，改写 dur.json）
+    //     export_cues.mjs   —— Windows 侧 exportEventsAndSubs() 第 ①-b 步（写 audio/cues.json）
+    //     words.py          —— 音频脚本「asr_check.py 之后」（派生 voices/words_rel.json）
+    `${d}/tools/trim_cmd.py`, `${d}/tools/export_cues.mjs`, `${d}/tools/words.py`,
   ];
   // TTS 是**两条互斥的后端**，编排器一次只跑一条（这里是 audioScript 配音段的镜像）：
   //   ① $D/lines.json 存在 → core/tts/tts.py（读 demo 根下的 lines.json，写 voices[_raw]/）；
@@ -537,21 +543,25 @@ function orchestratorRuns(slug, demoRel, script) {
  * ★ impact 只决定**措辞**，不决定「报不报」：
  *   'content'  —— 改**成片内容**（音频波形 / 时间轴 / 画面），不跑 = 成片内容与 build.sh 不符；
  *   'delivery' —— 只改**交付图**（poster / styleframe 等静帧），不跑 = 交付图陈旧、成片本身不变；
- *   'selfcheck'—— **纯自检**，不跑 = 少一道校验，成片一字不变。
+ *   'selfcheck'—— **纯自检**，不跑 = 少一道校验，成片一字不变；
+ *   'none'     —— 已**实测核实**「不跑与跑逐字节无差异」（确定性生成物），保留登记只为让
+ *                 「build.sh 有、编排器不跑」这件事本身可见，不构成缺口。
  * ★ 本表是**候选**：报之前还要核两件事 —— ① 该脚本真在本 demo 里；② 编排器本次确实不跑它
  *   （走 orchestratorRuns）⇒ 将来某一步被编排器补上时，这里会**自动**不再报，不用改表。
- *   （pitch.py 就是第一例：它已在 2026-10-06 被补进编排器，因此本表**不登记它**。）
+ *   （pitch.py 就是第一例：它已在 2026-10-06 被补进编排器，因此本表**不登记它**。
+ *     trim_cmd.py / export_cues.mjs / words.py 是 2026-10-07 的第二、三、四例，同样已从本表移除。）
  * ★ root='demo' 的 rel 相对 demo 目录（tools/xxx.py）；root='lib' 的 rel 相对库根（core/…）。
  *   两者都按「相对库根」拼出来核存在性 ⇒ **不写死任何 slug**。
  */
 const ORCH_SKIP_STEPS = [
   // ── 内容有影响（不跑 ⇒ 成片内容与 build.sh 不符）──
-  { rel: 'tools/trim_cmd.py',     root: 'demo', impact: 'content', what: '裁剪人声 wav（改人声内容）' },
-  { rel: 'tools/export_cues.mjs', root: 'demo', impact: 'content', what: '导出 cues（改画面 / 字幕的时间窗）' },
-  { rel: 'tools/words.py',        root: 'demo', impact: 'content', what: '生成词级时间轴 words.json（改逐词高亮）' },
-  { rel: 'tools/video_png.mjs',   root: 'demo', impact: 'content', what: '导出逐帧 PNG（改交付内容）' },
-  { rel: 'models/gen_volt.mjs',   root: 'demo', impact: 'content', what: '生成 volt 素材（改画面内容）' },
-  { rel: 'models/gen_kite.mjs',   root: 'demo', impact: 'content', what: '生成 kite 素材（改画面内容）' },
+  // ★ video_png.mjs（risograph）：它**替换**渲染器（PNG 无损中间片），不是「追加一步」——
+  //   编排器的渲染行硬编码 core/render/video.mjs 且带 --size，而它**不接受 --size** ⇒
+  //   直接接上会静默丢画幅。已评估为「风险过高，本轮不接」，详见 D:/lemo-tools/README.md 的差异清单。
+  { rel: 'tools/video_png.mjs',   root: 'demo', impact: 'content', what: '导出逐帧 PNG（**换渲染器**：PNG 无损中间片；编排器不替换，理由见 README）' },
+  // ── 已核实「不跑无差异」（确定性生成物；保留登记只为「build.sh 有、编排器不跑」这件事本身可见）──
+  { rel: 'models/gen_volt.mjs',   root: 'demo', impact: 'none', what: '生成 volt 素材（确定性：重跑产物与入库版逐字节相同，实测 md5 一致）' },
+  { rel: 'models/gen_kite.mjs',   root: 'demo', impact: 'none', what: '生成 kite 素材（确定性：重跑产物与入库版逐字节相同，实测 md5 一致）' },
   // ── 只影响交付图（成片本身不变，poster / styleframe 等会陈旧）──
   { rel: 'core/render/still.mjs', root: 'lib',  impact: 'delivery', what: '出静帧（poster / styleframe 等交付图）' },
   { rel: 'tools/still.mjs',       root: 'demo', impact: 'delivery', what: '出静帧（poster / styleframe 等交付图）' },
@@ -577,12 +587,13 @@ function reportOrchSkipSteps(slug, demoRel) {
     hits.push({ ...s, full });
   }
   if (!hits.length) return;
-  const rank = { content: 0, delivery: 1, selfcheck: 2 };
+  const rank = { content: 0, delivery: 1, selfcheck: 2, none: 3 };
   hits.sort((a, b) => rank[a.impact] - rank[b.impact]);
   console.log(`\n${C.b('[起飞前检查] build.sh 有、编排器不跑的步骤（已登记 · 只提示、不阻断）')}`);
   for (const h of hits) {
     const mark = h.impact === 'content' ? '★ 影响成片内容'
-      : h.impact === 'delivery' ? '○ 只影响交付图' : '· 仅少一道自检';
+      : h.impact === 'delivery' ? '○ 只影响交付图'
+      : h.impact === 'none' ? '· 已核实：不跑与跑无差异' : '· 仅少一道自检';
     warn(`  ${h.full}  —— ${mark}：${h.what}`);
   }
   if (hits.some(h => h.impact === 'content')) {
@@ -1913,6 +1924,29 @@ fi
     info(`events.mjs → ${(evR.stdout || '').trim().split('\n').filter(Boolean).pop() || 'ok'}`);
     artifacts.push(`${demoRel}/events.json`);
 
+    // ①-b 声音设计 cues（urban-sketch 的 tools/export_cues.mjs）★ 2026-10-07 补的缺口。
+    //   build.sh 的顺序是 events.mjs → **export_cues.mjs** → audio/score.py → audio/foley.py，
+    //   与这里同序。它开页面读 window.STROKES / TRACK() / EV / DUR，写 demo/audio/cues.json ——
+    //   那是 WSL 侧 audio/foley.py:12 `json.load(open(os.path.join(D, 'cues.json')))` 的**直读输入**
+    //   （世界笔画时间 / 帽子轨迹速度声像 / 事件），决定了拟音轨的全部时间与声像。
+    //   旧编排器不跑它 ⇒ 拟音按**旧画面**的笔画与轨迹排，而画面已换新内容、退出码 0（无法区分）。
+    //   ⚠️ 必须在**并行段之前**（与 events.mjs 同一个理由：它的消费者在 WSL 侧，产物要先回传）；
+    //      也必须在 mix.py 之前（foley.py 的产物又是 mix.py 的输入）。
+    //   ⚠️ 它**开页面 ⇒ 只能在 Windows 侧跑**，产物落在 Windows 库 ⇒ 必须进 artifacts 显式回传 WSL
+    //      （否则 foley.py 读到 WSL 上那份陈旧 cues.json）。
+    //   ★ 候选探测：全库 43 个风格里只有 urban-sketch 有它；不存在就跳过、不出声。
+    //     无参数调用（与它自己的 build.sh 一致；openDemo 默认 1920x1080）。
+    const cuesRel = `${demoRel}/tools/export_cues.mjs`;
+    if (winHas(cuesRel)) {
+      info(C.dim(`$ node ${cuesRel}`));
+      const cR = await run(process.execPath, [cuesRel], { cwd: CFG.winLib, env });
+      if (cR.code !== 0) {
+        fail(`export_cues.mjs 失败（退出码 ${cR.code}）：${(cR.stderr || '').trim().split('\n').slice(-2).join(' ')}`);
+      }
+      info(`export_cues.mjs → ${(cR.stdout || '').trim().split('\n').filter(Boolean).pop() || 'ok'}`);
+      artifacts.push(`${demoRel}/audio/cues.json`);
+    }
+
     // ② 配乐/混音共用的时间网格。原实现从不跑它 —— impasto 的 music/score.py:9 与 mix.py:9 第一行就
     //    json.load(out/timeline.json)，而 styles/*/demo/out/ 被 .gitignore 排除 → 第 2 步必然 FileNotFoundError。
     //    paper-lantern 用的是自己那套 render/cues.mjs（同一个产物、同一个位置）。
@@ -2368,6 +2402,45 @@ print("  \u2713 voices/dur.json 已按 lines.json 逐条从 wav 重算（%d 条�
     .venv/bin/python "$PITCH" "$D/lines.json" "$D/voices" 2>&1 || { echo "STEP_FAIL $(basename "$PITCH")"; exit 1; }
   fi
 
+  # ── 人声裁剪：trim_cmd.py（按 lines.json 里每行的 trim 字段裁掉首尾多余的词）───────────
+  # ★ 这是本文件修过的**第二个**「build.sh 有、旧编排器漏跑、且**改音频内容**」的缺口
+  #   （2026-10-07 逐条核实确证）：全库 43 个风格里**只有 microgame** 有 tools/trim_cmd.py。
+  #   它解决的问题写在它自己的 docstring 里：「Kokoro 念单个词结尾会带一个元音尾巴」
+  #   （Pump → "Pompey"）。做法：把 lines.json 里带 trim 字段的行（microgame 4 条：
+  #   c_pump / c_catch / c_zip / c_pull）按 whisper 词时间戳只留第一个词、末尾 40ms 淡出。
+  #   它**改写三样东西**（缺一不可，全部影响成片）：
+  #     ① 裁剪后的 wav —— 人声内容本身；
+  #     ② voices/dur.json —— 时长随之变短（渲染页 fetch 它排口播时间窗）；
+  #     ③ lines.json.asr.json —— 把这几行的 asr 期望文本设成那个词（供 asr_check 比对）。
+  #   旧编排器一步都不跑 ⇒ 4 个命令词仍带元音尾巴、dur.json 停在未裁剪的时长，
+  #   而成片照出、退出码 0 —— 与「跑通了」无法区分。
+  # ★ 位置与 pitch.py **同级同约束**（两条都不许动）：
+  #   ① 必须排在**配音之后** —— 它读 TTS 刚写出的 wav 与 dur.json；
+  #   ② 必须排在**回传 Windows / ASR 之前** —— dur.json 是「配音 → 回传 → 渲染」这条时序链的
+  #      判据，回传之后再改就白搭。
+  #   因此同样落在 LEMO_SKIP_VOICE 块**之内**：'rest' 相位（配音已在前置阶段跑过）若再跑一次，
+  #   会二次裁剪已裁过的 wav（把命令词越裁越短）。
+  # ★ 候选探测照本文件既有写法；**不写死 slug** —— 不存在就跳过、不出声（全库只有 microgame 有它）。
+  TRIM=""
+  for c in "$D/tools/trim_cmd.py"; do [ -f "$c" ] && { TRIM="$c"; break; }; done
+  if [ -n "$TRIM" ]; then
+    echo "[配音 裁剪] $(basename "$TRIM")（按 lines.json 的 trim 字段裁首尾多余的词，会改写 wav、dur.json 与 lines.json.asr.json）"
+    # 失败**不静默**：这一步的产物就是音频内容本身，悄悄跳过等于把「命令词带元音尾巴、dur.json 偏长」
+    # 藏起来。与 pitch.py / voice_fx.py 同级处理，也与各 demo build.sh 的 set -e 语义一致。
+    .venv/bin/python "$TRIM" "$D/lines.json" "$D/voices" 2>&1 || { echo "STEP_FAIL $(basename "$TRIM")"; exit 1; }
+  fi
+
+  # ASR 的**输入行文件**也要跟着换：microgame 的 build.sh 那一行是
+  #   .venv/bin/python core/tts/asr_check.py $D/lines.json.asr.json $D/voices
+  # —— 用的是 trim_cmd.py 刚写出的那一份（它把被裁行的 asr 期望文本设成了那个词，"Pump"）。
+  # 拿原始 lines.json 去比，会把「已裁到只剩 Pump」的音频和期望文本「Pump, now!」比 ⇒ 4 条假 DIFF
+  # 刷屏（实测 build.sh 通路没有这 4 条）。words.json 本身与 asr 字段无关（只由转写决定），
+  # 所以这条只影响校对措辞与 asr_check 的退出码，不影响成片。
+  # ★ 只在**本步真跑过**时才改用它：否则一个没有 trim_cmd.py 的 demo 若仓库里躺着一份陈旧的
+  #   lines.json.asr.json，ASR 会拿旧期望文本去核新音频（同一类「陈旧文件伪装成新的」坑）。
+  ASR_LINES="$D/lines.json"
+  if [ -n "$TRIM" ] && [ -f "$D/lines.json.asr.json" ]; then ASR_LINES="$D/lines.json.asr.json"; fi
+
   # ASR 校对只对拉丁语言有意义。离线 Kokoro 的中文音质本身一般，而 asr_check 用的 whisper 小模型
   # 对中文实测 9/9 全部 DIFF（相似度 0.20–0.57）；更要命的是它的 norm 不归一化「十/百/千」，
   # 所以含多位数字的行即使转写正确也会 FAIL ⇒ 中文版只会刷一屏假警告，掩盖真正的失败。
@@ -2409,7 +2482,30 @@ print("1" if L and all(cjk(x.get("lang")) for x in L) else "0")
     echo "ASR_SKIPPED"
   else
     echo "[配音 校对] ASR（失败不致命，只警告）"
-    .venv/bin/python core/tts/asr_check.py "$D/lines.json" "$D/voices" 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"
+    .venv/bin/python core/tts/asr_check.py "$ASR_LINES" "$D/voices" 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"
+
+    # ── 词级时间轴派生：words.py ────────────────────────────────────────────────
+    # ★ 这是本文件修过的**第三个**「build.sh 有、旧编排器漏跑、且**影响成片内容**」的缺口
+    #   （2026-10-07 逐条核实确证）：全库 43 个风格里**只有 dataviz / swiss-motion** 有 tools/words.py。
+    #   它读 lines.json + voices/words.json（**asr_check.py 刚写的那一份**），按字符位置比例把
+    #   whisper 的词起点映射到原文单词上，写 voices/words_rel.json —— 两个风格的页面 main.js
+    #   直读它（dataviz main.js:11 / swiss-motion main.js:12），驱动字幕**逐词出现**。
+    #   旧编排器不跑它 ⇒ 逐词时间轴停在旧内容上，而新配音照常出声、退出码 0（无法区分）。
+    #   实测证据：WSL 侧 dataviz/voices/words_rel.json 停在 9/30 14:50，而 words.json 已是
+    #   10/6 09:57 的新内容（swiss-motion 同：words_rel 9/30 vs words 10/5）—— 陈旧 5~6 天。
+    # ★ 位置硬约束：必须**排在 asr_check.py 之后**（要读它刚写的 words.json），
+    #   **VOICE_DONE / 回传之前**（words_rel.json 在下面的 backFiles 回传清单里）。
+    # ★ 只在 ASR **真跑了**的这个分支里跑：跳过 ASR ⇒ words.json 是上一版内容的陈旧产物 ⇒
+    #   由它派生的 words_rel.json 同样陈旧，与既有的「ASR 跳过不回传 words.json」原则一致
+    #   （跳 ASR 时 words_rel.json 也一并从回传清单里剔除，见下面 backFiles）。
+    # ★ 候选探测照本文件既有写法；不写死 slug —— 不存在就跳过、不出声。
+    WORDS=""
+    for c in "$D/tools/words.py"; do [ -f "$c" ] && { WORDS="$c"; break; }; done
+    if [ -n "$WORDS" ]; then
+      echo "[配音 词轴] $(basename "$WORDS")（由 words.json 派生 voices/words_rel.json，页面逐词高亮直读）"
+      # 失败**不静默**：产物直接决定字幕逐词出现的时刻，悄悄跳过等于把「逐词时间轴与本次配音不同步」藏起来。
+      .venv/bin/python "$WORDS" 2>&1 || { echo "STEP_FAIL $(basename "$WORDS")"; exit 1; }
+    fi
   fi
 else
   if [ -n "$TTSOWN" ]; then
@@ -2535,9 +2631,13 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
       //     「诚实的旧文件」，而不是被回传刷新了 mtime、伪装成新的旧文件 —— 这才是原坑的真正解法。
       //   判定依据是音频脚本跳 ASR 时打的 ASR_SKIPPED 标记（比匹配中文日志稳）。
       const asrSkipped = /ASR_SKIPPED/.test(v.stdout || '');
-      const backFiles = ['dur.json', 'words_rel.json', 'lips.json'];
-      if (!asrSkipped) backFiles.splice(1, 0, 'words.json');
-      if (asrSkipped) info(C.dim('跳过 ASR → 不回传 words.json（文件保留原地、mtime 不变，避免「伪装成新的旧文件」）'));
+      // ★ words_rel.json 与 words.json **同源**（都是那一次 ASR 的派生物：words.json 是转写本身，
+      //   words_rel.json 是它按原文单词比例重映射的结果，由 tools/words.py 写）。跳 ASR ⇒ 两者
+      //   都是上一版内容的陈旧产物 ⇒ **一并**不回传（同样的理由：不回传就不会刷新 mtime，
+      //   下游读到的是「诚实的旧文件」而不是「伪装成新的旧文件」）。
+      const backFiles = ['dur.json', 'lips.json'];
+      if (!asrSkipped) backFiles.splice(1, 0, 'words.json', 'words_rel.json');
+      if (asrSkipped) info(C.dim('跳过 ASR → 不回传 words.json / words_rel.json（文件保留原地、mtime 不变，避免「伪装成新的旧文件」）'));
       const back = await runWsl(
         [`mkdir -p '${demoWinWsl}/voices'`]
           .concat(backFiles.map(f =>
