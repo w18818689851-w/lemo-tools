@@ -186,7 +186,7 @@ film: Follow the Rain
 
 ### 踩过的坑（本机实测）
 - **首版**出片命令：`node lemo-make.mjs watercolor --skip-sync --no-preflight --ratio 16:9 --skip-audio`（日志首行，`2026-10-03T06:19:55.948Z`）——跳过了两份库同步、预检**与整条音频链**（音频链后于 15:47 单独补齐并重混，见下）。
-- 编排器两条告警：① demo 自带 `mux.sh` 的接口不是 `V A O [fps] [grain]`（自成一体），**回退 `core/render/mux.sh`**；② 该 demo 没有本编排器支持的字幕生成器 → `.srt` 沿用仓库里已提交的旧文件，未重新生成。
+- 编排器两条告警：① demo 自带 `mux.sh` 的接口不是 `V A O [fps] [grain]`（自成一体），**回退 `core/render/mux.sh`**；② 该 demo 没有本编排器支持的字幕生成器 → `.srt` 沿用仓库里已提交的旧文件，未重新生成。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立
 - 渲染：**2726 帧** / 24 fps / 6 workers / 1920×1080，实测 **33 s** 出 `video_gpu.mp4`（84.3 MB）。
 - 首版混流：走 WSL 侧 `core/render/mux.sh` + `h264_nvenc`（**GPU**，不是 CPU）；`MUX_OK 47369662 src_frames=2726 out_frames=2726`，帧数一致；首版成片 45.2 MB，全流程总耗时 **78.2 s**。修复音频后重混的帧数仍是 `2726`（未变），只是体积涨到 51,106,197 字节。
 - 首版出片的静音告警原文：`mux.sh: warning: the audio is silent or quieter than -70 LUFS, so loudness normalisation was skipped`。

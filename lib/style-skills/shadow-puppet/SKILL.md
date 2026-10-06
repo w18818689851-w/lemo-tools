@@ -48,6 +48,7 @@ film: Hou Yi Shoots the Suns
 
 | 角色 | 色值 | 用途 | 来源 |
 |---|---|---|---|
+| 幕布（底，白布） | `#f4ead2` | **背光白布幕** = 全片底色（皮影压在它上面、油灯从背后照）；也是「文案+风格」派生通路的底色 | `STYLE.md:8`「a white cloth screen」；`demo/carve.js:7` `DYE.white` |
 | 朱红 vermilion | `#b8211a` | 英雄披挂、印章、火 | `DEMO.md` Palette（染料） |
 | 火 flame | `#d9541c` | 火焰皮件、焦土 | 同上 |
 | 赭石 ochre | `#dc9d1e` | 山、地面条 | 同上 |

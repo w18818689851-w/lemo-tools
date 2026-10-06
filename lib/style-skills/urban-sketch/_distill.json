@@ -11,7 +11,7 @@
     "audio": 18
   },
   "defects": [
-    "编排器不认本 demo 的字幕生成器，第 3 步报警，.srt 沿用仓库里已提交的旧文件、未重新生成（logs/urban-sketch.log:29,119）",
+    "编排器不认本 demo 的字幕生成器，第 3 步报警，.srt 沿用仓库里已提交的旧文件、未重新生成（logs/urban-sketch.log:29,119） ★ 2026-10-06 复核：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导』部分已消解；但**本条主张的是「`.srt` 真旧」**（非仅告警误导）：本 demo 无编排器认得的 srt 生成器（`tools/srt.py`/`make_srt.py`/`subs_export.py` 均无），`demo/subs.json` 为静态文件、`tools/export_cues.mjs` 只写 `audio/cues.json`（不在第 6 步「本次新写出的字幕源」候选 `out/subs.json`/`out/srt.json`/`out/cues.json`/`subs.json`/`cues.json` 里）⇒ 第 6 步混流同样不会重生成，实测成片旁挂的 `D:/lemo-films/urban-sketch/urban-sketch.srt`（221 B）与仓库 `styles/urban-sketch/urban-sketch.srt`（221 B）**同为仓库旧文件**。⇒ **本条不消解、仍成立**，评分不变。（注：本条引用的 `logs/urban-sketch.log:29,119` 是更早一次成功运行的日志，该文件其后被一次 `[1] 环境自检` 双端不一致的失败运行覆盖，故本次只能以源码与产物核对。）",
     "字体通路回退 KaiTi：demo 全片文字是手写体 Reenie Beanie（页角批注）+ Caveat 500-600（标题/版权页），本机无，手写感有损（dub-styles.json#urban-sketch.notes）",
     "通路不承载「手写 reveal + 写在页边」这一核心形态，只给一个楷体字幕位；motion.subtitleFadeIn 0 但通路仍是通用字幕条语义",
     "still.mjs 报 still waiting for window.READY after 20 s 共 7 次（logs/urban-sketch.log:74-94），页面在 headless 下未及时置 READY，海报/风格帧步骤可能未产出",

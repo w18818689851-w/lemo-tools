@@ -51,7 +51,7 @@ function pickMux(slug) {
 // ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
 //   判据：`styles/` **读不到 / 扫到 0 个风格** ⇒ 一个混流脚本都没检查过 ⇒ 判 FAIL 并明说
 //   「本闸门已失明」。否则 `fails` 为空会打印「所有被挑中的脚本都满足四项口径」—— 那是**假的**。
-//   （写法照 `check-config-vs-doc.mjs:108-116` / `check-loudness-targets.mjs:64-79` 的同型守卫。）
+//   （写法照 `check-config-vs-doc.mjs` 头注释的「★ 失明守卫」段 / `blind[]` 块 / `check-loudness-targets.mjs:64-79` 的同型守卫。）
 const blind = [];
 let slugs = [];
 try {

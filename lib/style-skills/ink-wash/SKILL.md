@@ -156,7 +156,7 @@ film: The Swordsman and the River
 
 ### 已知缺陷
 - **题跋标题在平移镜头里会被画面边缘裁掉**。帧 f04 的竖排标题列（`THE SWORDSMAN AND THE RIVER`）左端已被切出画外；f02 同一条标题列还是完整的。`DEMO.md:82` 承认过同类问题：「Subtitles inherited the world camera transform in panning shots and slid off screen」。
-- **`.srt` 本次没有重新生成**。出片日志明确告警：「该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，`.srt` 将沿用仓库里已提交的旧文件」。所以成片里的字幕与随片 `.srt` 可能不同步，这是**编排器能力缺口**，不是风格缺陷。
+- **`.srt` 本次没有重新生成**。出片日志明确告警：「该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，`.srt` 将沿用仓库里已提交的旧文件」。所以成片里的字幕与随片 `.srt` 可能不同步，这是**编排器能力缺口**，不是风格缺陷。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立
 - 帧 f17 的「断流」瞬间溅墨点密度偏高，局部接近「糊成一片」；`DEMO.md:84` 记录过同类问题：「the cut began splitting the wave while the stroke was still crossing the frame」——后果提前发生，已修，但仍偏密。
 
 ### 素材缺口

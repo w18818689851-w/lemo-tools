@@ -169,7 +169,7 @@ film: Case File: Chubby
 - ~~**9:16 硬渲会丢画面**：无 `aspects` 声明，产品默认 9:16 导出时右侧约 43.75% 丢失、下方黑边；出血数字与右中主体全被裁掉。~~ **★ 2026-10-04 已修**：`demo/index.html` 加「设计帧等比装入」外壳 + 新增薄壳 `demo/film.js` 声明 `aspects`（5 个比例全支持），9:16 下整幅画面都在（见第 2 节）。残留代价：竖屏有效画面只占 1080×607、半调网点缩放会摩尔纹。
 - ~~**走不了编排器的音频链**：本风格没有独立的混音脚本，而 `lemo-make.mjs` 的混音步只按 `mix.py` / `sound.py` / `audio/mix.py` 三个**文件名**找脚本，一个都找不到就 `STEP_FAIL 该 demo 没有 mix.py / sound.py / audio/mix.py —— 它用的是另一套音频架构` 并 `exit 1`（`lemo-make.mjs` 的混音步）⇒ 本风格只能 `--skip-audio` 复用仓库里那份旧的 `demo/mix.wav`，走不了标准「主题出片」通路。~~ **★ 2026-10-05 已修**：新增薄壳 `demo/mix.py`（**不接受命令行参数**、用同一个解释器 `subprocess` 调既有 `music.py` 并把输出路径指向 `demo/mix.wav`；不重写任何配乐逻辑、不碰视频、幂等），编排器混音步现已命中本风格 —— 实测 `MIX_OK 5292044 …/styles/halftone-dossier/demo/mix.wav`，随后 `MUX_OK 46164256 src_frames=720 out_frames=720`，成片 1080×1920 / 30.00s / 真峰值 −2.79 dBTP / −14.24 LUFS（两条交付口径都达标）。**不再需要 `--skip-audio`**。（★ **原记**：上述 −2.79 dBTP 是那次复跑产物的读数；当前入库成片实测真峰值 **−3.26 dBTP**（`loudnorm` `input_tp`，4× 过采样）、达标。）★ 这条缺陷原本**没有**独立扣分项（`_distill.json#defects` 里从未记过它、也无 `【audio −N】`），故 `scoreBreakdown` / `matchScore` 不变。
 - **本 demo 没有 build.sh**，一键复现只能照 DEMO.md 六步手动走。
-- **events.json 为 0 条**：本风格 SFX 不走事件导出，时间硬编码在 `music.py`；字幕源未重新生成（沿用仓库旧 .srt）。
+- **events.json 为 0 条**：本风格 SFX 不走事件导出，时间硬编码在 `music.py`；字幕源未重新生成（沿用仓库旧 .srt）。 ★ 2026-10-06 复核：本条与本批次（第五十三批）改的**编排器第 3 步字幕告警措辞**无关——本条不引用该告警；其主张的「字幕源未重新生成、沿用仓库旧 `.srt`」由**第 6 步混流**实测确认（`_distill/logs/halftone-dossier.log:74`：「本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成」；本 demo 无任何字幕生成器）⇒ 属**真实缺陷**，仍成立，评分不变。
 
 ### 素材缺口
 - 五个字体家族（Noto Serif SC 900 / Bagel Fat One / ZCOOL KuaiLe / JetBrains Mono 800 / Noto Sans SC 900）必须本地 woff2 就位；缺任何一个都会导致逐字位置算错、字形重叠。

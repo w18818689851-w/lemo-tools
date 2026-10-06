@@ -4243,9 +4243,9 @@
         "styles/stained-glass/demo/glass.js",
         "styles/stained-glass/demo/test.js"
       ],
-      "evidence": "glass.js:6 `export const COL = { cobalt:'#1d3a9c', deepblue:'#142a70', blue2:'#2a52b0', ruby:'#a8101c', ruby2:'#860c18', gold:'#dc9a22', gold2:'#eab640', green:'#2f7f36', green2:'#22602e', olive:'#6b7a22', purple:'#632a63', ... }`（具名调色板 22 hex）；test.js:9 背景 `S.fillStyle = '#2a2a2e'`；glass.js:161 投影模式 `this.mode === 'proj' ? '#000' : '#26282d'`；★自我更正（2026-10 回查）：原填 fg='#000000' 系误读——`#000` 在 glass.js:114/156/161/165 与 window.js:143 是 `globalCompositeOperation='destination-out'` 的**遮罩填充**，不是文字色。该风格真实字幕画法见 subs.js:3 `drawBanderole(O, subs, t)`：羊皮纸绶带，底色渐变 subs.js:18 `#f3e6c6 → #ecdcb6 → #d9c497`，**文字色 subs.js:26 `O.fillStyle='#3a2412'`**，字体 `44px \"IM Fell English\"`，居中于 (960, 968)，带宽 64。对比度 #3a2412 on #f3e6c6 ≈ 11.8:1。",
+      "evidence": "glass.js:6 `export const COL = { cobalt:'#1d3a9c', deepblue:'#142a70', blue2:'#2a52b0', ruby:'#a8101c', ruby2:'#860c18', gold:'#dc9a22', gold2:'#eab640', green:'#2f7f36', green2:'#22602e', olive:'#6b7a22', purple:'#632a63', ... }`（具名调色板 22 hex）；★ 2026-10-06 修正：原 palette.bg=#2a2a2e 取自 `test.js:9` 的 `S.fillStyle = '#2a2a2e'` —— 那是 knightTest/dragonTest **模型页**的灰底、不是成片背景（全库扫描 #2a2a2e 仅 test.js 1 处命中）；已按 `glass.js:7` `COL.cobalt='#1d3a9c'`（`window.js:45` 采石格默认色、`STYLE.md:33,39`「cobalt ground」、`DEMO.md:74`「cobalt (dominant)」）改为 #1d3a9c，bg2 #142a70 不变。原 test.js:9 背景记录保留作历史：`S.fillStyle = '#2a2a2e'`；glass.js:161 投影模式 `this.mode === 'proj' ? '#000' : '#26282d'`；★自我更正（2026-10 回查）：原填 fg='#000000' 系误读——`#000` 在 glass.js:114/156/161/165 与 window.js:143 是 `globalCompositeOperation='destination-out'` 的**遮罩填充**，不是文字色。该风格真实字幕画法见 subs.js:3 `drawBanderole(O, subs, t)`：羊皮纸绶带，底色渐变 subs.js:18 `#f3e6c6 → #ecdcb6 → #d9c497`，**文字色 subs.js:26 `O.fillStyle='#3a2412'`**，字体 `44px \"IM Fell English\"`，居中于 (960, 968)，带宽 64。对比度 #3a2412 on #f3e6c6 ≈ 11.8:1。",
       "palette": {
-        "bg": "#2a2a2e",
+        "bg": "#1d3a9c",
         "bg2": "#f3e6c6",
         "fg": "#3a2412",
         "accent": "#dc9a22"

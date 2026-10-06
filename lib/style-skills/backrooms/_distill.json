@@ -12,7 +12,7 @@
   },
   "defects": [
     "palette -1：lib/dub-styles.json#backrooms 的底色是 plain-dark 兜底值 #0C1016（该条自标 bgSameAsDefault: true），而风格的主色是芥末黄 #d5bd66 系（DEMO.md:74）。该条 notes 自评「差异强度：最弱……若要求一眼看出不同，这条应标为暂不支持或另配底色」。（★ 2026-10-03 拆分：本条原为 ，其中「bgRecipe.texture 写成 scanlines、与 STYLE.md:25「无扫描线、无 RGB 荫罩」硬规则冲突」那一半**已修**（现 texture=none），已移入 resolvedDefects；底色兜底这一半**仍成立**，故扣分由 −2 降为 −1。）",
-    "typography -3：① 本次 .srt 未重新生成——编排器告警「该 demo 没有本编排器支持的字幕生成器，字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件」（log:29-30、log:104），字幕可能与本次成片不同步；② 风格要求 CEA-608 等宽 IBM Plex Mono 600，但 dub-styles.json#backrooms 的 fontFamily 是 SimHei（非等宽），破坏闭路字幕观感；③ 9:16 下 OSD 右上电量与右下时间码会被切掉，而 OSD 是本风格的叙事装置。",
+    "typography -3：① 本次 .srt 未重新生成——编排器告警「该 demo 没有本编排器支持的字幕生成器，字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件」（log:29-30、log:104），字幕可能与本次成片不同步；② 风格要求 CEA-608 等宽 IBM Plex Mono 600，但 dub-styles.json#backrooms 的 fontFamily 是 SimHei（非等宽），破坏闭路字幕观感；③ 9:16 下 OSD 右上电量与右下时间码会被切掉，而 OSD 是本风格的叙事装置。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立",
     "rhythm -1：本次出片走了 --skip-sync（log:1），「同步两份库」步骤被跳过。"
   ],
   "assetGaps": [

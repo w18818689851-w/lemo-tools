@@ -192,8 +192,8 @@ film: Three Trails
 
 ### 素材缺口
 - **没有 `lines.json`**（设计如此：本风格无旁白，STYLE.md:49「海报上的文字就是字幕」）。文案通路是 `content.json` / `content_alt.json` 的字段，**不是** lines 数组。
-- **没有字幕生成器**：`tools/` 下只有 `timeline.mjs` 与 `cuecheck.py`，**没有 `subs.mjs` / `subs.py` / `cues.mjs` / `export.mjs`**。因此 `lemo-make.mjs` 第 3 步与第 6 步都报同一条告警：「该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，`.srt` 将沿用仓库里已提交的旧文件」（log:29-30, 110）。
-- **但那条告警的文案与实际不符**：`styles/silkscreen-poster/` 目录下**根本没有 `.srt` 文件**（只有 `DEMO.md` / `STYLE.md` / `demo/` / `poster.jpg` / `style.json`）。所以「沿用旧文件」实际是「**无字幕文件**」，成片**没有字幕轨**——这在语义上与本风格一致（文字已印在画面里），但告警文案是错的，会误导下游以为存在一份可用的旧 `.srt`。
+- **没有字幕生成器**：`tools/` 下只有 `timeline.mjs` 与 `cuecheck.py`，**没有 `subs.mjs` / `subs.py` / `cues.mjs` / `export.mjs`**。因此 `lemo-make.mjs` 第 3 步与第 6 步都报同一条告警：「该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，`.srt` 将沿用仓库里已提交的旧文件」（log:29-30, 110）。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立
+- **但那条告警的文案与实际不符**：`styles/silkscreen-poster/` 目录下**根本没有 `.srt` 文件**（只有 `DEMO.md` / `STYLE.md` / `demo/` / `poster.jpg` / `style.json`）。所以「沿用旧文件」实际是「**无字幕文件**」，成片**没有字幕轨**——这在语义上与本风格一致（文字已印在画面里），但告警文案是错的，会误导下游以为存在一份可用的旧 `.srt`。 ★ 2026-10-06 已修：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导 / 两处不一致』部分已消解
 - 字体**无缺口**：`demo/fonts/` 下 Big Shoulders Display / Outfit / League Gothic 三个 `.ttf` 与三份 OFL 授权文件齐全。
 
 ### 能力限制

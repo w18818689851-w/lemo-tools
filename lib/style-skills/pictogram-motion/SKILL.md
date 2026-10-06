@@ -195,7 +195,7 @@ film: Aichi-Nagoya 2026 — All 43 Sports
 - 出片与配乐**均非本智能体执行**（GPU / Index-TTS 独占，纪律禁止起渲染）；以上数据全部转录自 `_distill/logs/pictogram-motion.log`、`demo/music/report.txt`、`ffprobe` / `ebur128` / `volumedetect` 与逐帧观察。
 - 首次出片走 `--skip-sync --no-preflight --ratio 16:9 --skip-audio`，WSL / Windows 双份库**未做同步校验**，且**整条音轨缺失**；配乐链（`export_timeline.cjs` → `music.py` → `mix.wav` → 重混流）由音频链修复任务补齐。★ **2026-10-05**：这条链现在能在**编排器内一键跑通**了——新增 `demo/mix.py` 壳（双副本同步），`node lemo-make.mjs pictogram-motion --ratio 9:16 --skip-sync --out <dir>` 直接走到 `MIX_OK` / `MUX_OK`，不再需要 `--skip-audio`（见第 11 节「走不了编排器音频链」）。
 - 环境：Windows Node v22.22.2 + ffmpeg 9.0.2 + WSL Ubuntu-24.04；首轮渲染 37s、混流 90.3s、成片 53.3 MB（静音）；配乐渲染 72s，重混流后成片 163.58s / 58.0 MB。
-- 日志里有两条 `!` 告警：①「本 demo 没有本编排器支持的字幕生成器 → `.srt` 沿用旧文件」；②「demo 自带 `mux.sh` 接口不匹配 → 回退 `core/render/mux.sh`」。两条都未阻断出片。
+- 日志里有两条 `!` 告警：①「本 demo 没有本编排器支持的字幕生成器 → `.srt` 沿用旧文件」；②「demo 自带 `mux.sh` 接口不匹配 → 回退 `core/render/mux.sh`」。两条都未阻断出片。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立
 - 逐帧分析所用的抽帧取自**修复前的无声成片**；因视频段未重渲（`out/video_gpu.mp4` 仍是 3878 帧原样），画面结论对修复后的成片**同样成立**。
 
 ### 下次迭代优先补什么

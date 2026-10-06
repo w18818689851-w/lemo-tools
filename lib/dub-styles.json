@@ -3053,7 +3053,7 @@
         ]
       },
       "palette": {
-        "bg": "#2a2a2e",
+        "bg": "#1d3a9c",
         "bg2": "#142a70",
         "fg": "#F3E6C6",
         "accent": "#dc9a22",
@@ -3064,7 +3064,7 @@
       "bgRecipe": {
         "type": "gradient",
         "stops": [
-          "#2a2a2e",
+          "#1d3a9c",
           "#142a70"
         ],
         "texture": "none",
@@ -3097,7 +3097,7 @@
         "subtitleFadeIn": 0.14,
         "chapterTransition": "cut"
       },
-      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #2a2a2e 相对亮度 ≤0.5（暗底→亮字））；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「a parchment banderole near the bottom (curled ends, gentle sag, thin rule), IM Fell English ~44 px in dark ink」——是**羊皮纸带 + 深墨字**。 ★ 字幕配色更正（style-recon 提供硬证据）：demo 的字幕是「米白绶带 + 深棕字」（styles/stained-glass/demo/subs.js:18 底带渐变 #f3e6c6→#ecdcb6→#d9c497，subs.js:26 文字色 #3a2412，44px IM Fell English，中心 (960,968)，带宽 64）。**但 ASS 的 Sub 样式是 BorderStyle=1（只有描边+阴影，没有底带）**，字幕直接压在画面底色上 —— 所以不能照搬 demo 的「深棕字」（深棕 #3a2412 压画面深底 #2a2a2e 只有 1.5:1，会看不见）。本条目取**绶带底色 #f3e6c6** 作字色，压在画面深底上对比度 11.4:1，可读；颜色本身是代码原值（此前误填 #f3e7c6，那是 ukiyoe 的题签色 main.js:95，已更正）。",
+      "notes": "★ 派生条目（derived:true），不是逐行手抽：配色来自 lib/dub-visual.json 的 palette（demo 代码抽取，带 file:line 证据）；字幕字号/位置取自 STYLE.md §4 的 px 值（÷1080 归一）；字幕颜色由 WCAG 对比度规则从底色推得（底 #1d3a9c 相对亮度 ≤0.5（暗底→亮字）；★ 2026-10-06：底色由 #2a2a2e 改为钴蓝 #1d3a9c 后仍 ≤0.5，故 fg/subtitle 的「暗底→亮字」取向不变）；章节卡等叠加层保守关闭，仅 accentRule=false。 知识库更新时应优先用代码抽取值替换本条的派生值。 ★ 类别修正：原先误按 light-strip（深条+浅字）派生，已改判为 light-card（浅卡+深墨字）——STYLE.md §4「a parchment banderole near the bottom (curled ends, gentle sag, thin rule), IM Fell English ~44 px in dark ink」——是**羊皮纸带 + 深墨字**。 ★ 字幕配色更正（style-recon 提供硬证据）：demo 的字幕是「米白绶带 + 深棕字」（styles/stained-glass/demo/subs.js:18 底带渐变 #f3e6c6→#ecdcb6→#d9c497，subs.js:26 文字色 #3a2412，44px IM Fell English，中心 (960,968)，带宽 64）。**但 ASS 的 Sub 样式是 BorderStyle=1（只有描边+阴影，没有底带）**，字幕直接压在画面底色上 —— 所以不能照搬 demo 的「深棕字」（深棕 #3a2412 压画面深底 #2a2a2e 只有 1.5:1，会看不见）。本条目取**绶带底色 #f3e6c6** 作字色，压在画面深底上对比度 11.4:1，可读；颜色本身是代码原值（此前误填 #f3e7c6，那是 ukiyoe 的题签色 main.js:95，已更正）。 ★ 2026-10-06 修正：原 `palette.bg = #2a2a2e`（及 `bgRecipe.stops[0]`）取自 `styles/stained-glass/demo/test.js:9` 的 `S.fillStyle = '#2a2a2e'` —— 那是 knightTest/dragonTest **模型页（lightbox 测试页）**的灰底，不是成片的背景；成片里 `#2a2a2e` 一次都没出现（全库扫描：仅 test.js 1 处命中）。本风格的画面主色是钴蓝：`glass.js:7` `COL.cobalt = '#1d3a9c'`、`window.js:45` 采石格（quarries）默认用 `COL.cobalt`（`STYLE.md:33`「Backgrounds: hand-cut lozenge quarries」、`STYLE.md:39`「cobalt ground」、`DEMO.md:74`「cobalt `#1d3a9c` (dominant)」、`SKILL.md` §3「底（钴蓝，主导）」）。已把 `palette.bg` 与 `bgRecipe.stops[0]` 由 `#2a2a2e` 改为 `#1d3a9c`（bg2 `#142a70` 不变，它本来就是 §3 记录的「暗部玻璃 / 夜间窗格」深蓝）。底色仍是暗底（相对亮度 0.057 ≤ 0.5）⇒ 由 WCAG 规则推得的 `fg` / `subtitle` 取向不变（仍亮字），无需连带改动。渲帧实测见 `lib/dub-visual.json#stained-glass.evidence`。",
       "bgSameAsDefault": false
     },
     {

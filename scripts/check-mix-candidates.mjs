@@ -54,7 +54,7 @@ async function meanVolume(f) {
 // ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
 //   判据：`styles/` **读不到 / 扫到 0 个风格** ⇒ 一个候选混音都没检查过 ⇒ 判 FAIL 并明说
 //   「本闸门已失明」。否则 `fails` 为空会打印「所有多候选的混音都逐字节相同」—— 那是**假的**。
-//   （写法照 `check-loudness-targets.mjs:64-79` / `check-config-vs-doc.mjs:108-116` 的同型守卫。）
+//   （写法照 `check-loudness-targets.mjs:64-79` / `check-config-vs-doc.mjs` 头注释的「★ 失明守卫」段 / `blind[]` 块 的同型守卫。）
 const blind = [];
 let slugs = [];
 try {

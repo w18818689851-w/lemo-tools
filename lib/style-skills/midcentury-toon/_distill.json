@@ -11,7 +11,7 @@
     "audio": 18
   },
   "defects": [
-    "【重要】本次出片的字幕未重新生成：日志打了两条警告——'该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件'（logs/midcentury-toon.log:29）与混流阶段的重复警告（logs/midcentury-toon.log:81）。成片里的字幕不是本次按 content.json 生成的，而是仓库里已提交的旧 .srt；只要改 content 台词，字幕就会与旁白不一致（typography 扣分）。",
+    "【重要】本次出片的字幕未重新生成：日志打了两条警告——'该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件'（logs/midcentury-toon.log:29）与混流阶段的重复警告（logs/midcentury-toon.log:81）。成片里的字幕不是本次按 content.json 生成的，而是仓库里已提交的旧 .srt；只要改 content 台词，字幕就会与旁白不一致（typography 扣分）。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立",
     "lib/dub-styles.json#midcentury-toon 的 subtitle.fontFamily=DengXian（本机无 Oleo Script / Alfa Slab One / Jost），字号 40px 与下边距 157px 与原生卡（Jost 500 42px、距底 60px、宽上限 1280px）不同；原生字幕卡的纸色圆角板 + 细墨边 + 两端珊瑚 8 角星 + 颜色赛璐璐套印偏移 5px 在 dub.mjs 通路里不会出现（typography 扣分）。",
     "混音峰值偏高：mix.wav peak 0.95（logs/midcentury-toon.log:74），距削波不足 0.5 dB（最终由混流压到 Peak -1.5 dBFS）（audio 扣分）。★ 真峰值口径更正（本次补记）：成片真峰值 = loudnorm 的 input_tp（4× 过采样）−1.50 dBTP，在 −1.2 dBTP 交付线内（余量 0.30 dB）、未削波；astats 采样峰值 −1.636732 是下界。",
     "成片 LRA 7.3 LU（logs/midcentury-toon.log:85），明显大于同批其他风格（3.5 / 4.6 LU）——三处真静音把动态范围拉开，属设计使然，但小音量下可能显得忽大忽小（audio 扣分）。"

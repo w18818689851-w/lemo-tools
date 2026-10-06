@@ -86,7 +86,7 @@ const fails = [];
 //   判据：一个带 `_distill.json` 的风格都枚举不到（目录不存在 / `--only` 拼错 / 过滤变了）⇒
 //   一份文档都没校验过 ⇒ 判 FAIL 并明说「本闸门已失明」。否则 `fails` 为空会打印
 //   「文档记录的成片信息与实物全部一致」—— 那是**假的**。
-//   （写法照 `check-loudness-targets.mjs:64-79` / `check-config-vs-doc.mjs:108-116` 的同型守卫。）
+//   （写法照 `check-loudness-targets.mjs:64-79` / `check-config-vs-doc.mjs` 头注释的「★ 失明守卫」段 / `blind[]` 块 的同型守卫。）
 const blind = [];
 if (slugs.length === 0) blind.push(`\`${DIR}\` 下一个带 _distill.json 的风格都没枚举到（路径 / \`--only\` / 过滤变了？）⇒ 一份文档都没校验过`);
 for (const slug of slugs) {

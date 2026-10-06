@@ -160,7 +160,7 @@ film: Where the Wind Went
 ## 11. 当前短板与避坑要点
 
 ### 已知缺陷
-- **编排器不认本 demo 的字幕生成器**：第 3 步报警「本编排器不支持该 demo 的字幕生成器」，`.srt` **沿用仓库里已提交的旧文件、未重新生成**（`logs/urban-sketch.log:29,119`）。字幕时间线真值是 `demo/subs.json`（3 条），换主题后 `.srt` 不会自动更新。
+- **编排器不认本 demo 的字幕生成器**：第 3 步报警「本编排器不支持该 demo 的字幕生成器」，`.srt` **沿用仓库里已提交的旧文件、未重新生成**（`logs/urban-sketch.log:29,119`）。字幕时间线真值是 `demo/subs.json`（3 条），换主题后 `.srt` 不会自动更新。 ★ 2026-10-06 复核：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导』部分已消解；但**本条主张的是「`.srt` 真旧」**：本 demo 无编排器认得的 srt 生成器，`demo/subs.json` 为静态文件、`tools/export_cues.mjs` 只写 `audio/cues.json`（不在第 6 步「本次新写出的字幕源」候选里）⇒ 第 6 步混流同样不重生成，成片旁挂的 `D:/lemo-films/urban-sketch/urban-sketch.srt`（221 B）与仓库旧文件同源 ⇒ **本条不消解、仍成立**，评分不变。
 - **字体回退**：demo 全片文字是手写体（Reenie Beanie + Caveat 500–600），本机无这两款，通路回退 **KaiTi**（楷体），手写感有损（`dub-styles.json#urban-sketch.notes`）。
 - **静帧生成超时告警**：本次出片日志里 `still.mjs` 反复报 `still waiting for window.READY after 20 s`（共 7 次，`logs/urban-sketch.log:74-94`），说明页面在 headless 下未及时置 `window.READY`；本次成片渲染最终完成，但**海报/风格帧步骤可能未产出**。
 - **音视频时长微差**：视频 32.413411 s 长于音频 32.400 s，mux 补静音到 32.455 s 以免 `-shortest` 切掉最后一帧（`logs/urban-sketch.log:127`）；成片时长按 32.42 s 记。

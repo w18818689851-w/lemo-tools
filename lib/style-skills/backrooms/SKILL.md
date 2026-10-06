@@ -176,7 +176,7 @@ film: Night Shift Orientation
   ② 它**缺少「音频比画面短时补静音」**——本片 `mix.wav` 59.700000s 比画面 59.706706s 短，`-shortest` 会**切掉最后一帧**，编排器守卫判 `MUX_FAIL 帧数不符 1433/1432`。
   **修复**：2026-10-03 用 `D:/lemo-tools/scripts/patch-style-mux.mjs`（幂等，先 `normalize()` 还原再打补丁）把 `core/render/mux.sh` 的这两处**最小外科回灌**到该副本——插入一个补丁块：`dur()` 用 ffprobe 量 V/A 时长，A<V 时 `PAD=",apad=whole_dur=$((V+1/fps))"`（补到**画面长度 + 一帧**，`-shortest` 就切不到末帧）；编码器改为 `case "${LEMO_VENC:-}"` 分支，`h264_nvenc` 走 `-preset p5 -profile high -rc vbr -cq $((CRF+4))`。
   **回灌后实测**：`MUX_OK 30386381 src_frames=1433 out_frames=1433`（`log:109`），且 mux 打印 `note: audio (59.700000 s) shorter than video (59.706706 s); padding to 59.748373 s`（`log:110`）——补丁确实生效；CRF 24 ⇒ **nvenc cq=28**。**成片已正常产出**（`log:111`）。改动极小、可回滚（`node scripts/patch-style-mux.mjs --only backrooms --revert`）。
-- **本次 `.srt` 未重新生成**：编排器明确告警「该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，`.srt` 将沿用仓库里已提交的旧文件」（`log:29-30`、`log:104`）。backrooms 的 `build.sh:13` 用的是**内联 `python3 -c`** 从 `events.json` 抽 `cap` 事件，编排器探测的 7 个候选（`tools/subs.mjs`/`subs.mjs`/`tools/export.mjs`/`tools/subs.py`/`subs.py`/`tools/cues.py`/`cues_export.py`）都不匹配 → **字幕可能与本次成片不同步**，属真实风险。
+- **本次 `.srt` 未重新生成**：编排器明确告警「该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，`.srt` 将沿用仓库里已提交的旧文件」（`log:29-30`、`log:104`）。backrooms 的 `build.sh:13` 用的是**内联 `python3 -c`** 从 `events.json` 抽 `cap` 事件，编排器探测的 7 个候选（`tools/subs.mjs`/`subs.mjs`/`tools/export.mjs`/`tools/subs.py`/`subs.py`/`tools/cues.py`/`cues_export.py`）都不匹配 → **字幕可能与本次成片不同步**，属真实风险。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立
 - ~~**无 9:16 支持，且本风格损失最重**~~ **★ 2026-10-04 已修**：`demo/index.html` 加「设计帧等比装入」外壳 + `demo/film.js` 声明 `aspects`（5 个比例全支持），9:16 下整幅画面与 OSD 都在（见第 2 节）。残留代价：竖屏有效画面只占 1080×607、全屏层不铺满留边。
 - **`dub-styles.json#backrooms` 几乎是无效条目**：该条 `bgSameAsDefault: true`、notes 自述「纯色 `#0C1016` + vignette + 4px 扫描线（黑压黑，肉眼不可见），且无任何叠加层 —— 与 plain-dark 的差异**只剩暗角**……差异强度：**最弱**。若要求「一眼看出不同」，这条应标为暂不支持或另配底色」。~~更严重的是它把 `bgRecipe.texture` 写成 `scanlines`~~（**★ 2026-10-03 已修**：当前 `bgRecipe.texture = none`，不再违反 `STYLE.md:25`「无扫描线、无 RGB 荫罩」的红线；该条 notes 自陈的 `textureRaw: vhs-grain` 矛盾也随之消失）。**仍成立的是底色兜底那一半** —— 底色仍是 plain-dark 的 `#0C1016`，而风格主色是芥末黄 `#d5bd66` 系。
 - **真峰值超交付线 0.28 dB**：mux 的 ebur128 输出只打印了 `I` 与 `LRA`（`log:107-108`），**没有 Peak 行**；事后用 `loudnorm` `input_tp`（4× 过采样）实测成片真峰值 **-0.92 dBTP**，**超 -1.2 dBTP 交付线 0.28 dB**（未达标，但真峰值为负、**未削波**）。`mix.wav` 峰值 0.950、rms -19.8 dB（`log:89`）——源混音峰值偏热是根因之一，与全库同类问题一致（AAC 256k 编码余量不足，属项目级既有缺陷）。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 -0.92 dBTP → **-1.44 dBTP**（★ 2026-10-05 重渲后实测），已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。
@@ -202,7 +202,7 @@ film: Night Shift Orientation
 
 ### 踩过的坑（本机实测）
 - 上述 mux 双缺陷（libx264 + 缺补静音）是**本风格独有、且曾导致出不了片**的坑，见上「已知缺陷」。
-- 编排器告警「没有本编排器支持的字幕生成器」，导致 `.srt` 未重生成（`log:29`）。
+- 编排器告警「没有本编排器支持的字幕生成器」，导致 `.srt` 未重生成（`log:29`）。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立
 
 ### 下次迭代优先补什么
 - **把 `demo/tools/mux.sh` 的回灌并入仓库基线**（或让 `build.sh` 直接调 `core/render/mux.sh`），使补丁不再依赖一次性脚本。

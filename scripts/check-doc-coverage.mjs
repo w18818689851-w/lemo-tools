@@ -38,7 +38,7 @@ const files = (() => {
   catch { return []; }                     // ★ 目录读不到 ⇒ 交给下面的失明守卫（不裸抛）
 })();
 const isGate = (f) => /^check-/.test(f);
-const isTool = (f) => /^(sync|patch|normalize|refresh|fix|measure)-/.test(f);
+const isTool = (f) => /^(sync|patch|normalize|refresh|fix|measure|prune)-/.test(f);
 
 const missing = [];
 for (const f of files) {
@@ -65,7 +65,7 @@ const unlisted = testEntries.filter((f) => !readme.includes(f));
 // ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
 //   判据：两个扫描根任一扫到 **0 个** ⇒ 闸门空转 ⇒ 判 FAIL 并明说「本闸门已失明」。
 //   否则 `missing` / `unlisted` 全空会打印「都已在文档里登记」—— 那是**假的**（什么都没扫到）。
-//   （写法照 `check-config-vs-doc.mjs:108-116` / `check-loudness-targets.mjs:64-79` 的同型守卫。）
+//   （写法照 `check-config-vs-doc.mjs` 头注释的「★ 失明守卫」段 / `blind[]` 块 / `check-loudness-targets.mjs:64-79` 的同型守卫。）
 const blind = [];
 if (files.length === 0) blind.push(`\`${SCRIPTS}\` 下扫到 0 个 .mjs（目录不存在 / 过滤变了？）⇒ 一个脚本都没检查过`);
 if (testEntries.length === 0) blind.push(`\`${testDir}\` 下扫到 0 个 *.test.mjs（目录不存在 / 枚举为空？）⇒ 「测试入口已登记」这条判据什么都没检查`);
