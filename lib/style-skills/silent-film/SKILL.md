@@ -190,7 +190,8 @@ film: The Runaway Loaf
 ### 素材缺口
 - **没有 `lines.json`**：本风格的文案**写死在 `demo/cardspecs.js` 的 `CARDS` 常量**里（`dub-visual.json#silent-film.copyContract.note`：「无 lines.json；条数为源码内可数项」）。因此「文案 + 风格」通路**注入不了文案**，只能改源码。
 - **`lib/dub-visual.json#silent-film` 的 `visualRef` 在本次读取时为 undefined**（按 `styles` 键取 `silent-film` 是能取到的，走 `visualRef` 路径的消费者需要按 `styles['silent-film']` 兜底）。
-- 字体文件齐全（Playfair Display / Playfair Display SC Black+Bold / Old Standard TT Regular+Italic+Bold，均 OFL），**无缺口**。
+- **`demo/assets/redraw_src.jpg` 不在仓库、也不在本机盘上（2026-10-06 核实）**：它只被 redraw 测试用（`?scene=frames.redrawSample`）。★ `frames.js:119` 与 `sheets.js:28` 都只挂 `onload`、**没有 `onerror`** ⇒ 404 时那个 Promise **永不 resolve，页面直接挂死**（不报错、不退出，比抛异常更难查）。它是 CC0 视频 `DiagonalCrosswalkYongeDundas.webm`（Raysonho，Wikimedia Commons）的**一帧裁切**：**原理上可由该 CC0 源重生**，但**确切裁切位置从未记录** ⇒ 无法逐字节复现。CREDITS 原来只写了作者 / 平台 / 授权、**没有 URL**——现已补 `https://commons.wikimedia.org/wiki/File:DiagonalCrosswalkYongeDundas.webm`，并注明「本仓库不含该文件」。本次**未下载、未新增任何素材**。
+- **字体：`fonts/` 里的 `.ttf` 不入库，但现已可由仓内脚本重生（2026-10-06 更正）**：本 demo 用 Playfair Display / Playfair Display SC Black+Bold / Old Standard TT Regular+Italic+Bold（均 OFL；`fonts/` 下的 OFL 许可原文与 `fonts.css` **已入库**）。★ 但 `.ttf` 本身被 `.gitignore`（`styles/*/demo/fonts/**/*.ttf`）挡住 ⇒ **新克隆里一个都没有**（clone 后实测 `demo/fonts/*.ttf` = 0）。原记「字体文件齐全…**无缺口**」只说对了「不需要外部素材」，**漏了「不入库」这一半**。现已把字体获取脚本纳入仓库 `tools/fetch-fonts.sh`，跑 `bash tools/fetch-fonts.sh --only silent-film` 即可补齐；实测重生出的 `.ttf` 与工作区**逐字节一致**（md5 相同）⇒ 归为「可由仓内脚本重生」，不再是缺口。★ 注意它**依赖网络**（从 google/fonts 取源文件，jsDelivr → raw.githubusercontent → gitmirror 三镜像轮询）。
 
 ### 能力限制
 - **已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，`demo/film.js:20`）；产品默认 1080×1920 下 4:3 片门按紧轴等比装入、居中，落在「等比装入 + 同色留白」这一档——不裁切、不变形，片门与幕布完整（见第 2 节）。

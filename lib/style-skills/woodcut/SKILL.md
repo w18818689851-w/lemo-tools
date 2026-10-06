@@ -168,6 +168,7 @@ film: The Bell Founder
 - 依赖**可用的 Kokoro 音色**（样片 `am_onyx`）与 IM Fell English 字体（demo 自带 OFL，但**无 CJK 活字**，中文题材需自备老式衬线/宋体）。
 - 引擎自带的**可复用部件有限**：`trans.js`（揭纸）、`hands.js`（高度场雕塑）、`fx.js`（钟 / 风箱 / 供品 / 村民 / 声环）、`interior.js`（作坊 / 坩埚 / 浇注 / 火星 / 模具 / 蒸汽）、`world.js`（山谷 / 村庄 / 钟楼 / 雪）。换主题必须自备场景几何。
 - 没有「钟 / 铁砧 / 供品」这类道具的音频采样，**全部靠 numpy 合成**（`mix.py` / `score.py`），改题材要重写对应合成器。
+- **`demo/assets/bearded_man_cc0.jpg` 不在仓库、也不在本机盘上（2026-10-06 核实）**：它只被滤镜测试用（`?test=filter`）。`test.js:39` 的 `loadImg()` 里是 `await im.decode()`，**404 会让它 reject**；`test.js:40` 的 `preload()` 直接 await 它 ⇒ **这条路径现在跑不了**（不是「结果不对」，是**直接失败**）。★ 它**不能由仓内脚本重生**（外部照片，无生成器）。作者 / 平台 / 授权在 CREDITS 里本来就写了（ThuyHaBich，Pixabay，经 Wikimedia Commons，CC0），但**原来没有 URL**——现已补 `https://commons.wikimedia.org/wiki/File:Bearded_man_smoking_pipe-3013924.jpg`，并注明「本仓库不含该文件」。★★ 该 Commons 页带 **`Restrictions: personality`**：照片里**真人的肖像权不随 CC0 放弃** ⇒ 要不要把这张图纳入仓库（或换一张无人的替代图）**需用户拍板**；本次**未下载、未新增任何素材**。
 
 ### 能力限制
 - 慢风格：**40–60s**、一叠独立版、一句一层；撑不起快节奏、强情绪外放、真人出镜、实拍或并列多观点的密集片。
