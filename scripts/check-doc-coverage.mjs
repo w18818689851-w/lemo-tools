@@ -9,10 +9,29 @@
  *   这类「工具加了、文档没跟」是**静默**的（没人会去数），只能靠机械比对拦住。
  *
  * 判据：
- *   1. `scripts/` 下每个 `check-*.mjs` 都必须在 **`test/README.md`** 与 **`_distill/AGENT-BRIEF.md`** 里被提到；
+ *   1. `scripts/` 下每个 `check-*.mjs` 都必须在 **`test/README.md`** 与 **`_distill/AGENT-BRIEF.md`** 里被**登记**；
  *   2. `scripts/` 下每个「工具类」脚本（`sync-*` / `patch-*` / `normalize-*` / `refresh-*` / `fix-*` / `measure-*`）
- *      至少在其中**一个**文档里被提到。
+ *      至少在其中**一个**文档里被**登记**。
  *   ★ 只在「新增了脚本却忘了写文档」时报错；不检查文字质量。
+ *
+ * ★★ 2026-10-06 收紧「登记」的判据：由**纯子串**改为**行锚定**（修一个已确认的假绿）。
+ *   旧判据 `t.includes(f)` 只要求脚本名在整份文档里**出现过** ⇒ **行被并掉、格式被破坏它都看不见**
+ *   （实测：`_distill/AGENT-BRIEF.md` 有 `check-render-venc.mjs` 的超长说明**直接粘着**
+ *   `node …/patch-render-venc.mjs`、**没有换行**，`patch-render-venc.mjs` 那一行被吞掉，闸门照报 exit 0）。
+ *   这正是本项目反复治过的「匹配判据可被无关代码满足」那一类。
+ *   现要求「**存在一行**按该文档的登记格式写下这个脚本」（脚本名一律**正则转义**，含 `.`）：
+ *   · `_distill/AGENT-BRIEF.md` = **命令行 / 行内代码**形态：
+ *     `^[ \t`\-]*node\s+(\S*[\/\\])?scripts[\/\\]<name>` —— 行首（可含空格/Tab/`-`/行内反引号）+ `node ` + 路径。
+ *     实测的三种合法形态都接受：代码块 `node D:/…/scripts/x.mjs …`、bullet `` - `node scripts/x.mjs` ``、
+ *     行首行内码 `` `node D:/…/scripts/x.mjs` ``。
+ *   · `test/README.md` = **检查器表**形态：`^\|\s*`(scripts|test)[\/\\]<name>`` —— 行首 `|` + 反引号包裹的路径。
+ *   ★ 同型残留（2026-10-06 一并收紧）：`test/*.test.mjs` 的「已登记」判据原为**裸子串**
+ *     `readme.includes(f)` ⇒ **测试入口行被并掉时同样看不见**（同一个病、同一个文件）。现改为行锚定，
+ *     接受两种合法形态：① `^node\s+(\S*[\/\\])?test[\/\\]<name>`（命令行块）
+ *     ② `^\|\s*`test[\/\\]<name>``（表行）。
+ *     ★ 测试入口侧**没有**「工具类只需一处」的豁免（只查 `test/README.md` 一处）⇒ 并成一行**必然**翻退出码。
+ *     ★ 失明守卫（`test/` 扫到 0 个 `*.test.mjs`）**早已存在**（见下面 `blind[]`），本侧无需新增。
+ *   ★ 放宽锚点（多接受几种合法行首）是允许的；**绝不许退回裸子串**。
  *
  * 用法：node scripts/check-doc-coverage.mjs
  * 退出码：有未登记的脚本 → 1；否则 0。
@@ -40,10 +59,23 @@ const files = (() => {
 const isGate = (f) => /^check-/.test(f);
 const isTool = (f) => /^(sync|patch|normalize|refresh|fix|measure|prune)-/.test(f);
 
+// ★ 行锚定判据（2026-10-06 收紧，见头注释）—— 每个文档一种「登记格式」。
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // 脚本名正则转义（含 `.`）
+const ANCHORS = {
+  // AGENT-BRIEF.md：命令行 / 行内代码形态（行首可含空格/Tab/`-`/行内反引号）
+  '_distill/AGENT-BRIEF.md': (f) => new RegExp('^[ \\t`\\-]*node\\s+(\\S*[\\/\\\\])?scripts[\\/\\\\]' + esc(f), 'm'),
+  // test/README.md：检查器表形态（行首 `|` + 反引号包裹的 `scripts/…` 或 `test/…`）
+  'test/README.md': (f) => new RegExp('^\\|\\s*`(scripts|test)[\\/\\\\]' + esc(f) + '`', 'm'),
+};
+
+// ★ 测试入口（`test/*.test.mjs`）在 `test/README.md` 的登记格式（2026-10-06 一并收紧）：
+//   ① 命令行块 `node test/x.test.mjs  # …`  ② 表行 `| `test/x.test.mjs` | …`
+const TEST_ENTRY = (f) => new RegExp('^(?:node\\s+(?:\\S*[\\/\\\\])?test[\\/\\\\]|\\|\\s*`test[\\/\\\\])' + esc(f), 'm');
+
 const missing = [];
 for (const f of files) {
   if (!isGate(f) && !isTool(f)) continue;          // style-distill / style-scan / unblock-* 等不强制登记
-  const where = Object.entries(texts).filter(([, t]) => t.includes(f)).map(([k]) => k);
+  const where = Object.entries(DOCS).filter(([k]) => ANCHORS[k] && ANCHORS[k](f).test(texts[k])).map(([k]) => k);
   if (isGate(f) && where.length < 2) missing.push({ f, need: '两个文档都要', where });
   else if (isTool(f) && where.length < 1) missing.push({ f, need: '至少一个文档', where });
 }
@@ -60,7 +92,7 @@ const readme = texts['test/README.md'];
 const testEntries = fs.existsSync(testDir)
   ? fs.readdirSync(testDir).filter((f) => f.endsWith('.test.mjs')).sort()
   : [];
-const unlisted = testEntries.filter((f) => !readme.includes(f));
+const unlisted = testEntries.filter((f) => !TEST_ENTRY(f).test(readme));
 
 // ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
 //   判据：两个扫描根任一扫到 **0 个** ⇒ 闸门空转 ⇒ 判 FAIL 并明说「本闸门已失明」。

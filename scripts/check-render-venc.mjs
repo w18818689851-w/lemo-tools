@@ -35,9 +35,23 @@
  *       且**不**出现 (d) 显式/回退/硬写 等限定词（显式|指定|explicit|才走|才用|回退|回落|fallback|
  *       硬写|硬编码|写死|违反|违规|FAIL|此前|原来|原先|曾经|used to|previously|legacy|不再|
  *       断言|闸门|守卫 —— 末三者用来放行「描述本闸门判据自身」的文字）、
- *       也**不**出现 `h264_nvenc` ⇒ 才判 FAIL。
+ *       也**不**出现 `h264_nvenc`、
+ *       ★ **且满足 (e) 相邻性**（2026-10-06 修一个已确认的**假红**）：
+ *       限定词必须**直接修饰** `libx264` —— 二者之间的文本只允许是
+ *       「空白 / 标点（**不含表格竖线 `|`**）/ 连接词白名单（使用|用|走|选|是|为|的|时|值|
+ *       选项|编码器|编码|器|情况|means|is|use|by|encoder|…|`LEMO_VENC`）」；
+ *       且当限定词在 `libx264` **之后**时，其右侧还必须紧接「边界 / 标点 / 连接词」。
+ *       ⇒ 才判 FAIL。
  *       「小句」切分符：`；;。，,` —— 避免「A；B」跨句误判
  *       （如正确写法「未设⇒h264_nvenc；显式 libx264⇒CPU」不会被误报）。
+ *     · ★ 为什么要有 (e)：旧判据只要求「同一小句里同时出现」，于是
+ *       `| libx264 | 默认安装即有的软件编码器，兼容性最好 |`
+ *       被误判为「过期声称」—— 这里 `默认` 修饰的是「默认**安装**」，不是在说「编码器默认值」。
+ *       纯关键词判据区分不了这种「限定词其实在修饰别的词」的情形。(e) 要求限定词**紧贴**编码器名：
+ *       上例 `libx264` 与 `默认` 隔着表格竖线 `|`（竖线是单元格边界、不是连接文字）⇒ 判「不相邻」⇒ 不报；
+ *       `libx264 是默认安装自带的软件编码器` 里 `默认` 右侧紧接实词「安装」⇒ 同样判「不相邻」⇒ 不报。
+ *       而真正的过期声称（`默认使用 libx264 编码` / `libx264 是默认编码器` / `未设 LEMO_VENC 时使用 libx264`）
+ *       限定词与编码器名之间只有连接词 ⇒ 仍**照旧判 FAIL**（实测见 test/README.md 条目）。
  *
  * ★ ③ 已知局限 / 会误报的边界：
  *   · 只做**文本/语法级**判定，不跑 ffmpeg —— 「未设时真的会调 h264_nvenc」是靠读代码确认的，不是实测编码。
@@ -53,6 +67,13 @@
  *     - 把旧声称改写成「默认 libx264，也可显式指定 h264_nvenc」这类**同时含显式词**的句子会被漏（(d) 误护）；
  *     - 旧声称拆成两行、或限定词与 `libx264` 隔了 `；。，` 的，会被漏；
  *     - 英文 "libx264 is used by default" 若同句含 `explicit`/`previously` 等词，会被漏。
+ *     - ★ (e) 相邻性**自身**带来的新边界（有意取舍，非疏漏）：限定词与 `libx264` 之间若垫了
+ *       **实词或整段说明**（如「默认情况下，编码器（用于分段渲染）走 `libx264`」中间的
+ *       「编码器（用于分段渲染）走」），(e) 会判「不相邻」而**漏报**；表格里限定词与编码器名
+ *       **分处两格**的真声称（如 `| libx264 | 默认 |`）也会被漏（(e) 视竖线为单元格边界）。
+ *       理由：**同一形态也正是假红的来源**（`| libx264 | 默认安装… |`），纯文本判据无法两全；
+ *       本闸门选择「宁漏不乱报」—— 漏报可由人工/其它闸门兜底，乱报会让整条守卫失去可信度。
+ *       连接词白名单是**正向**的：不在表内的实词一律使 (e) 不成立（宁可判「不相邻」）。
  *   · D 类**有意不查**的形态（显式排除，非疏漏）：
  *     - 本闸门自身 `scripts/check-render-venc.mjs` 与配套 `scripts/patch-render-venc.mjs`
  *       —— 它们天然携带旧文本（判据说明 / 替换搜索键），扫它们只会产生恒定误报；
@@ -238,6 +259,53 @@ const D_QUAL = /(默认|缺省|不设|没设|未设|unset|default)/i;
 const D_EXPL = /(显式|指定|explicit|才走|才用|回退|回落|fallback|硬写|硬编码|写死|违反|违规|判\s*FAIL|FAIL|此前|原来|原先|曾经|历史上|used to|previously|legacy|已弃用|不再|断言|闸门|守卫)/i;
 const D_CTX = /(LEMO_VENC|编码|encoder|venc|nvenc|ffmpeg|mux|转码|transcod)/i;
 
+// ★ D 类「相邻性」(e) 辅助（2026-10-06 修假红）—— 详见头注释 ② (e) / ③。
+//   连接词白名单：允许垫在「限定词」与 `libx264` 之间的**连接性**文字（长词在前，避免半截匹配）。
+const D_CONN = [
+  'LEMO_VENC', '情况下', '编码器', '情况', '选项', '选择', '指定', '采用', '使用', '编码',
+  'encoder', 'codec', 'means', 'uses', 'used', 'use', 'is', 'are', 'be', 'by', 'the', 'to', 'of', 'in', 'as', 'for', 'that', 'which', 'an', 'a',
+  '走', '选', '是', '为', '的', '时', '值', '器', '用',
+];
+// gap 里允许出现的「非文字」字符（空白 + 标点/符号）。★ 故意**不含**表格竖线 `|`/`｜`。
+const D_GAP_PUNCT = /[\s\u3000：:＝=~～\-—–>＞⇒→/\\*()（）\[\]【】「」『』《》〈〉“”"'‘’`·、．.]+/g;
+// 限定词右侧若以这些字符开头，视为「已到边界 / 后接标点」。
+const D_TAIL_PUNCT = /^[\s\u3000：:＝=~～\-—–>＞⇒→/\\*()（）\[\]【】「」『』《》〈〉“”"'‘’`·、．.]/;
+
+/** 去掉「空白 + 标点 + 连接词」后为空 ⇒ 该 gap 只含连接性文字（不是实义内容）。 */
+function dGapConnective(gap) {
+  let s = gap.replace(D_GAP_PUNCT, '');
+  for (let pass = 0; pass < 6; pass++) {
+    const before = s;
+    for (const w of D_CONN) s = s.split(w).join('');
+    if (s === before) break;
+  }
+  return s.length === 0;
+}
+
+/** 限定词右侧是否「紧接边界 / 标点 / 连接词」（用于限定词落在 `libx264` 之后的情形）。 */
+function dTailOk(rest) {
+  const t = rest.replace(/^\s+/, '');
+  if (t === '') return true;
+  if (D_TAIL_PUNCT.test(t)) return true;
+  return D_CONN.some((w) => t.startsWith(w));
+}
+
+/** (e) 相邻性：小句 `c` 内是否存在一对「限定词 ↔ `libx264`」彼此直接修饰。 */
+function dQualModifiesX264(c) {
+  const xs = [...c.matchAll(/libx264/gi)].map((m) => ({ i: m.index, n: m[0].length }));
+  const qs = [...c.matchAll(/(默认|缺省|不设|没设|未设|unset|default)/gi)].map((m) => ({ i: m.index, n: m[0].length }));
+  for (const q of qs) {
+    for (const x of xs) {
+      if (q.i + q.n <= x.i) {                 // 限定词在 libx264 之前：中间只能是连接性文字
+        if (dGapConnective(c.slice(q.i + q.n, x.i))) return true;
+      } else if (x.i + x.n <= q.i) {          // 限定词在 libx264 之后：中间连接性 + 右侧是边界/标点/连接词
+        if (dGapConnective(c.slice(x.i + x.n, q.i)) && dTailOk(c.slice(q.i + q.n))) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function scanD(root, tag) {
   const hits = [];
   const stack = [root];
@@ -264,6 +332,9 @@ function scanD(root, tag) {
           if (!/libx264/.test(line) || !D_CTX.test(line)) continue;
           for (const c of line.split(/[；;。，,]/)) {
             if (!/libx264/.test(c) || !D_QUAL.test(c) || D_EXPL.test(c) || /h264_nvenc/i.test(c)) continue;
+            // ★ (e) 相邻性：限定词必须**直接修饰** libx264（详见头注释 ②(e)）——
+            //   挡掉「限定词其实在修饰别的词」的假红（如表格里 `默认` 修饰「默认安装」）。
+            if (!dQualModifiesX264(c)) continue;
             hits.push({ repo: tag, file: path.relative(root, p).replace(/\\/g, '/'), line: i + 1, text: line.trim().slice(0, 200) });
             break;
           }
