@@ -164,7 +164,7 @@ film: Room to Think
 ### 已知缺陷
 - **字体回退**：`STYLE.md:32` 点名 Inter / Inter Tight 600 / JetBrains Mono，本机无这些 OFL 字体，通路由 `dub-styles.json` 回退到 Microsoft YaHei，字重/字宽与设计意图不完全一致（`dub-styles.json#dark-keynote.notes`）。
 - **9:16 曾不适配（★ 2026-10-04 已修）**：原记「无 `aspects` 声明，只按 1920×1080 绝对像素构图，硬渲 9:16 会丢失右侧约 43.75% 并留下方黑区」。**2026-10-04** 已改造 `styles/dark-keynote/demo/`：`film.js` 导出 `FILM_META.aspects = ['16:9','9:16']`（`film.js:11-16`）、`engine.js` 加 `setFrame(W,H)` 派生 `FX/FY/S`（`engine.js:12-14`），`renderFilm` 从实际帧重排（相机 `zoom × S`；全屏家什按 `FX/FY/S`）。**16:9 逐字节未变**（`fx=fy=S=1` 时每个表达式退化成它替换掉的那个数字）；9:16 实测不裁切、内容完整（见第 2 节）。
-- **`bg`/`fg` 无官方 hex**：`STYLE.md:25` 只说「cool neutral ladder」，`#0A0B0F`/`#151822`/`#E8EAF0` 来自 demo 代码具名调色板 PAL，非文档明文（`dub-styles.json#dark-keynote.notes`）。
+- **`bg`/`fg` 无官方 hex**：`STYLE.md:24` 只说「cool neutral ladder」，`#0A0B0F`/`#151822`/`#E8EAF0` 来自 demo 代码具名调色板 PAL，非文档明文（`dub-styles.json#dark-keynote.notes`）。
 
 ### 素材缺口
 - 无外部素材依赖（全部代码生成），因此不存在「缺图缺片」问题；真正的缺口是**字体文件**与**品牌资产**（新主题必须自备标记/字标，不能沿用 Tidy）。

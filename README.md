@@ -204,6 +204,48 @@ lemo-make.bat --help
 
 而且各 demo 的 `build.sh` 里 `events.mjs` 在 `mix.py` **之前**（有依赖），所以这一步必须放在并行段**之前**。
 
+## 编排器与 `build.sh` 的差异清单
+
+编排器**不是** `build.sh` 的逐行复刻 —— 它按**候选清单探测** demo 自带的脚本（`for c in …; do [ -f ] && break; done`）。
+因此**有些 `build.sh` 步骤编排器不跑**。这张表如实登记（2026-10-06 逐条核对 `styles/*/demo/build.sh`），
+并说明各自影响。★ 影响分三级：**成片内容**（不跑 ⇒ 成片内容与 `build.sh` 不一致）/ **只影响交付图**
+（成片本身不变，`poster.jpg`、`stills/*.jpg` 会陈旧）/ **纯自检**（不跑只是少一道校验，成片一字不变）。
+
+| 步骤（相对 `demo/`，`core/` 的相对库根） | 影响 | 涉及的风格 | 说明 |
+|---|---|---|---|
+| `tools/pitch.py` | **成片内容** | art-deco | ★ **已修（2026-10-06）**：编排器**现在会跑它**（原先漏跑 ⇒ 门童两句 +4 半音静默丢失）。列在此处只为标记「这一类缺口确实存在过」 |
+| `tools/trim_cmd.py` | **成片内容** | microgame | 裁剪人声 wav |
+| `tools/export_cues.mjs` | **成片内容** | urban-sketch | 导出 cues（画面 / 字幕的时间窗） |
+| `tools/words.py` | **成片内容** | dataviz / swiss-motion | 生成词级时间轴 `words.json`（逐词高亮） |
+| `tools/video_png.mjs` | **成片内容** | risograph | 导出逐帧 PNG |
+| `models/gen_volt.mjs` + `models/gen_kite.mjs` | **成片内容** | hologram-hud | 生成 volt / kite 素材 |
+| `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变） |
+| `tools/still.mjs` | 只影响交付图 | rubber-hose | 同上 |
+| `tools/cuecheck.py` | 纯自检 | 12 个：art-deco / dark-keynote / dataviz / engraving / hologram-hud / iso-infographic / microgame / midcentury-toon / silent-film / silkscreen-poster / whiteboard / woodcut | 配乐卡点 ↔ 画面时间网格自检 |
+| `tools/final_asr.py` | 纯自检 | 6 个：dark-keynote / hologram-hud / iso-infographic / microgame / rubber-hose / woodcut | 成片终检（ASR 比对） |
+| `check_mix.py`（`demo/` 或 `demo/tools/`） | 纯自检 | 2 个：blueprint / glass-product | 混音自检 |
+
+**这些差异是机器可检的**（2026-10-06 起）：`lemo-make.mjs` 的 `ORCH_SKIP_STEPS` 登记表 + `reportOrchSkipSteps()`，
+会在**起飞前检查**里按上表报出本 demo 命中的步骤（`★ 影响成片内容` / `○ 只影响交付图` / `· 仅少一道自检`）。
+**只提示、绝不阻断**（不 fail、不改退出码），且**不依赖** `demo-manifest-all.json` —— 声明缺失/损坏时照样有效
+（这补的正是「声明里 `assets_required` 多为空 ⇒ 漏跑的步骤根本不出现在任何报告里」那个**全静默**盲区）。
+用 `--no-preflight` 可整块关掉。
+
+★ **为什么这些不写进 `orchestratorRuns()` 的 `runs[]`**：`runs[]` 的语义是「编排器本次**会执行**它」
+（它是音频脚本与「第 3 步」候选循环的镜像），把**不执行**的步骤写进去会让起飞前检查把它们当成「会跑」而
+**静默** —— 与「让缺口可见」正好相反。所以单列一张登记表，报之前再核「脚本真在本 demo 里」**且**
+「`orchestratorRuns()` 确实返回 false」，于是将来某一步被编排器补上时它会**自动**不再报（`pitch.py` 就是第一例）。
+
+★ **不要拿 `demo-manifest-all.json` 的 `steps` 字段自动比**：编排器**直接调用**的 `core/` 脚本
+（`core/render/events.mjs`、`srt.py`、`video.mjs`、`mux.sh`、`core/tts/tts.py` …）都不在 `runs[]` 镜像里
+（那个镜像只覆盖「demo 自带候选脚本」这一类）⇒ 自动比对会把它们**全判成「漏跑」**（实测 34 个风格里 34 个命中，
+明显失真）。这也是本表选「人工核实 + 登记」而不是「自动比对」的原因。
+
+★ **干净名单**：按 `build.sh` 逐条抽取核对，35 个带 `build.sh` 的风格里**绝大多数至少漏跑一步**，
+本表核出的「没有上述任何一步」的是 **crayon-book / impasto / paper-lantern**；另有 **lowpoly-island**
+（只差 `music/check.py` 一个自检）与 **scifi-toon**（只差 `asr.py` / `srt.mjs` —— 后者是编排器**有意**不跑的
+Node 字幕脚本，见「第 6 步混流」里的说明）。
+
 ## 四批新功能：语言版本 / 配音引擎 / 输出尺寸 / 音色选择
 
 三者的共同点：**开关都在「内容文件」或一条命令行里，且都能逐字节回归到改动前**。

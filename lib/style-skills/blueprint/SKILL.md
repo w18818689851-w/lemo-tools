@@ -65,7 +65,7 @@ film: Patent Pending: The Cloud Catcher
 ## 4. 转场规则
 
 - **镜头之间怎么切**：**在强拍（downbeat）上硬切**，段内是连续运镜（`STYLE.md:47`、`STYLE.md:69`）。
-- **有没有叠化 / 闪白 / 擦除 / 定格**：**没有叠化**（`no dissolves`，`STYLE.md:69`）。允许的转场必须**来自制图本身**：①强拍硬切；②**FIG. 编号改写**——旧号被划掉、写上新号并配一行小字（样片 FIG. 1 → FIG. 2 · EXPLODED VIEW → FIG. 3 · IN OPERATION，`style-dna/blueprint.md:129`）；③剖面线 A–A 扫过画面（`STYLE.md:119`）。样片还有两个**物理撞击式微抖**：拍纸与落章（`DEMO.md:57`）。
+- **有没有叠化 / 闪白 / 擦除 / 定格**：**没有叠化**（`no dissolves`，`STYLE.md:69`）。允许的转场必须**来自制图本身**：①强拍硬切；②**FIG. 编号改写**——旧号被划掉、写上新号并配一行小字（样片 FIG. 1 → FIG. 2 · EXPLODED VIEW → FIG. 3 · IN OPERATION，`style-dna/blueprint.md:129`）；③剖面线 A–A 扫过画面（`STYLE.md:65`）。样片还有两个**物理撞击式微抖**：拍纸与落章（`DEMO.md:57`）。
 - **硬切点怎么定**：挂在 **108 BPM 网格**上——1 拍 = 0.5556s、1 小节 = 2.222s、十六分 = 0.139s；段与段的切点落在小节/强拍上（`style-dna/blueprint.md:81`）。
 - **转场时长与缓动**：硬切为 0 帧；FIG 改写与剖面线扫过是「画」出来的，时长跟笔画长度走，用 `draw.js` 的弧长截断（`draw.js:53-65`）。斜二测深度因子在 **0 → 0.5** 之间动画，是本风格特有的「平面转出厚度」缓动（`film.js:125`）。
 - **绝对不要的转场**：溶解 / 叠化 / 淡入淡出等 UI 式转场；3D 环绕；无来由的运镜（`style-dna/blueprint.md:121`）。

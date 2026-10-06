@@ -27,7 +27,7 @@ film: Einstein in Your Pocket
 
 **一句话内核**：一块 8000×4500 世界单位的暖白板就是整个世界；每个想法在板上各占一个区域，笔画出线、镜头骑着线去下一个区域，直到最后一记拉远越过板框、看见整堂课作为一张图挂在墙上。
 
-**边界**：它**撑不起**——需要真实质感/实拍/人物出镜的内容；纯情绪、无因果链的抒情片；以及「一句话塞多个并列信息点」的密集片（一条线只承担一个想法，`style-dna/whiteboard.md:51`）。它是**中速**的：`STYLE.md:6` 定位 **60–120s**，样片 111.0s（`style.json:17`）。
+**边界**：它**撑不起**——需要真实质感/实拍/人物出镜的内容；纯情绪、无因果链的抒情片；以及「一句话塞多个并列信息点」的密集片（一条线只承担一个想法，`style-dna/whiteboard.md:52`）。它是**中速**的：`STYLE.md:6` 定位 **60–120s**，样片 111.0s（`style.json:17`）。
 
 ---
 
@@ -67,7 +67,7 @@ film: Einstein in Your Pocket
 
 ## 4. 转场规则
 
-- **镜头之间怎么切**：**没有硬切**。转场要么是「笔画的线即转场」（镜头骑着笔刚画出的那条线——轨道、信号线、轨迹——去下一个想法），要么是一记**甩镜（camera whip）**（`STYLE.md:66`、`style-dna/whiteboard.md:52-55`）。样片里甩镜的落点是 46.45s（管钟第一声把镜头甩到轨道钟），全板拉远在 101.5s（`style-dna/whiteboard.md:265`）。
+- **镜头之间怎么切**：**没有硬切**。转场要么是「笔画的线即转场」（镜头骑着笔刚画出的那条线——轨道、信号线、轨迹——去下一个想法），要么是一记**甩镜（camera whip）**（`STYLE.md:66`、`style-dna/whiteboard.md:88-90`）。样片里甩镜的落点是 46.45s（管钟第一声把镜头甩到轨道钟），全板拉远在 101.5s（`style-dna/whiteboard.md:265`）。
 - **有没有叠化 / 闪白 / 擦除 / 定格**：**没有溶解、没有划像、没有闪白**。允许的动作是：笔飞入/飞出画框、板擦沿路径恒速擦除（留 10% 残影）、甩镜的运动模糊（`STYLE.md:64-66`）。
 - **硬切点怎么定**：样片音乐挂在 **120 BPM** 网格（1 拍 = 0.5s），第一小节**强拍 = 标题**（`T0=10.0`）；画面事件跟着这条网格与旁白走（`film.js:7`、`style-dna/whiteboard.md:250`）。
 - **转场时长与缓动**：相机运动 **>14px/帧** 时做 180° 运动模糊——渲染 **≤12 个子帧、子帧间隔 ≤4px** 后平均（子帧太少会让文字频闪，`STYLE.md:66`、`DEMO.md:38`）。跳笔抬起量 = 距离比例、上限为窗口的 **35%**；间隔 **>0.75s** 的笔飞到框外停车、并在下一笔前 **0.42s** 飞回（`DEMO.md:46`、`engine/wb.js:270-292`）。
@@ -150,8 +150,8 @@ film: Einstein in Your Pocket
 
 - **内容文件字段契约**：`lines.json` 提供每一行旁白 `{id, text}`（id 形如 `v01 / v02a`），**逐行即一句**、按子句拆成字幕；`voices/words.json` 提供每个词在每行里的起止时间（供 `at(id, word)` / `atS` / `atE` 把画面钉在说出的词上）。片子的「内容字段」是：主题对象（样片=别针/手机）、一个惊人的数字（20,000km、38μs、11km）、一条能走过去的过程（信号→延迟→距离→三边定位）、一个后果（每天漂一格）、一个修正（发射前调慢）。颜色语义在 `STYLE.md:28` 固定：黑=结构、蓝=信号/测量、橙=你/时间/关键之物（`style-dna/whiteboard.md` 的「颜色语义」条、`engine/wb.js` 的 `INK` 色板）。
 - **事件词汇表**（`type` → 消费者）：`stroke | write | dash`（`{pen,dur,len,x,y,pan,z,on}` → `mix.py` 记号笔声，`write` 稍轻；`pan`=屏幕 x、`z`=远近、`on=0` 时压低 9dB）/ `tap`（笔尖小嗒）/ `magnet`（`{big}` 磁贴吸板）/ `magnetOff` / `erase`（`{len}` 板擦摩擦）/ `rewind`（`{dur}` 摩擦用 9Hz 调制）/ `splash` / `tray`（`{pen}`）/ `trayEraser` / `cap` / `capOn` / `ping`（`{k}` 广播涟漪→钟琴 ping）/ `tickG{i}` / `tickO{i}` / `tickFix{i}` / `day{d}` / `vo`（`{id}`）/ `cues`（音乐锚点包）（`style-dna/whiteboard.md:193-214`）。
-- **时间线契约**：`demo/film.js` 导出 `build()` → `{ dur, render, ev, subs, cam, tl, VO, cues }`。`render(ctx,t)` 逐帧绘制（含 >14px/帧时的 180° 运动模糊、≤12 子帧、间隔 ≤4px）；`dur` 总时长（样片 `END=111`）；`ev` 是按时间排序的事件数组（供 `events.mjs` 导出 `events.json` 驱动声音，并附加 `pan/z/on`）；`subs` 是字幕条（子句拆分、≤44 字符/行、每条至少保持 1.4s）；`cam` 是键控相机；`cues` 是音乐锚点（`T0/BEAT/duet0/fix0/dayT`）。页面契约由 `main.js` 暴露 `window.READY / window.render(t) / window.DUR / window.EV`（`style-dna/whiteboard.md:101`）。
-- **新增主体怎么接入**：新主体 = 一组用引擎造形函数画出的 `Stroke`，交给某支笔在时间窗口内画完。必须做三件事：① 用 `W.line / curve / poly / arc / circle / rect / roundRect / arrow / dashed / hatch` 或 `W.text(str, x, y, {h, align, color})` 生成 `Stroke[]`；② 用 `tl.draw(pen, shapes, t, {by, minGap, maxGap})` 排进窗口（`by:` 让引擎解手速、保证准时写完；虚线自带更小底线、需要时用另一支笔）；③ 需要移动的实体**只交给磁贴**（`W.drawPinMagnet`），需要擦除/倒带用 `tl.erase(path, t, dur, {width, strength})`。给标签留出「全在或全不在」的余量，避开推镜的切边（`style-dna/whiteboard.md:100`、`DEMO.md:104-110`）。
+- **时间线契约**：`demo/film.js` 导出 `build()` → `{ dur, render, ev, subs, cam, tl, VO, cues }`。`render(ctx,t)` 逐帧绘制（含 >14px/帧时的 180° 运动模糊、≤12 子帧、间隔 ≤4px）；`dur` 总时长（样片 `END=111`）；`ev` 是按时间排序的事件数组（供 `events.mjs` 导出 `events.json` 驱动声音，并附加 `pan/z/on`）；`subs` 是字幕条（子句拆分、≤44 字符/行、每条至少保持 1.4s）；`cam` 是键控相机；`cues` 是音乐锚点（`T0/BEAT/duet0/fix0/dayT`）。页面契约由 `main.js` 暴露 `window.READY / window.render(t) / window.DUR / window.EV`（`style-dna/whiteboard.md:183`）。
+- **新增主体怎么接入**：新主体 = 一组用引擎造形函数画出的 `Stroke`，交给某支笔在时间窗口内画完。必须做三件事：① 用 `W.line / curve / poly / arc / circle / rect / roundRect / arrow / dashed / hatch` 或 `W.text(str, x, y, {h, align, color})` 生成 `Stroke[]`；② 用 `tl.draw(pen, shapes, t, {by, minGap, maxGap})` 排进窗口（`by:` 让引擎解手速、保证准时写完；虚线自带更小底线、需要时用另一支笔）；③ 需要移动的实体**只交给磁贴**（`W.drawPinMagnet`），需要擦除/倒带用 `tl.erase(path, t, dur, {width, strength})`。给标签留出「全在或全不在」的余量，避开推镜的切边（`style-dna/whiteboard.md:154`、`DEMO.md:104-110`）。
 - **换主题时要改哪些文件**：① `demo/lines.json`（旁白）→ 跑 `core/tts/tts.py` + `demo/tools/asr_check.py` 得新的 `voices/words.json`；② `demo/film.js`（板面区域布局常量、VO 起句时间、把画面用 `at(id,word)` 挂到说出的词上、笔、相机关键帧、字幕拆分）；③ 新图形直接用 `engine/wb.js` 的造形函数写进 `film.js`，**引擎本身不用改**；④ 配乐 `music.py` 读同一份 `events.json`，一般不用改。**关键**：先写 treatment 再据此产出素材，不要靠改内容文件硬凑（`DEMO.md:78-83`）。
 - **与 `dub.mjs` 通路的关系**：本风格在「文案 + 风格」通路里可生效的参数有 `palette`（bg `#e9ebee` / bg2 `#9aa0a8` / fg `#23262c` / accent `#d97757` / subtitle `#141414` / subtitleOutline 全透明 / subtitleBack `#E6F5F2EC`）、`bgRecipe`（type=gradient，stops `#e9ebee → #9aa0a8`，texture none，vignette 0.08）、`subtitle`（KaiTi / 0.04074 / 0.14537 / 0.06019 / 描边 0 / align 2）、`title.fontSizeFactor 0.11`、`motion.subtitleFadeIn 0.12` / `chapterTransition cut`、`overlay.accentRule true`（章节卡与 lowerThird 保守关闭）（`dub-styles.json#whiteboard`）。
 

@@ -384,6 +384,14 @@ function diagnoseMissingAssets(demoRel, text) {
  *     「编排器没有执行它 —— 这需要外部条件，不是编排器的 bug」。
  *   后者若说成「缺口」会造出一个**假工单**（game-show/make_voices.sh 需 macOS 的 say、
  *   watercolor/music/prep.sh 需联网，编排器不跑它们多少是设计如此）。危害方向见 classifyWhy 的注释。
+ *
+ * ⚠️ 2026-10-06 补：本检查分**两段**，纪律相同（只提示、绝不 fail、绝不改退出码）：
+ *   ① reportOrchSkipSteps() —— 读 ORCH_SKIP_STEPS 登记表，报出「本 demo 的 build.sh 有、
+ *      编排器不跑」的步骤。**不依赖声明**（只读本仓库文件 + orchestratorRuns），所以声明缺失/
+ *      损坏/该 demo 不在声明里时它照样有效。它补的正是上面那个「声明驱动」的盲区：
+ *      声明里 assets_required 多为空（实测 43 个 demo 里只有 1 个有），于是**漏跑的步骤
+ *      根本不会出现在任何报告里**（全静默）。
+ *   ② 下面这段声明驱动的检查 —— 一个字没动。
  */
 
 /** 读声明。文件不在 / 解析失败 / 结构不对 → 返回 null（调用方据此静默跳过）。 */
@@ -489,6 +497,9 @@ function orchestratorRuns(slug, demoRel, script) {
     `${d}/mix.py`, `${d}/audio/mix.py`,
     `${d}/audio/foley.py`, `${d}/foley.py`, `${d}/tools/foley.py`,
     `${d}/tools/srt.py`, `${d}/make_srt.py`, `${d}/subs_export.py`,
+    // ★ 2026-10-06 补：变调后处理 pitch.py（音频脚本里「配音之后、ASR/回传之前」新增的那一步）。
+    //   镜像必须同步改，否则起飞前检查会把「art-deco 的 pitch.py」继续报成「编排器漏跑」。
+    `${d}/tools/pitch.py`,
   ];
   // TTS 是**两条互斥的后端**，编排器一次只跑一条（这里是 audioScript 配音段的镜像）：
   //   ① $D/lines.json 存在 → core/tts/tts.py（读 demo 根下的 lines.json，写 voices[_raw]/）；
@@ -501,6 +512,84 @@ function orchestratorRuns(slug, demoRel, script) {
     runs.push(`${d}/tts/gen.py`);
   }
   return runs.includes(script);
+}
+
+// ─────────────── 「build.sh 有、编排器不跑」的步骤登记（只报告，不执行）───────────────
+/**
+ * ★ 为什么要有这张表（2026-10-06 端到端实测 + 全库审计）：
+ *   编排器的音频/交付链路是**按候选清单探测** demo 自带脚本的，而全库 35 个带 build.sh 的风格里
+ *   **大多数至少漏跑一步**。最要命的是**内容有影响**的那几步 —— 它们不跑时成片照样出得来、
+ *   退出码 0，只是内容与 build.sh 不一致，外部表现与「跑通了」无法区分。
+ *   实例（本轮修掉的就是第一个）：art-deco 的 tools/pitch.py 会变调重采样并改写 dur.json，
+ *   编排器漏跑 ⇒ 门童两句的 +4 半音静默丢失（实测 dur.json 停在未变调的 1.009 / 1.113）。
+ *
+ * ★ 为什么是**这张人工登记表**，而不是「拿 demo 链路声明的 steps 自动比」：
+ *   实测（用 demo-manifest-all.json 的 steps 字段跑一遍全库）会造出**大量假缺口** ——
+ *   编排器**直接调用**的 core/ 脚本（core/render/events.mjs、srt.py、video.mjs、mux.sh、
+ *   core/tts/tts.py …）都不在 orchestratorRuns 的 runs[] 镜像里（那个镜像只覆盖
+ *   「demo 自带候选脚本」这一类），自动比对会把它们全判成「漏跑」（实测 34 个风格里 34 个命中，
+ *   明显失真）。所以本表只登记**已逐条核实**的真缺口，宁少勿错。
+ *
+ * ★ 为什么**不**把这些写进 orchestratorRuns 的 runs[]：runs[] 的语义是「编排器本次**会执行**
+ *   它」（见该函数注释）—— 把不执行的步骤写进去，起飞前检查反而会把它们当成「会跑」而**静默**，
+ *   与「让缺口可见」正好相反。所以单列本表，由 reportOrchSkipSteps() 读它并如实报出。
+ *
+ * ★ impact 只决定**措辞**，不决定「报不报」：
+ *   'content'  —— 改**成片内容**（音频波形 / 时间轴 / 画面），不跑 = 成片内容与 build.sh 不符；
+ *   'delivery' —— 只改**交付图**（poster / styleframe 等静帧），不跑 = 交付图陈旧、成片本身不变；
+ *   'selfcheck'—— **纯自检**，不跑 = 少一道校验，成片一字不变。
+ * ★ 本表是**候选**：报之前还要核两件事 —— ① 该脚本真在本 demo 里；② 编排器本次确实不跑它
+ *   （走 orchestratorRuns）⇒ 将来某一步被编排器补上时，这里会**自动**不再报，不用改表。
+ *   （pitch.py 就是第一例：它已在 2026-10-06 被补进编排器，因此本表**不登记它**。）
+ * ★ root='demo' 的 rel 相对 demo 目录（tools/xxx.py）；root='lib' 的 rel 相对库根（core/…）。
+ *   两者都按「相对库根」拼出来核存在性 ⇒ **不写死任何 slug**。
+ */
+const ORCH_SKIP_STEPS = [
+  // ── 内容有影响（不跑 ⇒ 成片内容与 build.sh 不符）──
+  { rel: 'tools/trim_cmd.py',     root: 'demo', impact: 'content', what: '裁剪人声 wav（改人声内容）' },
+  { rel: 'tools/export_cues.mjs', root: 'demo', impact: 'content', what: '导出 cues（改画面 / 字幕的时间窗）' },
+  { rel: 'tools/words.py',        root: 'demo', impact: 'content', what: '生成词级时间轴 words.json（改逐词高亮）' },
+  { rel: 'tools/video_png.mjs',   root: 'demo', impact: 'content', what: '导出逐帧 PNG（改交付内容）' },
+  { rel: 'models/gen_volt.mjs',   root: 'demo', impact: 'content', what: '生成 volt 素材（改画面内容）' },
+  { rel: 'models/gen_kite.mjs',   root: 'demo', impact: 'content', what: '生成 kite 素材（改画面内容）' },
+  // ── 只影响交付图（成片本身不变，poster / styleframe 等会陈旧）──
+  { rel: 'core/render/still.mjs', root: 'lib',  impact: 'delivery', what: '出静帧（poster / styleframe 等交付图）' },
+  { rel: 'tools/still.mjs',       root: 'demo', impact: 'delivery', what: '出静帧（poster / styleframe 等交付图）' },
+  // ── 纯自检（不跑只是少一道校验，成片一字不变）──
+  { rel: 'tools/cuecheck.py',     root: 'demo', impact: 'selfcheck', what: '配乐卡点 ↔ 画面时间网格自检' },
+  { rel: 'tools/final_asr.py',    root: 'demo', impact: 'selfcheck', what: '成片终检（ASR 比对）' },
+  { rel: 'tools/check_mix.py',    root: 'demo', impact: 'selfcheck', what: '混音自检' },
+  { rel: 'check_mix.py',          root: 'demo', impact: 'selfcheck', what: '混音自检' },
+];
+
+/**
+ * 报出「本 demo 的 build.sh 有、编排器不跑」的步骤。
+ * ⚠️ 三条纪律与 preflight 的其余部分**完全一致**：只打印、**绝不 fail**、**绝不改退出码**；
+ *    任何异常都由调用方吞掉（本函数只读本仓库文件 + orchestratorRuns，不碰 WSL / 不碰声明）。
+ * 无命中时**一声不响**（不给不需要的 demo 制造噪音）。
+ */
+function reportOrchSkipSteps(slug, demoRel) {
+  const hits = [];
+  for (const s of ORCH_SKIP_STEPS) {
+    const full = s.root === 'demo' ? `${demoRel}/${s.rel}` : s.rel;
+    if (!fs.existsSync(path.join(CFG.winLib, full))) continue;    // 本 demo 没有这个脚本
+    if (orchestratorRuns(slug, demoRel, full)) continue;         // 编排器本次会跑它 ⇒ 不是缺口
+    hits.push({ ...s, full });
+  }
+  if (!hits.length) return;
+  const rank = { content: 0, delivery: 1, selfcheck: 2 };
+  hits.sort((a, b) => rank[a.impact] - rank[b.impact]);
+  console.log(`\n${C.b('[起飞前检查] build.sh 有、编排器不跑的步骤（已登记 · 只提示、不阻断）')}`);
+  for (const h of hits) {
+    const mark = h.impact === 'content' ? '★ 影响成片内容'
+      : h.impact === 'delivery' ? '○ 只影响交付图' : '· 仅少一道自检';
+    warn(`  ${h.full}  —— ${mark}：${h.what}`);
+  }
+  if (hits.some(h => h.impact === 'content')) {
+    warn('  ★ 带「影响成片内容」的步骤不跑时，成片仍会正常产出（退出码 0），只是内容与 build.sh 不一致 ——');
+    warn('    若要逐字节复现该 demo 的 build.sh，请直接跑它自带的 build.sh（本编排器不执行这些步骤）。');
+  }
+  info(C.dim('（登记表：lemo-make.mjs 的 ORCH_SKIP_STEPS；用 --no-preflight 跳过本检查）'));
 }
 
 /**
@@ -626,6 +715,11 @@ function shortHow(s) {
 /** 起飞前检查主流程。只打印，不返回、不抛、不 fail。 */
 async function preflight(o, demoRel) {
   if (o.noPreflight) return;
+  // ★ 先报「build.sh 有、编排器不跑」的步骤（见 ORCH_SKIP_STEPS）。位置刻意在声明检查**之前**：
+  //   这一段**不依赖 demo 链路声明**（只读本仓库文件 + orchestratorRuns），所以声明缺失/损坏、
+  //   或该 demo 不在声明里时它照样有效 —— 而「编排器漏跑了一步」恰恰是最需要先看到的信息。
+  //   与声明那一段同样的纪律：只提示、绝不 fail、绝不改退出码；异常也一律吞掉（不做单点故障）。
+  try { reportOrchSkipSteps(o.slug, demoRel); } catch { /* 只提示，绝不因它中断 */ }
   const m = loadManifest();
   if (!m) return;                                    // 声明缺失/损坏 → 静默
   const d = m.demos[o.slug];
@@ -2249,6 +2343,31 @@ print("  \u2713 voices/dur.json 已按 lines.json 逐条从 wav 重算（%d 条�
   if [ -z "$(ls -A "$D/voices"/*.wav 2>/dev/null)" ]; then
     echo "STEP_FAIL voices/ 里没有 wav 产出"; exit 1
   fi
+
+  # ── 变调后处理：pitch.py（按 lines.json 里每行的 pitch 字段做变调重采样）────────────
+  # ★ 这是本文件修过的一个真实缺口（2026-10-06 端到端实测确证）：全库 43 个风格里**只有
+  #   art-deco** 有 tools/pitch.py，而它**改变音频内容** —— 对带 pitch 字段的行做
+  #   k = 2^(st/12) 的变调重采样（音色更年轻、时长随之变短），并**改写 voices/dur.json**。
+  #   旧编排器的音频链里没有任何一步会跑它 ⇒ 门童两句的 +4 半音在编排器通路里**静默丢失**：
+  #   成片照出、退出码 0，只有拿 dur.json 与 build.sh 那条路逐条对照才看得出来
+  #   （实测编排器出的 B1 1.009 / B2 1.113，而做过 pitch 的应是 0.801 / 0.883）。
+  # ★ 位置有**硬约束**（两条，都不许动）：
+  #   ① 必须排在**配音之后** —— 它读 TTS 刚写出的 wav 与 dur.json；
+  #   ② 必须排在**回传 Windows / ASR 之前** —— dur.json 是「配音 → 回传 → 渲染」这条时序链的
+  #      判据（渲染页初始化时 fetch 它来排口播时间窗），回传之后再改就白搭。
+  #   因此它落在 LEMO_SKIP_VOICE 块**之内**：'rest' 相位（配音已在前置阶段跑过）若再跑一次，
+  #   变调会被**叠加两次**。
+  # ★ 候选探测照本文件既有写法（与 MUSIC / MIX 那几处同一个形状）；**不写死 slug** ——
+  #   只在文件存在时跑，不存在就跳过、不出声（全库只有 art-deco 有它）。
+  PITCH=""
+  for c in "$D/tools/pitch.py"; do [ -f "$c" ] && { PITCH="$c"; break; }; done
+  if [ -n "$PITCH" ]; then
+    echo "[配音 变调] $(basename "$PITCH")（按 lines.json 的 pitch 字段升调，会改写 wav 与 dur.json）"
+    # 失败**不静默**：这一步的产物就是音频内容本身，悄悄跳过等于把「音色与 build.sh 不符」藏起来。
+    # 与 voice_fx.py / voice.py 同级处理，也与各 demo build.sh 的 set -e 语义一致。
+    .venv/bin/python "$PITCH" "$D/lines.json" "$D/voices" 2>&1 || { echo "STEP_FAIL $(basename "$PITCH")"; exit 1; }
+  fi
+
   # ASR 校对只对拉丁语言有意义。离线 Kokoro 的中文音质本身一般，而 asr_check 用的 whisper 小模型
   # 对中文实测 9/9 全部 DIFF（相似度 0.20–0.57）；更要命的是它的 norm 不归一化「十/百/千」，
   # 所以含多位数字的行即使转写正确也会 FAIL ⇒ 中文版只会刷一屏假警告，掩盖真正的失败。

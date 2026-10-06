@@ -192,7 +192,7 @@ film: The Lampbearer
 - **【typography −1】同一条目的字幕参数是「套默认」而不是「抽取」**：`subtitle.fontFamily = "SimSun"`——本风格要求 **Cormorant Garamond italic**（衬线斜体）+ Cinzel，宋体会立刻破掉「碑铭 + 老式衬线」的 UI 语法；`marginVFactor 0.14537`（≈157 px）也比 demo 的 `y = H − 88`（≈8% / 86 px）更低。字号因子 0.0463（≈50px @1080 高）这一项倒是与 demo 一致。
 - **【−0，附带】`events` 导出为 0 条**：`story.js` 的 `T` 画面事件表**没有被导出成 events**，拟音落点全靠 `mix.py:68-82` 内部硬编码。下游若想用编排器的事件通路驱动拟音，会拿到空表（`events.json` 只有 20 字节）。
 - **【−0，附带】字幕走旁路**：编排器告警「本 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成」，随后由 demo 自带 `tools/srt.py` 重新生成。即**字幕轨是本次生成的**，但走的是旁路；下游若改动 `VO` 需确认这条旁路仍被调用。 ★ 2026-10-06 已修：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导 / 两处不一致』部分已消解
-- **【−0，附带】仓库元数据错标**：`D:/lemo-tools/scripts/unblock-placeholder-audio.mjs:42` 把本风格标成 `placeholder: true, missing: 'music/src/sb_precipice.mp3（商业版权曲，仓库不含）'`。**这是错的**：该曲是 **CC BY 4.0（署名即可）**，不是商业版权曲，也不是「仓库不含素材」的缺口（只是按 `.gitignore` 的既有设计只落本地）。这条错标会误导下游以为配乐有版权障碍。以 `demo/music/CREDITS.txt` 与 `demo/CREDITS` 为准。
+- **【−0，附带】仓库元数据错标**：`D:/lemo-tools/scripts/unblock-placeholder-audio.mjs:52` 把本风格标成 `placeholder: true, missing: 'music/src/sb_precipice.mp3（商业版权曲，仓库不含）'`。**这是错的**：该曲是 **CC BY 4.0（署名即可）**，不是商业版权曲，也不是「仓库不含素材」的缺口（只是按 `.gitignore` 的既有设计只落本地）。这条错标会误导下游以为配乐有版权障碍。以 `demo/music/CREDITS.txt` 与 `demo/CREDITS` 为准。
 - **【audio −0，附带 · 项目级既有风险】`core/render/mux.sh` 的 AAC 编码余量对打击乐素材不足**：`core/render/mux.sh:94` 的 `LN_TP = -1.7`（= 交付线 −1.2 减 0.5 dB 的 AAC 余量）。**本片达标**——PCM 落在 −1.7，成片实测真峰值 **−3.21 dBTP**（**原记**：重渲前读数 −1.54 dBTP，当时过冲 **+0.16 dB**），稳稳落在 0.5 dB 余量内。但**同管线其它风格已经出现削波**：`pictogram-motion` 成片真峰值 **+0.28 dBTP**（超出满刻度）、`game-show` **−0.22 dBTP**，相对 −1.7 的 PCM 目标过冲达 **+1.4 ~ +2.0 dB**，远超 0.5 dB 余量。这是**项目级风险**而不是本片的缺陷。★ **正解在 `mux.sh` 的 `LN_TP` 余量**（核心共享文件，本次未擅自改动）；★ **不要用手工压限去补**——实测反而更差：原 `mix.wav` → 成片 **+0.248**；预压 TP −2.0 → **+0.445**；预压 TP −4.2 → **+0.879**。原因是 `loudnorm` 总会把响度拉回 −14 LUFS，**真正起作用的是波峰因数**，上游电平怎么改都改变不了成片峰值（`core/render/mux.sh:70-72` 也记了同一结论）。 ★ **2026-10-03 已修（全库）**：本行引用的他片先例均已用 `scripts/fix-truepeak.mjs` 音频重混达标 —— `pictogram-motion` **+0.28 → −1.65 dBTP**、`game-show` **−0.22 → −2.09 dBTP**（全库 43/43 现均 ≤ −1.2 dBTP）；旧值保留作历史（当时确实超标）。
 - **细纹理 `textureRaw: pixel-post` 声明了但渲染未实现**：`lib/dub-styles.json#hd-2d.bgRecipe.textureRaw` 是 `pixel-post`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）**只把粗粒度 `bgRecipe.texture` 当主权威源**（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），**不读** `textureRaw` ⇒ `pixel-post` 这一层质感在「文案 + 风格」通路上**从未画出来过**。为什么没实现：`bgFilters()` 里没有 `pixel-post` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径**只如实标注、不猜参数**（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里）。
 
@@ -229,7 +229,7 @@ film: The Lampbearer
 
 - ~~**校正 `dub-styles.json#hd-2d` 的 3 处冲突**（把浅奶油底改成夜蓝、去掉 grain、字体换成 Cormorant Garamond italic 并把 `marginVFactor` 对齐 `y = H − 88`）~~ ★ **2026-10-06 更新（3 处里 2 处已修）**：**底色**（浅奶油 `#fff0c8` → 夜空 `#101d3e`，见「已知缺陷」与第 3 节）与 **grain**（已改 `texture: none`）**已修**；**字体**一处**仍待** —— 本机无 Cormorant Garamond，派生通路按项目约定一律填本机真实存在的字体（见第 5 / 11 节），`marginVFactor` 亦未对齐 `y = H − 88`。
 - **给 `core/render/mux.sh` 的 `LN_TP` 加余量**（项目级，影响所有风格；`pictogram-motion` 与 `game-show` 已实测削波/超线）。
-- **修 `unblock-placeholder-audio.mjs:42` 对 `hd-2d` 的错误标注**（CC BY 4.0，不是商业版权曲）。
+- **修 `unblock-placeholder-audio.mjs:52` 对 `hd-2d` 的错误标注**（CC BY 4.0，不是商业版权曲）。
 - **补一个 `demo/build.sh`**，把 `DEMO.md` 的 7 步固化成一键复现。
 - **补 9:16 的原生竖向方案**（重设相机 `fov` 与构图，把主体与 UI 收进 1080 宽），而不是裁切。
 - **让 `story.js` 的 `T` 事件表真正导出成 events**（本次为 0 条），把拟音落点从 `mix.py` 硬编码里解放出来。
@@ -289,7 +289,7 @@ film: The Lampbearer
 - ~~**`dub-styles.json#hd-2d` 的 3 处冲突**：浅奶油底（应为夜蓝）、`texture: grain`（应为 grain 0）、`fontFamily: SimSun`（应为 Cormorant Garamond italic）。~~ ★ **2026-10-06 更新**：前两处（**浅奶油底 → 夜空**、**`texture: grain` → `none`**）**已修**；`fontFamily: SimSun` **仍待**（本机无 Cormorant，派生通路按约定用本机字体）。
 - **`events` 导出 0 条**（画面事件表未接入编排器事件通路）。
 - **字幕走旁路**（demo 自带 `tools/srt.py`，编排器不接管）。
-- **`unblock-placeholder-audio.mjs:42` 错标**本风格的配乐为「商业版权曲」（实为 CC BY 4.0）。
+- **`unblock-placeholder-audio.mjs:52` 错标**本风格的配乐为「商业版权曲」（实为 CC BY 4.0）。
 - **`mux.sh` 的 AAC 余量不足**（项目级；本片达标，`pictogram-motion` +0.28 dBTP / `game-show` −0.22 dBTP 已超线）。 ★ **2026-10-03 已修（全库）**：本行引用的他片先例均已用 `scripts/fix-truepeak.mjs` 音频重混达标 —— `pictogram-motion` **+0.28 → −1.65 dBTP**、`game-show` **−0.22 → −2.09 dBTP**（全库 43/43 现均 ≤ −1.2 dBTP）；旧值保留作历史（当时确实超标）。
 - **无 `demo/build.sh`**（构建链只在 DEMO.md 里）。
 

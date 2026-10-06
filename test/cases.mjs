@@ -188,7 +188,21 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     （诊断里 3 条「告警误导」）。现第 3 步改为「本编排器不生成字幕源；.srt 是否更新取决于第 6 步」，
 //     第 6 步补明「（第 3 步编排器未产出、demo 自带 srt 生成器本次也没产出）」。**纯措辞，不改逻辑/行为**。
 //     这是**有意改编排器**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = 'dfa990043fa1b8368a7011fbc03c1ad0';
+//   2026-10-06 更新：**补上 art-deco 漏跑的变调步 tools/pitch.py**（端到端实测确证的真缺口）。
+//     音频链的「配音」段在 wav 落盘、`voices/*.wav` 非空校验**之后**、ASR / 回传 Windows **之前**
+//     新增一步候选探测（照 MUSIC / MIX 那几处同一个 `for c in …; do [ -f ] && break; done` 形状，
+//     **不写死 slug**）：候选 = `$D/tools/pitch.py`，只在文件存在时跑，不存在就跳过、不出声。
+//     ★ 位置是硬约束：pitch.py 会按 lines.json 的 pitch 字段变调重采样并**改写 voices/dur.json**，
+//     而 dur.json 是「配音 → 回传 → 渲染」时序链的判据（渲染页初始化时 fetch 它排口播时间窗），
+//     回传之后再改就白搭；同时它必须落在 LEMO_SKIP_VOICE 块**之内**，否则 'rest' 相位会把变调
+//     叠加两次。实测：编排器出的 dur.json 由 B1 1.009 / B2 1.113 回到做过 pitch 的 0.801 / 0.883。
+//     同步改了 orchestratorRuns() 的 runs[] 镜像（否则起飞前检查会把 pitch.py 误报成「漏跑」）。
+//     另在 preflight 里加了**只提示、不阻断**的 `ORCH_SKIP_STEPS` 登记表 + reportOrchSkipSteps()：
+//     把「build.sh 有、编排器不跑」的步骤（内容有影响 / 只影响交付图 / 纯自检）如实报出，
+//     补的正是「声明里 assets_required 多为空 ⇒ 漏跑静默」那个盲区。
+//     这是**有意改编排器**（补一个真缺口 + 让同类缺口可见，不削弱任何校验），基线值随之更新
+//     （红线本身保留，见 test/README.md 那张表）。
+export const ORCH_MD5 = 'caab495c8104130732266e5d1bf2db8b';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

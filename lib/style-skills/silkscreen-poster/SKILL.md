@@ -178,7 +178,7 @@ film: Three Trails
 ## 11. 当前短板与避坑要点
 
 ### 已知缺陷
-- **片尾卡的署名带密度超标**：帧 f23（片尾横版小海报）的深色信息带里塞了 **5 行**小字（`SILKSCREEN TRAVEL POSTER` / `LEMO-OPUSCAR` / `LEMOLAB × CLAUDE OPUS 5.5` / 字体署名 / 采样署名），而 STYLE.md:50 的页脚规则是 **≤45 字符、一行**。这是一个「现代署名块」被印进了海报的语法里。
+- **片尾卡的署名带密度超标**：帧 f23（片尾横版小海报）的深色信息带里塞了 **5 行**小字（`SILKSCREEN TRAVEL POSTER` / `LEMO-OPUSCAR` / `LEMOLAB × CLAUDE OPUS 5.5` / 字体署名 / 采样署名），而 DEMO.md:145 的页脚规则是 **≤45 字符、一行**。这是一个「现代署名块」被印进了海报的语法里。
 - **同一个标题在 banner 段与片尾卡上折行不一致**：banner 段（帧 f02/f03）是**两行平衡**（`3 TRAILS IN` / `GRANITE VALLEY`，符合 STYLE.md:48 与 DEMO.md:67），片尾卡（帧 f23）却是**一行**（`engine/poster.js:210-212` 的 `if (lines.length === 1)` 分支）。同一句片名在全片里出现两种排版。
 - **墙面上 banner 与海报行宽度不齐**：`film.js:306` 里三张海报按 `maxW = 1700` 排（`gap 54`），而 banner 是 **1800 u** 宽居中——帧 f20/f22 上能看到上方的 banner 比下方的海报行**左右各宽约 50 u**，形成轻微的上宽下窄。
 - **爬升段的深度主要靠视差**：帧 f13/f14 里层与层之间有米色**纸缝**（3 u）与纸厚阴影（9 u @28%），但抽帧上纸厚阴影几乎看不出来，「层在动」主要靠视差——这正是 STYLE.md:106 警告的「Parallax alone reads as *the mountains are moving*」的边界情形（DEMO 记录修法是「松脱时给纸缝和纸厚阴影、套准时一声响归零」，已实现但幅度偏弱）。

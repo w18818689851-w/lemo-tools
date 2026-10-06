@@ -34,7 +34,7 @@ film: Where the Wind Went
 ## 2. 画面构图
 
 - **镜头数与画幅**：原生 **16:9 / 1920×1080**（本次出片即 `--ratio 16:9`，`logs/urban-sketch.log:1-2`）；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，`film.js:16`）。**一台 2D 相机在 5120×2880 的整页大纸上移动**（最后拉远到 0.375× 才 1:1 看见整页，`DEMO.md:34`）。
-- **主体位置与占比**：**故事节拍上主体至少占画面高 1/3**；关键小物件（帽子）带一圈很淡的纸色 halo（reserve）以便在繁密树冠上读出来（`DEMO.md:37`、`film.js:333-336`）。
+- **主体位置与占比**：**故事节拍上主体至少占画面高 1/3**；关键小物件（帽子）带一圈很淡的纸色 halo（reserve）以便在繁密树冠上读出来（`DEMO.md:37`、`film.js:351`）。
 - **负空间 / 留白**：**纸白是最亮的值**，它是留白、靠 `reserve` 抬回纸色，**绝不画**（`STYLE.md:40`）。什么都没画满边——页边碎成色点，空白页边留给手写批注（`STYLE.md:106`）。
 - **图层叠放顺序**（从底到顶）：暖米纸（两档 fbm 斑驳 + 512 px 平铺牙纹，乘法叠在一切之上、连人物一起）→ 淡彩（2–3 层噪声边乘法叠色，按「颜色到达时刻」经湿前沿揭示）→ 墨线（按每像素「落笔时刻」回放笔顺）→ 手写文字（写在页上、随相机移动）（`DEMO.md:58`、`engine.js:220-282`）。
 - **安全区**：手写批注在**页角**（demo 左上 `Sun. 3:40 pm — windy`，1.55–2.35 s）；片名与版权页在**左下空白页边**（28.2–31.8 s）（`DEMO.md:74-78`）。
@@ -69,7 +69,7 @@ film: Where the Wind Went
 
 - **镜头之间怎么切**：**转场必须来自纸与画本身**——在页面上做镜头移动、翻页、或**颜色到达本身作为转场**（`STYLE.md:75`、`style-dna/urban-sketch.md:112`）。
 - **有没有叠化 / 闪白 / 擦除 / 定格**：**没有溶解/叠化**（`STYLE.md:75` 明确禁止）。有**颜色 bloom**（从一点以噪声圆 clip 绽开，人物用这个）、**到达场洇开**（世界用这个，带毛边湿前沿 + 暗潮线）、**笔顺画上**（任何「出现」的东西都按真实笔顺一笔笔画出）、**翻页**到新一跨（`DEMO.md:44`、`engine.js:196-214`）。
-- **硬切点怎么定**：挂在 **150 BPM 的 3/4 拍网格**上：1 拍 = 0.4s、1 小节 = 1.2s（`film.js:7`、`score.py:12`）。关键锚点：手写批注 1.55–2.35、上色 1.8、起风 4.4、阵风 4.6、帽子离头 6.0、触地 8.4、车铃 9.55/9.95、绕灯 10.8、树炸色 12.0/13.2/14.4、到顶 19.2、**静默小节 20.4–21.58**、下坠 21.6、扑 23.55、接住 24.0、点水 24.02、片名 28.2–29.5、版权页 30.1–31.8（`film.js`、`logs/urban-sketch.log:26`）。
+- **硬切点怎么定**：挂在 **150 BPM 的 3/4 拍网格**上：1 拍 = 0.4s、1 小节 = 1.2s（`film.js:18-19`、`score.py:12`）。关键锚点：手写批注 1.55–2.35、上色 1.8、起风 4.4、阵风 4.6、帽子离头 6.0、触地 8.4、车铃 9.55/9.95、绕灯 10.8、树炸色 12.0/13.2/14.4、到顶 19.2、**静默小节 20.4–21.58**、下坠 21.6、扑 23.55、接住 24.0、点水 24.02、片名 28.2–29.5、版权页 30.1–31.8（`film.js`、`logs/urban-sketch.log:26`）。
 - **转场时长与缓动**：**设计好的运动用三次缓动**；**跟拍用临界阻尼弹簧追一个「提前量」目标**，所以镜头像手一样有滞后（demo stiffness 28，坠落段 70，dt 1/240）；冲击推入带 **0.35 s 抖动**（`DEMO.md:35`、`film.js:165-186`）。
 - **绝对不要的转场**：溶解/叠化、划像等 UI 式转场、任何元素的淡入/滑入——**颜色只能从一点 bloom 或经到达场洇开，绝不 snap**、无来由的运镜（`style-dna/urban-sketch.md:114`）。
 
@@ -115,11 +115,11 @@ film: Where the Wind Went
 | 项 | 值 |
 |---|---|
 | 单镜时长 | 无固定区间，由故事决定；demo 用推、拉、弹簧横移跟拍、摇臂升起、甩摇 + 轻微侧滚、冲击推入 + 0.35 s 抖动、长拉远、倾入页边（`DEMO.md:36`） |
-| 全片时长 | 32.4s（`style.json:17`、`film.js:7`）；本次成片 **32.42s / 778 帧**（视频实际 32.413411 s，音频 32.400 s 被补静音到 32.455 s，`logs/urban-sketch.log:113,127`） |
+| 全片时长 | 32.4s（`style.json:17`、`film.js:18-19`）；本次成片 **32.42s / 778 帧**（视频实际 32.413411 s，音频 32.400 s 被补静音到 32.455 s，`logs/urban-sketch.log:113,127`） |
 | 镜头数 | 单页速写；事件 **36** 条、字幕 **3** 条（`logs/urban-sketch.log:26`、`subs.json`） |
 | 信息投放节拍 | 空白页 + 手写日期 → 钢笔按真实笔顺把主体一笔笔画出（线先于色）→ 颜色作为「到达」从源头洇开 → N 个被颜色点到的细节 → 到顶 / 静默 → 颜色扩散或收束 → 拉远成整页 → 收（`style-dna/urban-sketch.md:64-73`） |
 
-- **加速 / 减速点**：**人物以 12 fps 抖（boil）**——线抖与淡彩 seed 每 1/12 s 换一次；**静态的页不抖**（它是一张真纸）；**相机每帧平滑移动**（`STYLE.md:52`、`film.js:198`）。跑步循环两拍一步（`ph=(t-6.95)·TAU/(BEAT·2)`），每一步落在拍上（`style-dna/urban-sketch.md:79`）。**风被画出来**：每拍生一道「~@」形墨线，0.4 s 画出、再从尾巴擦掉（`DEMO.md:43`）。
+- **加速 / 减速点**：**人物以 12 fps 抖（boil）**——线抖与淡彩 seed 每 1/12 s 换一次；**静态的页不抖**（它是一张真纸）；**相机每帧平滑移动**（`STYLE.md:52`、`film.js:179-197`）。跑步循环两拍一步（`ph=(t-6.95)·TAU/(BEAT·2)`），每一步落在拍上（`style-dna/urban-sketch.md:79`）。**风被画出来**：每拍生一道「~@」形墨线，0.4 s 画出、再从尾巴擦掉（`DEMO.md:43`）。
 - **留白与静音的位置**：静默小节落在 20.4–21.58 s（到顶之后、下坠之前）；开场 0–2.4 s **只有笔声**且推大（`style-dna/urban-sketch.md:85,140`）。
 
 ---
@@ -148,7 +148,7 @@ film: Where the Wind Went
 
 ## 10. 编排规则
 
-- **内容文件字段契约**：`film.js` 是**唯一时间真值**，导出 `BPM/BEAT/BAR/DUR`（demo `BPM=150`、`DUR=32.4`，`film.js:7`）与页面契约 `window.render(t)` / `window.DUR` / `window.EV` / `window.TRACK` / `window.STROKES`，并置 `window.READY=true`（`style-dna/urban-sketch.md:198`）。内容侧字段：`title`（片名，手写）、`note`（页角批注：日期 + 天气 + 地点）、`credits[]`（版权页几行）、`colors[]`（每个色块的 `[r,g,b]`）、`sources[]`（颜色到达源 `{x,y,t,v,R,sy,mask}`）、`EV[]`（声音事件）、`STROKES[]`（世界每一笔 `[t0,dur,L,group]`，供拟音逐笔发声）、`TRACK()`（帽子轨迹 `[t,速度,屏幕x][]`，供翻飞声）（`style-dna/urban-sketch.md:175-184`）。`render(t)` 里先 `comp(cam,t)` 合成整页，再按世界坐标 `setTransform` 画动态层，**人物按 y 深度从远到近排序**（`style-dna/urban-sketch.md:199`）。
+- **内容文件字段契约**：`film.js` 是**唯一时间真值**，导出 `BPM/BEAT/BAR/DUR`（demo `BPM=150`、`DUR=32.4`，`film.js:18-19`）与页面契约 `window.render(t)` / `window.DUR` / `window.EV` / `window.TRACK` / `window.STROKES`，并置 `window.READY=true`（`style-dna/urban-sketch.md:198`）。内容侧字段：`title`（片名，手写）、`note`（页角批注：日期 + 天气 + 地点）、`credits[]`（版权页几行）、`colors[]`（每个色块的 `[r,g,b]`）、`sources[]`（颜色到达源 `{x,y,t,v,R,sy,mask}`）、`EV[]`（声音事件）、`STROKES[]`（世界每一笔 `[t0,dur,L,group]`，供拟音逐笔发声）、`TRACK()`（帽子轨迹 `[t,速度,屏幕x][]`，供翻飞声）（`style-dna/urban-sketch.md:175-184`）。`render(t)` 里先 `comp(cam,t)` 合成整页，再按世界坐标 `setTransform` 画动态层，**人物按 y 深度从远到近排序**（`style-dna/urban-sketch.md:199`）。
 - **事件词汇表**：`hatColor`（唯一彩色物上色）/ `windIn` / `gust` / `hatLift` / `bounce` / `miss` / `jump` / `bell` / `lampSpin` / `tree`（树炸色）/ `apex`（到顶）/ `silence` / `fall` / `dive` / `catch` / `splash` / `step{surf}`（`grass`|`stone`）/ `writeTitle{d}` / `writeCredits{d}` / `writeNote{d}`（`style-dna/urban-sketch.md:203-219`）。全部由 `film.js` 里 `EV.push` 产生，再经 `core/render/events.mjs` 序列化成 `events.json`（本次 36 条）。
 - **时间线契约**：`film.js` 导出上表并置 `window.READY`；`world.js` 建静态页；`film.js` 管时间线（帽子轨迹、相机、表演、颜色源、声音 cue）（`style-dna/urban-sketch.md:228-234`）。**关键机制**：颜色到达场（`arrivalField`）把「上色」变成一个**可被事件驱动**的量——任何「颜色该在什么时候到哪」的故事都能复用同一套引擎；`STROKES` 把世界里的每一笔导出给拟音，所以笔声永远与画面同步（`style-dna/urban-sketch.md:238`）。
 - **新增主体怎么接入**：新主体是 `engine.js` 里的一个函数或一支笔触库，必须能返回 `drawPrims` 认得的图元列表——`k='knock'`（纸色遮挡 poly）/ `k='wash'`（淡彩 poly + col + a + dx/dy 错位）/ `k='ink'`（墨线 `st = penStroke(...)`）/ `k='fn'`（自定义）；`sketchShape(ctx, poly, col, {ink, wash, offset, color, p})` 可一句话把任意闭合多边形画成「钢笔淡彩」。新角色造型放进 `poses.js` 的 `LOOK` 表，新姿势用 `V(x,y,z)` 身体坐标写（`style-dna/urban-sketch.md:186-194`）。

@@ -81,8 +81,8 @@ film: Midnight at the Starlight Hotel
 | 字号（相对画面宽 / 高） | 40–42 px @1920 宽 ≈ **2.08–2.19% 画面宽**；产品通路归一化 `fontSizeFactor` 0.03796（对 1080 高）（`STYLE.md:34`、`dub-styles.json#art-deco`） |
 | 颜色 / 描边 / 阴影 | 象牙白 `#F2E8D5`；**双层金关键线**做卡框；无黑描边（`STYLE.md:34`） |
 | 位置 / 安全边距 | 居中，卡中心 y≈990px；产品通路 `marginVFactor` 0.14537、`marginLFactor` 0.06019（`film.js:118-129`、`dub-styles.json#art-deco`） |
-| 单行字数上限 / 最多行数 | 卡宽上限 1500px，**最多两行**；每行口播 ≤ 4.5s（`style-dna/art-deco.md:16`） |
-| 出现与消失方式 | **从中心展开**（与标题、转场同一套系统）：提前 0.05s 上、滞后 0.25s 下；停留 `max(1.8s, 语音时长+0.6s)`（`style-dna/art-deco.md:34`） |
+| 单行字数上限 / 最多行数 | 卡宽上限 1500px，**最多两行**；每行口播 ≤ 4.5s（`style-dna/art-deco.md:41`） |
+| 出现与消失方式 | **从中心展开**（与标题、转场同一套系统）：提前 0.05s 上、滞后 0.25s 下；停留 `max(1.8s, 语音时长+0.6s)`（`style-dna/art-deco.md:86`） |
 
 - **字幕与旁白的关系**：字幕卡带**扬声器图标**（播音员=金色丝带麦，主角=酒红药丸帽），一卡一说话人（`DEMO.md:68`）。旁白是 1930 年代电台播音员腔，数字（楼层/时钟/年份）自己承担情节（`STYLE.md:35`）。
 - **本风格特有的字幕禁忌**：不用黑描边、不用现代无衬线粗口播字、不用逐字弹出；卡必须是「阶梯端头 + 双金线」的漆面条，不能是普通圆角矩形。
@@ -115,7 +115,7 @@ film: Midnight at the Starlight Hotel
 | 项 | 值 |
 |---|---|
 | 单镜时长 | 由 `timeline.js` 的 `SEC` 段表驱动；demo 约 10 个段落，从开场 3s 钩子到 4.4s 片尾卡 |
-| 全片时长 | demo **58.4s**（`style.json:17`）；用例区间 30–60s（`style-dna/art-deco.md:35`） |
+| 全片时长 | demo **58.4s**（`style.json:17`）；用例区间 30–60s（`style-dna/art-deco.md:89`） |
 | 镜头数 | 1401 帧 @24fps（`log:38,81`）；`SHOTS` 表定义逐镜 |
 | 信息投放节拍 | 116 BPM（1 拍 0.5172s）；楼梯段 16 拍加速到 138 BPM；STRIKE1=35.86s 起 12 声钟每声 1 拍（`timeline.js:3-16`） |
 
@@ -136,7 +136,7 @@ film: Midnight at the Starlight Hotel
 | 分辨率 / 比例 | 原生 **1920×1080 / 16:9**；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，`demo/film.js:20`），由 `frame.setFrame()`（`frame.js:17`）按视口尺寸重排：整幅设计画面按紧轴等比装入、居中并**裁到设计帧**（`demo/film.js:111-113`）、字幕按当前帧重定位（`demo/film.js:145-151`）；16:9 时 `FX=FY=S=1`、变换为恒等，逐字节退化成设计帧 |
 | 混流 | `sh core/render/mux.sh <video> <mix.wav> <out.mp4> 24 3`（`grain 3`，`build.sh:15`） |
 | 编码器 | `h264_nvenc`（本地 GPU，`log:7` 编码 nvenc） |
-| 音频入口 | `core/tts/tts.py` → `tools/pitch.py` → `core/tts/asr_check.py` → `music/score.py` → `tools/cuecheck.py` → `mix.py`（`build.sh:7-12`） |
+| 音频入口 | `core/tts/tts.py` → `tools/pitch.py` → `core/tts/asr_check.py` → `music/score.py` → `tools/cuecheck.py` → `mix.py`（`build.sh:7-12`）。★ **编排器通路是否跑 `pitch.py`：跑**（2026-10-06 修）—— `lemo-make.mjs` 原先漏跑这一步，门童两句的 +4 半音在编排器通路里静默丢失（成片照出、退出码 0）；现已补进音频链，位置在「配音」段 `voices/*.wav` 非空校验之后、ASR 与回传 Windows 之前（`pitch.py` 会改写 `voices/dur.json`，回传之后再改就白搭）。★ 但 `tools/cuecheck.py`（本行的第 5 步）编排器**不跑**（纯自检，不影响成片）—— 差异清单见 `D:/lemo-tools/README.md` 的「编排器与 `build.sh` 的差异清单」 |
 | 字幕入口 | `tools/subs.py` + `core/render/srt.py <srt.json> <out.srt>`（`build.sh:13`） |
 | 事件导出 | `node core/render/events.mjs styles/art-deco/demo`（本片出 20 事件 / 7 cues，`log:26,30`） |
 | 本风格专属参数 | 响度 -14 LUFS、grain 3；时间网格 `tools/dump_timeline.mjs` → `timeline.json`（配乐/混音/校点共用） |
@@ -147,9 +147,9 @@ film: Midnight at the Starlight Hotel
 
 ## 10. 编排规则
 
-- **内容文件字段契约**（`content_fields`）：`lines.json` 每条 `{id, text, voice, speed, pitch?, sub?, asr?}`；单行口播 ≤4.5s；人声分 `radio`（`bm_fable`，speed 0.96–1.02）与 `boy`（`am_puck`，speed 0.86、pitch +4）两类（`style-dna/art-deco.md:96`、`lines.json`）。
-- **事件词汇表**：`shot{name}`（镜头切换，供声音分层）、`vo{id}`（人声，mix.py 从 `voices/<id>.wav` 读）；动作拟音按材料（黄铜/青铜/铁/银/木/纸/刀闸/继电器/电梯叮/烟花哨）由 `mix.py` 按 `T` 的命名时刻生成（`style-dna/art-deco.md:99`）。
-- **时间线契约**：`timeline.js` 导出 `BPM/B/BAR/K_BPM`、段表 `SEC`、命名同步点 `T`、台词起点 `LINES`；`film.js` 导出 `renderFilm(g,t,Q)`、`DUR`、`SHOTS`（`[t0,t1,fn,name]`）、`TR`、`subs()`、`events()`；页面契约 `window.READY / window.render(t) / window.DUR / window.EV`（`style-dna/art-deco.md:98`）。
+- **内容文件字段契约**（`content_fields`）：`lines.json` 每条 `{id, text, voice, speed, pitch?, sub?, asr?}`；单行口播 ≤4.5s；人声分 `radio`（`bm_fable`，speed 0.96–1.02）与 `boy`（`am_puck`，speed 0.86、pitch +4）两类（`style-dna/art-deco.md:176`、`lines.json`）。
+- **事件词汇表**：`shot{name}`（镜头切换，供声音分层）、`vo{id}`（人声，mix.py 从 `voices/<id>.wav` 读）；动作拟音按材料（黄铜/青铜/铁/银/木/纸/刀闸/继电器/电梯叮/烟花哨）由 `mix.py` 按 `T` 的命名时刻生成（`style-dna/art-deco.md:196`）。
+- **时间线契约**：`timeline.js` 导出 `BPM/B/BAR/K_BPM`、段表 `SEC`、命名同步点 `T`、台词起点 `LINES`；`film.js` 导出 `renderFilm(g,t,Q)`、`DUR`、`SHOTS`（`[t0,t1,fn,name]`）、`TR`、`subs()`、`events()`；页面契约 `window.READY / window.render(t) / window.DUR / window.EV`（`style-dna/art-deco.md:190`）。
 - **新增主体怎么接入**：任意路径走 `D.drawShape(g, pts, {color, halo, trail, glints, part})`（喷绘金填充或 `color` 单色 + 金关键线 + 可选太阳纹光晕/速度线尾/闪光）；母题用 `sunburst / archFrame / fan / fishScale / chevrons / sparkle / speedLines`；招牌用 `B.buildSign(text)` → `B.drawSign(g, sign, x, y, scale, {lit})`；镜头用 `cam.js` 的 `makeCam` + `cardTransform`（`DEMO.md:103-120`）。
 - **换主题时要改哪些文件**：① `demo/timeline.js`（BPM/段表/同步点/台词起点）；② `demo/lines.json`（文案+音色）；③ `demo/film.js` 的 `SHOTS/TR/subs`（镜头与转场编排）；④ `demo/scenes/*`（场景）；⑤ `demo/chars.js`（人物，或删掉走无人版）；⑥ `music/score.py` 与 `mix.py` 的 cue 表；⑦ 调色板里唯一的强调色。**引擎（`engine/deco.js`/`type.js`/`bulbs.js`/`cam.js`）不用改**。
 - **与 `dub.mjs` 通路的关系**：本风格在「文案+风格」通路里能生效的参数是 `palette`（bg `#0d0b09` / accent `#c9a24b` / 字幕底 `#B3000000`）、`bgRecipe`（`#0d0b09`→`#0a0e16` 渐变 + vignette 0.35）、`subtitle`（`fontSizeFactor` 0.03796、`marginVFactor` 0.14537、bold）、`title`（`fontSizeFactor` 0.1）、`overlay.accentRule=true`；`chapterCards/lowerThird/progressBar` 均关闭（`dub-styles.json#art-deco`）。**注意该条为 `derived:true` 派生值**，不是逐行手抽。**字体口径**：通路按 `lib/dub-styles.json._notes[5]` 的约定把 `subtitle.fontFamily` 填成**本机真实存在的字体** —— 本条是 `DengXian`（等线）；本节第 5 行点名的 Josefin Sans / Limelight / Poiret One / Italiana **本机都没有**（OFL，只在 `styles/art-deco/demo/fonts/` 里），故字形观感与样片**有差**（等线是几何无衬线，接近但不等于 Josefin Sans）。
