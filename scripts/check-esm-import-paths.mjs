@@ -137,10 +137,39 @@ function matchParen(src, open) {
   return n;
 }
 
+/** 去掉注释（**保留字符串 / 模板字面量内容**）—— 让下面的「已修」信号只可能来自**代码**。
+ *  ★ 2026-10-06 补（夹具实测的假绿）：改前判据直接对**原始实参文本**做
+ *    `/pathToFileURL/` / `/file:\/\//` 子串测试，而实参里的**注释**也算文本 ⇒
+ *    `import(/* 这里本该用 pathToFileURL *\/ path.join(ROOT,'x.mjs'))`（真违规原样不动，
+ *    只在实参里塞一句**无关**注释）会被判「已修」而**放行** ⇒ 判据结论取决于无关文本。
+ *    剥掉注释后，该信号只能来自真正的代码表达式 ⇒ 假绿消除。
+ *  ★ 只剥注释、**不剥字符串**：`import('file:///x')` 的 `file://` 在**字符串**里，是合法说明符，
+ *    必须保留（剥了会把合法写法误判成违规 = 假红）。 */
+function stripCommentsKeepStrings(s) {
+  let out = '', i = 0; const n = s.length; let state = 'code';
+  while (i < n) {
+    const c = s[i], d = s[i + 1];
+    if (state === 'code') {
+      if (c === '/' && d === '/') { state = 'line'; i += 2; continue; }
+      if (c === '/' && d === '*') { state = 'block'; i += 2; continue; }
+      if (c === "'") state = 'sq'; else if (c === '"') state = 'dq'; else if (c === '`') state = 'tpl';
+      out += c; i++; continue;
+    }
+    if (state === 'line') { if (c === '\n') { state = 'code'; out += c; } i++; continue; }
+    if (state === 'block') { if (c === '*' && d === '/') { state = 'code'; i += 2; } else { if (c === '\n') out += c; i++; } continue; }
+    const q = state === 'sq' ? "'" : state === 'dq' ? '"' : '`';
+    out += c;
+    if (c === '\\') { out += s[i + 1] ?? ''; i += 2; continue; }
+    if (c === q) state = 'code';
+    i++;
+  }
+  return out;
+}
+
 // ── 判据：这个 import 实参是不是「运行时拼的绝对路径」且没走 file:// ────────────
 const SCHEME = /^(data|node|http|https|file|blob):/;
 function classify(arg) {
-  const a = arg.trim();
+  const a = stripCommentsKeepStrings(arg).trim();              // ★ 先剥注释，信号只能来自代码
   if (/pathToFileURL/.test(a)) return { bad: false };          // 已修：显式转 file:// URL
   if (/file:\/\//.test(a)) return { bad: false };              // 直接给 file:// 串
   const isPathCall = /\bpath\s*\.\s*(join|resolve|normalize)\s*\(/.test(a);

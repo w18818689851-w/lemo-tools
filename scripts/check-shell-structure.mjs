@@ -73,7 +73,14 @@ function checkOne(file, text) {
   const tail = lines.map((l, i) => ({ l, i })).filter(({ l }) => l.trim() && !/^\s*#/.test(l));
   const last = tail[tail.length - 1];
   if (last && /^\s*fi\s*$/.test(last.l)) {
-    const near = lines.slice(Math.max(0, last.i - 25), last.i + 1).join('\n');
+    // ★ 2026-10-06 收紧（夹具实测的假红）：原判据把**整段（含注释）**丢进 near 做标记匹配，
+    //   于是一个**普通**脚本只要「最后一条非注释语句是 fi」且前 25 行里**注释**提到过
+    //   `input_tp`（如 `# 这里的 input_tp 只是顺带一提`）就被判成「判定块后缺 exit 0」——
+    //   而它根本不是判定块 ⇒ 假红。现在 near **只取非注释行**：标记必须出现在**代码**里才算
+    //   「这是判定块」。真实判定块的标记（`awk … input_tp …` / `echo "…missed the target…"`）
+    //   都在代码行上，故本收紧不改真实语料结论（改前改后 82 个脚本均 0 命中）。
+    const near = lines.slice(Math.max(0, last.i - 25), last.i + 1)
+      .filter((l) => !/^\s*#/.test(l)).join('\n');
     if (/missed the target|input_tp|Peak level dB/.test(near)) {
       fails.push({ file, kind: '② 判定块后缺 exit 0', ln: last.i + 1, detail: '以 fi 结尾 ⇒ 退出码与判定结果相反' });
     }
