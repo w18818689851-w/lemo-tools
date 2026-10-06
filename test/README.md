@@ -45,7 +45,7 @@ node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 �
 
 | 用例 | 断言 |
 |---|---|
-| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `315887dd9e38702bb057e02f38a97b54` |
+| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `6283aadb98433b16ea2a35c2a754cd30` |
 
 控制台只是**包装层**，绝不能改编排器。这条是整个项目的红线，失败信息直说「编排器被改动了 —— 控制台不应该修改它」。
 
@@ -235,6 +235,10 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
    且已镜像 WSL。）
 4. ★ **红线三处同步**（本表 + `test/cases.mjs` 的 `ORCH_MD5` + `README.md` 的差异清单）：
    `58e2bcbae682b4167444f0dd66445771` → `315887dd9e38702bb057e02f38a97b54`。
+   ★ **2026-10-07 再改一次**（纯注释）：`lemo-make.mjs` 里那句引 `core/tts/asr_check.py:116` 的注释**是失效引用**
+   （`:116` 实为 `return 'offline'`；真正写 `words.json` 的那句 `json.dump` 在 **`:168`**）⇒
+   按引用纪律第 12 条**改成符号锚**（「`core/tts/asr_check.py` 里写 `words.json` 的那句 `json.dump`」），从此不再随行号漂。
+   md5 `315887dd9e38702bb057e02f38a97b54` → **`6283aadb98433b16ea2a35c2a754cd30`**。
    另同步 `orchestratorRuns()` 的 `runs[]`（加入 `${d}/tools/video_png.mjs`，否则起飞前检查会继续把它
    报成「编排器漏跑」）并从 `ORCH_SKIP_STEPS` **移除**该条（它已被编排器跑；移除后该表的
    **impact: content 一档为空**，如实说明：内容级缺口目前清零，表结构保留）。

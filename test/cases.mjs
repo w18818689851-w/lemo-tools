@@ -253,7 +253,7 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //         README.md 的「编排器与 build.sh 的差异清单」。另同步了 orchestratorRuns() 的 runs[]
 //         （加 `${d}/tools/video_png.mjs`）并从 ORCH_SKIP_STEPS **移除**该条（它已被编排器跑）。
 //     ★ 库仓文件（video_png.mjs）改动已**镜像 WSL** 并逐字节核对（见 test/README.md）。
-export const ORCH_MD5 = '315887dd9e38702bb057e02f38a97b54';
+export const ORCH_MD5 = '6283aadb98433b16ea2a35c2a754cd30';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

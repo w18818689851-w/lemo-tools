@@ -568,6 +568,9 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    而本机 `spawnSync` 走 pipe 一律 EBUSY ⇒ 不改就 960 帧全渲完在拼接处 exit 1；
    同步 `runs[]` 加该项、`ORCH_SKIP_STEPS` 移除该项，
    `58e2bcbae682b4167444f0dd66445771` → `315887dd9e38702bb057e02f38a97b54`）。
+   ★ **2026-10-07 再改一次**（纯注释）：`lemo-make.mjs` 里引 `core/tts/asr_check.py:116` 的那句**是失效引用**
+   （`:116` 实为 `return 'offline'`；真正写 `words.json` 的 `json.dump` 在 **`:168`**）⇒
+   按引用纪律第 12 条**改成符号锚**，从此不再随行号漂。md5 `315887dd…` → **`6283aadb98433b16ea2a35c2a754cd30`**。
    再上一次：**2026-10-06** 补上 art-deco 漏跑的变调步 `tools/pitch.py`（`dfa990…` → `caab495…`），
    并把「build.sh 有、编排器不跑」的步骤做成起飞前检查可报的 `ORCH_SKIP_STEPS` 登记表。
    ★ **若你确实动了 `D:/lemo-opuscar` 下任何文件 ⇒ 改完立刻同步两侧**（改一侧 = 分叉 = 阻塞出片，

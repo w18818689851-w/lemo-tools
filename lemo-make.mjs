@@ -2642,7 +2642,7 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
       audioWarns.push(...[...v.stdout.matchAll(/STEP_WARN (.+)/g)].map(x => x[1].trim()));
       // voices/*.json + lines.json 回传 Windows（页面读的就是这一份）
       // ★ 跳过 ASR 时**不回传** words.json（2026-10-02 修）。words.json 在配音阶段唯一的写者是
-      //   asr_check.py（见 core/tts/asr_check.py:116），跳过 ASR ⇒ 没重算 ⇒ 那份是上一版内容的
+      //   asr_check.py（见 core/tts/asr_check.py 里写 words.json 的那句 json.dump），跳过 ASR ⇒ 没重算 ⇒ 那份是上一版内容的
       //   陈旧产物。旧实现照样把它拷回 Windows：mtime 被刷新、看起来像刚生成，而页面拿到的是
       //   **旧词级时间**（实测 engraving 的 words.json 至今还是旧英文内容的 5 条 title,d1-d3,close）。
       //   ★ 音频脚本跳 ASR 时**只不回传、绝不删除**（全库有 17 处消费方，如 whiteboard/film.js、
