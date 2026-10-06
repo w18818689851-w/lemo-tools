@@ -8,8 +8,8 @@
  *   本库语义：**没声明 `FILM_META.aspects` = 只支持 16:9**（`lib/aspects.mjs:29-33`）。
  *   但**影片的真实入口不是 `film*.js`** —— 渲染器加载的是 `demo/index.html`
  *   （`core/render/page.mjs:16` 明确要求该文件存在），`index.html` 里的 `<script type="module">`
- *   再 `import(...)` 具体模块（很多风格是 `main.js`）。实测 43 个风格里**只有 21 个有 `film*.js`**，
- *   另 22 个（`backrooms` / `paper-lantern` / `halftone-dossier` …）走 `main.js` 或 `index.html` 内联脚本。
+ *   再 `import(...)` 具体模块（很多风格是 `main.js`）。实测 43 个风格里**42 个有 `film*.js`**，
+ *   仅 1 个（`pixel-rpg`）没有，走 `main.js` 或 `index.html` 内联脚本。
  *   ⇒ 陷阱：若有人照 `MAINTAINING.md` 的多比例范式改造了某风格的 `main.js`（读视口尺寸自适应），
  *   **控制台仍会报「只支持 16:9」**（因为 `film*.js` 不存在、探测看不到）。
  *   后果：用户看到**假的**「会被裁切」警告，并被「一键修复」按钮推向更差的比例。
