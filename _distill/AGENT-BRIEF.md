@@ -415,6 +415,35 @@ node D:/lemo-tools/scripts/refresh-style-skill.mjs --only <slug>   # 或 --all
 自动在 SKILL.md 标「已修」。★ 反向情况（旧达标、新超标）它**只告警不自动写** ——
 那需要你新增一条缺陷并定扣分档，属人工判断。
 
+### ★ 控制台的注册表 / `_jobs/` 会跨运行累积：定期跑 `prune-jobs.mjs`（2026-10-07 立）
+
+**为什么需要它**：控制台每出一个任务，就同时往三处落一份 —— 产物目录 `D:/lemo-films/_jobs/<任务id>/`、
+注册表条目 `D:/lemo-films/.console/index.json`、日志 `.console/logs/<id>.jsonl`。这三处
+**没有任何自动化在清**（核法见本条末），⇒ **只增不减**。后果不只是占盘：**注册表会被依赖它的测试读回来**
+（`test/ui.test.mjs` 启动时 `loadHistory()` 读它、B7 又往它写批次标记）⇒ 积多了测试就**变脆**
+（`test/ui.test.mjs` 的 B7 用例注释自述「失败的 B7 会把自己刚建的批次标记**留在 `.console/index.json` 里**，
+成为下一次运行的毒点」—— 即「越跑越红」的自我投毒路径；本次审计实测注册表积到 **78** 条时该套转红、清到 **10** 条即转绿）。
+
+```bash
+node D:/lemo-tools/scripts/prune-jobs.mjs              # 默认**只报告（dry-run）**，不删任何东西
+node D:/lemo-tools/scripts/prune-jobs.mjs --apply      # 确认无误后才真删（目录 + 注册表条目 + 日志）
+node D:/lemo-tools/scripts/prune-jobs.mjs --keep 20    # 换保留条数（默认保留最新 10 个已结束任务）
+```
+
+语义（判据机械、可解释）：
+- **只处理已结束的任务**（`endedAt` 有值，或 `status ∈ done/failed/canceled`），**绝不动 running/queued**；
+- 按 `createdAt` 从新到旧，**保留最新 `--keep N` 个**（默认 10），其余为待清理；产物目录不存在时仍清注册表+日志；
+- **三处一起清** —— 只删一处会留下「点进去 404」的僵尸任务或孤儿目录；
+- ★ **安全闸**：待清理目录必须落在 `_jobs/` 内、且 `lstat` 判定**不是 junction / 符号链接**，
+  否则跳过并 **exit 1**（本机踩过「junction 的 `rm -rf` 会穿透删真实目标」）；
+- ★ **覆盖点 `LEMO_FILM_DIR`**（默认 `D:/lemo-films`，与 `lib/store.mjs` 的注册表根**同义**：
+  注册表根 = `<LEMO_FILM_DIR>/.console`）⇒ 设它即可在**临时树**上非破坏地演练 `--apply`。
+
+★ **核法**（本条断言「没有自动化在跑它」）：`ls .github .gitlab-ci.yml .circleci`（空）、
+`ls package.json`（无）、`ls .git/hooks/ | grep -v .sample`（空）、
+`Get-ScheduledTask | ? { $_.Actions.Arguments -match 'lemo|prune' }`（计划任务 **196** 个、命中 **0**）。
+★ 现状：**需人工定期跑**（未挂任何自动触发；合适的挂载点需人工拍板，不擅自挂）。
+
 ### ★★ 重蒸馏之前：先过三道前置检查（2026-10-06 立，治「越修越坏」）
 
 ★ **病根**：`plan` 报出「待处理」**不等于**「该重渲」。本轮实测 33 个「待处理」里 **21 个是误标**

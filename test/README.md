@@ -303,7 +303,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
        把锁目录隔离（`LEMO_LOCK_DIR=<临时目录> node test/smoke.mjs`）后 **40 passed / 0 failed / exit 0**。
      · `test/ui.test.mjs` 三次干净重跑：`56/3`（B7,C2,C3）→（日志被两个进程混写，作废）→ **`58 passed / 1 failed`（只剩 B7）**。
        B7 的失败断言是**扫全表**的：`[...document.querySelectorAll('#jobs .jbatch')]` 里每一条都得是 `批 N/2`，
-       而持久化的任务历史 `D:\lemo-films\.console\index.json`（**不可用环境变量隔离**，`lib/store.mjs:25` 硬编码）
+       而持久化的任务历史 `D:\lemo-films\.console\index.json`（**已可用 `LEMO_FILM_DIR` 隔离** —— 2026-10-07 起 `lib/store.mjs:25` 的 `ROOT` 认这个覆盖点，与 `scripts/prune-jobs.mjs` 同名同义；未设时行为逐字节不变）
        里有**另一个并发智能体**在 `2026-10-06T19:10:23Z` 留下的 `batchTotal:1` 任务（`jmux200kg-1` / `impasto`）
        ⇒ 列表里混进一个 `批 1/1`。**本次改动与它无关**：B7 走 `--dry-run --skip-sync`，根本不进渲染段，
        且本次从未起过控制台/批次。★ 这是 `ui.test.mjs` 自身的**用例脆弱性**（API 侧已按 `priorBatchIds` 排除历史、
