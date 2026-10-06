@@ -739,7 +739,7 @@ function dubFilms(root) {
  * ★ 为什么必须单列一条：控制台出片现在写进独立输出目录（见 lib/jobs.mjs:jobOutDir），
  *   而一级扫描（apiFilms）**故意跳过 `_` 前缀目录** —— 那是本项目「非风格 / 内部产物」的既有约定。
  *   所以这里照 dubFilms 的做法**显式再扫一层**：既有条目一个字节没改，只是多了几条（纯追加）。
- * ★ 文件名就是风格 slug：编排器 `lemo-make.mjs:2593` 写的是 `<outDir>\<slug>.mp4`，
+ * ★ 文件名就是风格 slug：编排器 `lemo-make.mjs` 里那条 `const dst = path.join(outDir, ...)` 写的是 `<outDir>\<slug>.mp4`，
  *   所以 slug 从文件名取；`jobId` 取目录名（= 任务 id）—— 用户据此能对上是哪一次出片。
  * ★ 只认 `.mp4`：同一个出片目录里还可能有 `<slug>.srt`，那不是成片。
  * ★ 纯只读：只 stat，不写任何东西。

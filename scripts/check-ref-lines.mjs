@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/check-ref-lines.mjs —— **散文里的 `<路径>:<行号>` 引用会不会随行号漂移而失效**
+ * scripts/check-ref-lines.mjs —— **散文/源码里的 `<路径>:<行号>` 引用会不会随行号漂移而失效**
  *
  * ★ 由来（2026-10-06，本会话**连撞三次**）：
  *   `scripts/check-film-aspect.mjs` 的两处注释引用 `` `scripts/style-distill.mjs:189` ``
@@ -220,6 +220,73 @@
  *     `pictogram-motion/_distill.json` 的 `core/render/mux.sh:23`（`GR="${5:-2}"` 实在 **36** 行）、
  *     `mux.sh:115`（`noise=c0s` 实在 **173** 行）、`demo/mux.sh:12`（`noise=c0s=4` 实在 **19** 行）。
  *
+ * ── ★★ 2026-10-07 扩扫描范围②：纳入**源码文件** ────────────────────────────────
+ *   **盲区（已被实证）**：`DOCS` 此前只含 `.md` + `_distill.json` ⇒ **源码文件**
+ *   （`.mjs` / `.js` / `.py` / `.sh`）**注释里**的同类引用**完全不被覆盖**。
+ *   实证：`lib/jobs.mjs`（3 处）与 `lib/vram.mjs`（2 处）的这类引用**全部已失效**
+ *   （`lemo-make.mjs` 的 `:1158` / `:743` / `:996-1019` / `:2428`×2 ⇒ 真位置
+ *   `:1273` / `:858` / `:1559-1563` / `:2716`）。
+ *
+ *   **扫描范围（新增）**：`lib/*.mjs`（根级）、工具仓根 `*.mjs`、`styles/<slug>/demo/**`、
+ *   `core/**`、`tools/**`（后三者只收 `.mjs` / `.js` / `.py` / `.sh`）。
+ *   ★ **排除**（照本项目既有闸门的 `SKIP` 写法，见 `check-esm-import-paths.mjs` 的 `SKIP`）：
+ *   `vendor/`、`node_modules/`、`.git/`、`*.min.js` —— 压缩产物/三方库里有
+ *   `` `r.classId:0` `` / `` `r.length:0` `` 这种**不是引用**的东西（`REF` 认得出它，
+ *   因为 `r.classId` 恰好长得像「带扩展名的路径」）⇒ 不排除就会**假红**（夹具 t3 实测）。
+ *   ★ **判据不变**：(a)(b)(c)(d) **四条全跑** —— 源码文件里的引用**目标也是别的文件**，
+ *   与「引用写在 `.md` / `.json` / `.js` 里」**无关**。**先测误报率再定稿**，见下。
+ *
+ *   **实测（纳入前 → 纳入后，同一台机同一时刻）**：扫描 **180 份 → 180 份文档 + 791 份源码**；
+ *   引用 **3818 → 3826**（**+8**）；解析到文件 **3578 → 3583**（+5）；进入 (c) **41 → 42**（+1）；
+ *   **FAIL 0 → 1**。
+ *
+ *   ★★ **误报率实测（逐条人读，791 份源码 / **8** 处引用）**：
+ *   · **真失效 1 条（闸门可见）**：`lib/jobs.mjs:61` 引 `` `server.mjs:1675` ``，
+ *     而 `server.mjs` 第 1675 行只是**注释块的收尾星号斜杠**（`--skip-sync` 实在 **1674**（注释）/ **1755**
+ *     （`const opts = ['--skip-sync', ...b.runOpts];`））⇒ **(c) FAIL**，**真阳性**。
+ *   · **有效 3 条**（逐条 `sed -n '<n>p'` 核过被引行内容与引文一致）：
+ *     `styles/art-deco/demo/frame.js:11` 引 `` `STYLE.md:45` ``（第 45 行 = 「What never moves: the
+ *     centre axis of a composition…」，正文的「中轴是构图里唯一不能动的东西」逐字对得上）；
+ *     `lib/dub-core.mjs:169` 引 `` `halftone-dossier/STYLE.md:19` ``（第 19 行含 `a rotated grid of
+ *     circles` + `step 20–26 px`，与引文逐字一致）；`lib/dub-core.mjs:172` 引
+ *     `` `risograph/STYLE.md:23` ``（第 23 行 = `cosine spot function on a rotated grid,
+ *     period ~6–8 px at 1080p`，逐字一致）。
+ *   · **只列不判 4 条**：`lib/dub-core.mjs` 的 `` `demo/index.html:140` ``×2（全库 **46** 处同名）、
+ *     `` `STYLE.md:25` ``（**44** 处同名）⇒ **多义(无法核对)**，**不算误报**（本闸门**不判**它）。
+ *   ⇒ **命中 1 / 误报 0 ⇒ 精度 100%**，**不做任何收窄**（四条判据全保留）。
+ *   ★ 口径必须说清：**这 8 处里只有 1 处是本闸门能判 FAIL 的**（其余 3 有效 + 4 多义）。
+ *     「精度 100%」的分母是**命中**，不是**引用**。
+ *   ★ 排除项**在本轮真实语料上不承重**（实测：带排除 791 份/8 处引用，关掉排除 792 份/**同样 8 处**
+ *     —— 那个 `vendor/opentype.min.js` 里**一个反引号都没有**，故 0 贡献）⇒ 它是**保险**，不是修 bug；
+ *     但**必须留**：夹具 t3 证明同一形态一旦落进不被排除的文件就会**假红**。
+ *
+ *   ★★ **同时暴露的第二层盲区（比「没扫源码」更深，务必知道）**：
+ *   任务书给的 5 处里**只有 `lib/jobs.mjs:60` 是反引号包裹的** —— 其余 4 处
+ *   （`lib/jobs.mjs:74` / `:751`、`lib/vram.mjs:25` / `:199`）**都没加反引号**
+ *   （写作 `见 lemo-make.mjs:743`、`与编排器 lemo-make.mjs:996-1019 逐字对齐`…）
+ *   ⇒ 它们是**裸引用**，本闸门**按设计就不认**（见「已知局限」第 2 条）⇒
+ *   **扩了源码范围也照样看不见它们**。⇒ 「源码文件已纳入」**不等于**「源码里的引用都被管住了」：
+ *   本次纳入只覆盖**带反引号**的那一部分。**修法**：给裸引用**加上反引号**；
+ *   本轮那 5 处已顺带改成**符号名 / 代码锚**（不再依赖行号 ⇒ 也就不再是裸引用）。
+ *   ★ 另有一条**本闸门结构性看不见**的真失效（人工读出来的，**已报未改**）：
+ *     `server.mjs:742` 引 `` `lemo-make.mjs:2593` ``，正文说它「写的是 `<outDir>\<slug>.mp4`」；
+ *     而 `:2593` 是显存注释，真出处是 **`:2890` 的 `const dst = path.join(outDir, \`${o.slug}.mp4\`)`**
+ *     ⇒ 行号在范围内 + 被引行有内容 + 小句里没有高置信片段 ⇒ (a)(b)(c)(d) **四条全放行**
+ *     （与 (d) 清单 ⑪ 同形）。
+ *
+ *   ★ **失明守卫照旧生效**（夹具 t4 实测：整棵树一个引用都没有 ⇒ 仍判失明 FAIL）。
+ *   ★ **不纳入**：`scripts/**`（本轮任务未要求；那 29 个闸门自身带**大量**行号引用，
+ *     含 `check-ref-lines.mjs` **自己的头注释** —— 纳入要单独评估）；`node_modules/`、
+ *     `vendor/`、生成物（`demo/out/**` 等）**一律不纳入**（噪声）。
+ *
+ *   ★ 夹具（用 `LEMO_TOOLS_ROOT` / `LEMO_OPUSCAR` / `LEMO_STYLES_ROOT` / `LEMO_DISTILL_ROOT`
+ *     四个覆盖点指到临时树，**绝不动真实仓**；`before.mjs` = 把 `SCAN` 退回 `DOCS` 的等价「改动前」版本）：
+ *     · **t1**（源码里 `` `target.mjs:999` ``，目标只有 3 行）**改动前 exit 0（抓不到）⇒ 改动后 (b) 1 处 + exit 1**；
+ *     · **t2**（源码里正常引用 `` `target.mjs:2` `` 与 `` `STYLE.md:1` ``）**改动前后都 exit 0**（不误报）；
+ *     · **t3**（`` `r.classId:0` `` / `` `r.length:0` `` 放 `demo/vendor/lib.min.js` ⇒ **被排除、0 贡献**；
+ *       同一段内容放 `core/notmin.js` ⇒ **2 处 (a) 假红**）⇒ **证明排除项是承重的**；
+ *     · **t4**（整棵树无引用）**改动前后都 exit 1 + 「本闸门已失明」**（失明守卫未被扩范围破坏）。
+ *
  * ── ★ 豁免（只列 backlog、**不判 FAIL**）──────────────────────────────────────
  *   路径匹配 `(^|/)logs?/` 或 `.log$` 的引用 —— 运行期产物：`_distill/logs/*.log` 在**两个仓都被
  *   `.gitignore` 排除**（实测 `git check-ignore` 命中 `*.log` / `_distill/*`），**不随仓库分发**，
@@ -257,6 +324,14 @@
  *     ★ 2026-10-07 实测：`_distill.json` 里这类**裸引用有 390 处**（是**反引号引用 17 处**的 23 倍），
  *     **明确不纳入**（按 (a)(b)(d) 判得 3 命中 / **误报 2**，见上「扩扫描范围」段的实测）——
  *     即本次纳入只覆盖该语料的**一小部分**引用，别把「`_distill.json` 已纳入」读成「它的引用全被管住」。
+ *     ★★ **源码文件同理（2026-10-07 再确认）**：本轮纳入的 791 份源码共 8 处引用，其中**4 处是裸引用**
+ *     （正是任务书那 5 处里的 4 处）⇒ **扩了源码范围也照样看不见它们**。别把「源码文件已纳入」
+ *     读成「源码里的引用都被管住了」。
+ *   · ★ **`scripts/**` 不在扫描范围内**（2026-10-07 明确记下）：本轮任务未要求；那 29 个闸门自身
+ *     带**大量**行号引用（含本闸门**自己的头注释** —— 纳入后会自我扫描，需单独评估误报率）。
+ *     纳入前**必须先测误报率**（同 (c) 的纪律）。
+ *   · ★ **`vendor/` / `node_modules/` / `*.min.js` / 生成物**一律不纳入（压缩产物里
+ *     `` `r.classId:0` `` 这类会被 `REF` 认成引用 ⇒ 假红；见「扩扫描范围②」段的夹具 t3）。
  *   · ★ **`.json` 的出处行号口径**：`_distill.json` 按**物理行**扫（与 `.md` 同口径），
  *     靠「`JSON.stringify` 把 `\n` 转义 ⇒ 1 字符串值 = 1 物理行」保证与「按字符串值判」等价（实测 2510/2510）。
  *     若该文件被压成一行，`where` 的行号会失真（**判据不受影响**，见上）。
@@ -298,6 +373,7 @@ const LIST_BACKLOG = process.argv.includes('--list-backlog');
 // ── 扫描范围（★ 显式列表，不用「全仓 md」那种会拖进噪声的 glob）─────────────
 //   ★ 2026-10-07：除 `.md` 外**再纳入 `lib/style-skills/<slug>/_distill.json`** ——
 //     它是**唯一**没被任何闸门管着的 `<路径>:<行号>` 引用宿主（见头注释「扩扫描范围」段）。
+//   ★★ 2026-10-07 再扩：**源码文件**（`SRCS`，见下）也纳入（见头注释「扩扫描范围②」段）。
 const styleSlugs = (() => {
   try { return fs.readdirSync(STYLES, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); }
   catch { return []; }
@@ -318,6 +394,42 @@ const DOCS = [
   path.join(OPUSCAR, 'core', 'README.md'),
   ...styleSlugs.flatMap((s) => [path.join(STYLES, s, 'STYLE.md'), path.join(STYLES, s, 'DEMO.md')]),
 ].filter((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
+
+// ── ★ 2026-10-07 扩扫描范围②：**源码文件**里的 `<路径>:<行号>` 引用 ──────────────
+//   盲区：`DOCS` 此前**只含 `.md` + `_distill.json`** ⇒ 源码文件（`.mjs` / `.js` / `.py` / `.sh`）
+//   注释里的同类引用**完全不被覆盖**。已实证：`lib/jobs.mjs`（3 处）与 `lib/vram.mjs`（2 处）
+//   的这类引用**全部已失效**（修法与实测见头注释「扩扫描范围：源码文件」段）。
+//   ★ 判据不变（(a)(b)(c)(d) 全跑）—— 实测命中 2 处、**逐条人读全是真失效（精度 100%）**。
+//   ★ 排除项（照本项目既有闸门的 `SKIP` 写法，见 `check-esm-import-paths.mjs` 的 `SKIP`）：
+//     压缩过的 JS / 三方库里有 `r.classId:0` 这种**不是引用**的东西 ⇒ 必须排除
+//     `vendor/`、`node_modules/`、`.git/`、`*.min.js`。
+const SRC_SKIP = /[\\/](?:vendor|node_modules|\.git)[\\/]|\.min\.js$/;
+const SRC_EXT = /\.(?:mjs|js|py|sh)$/;
+/** 目录下**根级**（不递归）匹配的文件 —— 用于 `lib/*.mjs` 与工具仓根 `*.mjs` */
+const topLevel = (dir, re) => {
+  try { return fs.readdirSync(dir).filter((n) => re.test(n)).map((n) => path.join(dir, n)); } catch { return []; }
+};
+/** 目录下**递归**匹配的文件，逐层跳过 `vendor/`、`node_modules/`、`.git/`、`*.min.js` */
+function collectSrc(dir, re, out = []) {
+  let es; try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of es) {
+    const p = path.join(dir, e.name);
+    if (SRC_SKIP.test(p)) continue;
+    if (e.isDirectory()) collectSrc(p, re, out);
+    else if (re.test(e.name)) out.push(p);
+  }
+  return out;
+}
+const SRCS = [...new Set([
+  ...topLevel(path.join(ROOT, 'lib'), /\.mjs$/),                       // 工具仓 lib/*.mjs
+  ...topLevel(ROOT, /\.mjs$/),                                        // 工具仓根 *.mjs
+  ...styleSlugs.flatMap((s) => collectSrc(path.join(STYLES, s, 'demo'), SRC_EXT)),  // styles/*/demo/**
+  ...collectSrc(path.join(OPUSCAR, 'core'), SRC_EXT),                 // core/**
+  ...collectSrc(path.join(OPUSCAR, 'tools'), SRC_EXT),                // tools/**
+])].sort();
+
+/** 本次真正扫的文件 = 文档 + 源码 */
+const SCAN = [...DOCS, ...SRCS];
 
 // ── 引用形态 ────────────────────────────────────────────────────────────────
 //   反引号包裹、路径带扩展名、`:行号`（可 `N` / `N-M` / `N/M/…` / 逗号分隔组 `N-M,K`）
@@ -479,7 +591,7 @@ const fails = [];      // {kind, file, docLine, ref, snippet?, detail}
 const backlog = [];    // 豁免 / 多义 / 已登记
 let refCount = 0, resolvedCount = 0, cApplied = 0;
 
-for (const file of DOCS) {
+for (const file of SCAN) {
   const slug = slugOf(file);
   const docLines = fs.readFileSync(file, 'utf8').split('\n');
   docLines.forEach((line, i) => {
@@ -598,14 +710,19 @@ for (const file of DOCS) {
 
 // ── ★ 失明守卫 ──────────────────────────────────────────────────────────────
 const blind = [];
-if (refCount === 0) blind.push(`扫描范围内（${DOCS.length} 份文档）**一个 \`<路径>:<行号>\` 引用都没找到** ⇒ 一个引用都没检查过`);
+if (refCount === 0) blind.push(`扫描范围内（${DOCS.length} 份文档 + ${SRCS.length} 份源码）**一个 \`<路径>:<行号>\` 引用都没找到** ⇒ 一个引用都没检查过`);
 if (refCount > 0 && resolvedCount === 0) blind.push(`找到 ${refCount} 处引用，但**一处都解析不到文件** ⇒ 要么文档里的引用真的全坏、要么解析根配错了（先核对下面的 (a) 清单）`);
 
 // ── 输出 ────────────────────────────────────────────────────────────────────
 const byKind = (k) => fails.filter((f) => f.kind.startsWith(k));
 console.log('散文里的 `<路径>:<行号>` 引用闸门\n');
-console.log(`扫描：${DOCS.length} 份文档（test/README.md、_distill/AGENT-BRIEF.md、${skillSlugs.length} 份 SKILL.md、`);
-console.log(`      ${DOCS.filter((p) => p.endsWith('_distill.json')).length} 份 _distill.json、MAINTAINING/TECHNIQUE/core/README、${styleSlugs.length}×2 份 STYLE|DEMO.md）`);
+console.log(`扫描：${DOCS.length} 份文档 + ${SRCS.length} 份源码`);
+console.log(`  文档：test/README.md、_distill/AGENT-BRIEF.md、${skillSlugs.length} 份 SKILL.md、`);
+console.log(`        ${DOCS.filter((p) => p.endsWith('_distill.json')).length} 份 _distill.json、MAINTAINING/TECHNIQUE/core/README、${styleSlugs.length}×2 份 STYLE|DEMO.md`);
+console.log(`  源码：${topLevel(path.join(ROOT, 'lib'), /\.mjs$/).length} 份 lib/*.mjs、${topLevel(ROOT, /\.mjs$/).length} 份工具仓根 *.mjs、` +
+  `${SRCS.filter((p) => /[\\/]demo[\\/]/.test(p)).length} 份 styles/*/demo/**、` +
+  `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'core'))).length} 份 core/**、` +
+  `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'tools'))).length} 份 tools/**（.mjs/.js/.py/.sh；已排除 vendor/、node_modules/、*.min.js）`);
 console.log(`引用：${refCount} 处；解析到文件 ${resolvedCount} 处；其中 ${cApplied} 处进入 (c) 内容比对\n`);
 
 const SHOW = { '(a)': '(a) 文件不存在', '(b)': '(b) 行号超范围', '(c)': '(c) 内容对不上', '(d)': '(d) 被引行没有内容（空行/分隔线/围栏/幻影行）' };
