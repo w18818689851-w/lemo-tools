@@ -292,6 +292,41 @@
  *   `.gitignore` 排除**（实测 `git check-ignore` 命中 `*.log` / `_distill/*`），**不随仓库分发**，
  *   且**每次跑都会重写** ⇒ 它的行号**天然会变**。判它 FAIL 会得到一个**永远红的噪声闸门**。
  *
+ * ── ★★ 裸引用（只列 backlog、**不判 FAIL**）—— 2026-10-07 新增的**第三类 backlog** ────────────
+ *   **它治的盲区**：本闸门**只认反引号包裹**的引用（见下「已知局限」第 2 条）⇒ 正文里**不带反引号**的
+ *   「路径 + 冒号 + 行号」（如 `见 lemo-make.mjs:743`）**一条都不被核对** —— 不计入 `refCount`、
+ *   不进 (a)(b)(c)(d)、**也不出现在任何输出里**。上一批把 `lib/style-skills/<slug>/_distill.json` 的
+ *   378 处裸引用补了反引号清零，但**全库还剩一批**（在 `SKILL.md` / `test/README.md` / 源码注释里）
+ *   —— 而闸门对它们**一言不发** ⇒ 后人会把「0 处失效」误读成「引用已清零」。
+ *
+ *   **为什么不把它们纳入判据（实测，别再试）**：按 (a)(b)(d) 判裸引用 ⇒ 命中 3 / **误报 2（精度 ≈33%）**，
+ *   且失败是**结构性**的：裸引用拿不到「同小句路径感知」（`siblingPaths` **只收反引号片段**），
+ *   只写 basename 的裸引用必然解析到**同名错文件**（实测 `mux.sh:115` → 本风格 demo 里那份 22 行的）。
+ *   ⇒ **判据一个字都不动**；(a)(b)(c)(d) 的形态与阈值全部不变。
+ *
+ *   **做法**：照 `logs` 的写法，把裸引用**列进 backlog**（计数 + `--list-backlog` 逐条列出处与原文片段），
+ *   **一律不判 FAIL、不影响退出码**。★ 输出里**明说这是盲区**（见 `盲区` 分支的文案），
+ *   否则「只列不判」本身也会被读成「已处理」。
+ *
+ *   **判据（正则）与假阳收窄（2026-10-07 实测）**：形态与 `REF` 同形，但**不加锚**（裸引用嵌在正文里）
+ *   —— 路径 + `:` + 行号（可 `N` / `N-M` / `N/M/…` / 逗号组 `N-M,K`），路径**带扩展名**。
+ *   ★ **扩展名必须以字母开头**（`\.[A-Za-z]…`）：这一条规则**同时**挡掉两类假阳 ——
+ *     ① **`地址:端口`**（`127.0.0.1:12345` / `127.0.0.1:9257`：左侧全是数字点，**没有**「以字母开头的扩展名」）；
+ *     ② **`数值比`**（对比度的 `2.5:1` / `11.4:1` / `14.8:1` / `1.5:1`：左侧是纯小数，`5`/`4`/`8` 不是字母）。
+ *   ★ **实测（同一台机同一时刻，真实语料）**：**宽松版 305 处 → 收窄后 295 处**（**−10**）；
+ *     被挡掉的 10 处**逐条核对全是**上面这两类假阳，**没有误伤任何一条真裸引用**
+ *     （收窄前后的差集 = `127.0.0.1:12345`×3、`2.5:1`×2、`11.4:1`×2、`14.8:1`、`1.5:1`、`127.0.0.1:9257`）。
+ *   ★ **已知残留假阳（不修，只记）**：本闸门**自己的「引用形态示例」**被它的**说明副本**
+ *     （`test/README.md` / `_distill/AGENT-BRIEF.md` 里那两行闸门描述）带进语料 ⇒ 会多列约 **16** 处
+ *     （如 `foo.js:12`、`main.js:566`、`demo/test.js:9`、`scripts/does-not-exist.mjs:10`）。
+ *     这类**没法从形态上区分**（它们**真的**长得跟裸引用一样），而它们是**夹具/示例说明**不是真引用。
+ *     ★ 残留占比 ≈ **16/295 ≈ 5%** ⇒ **接受**（backlog **只列不判**，多列几条不产生假红；
+ *     宁可多列 5% 也不收窄到把真裸引用漏掉）。★ 另：压缩产物里的 `r.classId:0` 这类形态
+ *     （「标识符 + `:0`」恰好长得像「带扩展名的路径」）由 `SRC_SKIP`（`vendor/`、`node_modules/`、
+ *     `*.min.js`）挡住 —— 与 (a)(b)(c)(d) **共用同一套排除项**。
+ *   ★ **本闸门自己不扫自己**（`SELF_REF_GATE`）⇒ 本段（以及 (d) 的 13 条清单、`_distill.json` 的 17 条清单）
+ *     里为**举证**而写的裸引用**不会**被算进这个 backlog。
+ *
  * ── ★ 两层语义（照本项目既有写法）────────────────────────────────────────────
  *   若**引用所在小句**内出现「已登记的失效」标记（`已失效|待修|已知失效|原为|原记|已登记|已废弃`），
  *   只列 backlog、**不判 FAIL**（同 `check-tp-prose.mjs` ④ 的历史语境豁免，但粒度收窄到**小句**）。
@@ -320,9 +355,12 @@
  *     的小句里根本没有「高置信代码片段」（只有别的引用、路径、slug 或散文）。**这是有意的取舍**：
  *     ★ 2026-10-07 纳入 `.json` 后的同口径数字：**3813 处 / 41 处**（占比同样 ≈1%）。
  *     宁可少判、不可乱报。(c) **不是**「所有引用都比对内容」。
- *   · 启发式（非 AST）：解析器只认**反引号包裹**的引用；写在正文里不加反引号的 `foo.js:12` **看不见**。
- *     ★ 2026-10-07 实测：`_distill.json` 里这类**裸引用有 390 处**（是**反引号引用 17 处**的 23 倍），
- *     **明确不纳入**（按 (a)(b)(d) 判得 3 命中 / **误报 2**，见上「扩扫描范围」段的实测）——
+ *   · 启发式（非 AST）：解析器只认**反引号包裹**的引用；写在正文里不加反引号的 `foo.js:12` **看不见**
+ *     —— ★ 2026-10-07 起**不再是「完全不可见」**：它们会被列进第三类 backlog「**裸引用(未被核对)**」
+ *     （**只列不判 FAIL**，见上「裸引用」段）。**但「被列出」≠「被核对」**：它们仍然不进 (a)(b)(c)(d)、
+ *     不计入 `refCount` ⇒ 这类引用的**正确性依然零覆盖**。
+ *     ★ 2026-10-07 实测：`_distill.json` 里这类**裸引用曾有 390 处**（是**反引号引用 17 处**的 23 倍），
+ *     **明确不纳入判据**（按 (a)(b)(d) 判得 3 命中 / **误报 2**，见上「扩扫描范围」段的实测）——
  *     即本次纳入只覆盖该语料的**一小部分**引用，别把「`_distill.json` 已纳入」读成「它的引用全被管住」。
  *     ★★ **源码文件同理（2026-10-07 再确认）**：本轮纳入的 791 份源码共 8 处引用，其中**4 处是裸引用**
  *     （正是任务书那 5 处里的 4 处）⇒ **扩了源码范围也照样看不见它们**。别把「源码文件已纳入」
@@ -447,6 +485,28 @@ const SCAN = [...DOCS, ...SRCS];
 //   ★ 锚 `^…$`：整串必须刚好是「路径:行号组」，`a.js:1,b.js:2` / `x.js:1, 'a'` 都不会被误吃。
 const REF = /^([A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z0-9_]+):(\d+)((?:[-/,]\d+)*)$/;
 const TICKS = /`([^`\n]+)`/g;
+/**
+ * ★ 2026-10-07 新增：**裸引用**（正文里**不带反引号**的「路径 + 冒号 + 行号」）。
+ *   本闸门**只认反引号包裹**的引用 ⇒ 这类引用**一条都不被核对**（不计入 `refCount`、不进 (a)(b)(c)(d)）。
+ *   这里只把它们**列进 backlog**（计数 + `--list-backlog`），**不判 FAIL** ——
+ *   因为按 (a)(b)(d) 判它们实测精度仅 ≈33%（结构性失败，见头注释「裸引用」段）。
+ *   ★ 与 `REF` 的差别只有两点：① **不加锚**（裸引用嵌在正文里，不是整串）；② **扩展名必须以字母开头**
+ *     —— 后者一条规则同时挡掉 `地址:端口`（`127.0.0.1:12345`）与 `数值比`（对比度 `2.5:1`）两类假阳。
+ *     实测：宽松版 305 处 → 收窄后 295 处，挡掉的 10 处**全是**这两类假阳、**零误伤**。
+ */
+const BARE_REF = /([A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z][A-Za-z0-9_]*):(\d+)((?:[-/,]\d+)*)/g;
+/**
+ * 裸引用扫描用的「挖洞」正则：把**已核对的**反引号片段整段换成等长空格，免得它们被重复算成裸引用。
+ * ★ 为什么**不复用** `TICKS`：`TICKS` 是 `+`（要求非空），遇到**双反引号**写法（`` `` `x.js:1` `` ``，
+ *   本仓大量使用）会把**内层反引号与空格配对**，导致 `x.js:1` **整段漏出掩码** ⇒ 3 处已核对引用
+ *   被误列成裸引用（实测：`_distill/AGENT-BRIEF.md` 的 `core/render/mux.sh:36`、
+ *   `test/README.md` 的 `check-film-aspect.mjs:66` 与 `scripts/style-distill.mjs:189`）。
+ *   `*`（允许空）会先把相邻的两个反引号吃掉，配对才与人的读法一致 ⇒ 这 3 处消失（298 → 295）。
+ *   ★ **判据（`TICKS` / `REF`）一个字都没动** —— 这只影响**裸引用扫描的掩码**。
+ */
+const CODE_SPANS = /`[^`\n]*`/g;
+/** 第三类 backlog 的 kind（`logs` / 多义 / 欠指明 之外的） */
+const BARE_KIND = '裸引用(未被核对)';
 /** 占位符 / 通配的路径不算引用（`styles/<slug>/demo`、`film*.js`） */
 const isPlaceholder = (p) => /[<>*…]/.test(p);
 const isLogRef = (p) => /(^|\/)logs?\//.test(p) || /\.log$/.test(p);
@@ -603,14 +663,34 @@ const linesOf = new Map();
 const getLines = (p) => { if (!linesOf.has(p)) linesOf.set(p, fs.readFileSync(p, 'utf8').split('\n')); return linesOf.get(p); };
 
 const fails = [];      // {kind, file, docLine, ref, snippet?, detail}
-const backlog = [];    // 豁免 / 多义 / 已登记
+const backlog = [];    // 豁免 / 多义 / 已登记 / 裸引用(未被核对)
 let refCount = 0, resolvedCount = 0, cApplied = 0;
+let bareCount = 0;     // ★ 裸引用（正文里不带反引号）—— **从未被核对**，只列 backlog
 
 for (const file of SCAN) {
   const slug = slugOf(file);
   const docLines = fs.readFileSync(file, 'utf8').split('\n');
   docLines.forEach((line, i) => {
     const lineNo = i + 1;
+    // ── ★ 裸引用：只列 backlog、**不判 FAIL**（见头注释「裸引用」段）──
+    //   先把**反引号片段整段挖成等长空格**，保证「已核对的引用」不会被重复算成裸引用
+    //   （等长替换 ⇒ 命中位置与原文一致，便于报出处）。用 `CODE_SPANS` 而非 `TICKS`，理由见其定义。
+    const masked = line.replace(CODE_SPANS, (t) => ' '.repeat(t.length));
+    for (const bm of masked.matchAll(BARE_REF)) {
+      if (isPlaceholder(bm[1])) continue;      // `styles/<slug>/demo`、`film*.js` 这类占位/通配不算
+      bareCount++;
+      // ★ `masked` 是**等长**替换 ⇒ `bm.index` 与原文下标一致，可以直接去原文取上下文片段。
+      const rawCtx = line.slice(Math.max(0, bm.index - 30), bm.index + bm[0].length + 30).trim();
+      backlog.push({
+        kind: BARE_KIND,
+        where: `${path.relative('D:/', file).replace(/\\/g, '/')}:${lineNo}`,
+        fragment: bm[0],
+        detail: '正文里**不带反引号**的「路径 + 冒号 + 行号」⇒ 本闸门**只认反引号包裹**的引用，'
+          + '这一条**从未被核对**（不计入 refCount、不进 (a)(b)(c)(d)）。'
+          + '修法：给它补**反引号 + 带目录的路径**（见 `_distill/AGENT-BRIEF.md` 引用纪律第 12 条）'
+          + `\n        原文：…${rawCtx}…`,
+      });
+    }
     for (const m of line.matchAll(TICKS)) {
       const inner = m[1].trim();
       const r = inner.match(REF);
@@ -739,7 +819,8 @@ console.log(`  源码：${topLevel(path.join(ROOT, 'lib'), /\.mjs$/).length} 份
   `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'core'))).length} 份 core/**、` +
   `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'tools'))).length} 份 tools/**、` +
   `${SRCS.filter((p) => p.startsWith(path.join(ROOT, 'scripts'))).length} 份 scripts/**（.mjs/.js/.py/.sh；已排除 vendor/、node_modules/、*.min.js；**本闸门自己不扫自己**）`);
-console.log(`引用：${refCount} 处；解析到文件 ${resolvedCount} 处；其中 ${cApplied} 处进入 (c) 内容比对\n`);
+console.log(`引用：${refCount} 处；解析到文件 ${resolvedCount} 处；其中 ${cApplied} 处进入 (c) 内容比对`);
+console.log(`★ 另有**裸引用**（正文里不带反引号）${bareCount} 处 —— 本闸门**只认反引号包裹**的引用 ⇒ 这 ${bareCount} 处**从未被核对**（不计入上面的「引用」数；只列 backlog，见文末「盲区」）\n`);
 
 const SHOW = { '(a)': '(a) 文件不存在', '(b)': '(b) 行号超范围', '(c)': '(c) 内容对不上', '(d)': '(d) 被引行没有内容（空行/分隔线/围栏/幻影行）' };
 const KINDS = ['(a)', '(b)', '(c)', '(d)'];
@@ -759,8 +840,16 @@ if (backlog.length) {
   const g = {};
   for (const b of backlog) (g[b.kind] ||= []).push(b);
   for (const [k, v] of Object.entries(g)) console.log(`  · ${k}：${v.length} 处`);
+  if (bareCount) {
+    // ★ 必须**明说这是盲区** —— 否则「只列不判」会被读成「已处理」，盲区就白列了。
+    console.log(`\n  ★★ **盲区**：上面「${BARE_KIND}」的 ${bareCount} 处 = 正文里**不带反引号**的「路径 + 冒号 + 行号」。`);
+    console.log(`     本闸门**只认反引号包裹**的引用 ⇒ 它们**一条都没被核对**（既不在上面的 (a)(b)(c)(d) 里，也不计入「引用：N 处」）。`);
+    console.log(`     ⇒ **别把「引用失效 0 处」读成「引用全对」** —— 这 ${bareCount} 处是**盲区**，正确性零覆盖。`);
+    console.log(`     ★ **不判 FAIL** 是因为按 (a)(b)(d) 判它们实测精度只有 ≈33%（裸引用拿不到「同小句路径感知」，会解析到同名错文件）。`);
+    console.log(`     正确修法是**写作侧**：给它们补**反引号 + 带目录的路径**（见 \`_distill/AGENT-BRIEF.md\` 引用纪律第 12 条），不是改判据。`);
+  }
   if (LIST_BACKLOG) for (const b of backlog) console.log(`      ${b.where}  ${b.fragment}\n        ${b.detail}`);
-  else console.log('  （加 `--list-backlog` 逐条列出）');
+  else console.log('\n  （加 `--list-backlog` 逐条列出）');
 }
 
 if (blind.length) {
@@ -768,5 +857,5 @@ if (blind.length) {
   for (const b of blind) console.log(`  ✘ ${b}`);
 }
 
-console.log(`\n[闸门] 引用失效 ${fails.length} 处（a ${byKind('(a)').length} / b ${byKind('(b)').length} / c ${byKind('(c)').length} / d ${byKind('(d)').length}）、只列不判 ${backlog.length} 处${blind.length ? '、**已失明**' : ''} ${(fails.length || blind.length) ? '✘' : 'OK'}`);
+console.log(`\n[闸门] 引用失效 ${fails.length} 处（a ${byKind('(a)').length} / b ${byKind('(b)').length} / c ${byKind('(c)').length} / d ${byKind('(d)').length}）、只列不判 ${backlog.length} 处（其中**裸引用盲区** ${bareCount} 处）${blind.length ? '、**已失明**' : ''} ${(fails.length || blind.length) ? '✘' : 'OK'}`);
 process.exitCode = (fails.length || blind.length) ? 1 : 0;

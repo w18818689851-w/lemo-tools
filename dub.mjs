@@ -821,7 +821,15 @@ async function main() {
   say(`${C.b}dub.mjs${C.x}  形态 ${form}${form === 'B' ? '（口播素材铺画面）' : '（生成背景）'}`);
   say(`  文案  ${raw.length} 字 → ${lines.length} 句`);
   say(`  输出  ${outDir}`);
-  say(`  尺寸  ${W}x${H} · 帧率 30 · 音色 ${o.voice} · 语速 ${o.speed} · 句间 ${o.gap}s${form === 'B' ? ` · fit ${o.fit}` : ''}`);
+  // ★ --keep-original 下**不跑 TTS、不缩放、不改帧率**（成片沿用素材）⇒ 这一行若照默认路径写
+  //   （「尺寸 1080x1920 · 帧率 30 · 音色 … · fit …」）就是**说要做的事其实一件都不做**。
+  //   这里如实说，并把默认值明确标成「不生效的默认值」。（只改文案，执行逻辑一个字没动。）
+  if (o.keepOriginal) {
+    say(`  尺寸  ${C.d}沿用素材（下面这些只是默认值，--keep-original 下不生效：${W}x${H} / 30fps` +
+      `${form === 'B' ? ` / fit ${o.fit}` : ''}）${C.x} · 不跑 TTS ⇒ 音色/语速/句间均不参与`);
+  } else {
+    say(`  尺寸  ${W}x${H} · 帧率 30 · 音色 ${o.voice} · 语速 ${o.speed} · 句间 ${o.gap}s${form === 'B' ? ` · fit ${o.fit}` : ''}`);
+  }
   // ★ --keep-original 下 --size / --ratio **都不生效**（改尺寸/比例就是改画面）——
   //   与 --size 一致给提示。放在这里（而非 runKeepOriginal 里）是为了 --dry-run 也能看到。
   if (o.keepOriginal) {
@@ -845,7 +853,10 @@ async function main() {
     const durs = lines.map((L) => Math.max(0.4, L.text.length / (EST_CPS * o.speed)));
     const { items, total } = buildTimeline(lines, durs, o.gap);
     const titleDur = o.title ? Math.min(2.5, durs[0]) : 0;
-    step(2, `时间轴（${C.y}估算${C.x} —— 真实时长要跑完 TTS 才知道）`);
+    step(2, o.keepOriginal
+      ? `时间轴（${C.y}估算${C.x} —— ★ --keep-original **不跑 TTS**：真实时间轴来自 --srt / ASR / VAD，` +
+        `按**素材真实时长**分配，与下面这串估算值无关；估算值只在 --dry-run 里预览用）`
+      : `时间轴（${C.y}估算${C.x} —— 真实时长要跑完 TTS 才知道）`);
     say(`  ${'id'.padStart(4)}  ${'t0'.padStart(8)} ${'t1'.padStart(8)} ${'dur'.padStart(7)}   ${'字幕窗'.padEnd(19)} 文本`);
     for (const it of items) {
       say(`  ${it.id.padStart(4)}  ${f3(it.t0).padStart(8)} ${f3(it.t1).padStart(8)} ${f3(it.dur).padStart(7)}   ` +
@@ -853,11 +864,24 @@ async function main() {
     }
     say(`  ${C.b}总时长 ≈ ${f3(total)}s${C.x}${o.title ? `（片头标题 ${f2(titleDur)}s）` : ''}`);
     step(3, '将要做的事（未执行）');
-    say(`  · 调 WSL 里的 Index-TTS 批量合成 ${lines.length} 句 → ${outDir}\\_tts\\`);
-    say(`  · 拼时间轴 + 响度/真峰值归一（PCM 目标峰值 ${TARGET_PEAK_PCM} dBFS，响度 ${targetLufs} LUFS）`);
-    if (form === 'B') say(`  · 素材 ${videoHost} 铺满 ${W}x${H}（保持比例居中裁切），fit=${o.fit}`);
-    else say(`  · 生成 ${W}x${H} 深色渐变背景${bgHost ? `（改用 ${bgHost}）` : ''}`);
-    say(`  · 烧中文字幕（底部安全区）+ 导出 film.srt → ${VENC} 编码 → film.mp4`);
+    // ★★ --keep-original 下**不做**默认路径那些事（不跑 TTS、不缩放/不裁切/不 trim/不 loop、
+    //   不对音频做响度归一）—— 照默认路径写就是**误导**（上一批实测：dry-run 打「调 WSL 里的
+    //   Index-TTS 批量合成」与「素材…铺满…fit=trim」，而这两件事**一件都不做**）。
+    //   这里如实列它**真正**要做的事。★ 只改文案，执行逻辑一个字没动。
+    if (o.keepOriginal) {
+      say(`  ${C.d}· （--keep-original 下**不跑 TTS**）字幕时间轴：--srt → ASR 强制对齐 → VAD 切段按字数分配 → 整体均匀分配${C.x}`);
+      say(`  ${C.d}· （--keep-original 下**不缩放、不裁切、不 trim、不 loop**）素材 ${videoHost} 的画面 / 时长 / 帧率**原样沿用**${C.x}`);
+      say(o.keepOriginalLimit
+        ? `  · 音轨：--keep-original-limit 已开 → 重编码 + 限幅到 ${TARGET_PEAK_PCM} dBFS（只压峰；不做响度归一）`
+        : `  · 音轨：-c:a copy（与素材**逐字节相同**；不做响度/真峰值归一 —— 素材自身超标时加 --keep-original-limit）`);
+      say(`  · 只往**上面**叠：烧中文字幕（底部安全区）+ 叠加层 → 导出 film.srt → ${VENC} 编码 → film.mp4`);
+    } else {
+      say(`  · 调 WSL 里的 Index-TTS 批量合成 ${lines.length} 句 → ${outDir}\\_tts\\`);
+      say(`  · 拼时间轴 + 响度/真峰值归一（PCM 目标峰值 ${TARGET_PEAK_PCM} dBFS，响度 ${targetLufs} LUFS）`);
+      if (form === 'B') say(`  · 素材 ${videoHost} 铺满 ${W}x${H}（保持比例居中裁切），fit=${o.fit}`);
+      else say(`  · 生成 ${W}x${H} 深色渐变背景${bgHost ? `（改用 ${bgHost}）` : ''}`);
+      say(`  · 烧中文字幕（底部安全区）+ 导出 film.srt → ${VENC} 编码 → film.mp4`);
+    }
     say(`  ${C.d}--dry-run 到此为止。${C.x}`);
     return;
   }

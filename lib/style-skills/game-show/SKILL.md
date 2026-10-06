@@ -19,26 +19,26 @@ film: Rhythm of AI, 1997 → 2026
 
 ## 1. 风格说明
 
-**是什么**：一部「**节奏游戏式的综艺节目**」——玩具般的吉祥物（粗墨线描边）站在糖果色条纹与太阳 burst 上，每一次打击都落在**固定的速度网格**上，是「呼—应」的模式，每一局赢的时候弹出一个**判定词**（STYLE.md:3）。
+**是什么**：一部「**节奏游戏式的综艺节目**」——玩具般的吉祥物（粗墨线描边）站在糖果色条纹与太阳 burst 上，每一次打击都落在**固定的速度网格**上，是「呼—应」的模式，每一局赢的时候弹出一个**判定词**（`STYLE.md:3`）。
 
-**不是什么**（最容易做错的邻居风格）：不是微型游戏大杂烩（没有计时器、不是每 3s 换一种画风）；不是中世纪卡通（没有手绘质感背景、没有角色表演）；不是发布会（没有慢揭示、没有渐变）（STYLE.md:15）。
+**不是什么**（最容易做错的邻居风格）：不是微型游戏大杂烩（没有计时器、不是每 3s 换一种画风）；不是中世纪卡通（没有手绘质感背景、没有角色表演）；不是发布会（没有慢揭示、没有渐变）（`STYLE.md:15`）。
 
-**什么时候用它**：讲**有阶段/有胜负/有年度**的题材——技术发展史、年度回顾、榜单对阵、A vs B 的比拼；格式从 **45s（三局）到约 3min（八局）**，旁白可选，可以只靠短呼喊和字幕撑起一部片（STYLE.md:6）。
+**什么时候用它**：讲**有阶段/有胜负/有年度**的题材——技术发展史、年度回顾、榜单对阵、A vs B 的比拼；格式从 **45s（三局）到约 3min（八局）**，旁白可选，可以只靠短呼喊和字幕撑起一部片（`STYLE.md:6`）。
 
-**一句话内核**：一切都在网格上；每一关 = 一个可重复的动作 + 一个赢（STYLE.md:10,13）。
+**一句话内核**：一切都在网格上；每一关 = 一个可重复的动作 + 一个赢（`STYLE.md:10,13`）。
 
-**边界**：撑不起需要细腻情绪、连续叙事、安静独白的内容——本风格是「亮、吵、机械精确」的，没有角色表演也没有慢揭示（style-dna/game-show.md:123）。
+**边界**：撑不起需要细腻情绪、连续叙事、安静独白的内容——本风格是「亮、吵、机械精确」的，没有角色表演也没有慢揭示（`style-dna/game-show.md:123`）。
 
 ---
 
 ## 2. 画面构图
 
-- **镜头数与画幅**：全片**无运镜旅行**，从头到尾是**正面、对称的舞台台口**，是画框自己在动（beat punch）（DEMO.md:31）。原生 **16:9（1920×1080）**；★ **2026-10-04 已声明多比例**（见下）。
-- **主体位置与占比**：角色站在**地板带**上（y = 860–900，顶上一条约 8px 墨线）；横幅在**左上角**、判定词在**中央偏上**（STYLE.md:67, DEMO.md:61）。
-- **负空间 / 留白**：布景是满幅饱和底 + 同色系图案，几乎没有留白；负空间靠**硬偏移阴影**制造图层感，而非柔光（STYLE.md:20）。
+- **镜头数与画幅**：全片**无运镜旅行**，从头到尾是**正面、对称的舞台台口**，是画框自己在动（beat punch）（`DEMO.md:31`）。原生 **16:9（1920×1080）**；★ **2026-10-04 已声明多比例**（见下）。
+- **主体位置与占比**：角色站在**地板带**上（y = 860–900，顶上一条约 8px 墨线）；横幅在**左上角**、判定词在**中央偏上**（`STYLE.md:67`, `DEMO.md:61`）。
+- **负空间 / 留白**：布景是满幅饱和底 + 同色系图案，几乎没有留白；负空间靠**硬偏移阴影**制造图层感，而非柔光（`STYLE.md:20`）。
 - **图层叠放顺序**（从底到顶）：饱和底色 → 同色系图案（斜条纹/波点/太阳burst）→ 更暗地板带 + 墨线 → 角色/道具 → 硬偏移阴影（描边色 +10~14px）→ telop 字幕/卡片/判定词。
-- **安全区**：角色在地板带上；banner 左上 (x=56,y=44)；判定词中央偏上；字幕 telop 牌在底部。同时 punch 总和须 < ~0.06，否则露画框边缘（STYLE.md:67）。
-- **本风格**不能**出现的构图**：慢揭示、渐变背景、柔阴影、脱离网格的运动、溶解叠化（STYLE.md:15, 104）。
+- **安全区**：角色在地板带上；banner 左上 (x=56,y=44)；判定词中央偏上；字幕 telop 牌在底部。同时 punch 总和须 < ~0.06，否则露画框边缘（`STYLE.md:67`）。
+- **本风格**不能**出现的构图**：慢揭示、渐变背景、柔阴影、脱离网格的运动、溶解叠化（`STYLE.md:15`, 104）。
 
 **★ 2026-10-04：已支持多比例（页面外壳等比装入）**。改造**没有**逐处改写绘制点（本风格是 1588 行内联脚本 + `#stage` SVG 与 `#paper`/`#fx` 两张 1920×1080 画布，逐处改必然静默错位），而是只改**一个页面外壳文件** `demo/index.html`：影片本体仍按**固定设计帧 1920×1080** 画（一字未改），当前帧（= 渲染视口）不是 1920×1080 时，把**整张设计帧等比装入**（contain）并居中，留边露出页面底色 `#F4ECDD`（本风格的米色纸底）。声明在**新增的薄壳** `demo/film.js`（`FILM_META.aspects`，控制台按源码文本探测——它只扫 `demo/film*.js`，而本风格的影片本体是 `index.html` 的内联脚本，`main.js`/`main_b.js`/`main_v1.js`/`remix2026.js` 只是它的构建输入，都不在这个命名约定里）。`FILM_META.aspects = ['16:9','9:16','3:4','4:3','1:1']`。
 
@@ -52,26 +52,26 @@ film: Rhythm of AI, 1997 → 2026
 
 | 角色 | 色值 | 用途 | 来源 |
 |---|---|---|---|
-| 墨线 | `#1B1B1B` | 所有描边 / 硬阴影 | DEMO.md:50 |
-| 纸 | `#FFFFFF` / 奶油 `#FFF6E5` | 卡片、成绩单底 | DEMO.md:55 |
-| 糖果主色 | `#FFD23F` 黄 / `#FF8C42` 橙 / `#FF5A5F` 红 / `#FF8FB1` 粉 | 布景、判定词 | DEMO.md:56 |
-| 糖果主色 | `#5BD68A` 绿 / `#C6F16D` 青柠 / `#8ED1FC` 天蓝 / `#4D7CFE` 蓝 | 布景、角色 | DEMO.md:56 |
-| 深布景 | `#6B4FBB`/`#46318F` 紫、`#3FB8AF`/`#2B8F88` 青、`#26264A` navy | 夜/终章布景 | DEMO.md:57 |
-| 道具 | `#C98A52`/`#8E5530` 木、`#C3CAD9` 灰、`#FFD1A8` 肤色 | 讲台、木头 | DEMO.md:58 |
+| 墨线 | `#1B1B1B` | 所有描边 / 硬阴影 | `DEMO.md:50` |
+| 纸 | `#FFFFFF` / 奶油 `#FFF6E5` | 卡片、成绩单底 | `DEMO.md:55` |
+| 糖果主色 | `#FFD23F` 黄 / `#FF8C42` 橙 / `#FF5A5F` 红 / `#FF8FB1` 粉 | 布景、判定词 | `DEMO.md:56` |
+| 糖果主色 | `#5BD68A` 绿 / `#C6F16D` 青柠 / `#8ED1FC` 天蓝 / `#4D7CFE` 蓝 | 布景、角色 | `DEMO.md:56` |
+| 深布景 | `#6B4FBB`/`#46318F` 紫、`#3FB8AF`/`#2B8F88` 青、`#26264A` navy | 夜/终章布景 | `DEMO.md:57` |
+| 道具 | `#C98A52`/`#8E5530` 木、`#C3CAD9` 灰、`#FFD1A8` 肤色 | 讲台、木头 | `DEMO.md:58` |
 
-- **明度 / 对比规则**：**墨 + 纸 + 糖果**三件套；大词用白或黄 + 粗墨描边；判定词可粉可黄（STYLE.md:31）。
-- **禁止出现的颜色**：渐变（任何形式）、柔和的低饱和色调、纹理色（STYLE.md:20）。
-- **同一画面最多几个色相**：**一套布景 = 一个色相**（背景、图案、关卡卡同色相，卡片随布景换色）；相邻两关不共用色相；角色的身体色是它的身份、永不变，且**不与所站布景同色相**（STYLE.md:29-30）。
+- **明度 / 对比规则**：**墨 + 纸 + 糖果**三件套；大词用白或黄 + 粗墨描边；判定词可粉可黄（`STYLE.md:31`）。
+- **禁止出现的颜色**：渐变（任何形式）、柔和的低饱和色调、纹理色（`STYLE.md:20`）。
+- **同一画面最多几个色相**：**一套布景 = 一个色相**（背景、图案、关卡卡同色相，卡片随布景换色）；相邻两关不共用色相；角色的身体色是它的身份、永不变，且**不与所站布景同色相**（`STYLE.md:29-30`）。
 
 ---
 
 ## 4. 转场规则
 
-- **镜头之间怎么切**：**小节线硬切 + 很短的白色闪（约 0.08s）**——每次换关/换布景都是硬切在 bar 线上（STYLE.md:49, DEMO.md:36）。
-- **有没有叠化 / 闪白 / 擦除 / 定格**：只有**白闪**；**全片唯一的一次淡出**是结尾最后 0.8s 淡到 navy（STYLE.md:49, DEMO.md:38）。
-- **硬切点怎么定**：关卡卡那一小节的首拍；demo 关卡卡小节全部登记在 `CUTS`（`main_b.js`）里（DEMO.md:134）。
-- **转场时长与缓动**：白闪约 0.08s；punch 约 0.16s 衰减；出现用 back-ease、退出用 ease-in，**没有任何慢淡入**（东西要么就在、要么「啪」地弹出）（STYLE.md:47）。
-- **绝对不要的转场**：溶解 / 叠化（STYLE.md:67）。
+- **镜头之间怎么切**：**小节线硬切 + 很短的白色闪（约 0.08s）**——每次换关/换布景都是硬切在 bar 线上（`STYLE.md:49`, `DEMO.md:36`）。
+- **有没有叠化 / 闪白 / 擦除 / 定格**：只有**白闪**；**全片唯一的一次淡出**是结尾最后 0.8s 淡到 navy（`STYLE.md:49`, `DEMO.md:38`）。
+- **硬切点怎么定**：关卡卡那一小节的首拍；demo 关卡卡小节全部登记在 `CUTS`（`main_b.js`）里（`DEMO.md:134`）。
+- **转场时长与缓动**：白闪约 0.08s；punch 约 0.16s 衰减；出现用 back-ease、退出用 ease-in，**没有任何慢淡入**（东西要么就在、要么「啪」地弹出）（`STYLE.md:47`）。
+- **绝对不要的转场**：溶解 / 叠化（`STYLE.md:67`）。
 
 ---
 
@@ -81,13 +81,13 @@ film: Rhythm of AI, 1997 → 2026
 |---|---|
 | 字体 | 中文 **Noto Sans SC 900**；拉丁展示 **Fredoka 700**；手写道具 **ZCOOL KuaiLe** |
 | 字号（相对画面宽 / 高） | 标题「AI 进化节拍」200px（≈10.4% 画面宽）；判定词 120px；关卡名自适应到 720px 宽 |
-| 颜色 / 描边 / 阴影 | 白或黄填充 + **约字号 14% 的墨色描边画在填充下面**（`paint-order: stroke`）（STYLE.md:37） |
+| 颜色 / 描边 / 阴影 | 白或黄填充 + **约字号 14% 的墨色描边画在填充下面**（`paint-order: stroke`）（`STYLE.md:37`） |
 | 位置 / 安全边距 | banner 左上 (56,44)；判定词中央偏上、−6° 斜角；字幕 telop 牌在底部 |
 | 单行字数上限 / 最多行数 | 横幅一行 ≤ ~20 个 CJK 字；牌子 ≤ ~12 个 CJK 字（拉丁约宽 1.6×） |
 | 出现与消失方式 | 标题**逐字构建**、每字弹出间隔 0.06s；打字机每 1/8 拍一个字、每 2 字一次键击；停留 ≥ max(1.8s, 语音 + 0.6s) |
 
-- **字幕与旁白的关系**：**字幕就是 telop**——关卡卡、角贴横幅、标签、道具文字与判定词承载意义；**没有细的通用 caption**。样本片屏上全中文、声音只有短英文呼喊、**无旁白**（DEMO.md:8, STYLE.md:38）。
-- **本风格特有的字幕禁忌**：不用长句/从句/书面语；一句不塞两个信息点；不要做成细描边 caption（style-dna/game-show.md:50）。
+- **字幕与旁白的关系**：**字幕就是 telop**——关卡卡、角贴横幅、标签、道具文字与判定词承载意义；**没有细的通用 caption**。样本片屏上全中文、声音只有短英文呼喊、**无旁白**（`DEMO.md:8`, `STYLE.md:38`）。
+- **本风格特有的字幕禁忌**：不用长句/从句/书面语；一句不塞两个信息点；不要做成细描边 caption（`style-dna/game-show.md:50`）。
 
 ---
 
@@ -95,20 +95,20 @@ film: Rhythm of AI, 1997 → 2026
 
 > 本风格成片音轨**已由「静音占位」修成真实混音**（见第 11 节）；以下为**实测**的声音设计与数字。
 
-- **配乐**：**全部从画面事件合成**（`music.py` + `synth_lib.py`，纯 numpy/scipy **代码合成**，`demo/CREDITS` 明写 "No samples, no third-party music"）——软饱和正弦 kick、带通噪声军鼓与拍手、hats、slap bass、带关闭滤波的失谐锯齿 brass stab、带颤音方波主音、马林巴式拨弦、音乐盒铃、三角波 pad、方波琶音、牛铃（STYLE.md:71）。**明亮大调流行和声**在一条短和弦循环上：demo 是 **150 BPM**、一小节一个和弦、**F–G–Em–Am** 王道进行；每关有自己的味道（funk/quiz/electro/dream/heavy…），不是换一首新歌（DEMO.md:42）。
-- **拟音（foley）**：玩具化、**带音高**——pop、plop + boing 落地、印章、打字机键击、蜂鸣器、叮、伺服嗡鸣、splat；带音高的 pip 可在人群降落时拼出旋律（STYLE.md:73）。`events.json` 的 **474 个事件**由 `music.py` 的事件循环逐条映射到音效。
-- **旁白处理**：无旁白。**呼喊，不是句子**：1–3 个词（`Hey!`、一个数字、一个判定），放在拍点**前 20–30ms** 让辅音落在拍上；人群呼喊 = 好几个不同嗓音叠 5–6ms、pan −0.6…+0.6（DEMO.md:45）。**本次成片 40 条呼喊全部落地**：原设计用 macOS `say` 系统声线（`name|voice|rate|pitch|text`，如 `title|Samantha|190|1.18|A. I. Beat!`、`checkmate|Zarvox|200|1.0|Checkmate.`），本机改用项目自带**离线 Kokoro** 重建（`demo/make_voices_kokoro.py`，见第 11 节）；声线映射 Samantha→`af_heart`、Kathy→`af_bella`、Junior→`af_sky`、Fred→`am_michael`、Ralph→`am_fenrir`、Superstar→`am_puck`、Zarvox→`am_onyx`。
-- **响度目标**：`−14 LUFS`，真峰 ≤ −1 dB；**软削波（tanh）而非硬限幅**（STYLE.md:76）。**成片实测 `I = −14.0 LUFS`、`LRA 4.2 LU`**；但真峰值 `input_tp = −0.22 dBTP`，**超出项目 −1.2 dBTP 交付目标 0.98 dB（削波，见第 11 节）**。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 −0.22 dBTP → **−2.09 dBTP**、已在 −1.2 dBTP 交付线内（达标）；原 −0.22 dBTP 记录保留为历史。
-- **静音策略**：静默是**强度手段**之一（一小节只剩鼓然后一个大击，或一小节静默被一声呼喊打破），不当主结构（style-dna/game-show.md:81）。
+- **配乐**：**全部从画面事件合成**（`music.py` + `synth_lib.py`，纯 numpy/scipy **代码合成**，`demo/CREDITS` 明写 "No samples, no third-party music"）——软饱和正弦 kick、带通噪声军鼓与拍手、hats、slap bass、带关闭滤波的失谐锯齿 brass stab、带颤音方波主音、马林巴式拨弦、音乐盒铃、三角波 pad、方波琶音、牛铃（`STYLE.md:71`）。**明亮大调流行和声**在一条短和弦循环上：demo 是 **150 BPM**、一小节一个和弦、**F–G–Em–Am** 王道进行；每关有自己的味道（funk/quiz/electro/dream/heavy…），不是换一首新歌（`DEMO.md:42`）。
+- **拟音（foley）**：玩具化、**带音高**——pop、plop + boing 落地、印章、打字机键击、蜂鸣器、叮、伺服嗡鸣、splat；带音高的 pip 可在人群降落时拼出旋律（`STYLE.md:73`）。`events.json` 的 **474 个事件**由 `music.py` 的事件循环逐条映射到音效。
+- **旁白处理**：无旁白。**呼喊，不是句子**：1–3 个词（`Hey!`、一个数字、一个判定），放在拍点**前 20–30ms** 让辅音落在拍上；人群呼喊 = 好几个不同嗓音叠 5–6ms、pan −0.6…+0.6（`DEMO.md:45`）。**本次成片 40 条呼喊全部落地**：原设计用 macOS `say` 系统声线（`name|voice|rate|pitch|text`，如 `title|Samantha|190|1.18|A. I. Beat!`、`checkmate|Zarvox|200|1.0|Checkmate.`），本机改用项目自带**离线 Kokoro** 重建（`demo/make_voices_kokoro.py`，见第 11 节）；声线映射 Samantha→`af_heart`、Kathy→`af_bella`、Junior→`af_sky`、Fred→`am_michael`、Ralph→`am_fenrir`、Superstar→`am_puck`、Zarvox→`am_onyx`。
+- **响度目标**：`−14 LUFS`，真峰 ≤ −1 dB；**软削波（tanh）而非硬限幅**（`STYLE.md:76`）。**成片实测 `I = −14.0 LUFS`、`LRA 4.2 LU`**；但真峰值 `input_tp = −0.22 dBTP`，**超出项目 −1.2 dBTP 交付目标 0.98 dB（削波，见第 11 节）**。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 −0.22 dBTP → **−2.09 dBTP**、已在 −1.2 dBTP 交付线内（达标）；原 −0.22 dBTP 记录保留为历史。
+- **静音策略**：静默是**强度手段**之一（一小节只剩鼓然后一个大击，或一小节静默被一声呼喊打破），不当主结构（`style-dna/game-show.md:81`）。
 
 ---
 
 ## 7. 素材偏好
 
-- **需要什么素材**：**纯矢量**，全部由 SVG/canvas 路径在 1920×1080 现场绘制——**不需要任何外部图片/视频素材**；字体三个家族（Noto Sans SC / Fredoka / ZCOOL KuaiLe，本地 woff2 子集）（STYLE.md:19, DEMO.md:63）。
-- **不需要什么素材**：不需要真实照片、不需要纹理贴图、不需要品牌 logo 或官方 UI；真实品牌只能以「名字写在小名牌上 + 原创吉祥物 + 松散配色呼应」的方式出现（DEMO.md:84）。
-- **取景 / 质感 / 比例偏好**：平涂填充、一种描边色、圆角连接与端帽；角色与道具 8px 描边、小零件 5–7px；硬偏移阴影 +10px（贴纸/横幅）到 +14px（卡片）（STYLE.md:19-20）。
-- **可替代方案**（缺素材时怎么降级而不破风格）：**macOS 系统声线（`say`）不可用时**，改用项目自带**离线 Kokoro**（`core/tts/tts.py`）重建呼喊（本风格已这么做，见第 11 节），而不是退回静音占位；字体缺失会导致 `measure()` 量错宽 → telop 溢出牌子，必须先加载字体再 `buildAll()`（STYLE.md:96）。
+- **需要什么素材**：**纯矢量**，全部由 SVG/canvas 路径在 1920×1080 现场绘制——**不需要任何外部图片/视频素材**；字体三个家族（Noto Sans SC / Fredoka / ZCOOL KuaiLe，本地 woff2 子集）（`STYLE.md:19`, `DEMO.md:63`）。
+- **不需要什么素材**：不需要真实照片、不需要纹理贴图、不需要品牌 logo 或官方 UI；真实品牌只能以「名字写在小名牌上 + 原创吉祥物 + 松散配色呼应」的方式出现（`DEMO.md:84`）。
+- **取景 / 质感 / 比例偏好**：平涂填充、一种描边色、圆角连接与端帽；角色与道具 8px 描边、小零件 5–7px；硬偏移阴影 +10px（贴纸/横幅）到 +14px（卡片）（`STYLE.md:19-20`）。
+- **可替代方案**（缺素材时怎么降级而不破风格）：**macOS 系统声线（`say`）不可用时**，改用项目自带**离线 Kokoro**（`core/tts/tts.py`）重建呼喊（本风格已这么做，见第 11 节），而不是退回静音占位；字体缺失会导致 `measure()` 量错宽 → telop 溢出牌子，必须先加载字体再 `buildAll()`（`STYLE.md:96`）。
 
 ---
 
@@ -121,8 +121,8 @@ film: Rhythm of AI, 1997 → 2026
 | 镜头数 | 无传统镜头切换；结构为 4 + 7×9 + 1 + 16 + 9 = **93 小节** |
 | 信息投放节拍 | 冷开场全员 + 报数（4 小节）→ 7 关（每关 9 小节，最后一拍 [第 7 小节第 3 拍] 是 slam + "Perfect!"）→ REMIX 卡 + 16 小节 remix → 结尾 9 小节（蛋 2 + "Hi!" 1 + 成绩单 3 + 信用卡 3，含 0.8s 淡出） |
 
-- **加速 / 减速点**：每关前半建立模式、后半回应/升级；REMIX 关把近期事件堆到一块布景、缩略图缩进底部槽；结尾用**半速一小节**做揭示（STYLE.md:75, DEMO.md:25）。
-- **留白与静音的位置**：大击前一小节只剩鼓；一小节静默被一声呼喊打破（STYLE.md:75）。
+- **加速 / 减速点**：每关前半建立模式、后半回应/升级；REMIX 关把近期事件堆到一块布景、缩略图缩进底部槽；结尾用**半速一小节**做揭示（`STYLE.md:75`, `DEMO.md:25`）。
+- **留白与静音的位置**：大击前一小节只剩鼓；一小节静默被一声呼喊打破（`STYLE.md:75`）。
 
 ---
 
@@ -147,11 +147,11 @@ film: Rhythm of AI, 1997 → 2026
 
 ## 10. 编排规则
 
-- **内容文件字段契约**（`content_fields`）：`SECT`（每个关卡卡的首小节，`main_b.js`）、`CUTS`（白闪小节线）、`END_BAR`（由 `assemble.py` 字符串替换设定）；关卡卡 `card(bar0, num, name, years, col, col2, icon)`；年份横幅 `banner(g, year, name, sub, col)`；`music.py` 的 `PLAN[bar]` 与 `span(a,b,mode)`；呼喊行 `voices/lines*.txt`（`name|voice|rate|pitch|text`）（style-dna/game-show.md:166-168）。
-- **事件词汇表**：画面里每个 `ev(t,name,{f,i})` 都导出到 `events.json`（demo 474 个）。`music.py` 映射：`tock/bleep`（象棋）、`stone`（围棋）、`ding/boop/buzz`（答题）、`land`（plop+boing）、`pip`（带音高 pop，用 `f`）、`slam/bigslam`、`stamp`、`type`、`crack/hatch`、`servo`、`liftoff`、`swish`、`clap`、`drop`、`blip`、`kickhit`、`splat`、`denoise`、`cheer`；呼喊是 `v:<name>` 事件，播放 `voices/<name>.wav`；未知名字被静默忽略（DEMO.md:44）。
-- **时间线契约**：`frame_head.html` 基础助手（`el/txt/tf/op/E/chars/charsPop/measure/bg`）；`main_v1.js` 速度网格（`at(bar,beat)`/`B`/`BARL`/`frac`）+ `ev`/`punch`/`hopY`/`hitSq` + 字幕/布景/爆发/判定/横幅；`main_b.js` 角色 + `scene(t0,t1,build)` + `card` + `render(t)` + `init()`。**契约**：`scene()` 只建一次节点、返回 `update(t)`，`update` 只设属性（DEMO.md:143）。
-- **新增主体怎么接入**：角色用 `bean(parent,{color,belly,antenna,name,kind,...})` + `pose(c,{hey,open,sq,lean,face,blink,...})` / `poseAny`；人类 `human(...)`；道具 `podium/taskIcon/smallBot`；`CAST` 有 16 个现成选手（gpt/claude/gemini/llama/deepseek/ernie/qwen/mistral/kimi/grok/bert/dalle/mj/sd/sora/baby）（DEMO.md:160-165）。
-- **换主题时要改哪些文件**：`main_b.js`（`SECT` / `CUTS` / 关卡卡文本 / 道具文字 / 成绩单 / 信用卡）+ `main_v1.js`（调色板 `K`）+ `music.py`（`PLAN`/`VO`）+ `voices/lines*.txt`；然后 `assemble.py → build.py`。**`main.js` 与 `index.html` 是生成物，直改会被覆盖**（DEMO.md:131）。
+- **内容文件字段契约**（`content_fields`）：`SECT`（每个关卡卡的首小节，`main_b.js`）、`CUTS`（白闪小节线）、`END_BAR`（由 `assemble.py` 字符串替换设定）；关卡卡 `card(bar0, num, name, years, col, col2, icon)`；年份横幅 `banner(g, year, name, sub, col)`；`music.py` 的 `PLAN[bar]` 与 `span(a,b,mode)`；呼喊行 `voices/lines*.txt`（`name|voice|rate|pitch|text`）（`style-dna/game-show.md:166-168`）。
+- **事件词汇表**：画面里每个 `ev(t,name,{f,i})` 都导出到 `events.json`（demo 474 个）。`music.py` 映射：`tock/bleep`（象棋）、`stone`（围棋）、`ding/boop/buzz`（答题）、`land`（plop+boing）、`pip`（带音高 pop，用 `f`）、`slam/bigslam`、`stamp`、`type`、`crack/hatch`、`servo`、`liftoff`、`swish`、`clap`、`drop`、`blip`、`kickhit`、`splat`、`denoise`、`cheer`；呼喊是 `v:<name>` 事件，播放 `voices/<name>.wav`；未知名字被静默忽略（`DEMO.md:44`）。
+- **时间线契约**：`frame_head.html` 基础助手（`el/txt/tf/op/E/chars/charsPop/measure/bg`）；`main_v1.js` 速度网格（`at(bar,beat)`/`B`/`BARL`/`frac`）+ `ev`/`punch`/`hopY`/`hitSq` + 字幕/布景/爆发/判定/横幅；`main_b.js` 角色 + `scene(t0,t1,build)` + `card` + `render(t)` + `init()`。**契约**：`scene()` 只建一次节点、返回 `update(t)`，`update` 只设属性（`DEMO.md:143`）。
+- **新增主体怎么接入**：角色用 `bean(parent,{color,belly,antenna,name,kind,...})` + `pose(c,{hey,open,sq,lean,face,blink,...})` / `poseAny`；人类 `human(...)`；道具 `podium/taskIcon/smallBot`；`CAST` 有 16 个现成选手（gpt/claude/gemini/llama/deepseek/ernie/qwen/mistral/kimi/grok/bert/dalle/mj/sd/sora/baby）（`DEMO.md:160-165`）。
+- **换主题时要改哪些文件**：`main_b.js`（`SECT` / `CUTS` / 关卡卡文本 / 道具文字 / 成绩单 / 信用卡）+ `main_v1.js`（调色板 `K`）+ `music.py`（`PLAN`/`VO`）+ `voices/lines*.txt`；然后 `assemble.py → build.py`。**`main.js` 与 `index.html` 是生成物，直改会被覆盖**（`DEMO.md:131`）。
 - **与 `dub.mjs` 通路的关系**：`lib/dub-styles.json#game-show` 生效参数——palette（bg `#FFF6E5` / bg2 `#6B4FBB` / fg `#1B1B1B` / accent `#816300`）、bgRecipe（gradient 双色）、subtitle（SimHei 粗体、fontSizeFactor 0.04444、marginV 0.14537、描边 0.0062）、title（fontSizeFactor 0.1）、overlay（chapterCards + accentRule + progressBar 开）。**注意该条为 `derived:true` 派生条目**，不是逐行手抽：配色取自 `lib/dub-visual.json` 的 demo 代码抽取；字幕字号/位置走「分类别默认」（类别 dark-glow + 厚描边，`STYLE.md §4` 只给字幕形态、没给 px）；字幕颜色由 **WCAG 对比度规则**从底色 `#FFF6E5` 推得（亮底→深字）。**字体口径**：通路按 `_notes[5]` 把 `subtitle.fontFamily` 填成**本机字体** `SimHei`（黑体，含 CJK）—— 样片用的是 Noto Sans SC 900 / Fredoka 700 / ZCOOL KuaiLe，本机都没有。**accent 口径**：`#816300` 不是 demo 的 `#FFD23F`，而是按 `_notes[10]②`「`accent/bg` 一律提到 ≥4.5」调整过的**替换值**（实测 `#816300` 压 `#FFF6E5` = 5.26，而 demo 的 `#FFD23F` 只有 1.35，肉眼看不见）。
 
 ---
@@ -172,8 +172,8 @@ film: Rhythm of AI, 1997 → 2026
 
 ### 能力限制
 - 依赖 Playwright + Chrome Headless Shell 截帧；3571 帧 / 6 workers ≈ 75s。渲染约 145MB 中间片再混流。
-- `render(t)` **必须是 `t` 的纯函数**——曾经 remix 缩略图只在 `t < t1+0.01` 更新，6-worker 冷启动时显示初始状态（v3 成片 124.0–131.2s 底部缩略图是错的，已修）（DEMO.md:130）。
-- `synth_lib.py` 分配固定 `DUR = 150.0s` 缓冲，更长的片子会切尾（DEMO.md:135）。
+- `render(t)` **必须是 `t` 的纯函数**——曾经 remix 缩略图只在 `t < t1+0.01` 更新，6-worker 冷启动时显示初始状态（v3 成片 124.0–131.2s 底部缩略图是错的，已修）（`DEMO.md:130`）。
+- `synth_lib.py` 分配固定 `DUR = 150.0s` 缓冲，更长的片子会切尾（`DEMO.md:135`）。
 
 ### 踩过的坑（本机实测）
 - 原 `demo/make_voices.sh` 依赖 macOS `say`，本机没有 macOS ⇒ 40 个 wav 一个都没有 ⇒ `music.py` 直接 `FileNotFoundError: voices/title.wav` 崩掉。改用 `core/tts/tts.py`（离线 Kokoro）+ 新增 `demo/make_voices_kokoro.py` 重建，**没有改原 `make_voices.sh`**（两侧 md5 仍为 `57f0900bbfea7360f5a98e0a5b3bdb2c`）。

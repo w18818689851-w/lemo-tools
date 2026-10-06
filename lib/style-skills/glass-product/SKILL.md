@@ -133,7 +133,7 @@ film: Aura — Hear the Light
 
 | 项 | 值 |
 |---|---|
-| 渲染入口 | `node core/render/video.mjs styles/glass-product/demo --fps 24 --workers 3 --out $D/out/video24.mp4`（build.sh:15）；本次实际出片用 `--workers 6 --size 1920x1080` |
+| 渲染入口 | `node core/render/video.mjs styles/glass-product/demo --fps 24 --workers 3 --out $D/out/video24.mp4`（`build.sh:15`）；本次实际出片用 `--workers 6 --size 1920x1080` |
 | 帧率 | 24 fps（`style.json:16` 的 `frame_sec` 19.2 是「每帧秒数」口径下的换算值） |
 | 分辨率 / 比例 | 原生 **1920×1080 / 16:9**（本次出片命令行显式 `--ratio 16:9`）；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，`demo/film.js`）——3D 画布与 `#ov` 一起按 `S = min(FX, FY)` 等比装入当前帧、设计帧外留背景色 `#000`（`main.js:223-225`），16:9 时 `S = 1`、逐字节不变 |
 | 混流 | `sh core/render/mux.sh $D/out/video24.mp4 $D/mix.wav styles/glass-product/glass-product.mp4 24 0`（末位 0 = 颗粒 grain 0） |

@@ -136,7 +136,7 @@ film: The Colour of Rain
 
 | 项 | 值 |
 |---|---|
-| 渲染入口 | `node core/render/video.mjs styles/impasto/demo --fps 24 --workers 3 --out "$D/out/video24.mp4"`（build.sh:7）；本次实际出片用 `--workers 6 --size 1920x1080` |
+| 渲染入口 | `node core/render/video.mjs styles/impasto/demo --fps 24 --workers 3 --out "$D/out/video24.mp4"`（`build.sh:7`）；本次实际出片用 `--workers 6 --size 1920x1080` |
 | 帧率 | 24 fps（`style.json:16` 的 `frame_sec` 28.58 是「每帧秒数」口径下的换算值） |
 | 分辨率 / 比例 | 原生 1920×1080 / 16:9（本次出片命令行显式 `--ratio 16:9`）；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，`film.js:21`），由 `setFrame()`（`film.js:20`）从实际帧重排：相机 `zoom × S`（`film.js:72` 等 8 处）、屏幕雨 / 暗角 / 署名板按当前帧（`film.js:79,346,45`，`engine/impasto.js:154`）；16:9 时 `fx=fy=S=1` 逐字节退化成设计帧 |
 | 混流 | `sh core/render/mux.sh "$D/out/video24.mp4" "$D/mix.wav" "$D/../impasto.mp4" 24 0`——**末位 0 = 颗粒 0，注释原话是「no grain: keeps knife edges crisp」** |

@@ -48,7 +48,7 @@ film: Room to Think
 
 | 角色 | 色值 | 用途 | 来源 |
 |---|---|---|---|
-| 底 | `#0A0B0F` | 近黑舞台基色 | `DEMO.md:66`、`dub-visual.json`（engine.js:7-9 PAL.bg0） |
+| 底 | `#0A0B0F` | 近黑舞台基色 | `DEMO.md:66`、`dub-visual.json`（`engine.js:7-9` PAL.bg0） |
 | 底（径向提亮） | `#151822` | 上中部径向提亮到 | `DEMO.md:66`、`dub-styles.json#dark-keynote.palette.bg2` |
 | 冷色光晕 | `#3B4CCA`（8%） | 右上大型冷色光池 | `DEMO.md:66` |
 | 主文字 | `#E8EAF0` | 主文本 / 字幕 | `DEMO.md:72` |
