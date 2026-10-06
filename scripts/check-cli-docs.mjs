@@ -11,6 +11,20 @@
  *   ① 用法块（行首缩进 ≥2 空格的 `--flag`）里列出的每个参数，代码里**必须真的处理**；
  *   ② 代码里处理的每个参数，**必须**在用法块里列出（标准参数如 `--help` 走白名单）。
  *
+ * ★ 用法块**不能**按「整份源码里任意缩进的 `--flag`」来判定（2026-10-06 修，原为假绿）：
+ *   那样一段**无关**的模板文本/注释里缩进写个 `--flag`，就会把「已实现但没写进用法块」的参数
+ *   冒充成「已文档」。实测夹具：`--beta` 已实现、用法块里没有，只因另一段无关模板里多了一行
+ *   缩进的 `--beta`，闸门就静默报 OK。
+ *   但「收紧成连续块」也不行 —— 真实用法块**不是连续块**：`dub.mjs` 的用法块被空行/续行
+ *   切成 12 个碎段（最长 4 行）、`lemo-make.mjs` 切成 10 个（最长 8 行），任何「最长块 / 连续块 / 块大小阈值」
+ *   的收紧都会把合法参数打成「代码有文档无」（大面积假红）。
+ *   故改用**锚点法**：用法块 = 「含用法小标题的那段模板字符串（或块注释）」。
+ *   小标题 = 行尾的 `用法:` / `用法：` / `Usage` / `USAGE` / `选项` / `Options` / `OPTIONS`
+ *   （前面是行首、空白、`*`、`·` 或反引号）。
+ *   区域 = 该小标题所在的模板字符串：由「未转义反引号数的奇偶」判断它在不在模板里，
+ *   再取「上一个含反引号的行 ↔ 下一个含反引号的行」为边界；块注释（`/*` 起、其闭合标记止）同理。
+ *   只有落在区域内的行首缩进 `--flag` 才算「已文档」。
+ *
  * 支持的解析风格（两种都在用，别只认一种）：
  *   · `case '--flag':`（`dub.mjs` 的 switch）
  *   · `a === '--flag'`（`lemo-make.mjs` 的 if 链）
@@ -42,9 +56,54 @@ function implemented(src) {
   ]);
 }
 
-/** 用法块：行首缩进 ≥2 空格的 `--flag`（各文件的 usage 都是这个排法） */
+/** 用法块小标题：行尾的 `用法:` / `用法：` / `Usage` / `USAGE` / `选项` / `Options`（前面须是行首/空白/`*`/`·`/反引号） */
+const USAGE_HEADING = /(?:^|[\s*·`])(?:用法|Usage|USAGE|选项|Options|OPTIONS)[ \t]*[:：]?[ \t]*$/;
+
+/** 一行里**未转义**的反引号数（先去掉 `\x` 转义对，再数） */
+const ticks = (line) => (line.replace(/\\./g, '\u0000').match(/`/g) || []).length;
+
+/**
+ * 用法块区域 = 「含用法小标题的那段**模板字符串**（或块注释）」。
+ * 返回若干 `[startLine, endLine]`（0 基、闭区间）。
+ * ★ 判据是机械的：小标题所在行「含本行的未转义反引号累计数」为奇数 ⇒ 它在模板字符串内部；
+ *   区域边界取「上一个含反引号的行 ↔ 下一个含反引号的行」。块注释按 `/*` / 闭合标记同理。
+ */
+function usageRegions(src) {
+  const lines = src.split('\n');
+  const ticksThrough = [0];
+  for (let i = 0; i < lines.length; i++) ticksThrough.push(ticksThrough[i] + ticks(lines[i]));
+  const out = [];
+  for (let a = 0; a < lines.length; a++) {
+    if (!USAGE_HEADING.test(lines[a])) continue;
+    if (ticksThrough[a + 1] % 2 === 1) {                 // ① 小标题在模板字符串里
+      let open = a; while (open >= 0 && ticks(lines[open]) === 0) open--;
+      let close = a + 1; while (close < lines.length && ticks(lines[close]) === 0) close++;
+      if (open >= 0 && close < lines.length) out.push([open, close]);
+      continue;
+    }
+    const before = lines.slice(0, a).join('\n');          // ② 小标题在块注释里
+    if ((before.match(/\/\*/g) || []).length > (before.match(/\*\//g) || []).length) {
+      let open = a; while (open >= 0 && !lines[open].includes('/*')) open--;
+      let close = lines[a].includes('*/') ? a : a + 1;
+      while (close < lines.length && !lines[close].includes('*/')) close++;
+      if (open >= 0 && close < lines.length) out.push([open, close]);
+    }
+  }
+  return out;
+}
+
+/**
+ * 用法块：**只在**「用法小标题所在的那段模板字符串 / 块注释」里找行首缩进 ≥2 空格的 `--flag`。
+ * ★ 不再扫整份源码 —— 否则任意无关文本里缩进的 `--flag` 都会被当成「已文档」（假绿）。
+ */
 function documented(src) {
-  return new Set([...src.matchAll(new RegExp(`^\\s{2,}(${FLAG})`, 'gm'))].map((m) => m[1]));
+  const lines = src.split('\n');
+  const set = new Set();
+  for (const [s, e] of usageRegions(src)) {
+    const text = lines.slice(s, e + 1).join('\n');
+    for (const m of text.matchAll(new RegExp(`^\\s{2,}(${FLAG})`, 'gm'))) set.add(m[1]);
+  }
+  return set;
 }
 
 const fails = [];

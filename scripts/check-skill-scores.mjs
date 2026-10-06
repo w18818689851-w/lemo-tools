@@ -22,6 +22,27 @@
  *   · 条目里**所有**被抽取的配置值断言都被证伪 ⇒ 「全失效」（不该再留在 defects）→ FAIL；
  *   · 只有**部分**被证伪、且条目仍引用当前配置里存在的值 ⇒ 「混合条目」→ WARN，需人工复核。
  *
+ * ★ 「仍引用当前配置值」的判据（2026-10-06 收紧；修一个已实测的假绿）：
+ *   旧判据 = `[...txt.matchAll(/#hex/g)].some(m => cfgText.includes(hex))`，其中
+ *   `cfgText = JSON.stringify(该风格的配置条目).toUpperCase()` —— 在**整份配置条目的文本**里
+ *   做子串搜索。于是只要 defect 文本里出现**任何一个「在配置里出现过」的 hex**（哪怕是
+ *   **别的字段**的色，例如 `subtitle.plateColor`），就被判成「仍引用当前配置值」⇒ 把本该
+ *   FAIL 的「全失效」降级成 WARN 的「混合条目」（假绿，exit 0）。
+ *   实测夹具（`D:/lemo-tmp/agent-matchaudit/fx-scores` vs `fx-scores-control`，唯一差别是
+ *   defect 尾部多一句别的字段的 hex）：
+ *     defect = `bgRecipe.texture 写成 grain（实际是 paper）`，配置 texture=paper、
+ *     `subtitle.plateColor=#AABBCC` —— 尾部加「另见背景 #AABBCC 的说明」即从
+ *     `[2] 全失效 1 条 ✘ exit 1` 变成 `⚠ 混合条目 … [2] 全失效 0 条 OK exit 0`。
+ *   新判据（**复用下面同一次断言抽取的结果，不另起一套正则**）：**逐条**看被抽取的断言 ——
+ *   若该断言引用的值 **== 它所涉字段的当前值**（`texture` ↔ `bgRecipe.texture`、
+ *   `fontFamily` ↔ `subtitle.fontFamily`、`bg/bg2/fg/accent/subtitle` ↔ `palette.<field>`），
+ *   则该断言**未被证伪**，记一次 `citesCurrent`。只有 `citesCurrent > 0` 才是「混合条目」
+ *   （部分断言仍成立）。即判据从「**配置里任何地方**出现过这个值」收窄为
+ *   「**本条所涉字段**的当前值」。注意「实际是 paper」这类**修正句**不会被计（它没有
+ *   `texture <分隔符>` 形式，抽不到断言）—— 这正是与旧假绿的分界。
+ *   误报率（铁律：先测再定稿）：真实 43 份上被抽取断言 22 条、**有证伪的条目 0 条**
+ *   ⇒ 新判据在真实语料上连一次都没被触发，`[1]/[2]/[3]` 三项与改动前**逐字一致**（exit 0）。
+ *
  * 用法：node scripts/check-skill-scores.mjs
  * 退出码：有 FAIL（①②③ 任一）→ 1；否则 0。
  */
@@ -90,39 +111,44 @@ for (const slug of slugs) {
   }
 
   const c = bySlug[slug] || {};
-  const cfgText = JSON.stringify(c).toUpperCase();
   const texNow = c.bgRecipe && c.bgRecipe.texture;
   const fontNow = c.subtitle && c.subtitle.fontFamily;
   const palNow = c.palette || {};
 
   for (const txt of d.defects || []) {
     const falsified = [];
+    // ★ 本条 defect 里「引用了**本条所涉字段**的当前值」的断言数（收窄后的混合判据，见文件头注释）。
+    let citesCurrent = 0;
     // texture 断言
     for (const m of txt.matchAll(/texture\s*(?:=|:|是|为|写成|改成|取)\s*[`"']?([A-Za-z][\w-]*)/g)) {
       if (!TEXTURES.includes(m[1])) continue;
       claims++;
-      if (texNow !== m[1] && !HIST_MARK.test(around(txt, m))) falsified.push(`texture "${m[1]}" ≠ 当前 "${texNow}"`);
+      if (texNow === m[1]) citesCurrent++;
+      else if (!HIST_MARK.test(around(txt, m))) falsified.push(`texture "${m[1]}" ≠ 当前 "${texNow}"`);
     }
     // fontFamily 断言
     for (const m of txt.matchAll(/fontFamily\s*(?:=|:|是|为|被改成|回退到|回退)\s*[`"'\s]*([A-Za-z][A-Za-z ]+?)(?=[`"'\s，。；、）)]|$)/g)) {
       const v = m[1].trim();
       if (!FONTS.includes(v)) continue;
       claims++;
-      if (fontNow !== v && !HIST_MARK.test(around(txt, m))) falsified.push(`fontFamily "${v}" ≠ 当前 "${fontNow}"`);
+      if (fontNow === v) citesCurrent++;
+      else if (!HIST_MARK.test(around(txt, m))) falsified.push(`fontFamily "${v}" ≠ 当前 "${fontNow}"`);
     }
     // palette 字段断言（xxx.bg = #hex / bg #hex / 字段为 bg #hex ...）
     for (const m of txt.matchAll(/\b(bg2?|fg|accent|subtitle)\b\s*(?:字段[为是]?|=|:|是|为)?\s*[`"']?(#[0-9A-Fa-f]{6,8})/g)) {
-      const field = m[1] === 'bg' ? 'bg' : m[1];
+      const field = m[1];
       const hex = m[2];
       claims++;
       const cur = palNow[field];
-      if (cur && String(cur).toUpperCase() !== hex.toUpperCase()) falsified.push(`${field} ${hex} ≠ 当前 ${cur}`);
+      if (cur && String(cur).toUpperCase() === hex.toUpperCase()) citesCurrent++;
+      else if (cur) falsified.push(`${field} ${hex} ≠ 当前 ${cur}`);
     }
 
     if (!falsified.length) continue;
-    // 条目里是否还引用了当前配置中存在的值（bg/fg/accent/stops 等）——用于区分「混合」与「全失效」
-    const citesCurrent = [...txt.matchAll(/#[0-9A-Fa-f]{6,8}/g)].some((m) => cfgText.includes(m[0].toUpperCase()));
-    if (citesCurrent) { mixed++; console.log(`⚠ 混合条目 ${slug}：${falsified.join('；')}（条目仍引用当前配置值，未整体证伪）|| ${txt.slice(0, 60)}`); }
+    // 混合判据（★ 2026-10-06 收紧）：条目里**至少有一条被抽取的断言**引用的就是
+    // **本条所涉字段**的当前值（即该断言未被证伪）⇒ 只有部分失效 ⇒ WARN 人工复核。
+    // 不再用「整份配置条目文本里出现过这个 hex」—— 那会被**无关字段**的色值满足（假绿）。
+    if (citesCurrent) { mixed++; console.log(`⚠ 混合条目 ${slug}：${falsified.join('；')}（条目仍引用本条所涉字段的当前值，未整体证伪）|| ${txt.slice(0, 60)}`); }
     else { fail++; console.log(`✘ 仍存全失效条目 ${slug}：${falsified.join('；')} || ${txt.slice(0, 80)}`); }
   }
 }
