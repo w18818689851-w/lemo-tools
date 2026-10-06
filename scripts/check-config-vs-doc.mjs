@@ -37,15 +37,54 @@
  *       「深色相上的**前景字**与人、片尾底色」—— 它是合法底色 ⇒ 「字/前景」出现在用途散文里
  *       不足以判它非背景。真正要抓的是**角色名**里的光/灯类（`主（暖实体光）`、`环境主光`…）。
  *
- *  4) 裁决：某候选色的命中行里**存在一行角色列不含 NONBG 标记** ⇒ 该色「以背景角色被记录」⇒ 放行；
+ *  4) 裁决：`palette.bg`（**主底色**）的命中行里**存在一行角色列不含 NONBG 标记** ⇒ 「以背景角色被记录」⇒ 放行；
  *     否则（**完全不在 §3**，或**只**出现在非背景角色行里）⇒ 判可疑。
- *     风格放行 = 任一候选色（bg 或任一 stop）以背景角色被记录（与旧判据「任一命中即放行」同精神）。
+ *     ★ `bgRecipe.stops` 只作**辅助**：**仅当 `palette.bg` 缺失/null 时**才看（见下面「二次收紧」；
+ *       不是「任一候选色命中即放行」—— 那句已作废）。
+ *
+ * ★★ 已知局限 ①（2026-10-06 实测评估后**决定只记录、不根治**）：角色裁决是**黑名单**，没有正向白名单。
+ *   · **症状**：`NONBG` 是黑名单 ⇒ **任何不含这些非背景词的 role 都被当成「以背景角色记录」**
+ *     ⇒ 只要角色名取得不含灯/光/强调一类词，一个**错底色**就能过闸。
+ *   · **可被绕过的具体构造**（夹具实测，`D:/lemo-tmp/agent-gate2/fx/`）：同一个错底色 `#fff0c8` ——
+ *     **写成 §3 表格行** `| 派生通路底 | \`#fff0c8\` | 「文案 + 风格」通路的底色 | … |` ⇒ **放行（exit 0）**；
+ *     **写成 §3 散文 bullet** `- 「文案 + 风格」通路的底色是 \`#fff0c8\`。` ⇒ **仍判可疑**。
+ *     ⇒ 判据对**格式**（只读表格行，散文里写同一句话不算）与**角色命名**（黑名单）都敏感，两者都不是内容判据。
+ *   · **为什么没换成正向白名单**（题给方向：role 必须含 `底|背景|天空|纸|地面|环境|墙|幕|板|场景|布|底色`）：
+ *     逐条核对 44 条真实语料的 §3 角色列后**实测误报率**（复现：临时目录 `D:/lemo-tmp/agent-gate2/`
+ *     下的 `wl-schemes.mjs`，把白名单词表按方案 A–E 逐档替换即可重跑）——
+ *     ① 题给 12 词 ⇒ **8 条误报**：`silkscreen-poster`（`天光 sky1`/`dub 通路派生`）、`ascii-crt`
+ *        （`产品通路（dub）`）、`brick-toy`（`主`）、`cel-anime-80s`（`夜景主色`）、`living-screencast`
+ *        （`产品浅主题·墨`）、`paper-lantern`（`房间黑`）、`pictogram-motion`（`米白 CREAM`）、`swiss-motion`（`页`）；
+ *     ② 再补**可辩护**的背景词（`通路|派生|夜|房间|页`）⇒ 降到 **3 条误报**；剩下 3 条只能靠
+ *        `主`（`brick-toy`）、`米白`（`pictogram-motion`）、`产品|主题|墨`（`living-screencast`）才救得回来；
+ *     ③ 把这 5 个词也塞进白名单 ⇒ 真实语料 **0 误报**，但 `hd-2d` 真阳性夹具（`#fff0c8`）**同时被放行**
+ *        （它命中的行是 `主（暖实体光）`，`主` 一进白名单就放行）⇒ **闸门的立身之本被拆掉**；
+ *     ④ 退一步用「白名单 ∧ ¬黑名单」⇒ 真实 0 误报且 `hd-2d` 夹具仍被抓，但白名单里必须常驻
+ *        `主/米白/产品/主题/墨` 这类**不含任何背景语义**的词 ⇒ 它已不是「正向白名单」，
+ *        对上面那条绕过构造**一点也拦不住**（`派生通路底`/`主色` 这类名字照样命中）。
+ *   · **结论**：§3 的**角色列不是受控词表**（同一列混着角色名〔底/纸/幕〕、纯色名〔米白/主/墨〕、
+ *     通路名〔dub 通路派生〕），任何「按 role 用词」的正向白名单都无法同时做到「排除光/强调行」
+ *     与「保住 44 条合法行」—— 除非把 `主/墨/米白` 也当背景词，那就等于没有白名单。
+ *     按项目纪律「判据不成立时宁可只报不改」⇒ **保留黑名单**，把局限如实写在这里。
+ *     ⇒ 本闸门只保证「底色的**角色归属**不是灯/光/强调一类」；**不保证**角色名与底色内容相符。
  *
  * ── 语义（重要，别把它当判决）：这类可疑分两种，处置完全不同 ——
- *   · **文档已记录**（该风格第 11 节「已知缺陷」里提到了 `dub-styles.json` / `palette`）⇒ 属**已知积压**，
+ *   · **文档已记录**（该风格第 11 节「已知缺陷」里**确实记了本条**冲突）⇒ 属**已知积压**，
  *     文档里已有扣分与（通常）正确值，**只列为 backlog，不判 FAIL**；
  *   · **文档没记录** ⇒ 说明是**新出现的抽取错误**（没人知道），**判 FAIL**。
  *   这样既能把积压显式列出来，又不会被积压淹没而漏掉新问题。
+ *
+ * ★★ 已知局限 ② 的处置（2026-10-06 **已根治**）：旧 `docRecorded` 是**粗判据** ——
+ *   「§11 里同时出现 `dub-styles.json|dub-visual.json|dub 通路` **与** `palette|底色|配色`」即算「已记录」。
+ *   ⇒ 会把「§11 记的其实是**另一条**冲突」的风格误判成 backlog。真事故（`shadow-puppet`）：它的 §11 记的是
+ *   **`textureRaw: backlit-leather` 未实现**，而自评行里写着「palette −1」、另有一条「`dub 通路`的字幕位置…」
+ *   ⇒ 两个正则都命中 ⇒ 被当成「底色冲突已记录」。一旦它的底色真出问题，就会被归成 backlog 而**不判 FAIL**
+ *   （夹具实测：改前 `shadow-puppet` 夹具判 **backlog / exit 0**，改后判 **fresh / exit 1**）。
+ *   现收紧为**必须指向本条**：§11 里出现**该风格的 `palette.bg` 值**（带 `#`、大小写不敏感、不匹配更长 hex 的前缀）
+ *   **或**明确写「底色」。★ 为什么不用题给备选的「`§3`」：§11 里的 `§3` 经常是在说**别的角色**
+ *   （`engraving` §11 就用 `§3` 解释 `accent` 的代理值），拿它当「指向本条」会重新引入同一类误判。
+ *   ★ 为什么不用「`背景`」：风格文档里 `背景` 多是「背景带渐变 / 背景 sweep」这类**风格描述**，
+ *   不是「本条底色冲突」，用它同样会放宽到旧判据。
  *
  * 用法：node scripts/check-config-vs-doc.mjs [--all]
  *   --all：连「文档已记录」的积压也判 FAIL（用于集中清理时）
@@ -120,12 +159,24 @@ function roleHit(c, rows) {
   return { mode: `near${NEAR}`, rows: rows.filter((r) => r.hexes.some((h) => dist(c, h) <= NEAR)) };
 }
 
-/** 第 11 节是否已记录「配置配色有问题」 */
-function docRecorded(md) {
+/** 第 11 节是否**确实记录了本条**冲突（配置配色有问题），而不是「记了另一条冲突」。
+ *  ★★ 2026-10-06 收紧（修残留误判）：旧判据只看「§11 里同时出现
+ *    (`dub-styles.json|dub-visual.json|dub 通路`) **与** (`palette|底色|配色`)」——
+ *    只要 §11 里**任何一处**提到 palette 就算「本条已记录」。真事故（`shadow-puppet`）：它的 §11
+ *    记的是**另一条**冲突（`textureRaw: backlit-leather` 未实现），而自评行里写着「palette −1」、
+ *    另有一条「`dub 通路`的字幕位置…」⇒ 两个正则都命中 ⇒ 被当成「底色冲突已记录」⇒ 归成 backlog
+ *    而**不判 FAIL**。现要求 §11 **指向本条**：出现该风格的 `palette.bg` 值（带 `#`、大小写不敏感、
+ *    不匹配更长 hex 的前缀）**或**明确写「底色」。 */
+function docRecorded(md, bg) {
   const lines = md.split('\n');
   const i = lines.findIndex((l) => /^##\s*11\./.test(l));
   const seg = i < 0 ? md : lines.slice(i).join('\n');
-  return /dub-styles\.json|dub-visual\.json|dub 通路/.test(seg) && /palette|底色|配色/.test(seg);
+  const mentionsCfg = /dub-styles\.json|dub-visual\.json|dub 通路/.test(seg);
+  const mentionsPal = /palette|配色|底色/.test(seg);
+  // `(?![0-9A-Fa-f])` 避免 `#000000` 误命中 `#00000000`（ascii-crt / shadow-puppet 的 §11 里都有后者）。
+  const bgHex = bg ? new RegExp(`#${norm(bg)}(?![0-9A-Fa-f])`, 'i').test(seg) : false;
+  const pointsToThis = bgHex || /底色/.test(seg);
+  return mentionsCfg && mentionsPal && pointsToThis;
 }
 
 const backlog = [], fresh = [], noSec = [];
@@ -157,7 +208,7 @@ for (const e of cfg.styles) {
 
   const why = hits.length ? 'role' : 'absent';
   const bad = hits.flatMap((h) => h.rows.map((r) => `${h.c}（${h.mode}）角色=${r.role}`));
-  const rec = docRecorded(md);
+  const rec = docRecorded(md, bg);
   const item = {
     slug: e.slug, bg, stops: stops.join(' '), why, bad, rec,
     docHas: [...s3.hexes].slice(0, 6).map((x) => '#' + x).join(' '),
