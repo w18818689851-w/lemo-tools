@@ -81,7 +81,7 @@
  *   LEMO_DISTILL_ROOT  风格技能树（默认 D:/lemo-tools/lib/style-skills）—— F 段变异验证指向**临时副本**
  *                      （与 check-film-aspect.mjs / check-tp-prose.mjs 同名同义）。
  *   LEMO_BATCH_DIR     批次证据目录（默认 D:/lemo-tools/_distill）—— F 段变异验证指向临时目录。
- *   LEMO_LOCK_DIR      并发锁目录（默认 D:/lemo-films）—— 与 lemo-make.mjs:1439 同名同义。
+ *   LEMO_LOCK_DIR      并发锁目录（默认 D:/lemo-films）—— 与 `lemo-make.mjs:1568` 同名同义。
  * 退出码：有 FAIL（或失明）→ 1；否则 0。
  *   ★「疑似正在重渲、本次不判」**不算 FAIL**（exit 0），但会**大声打印**并列出本会报的每一条 —— 别当成「通过」。
  */
@@ -99,7 +99,7 @@ const BATCH_DIR = path.resolve(process.env.LEMO_BATCH_DIR || 'D:/lemo-tools/_dis
 const LOCK_DIR = path.resolve(process.env.LEMO_LOCK_DIR || 'D:/lemo-films');
 const DEFER_FRESH_MS = 15 * 60 * 1000;    // 「成片很新」窗口
 const DEFER_ACTIVE_MS = 10 * 60 * 1000;   // 「批次在跑」窗口（批次证据的最新 mtime）
-// ★ 锁的「活着」判据**逐字对齐** lemo-make.mjs:1449-1453：pid 仍在 **且** 锁龄 < 6h。别自创阈值。
+// ★ 锁的「活着」判据**逐字对齐** `lemo-make.mjs:1575-1582`：pid 仍在 **且** 锁龄 < 6h。别自创阈值。
 const LOCK_MAX_AGE_MS = 6 * 3600 * 1000;
 const NOW = Date.now();
 
@@ -160,7 +160,7 @@ function batchProbe() {
   return { hits, items };
 }
 
-/** 该 slug 的并发锁是否「活着」—— 判据逐字复用 lemo-make.mjs:1449-1453。无锁返回 null（正常态，非失明）。 */
+/** 该 slug 的并发锁是否「活着」—— 判据逐字复用 `lemo-make.mjs:1575-1582`。无锁返回 null（正常态，非失明）。 */
 function lockProbe(slug) {
   const p = path.join(LOCK_DIR, `.${slug}.lock`);
   const m = mtimeOf(p);

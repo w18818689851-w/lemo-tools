@@ -19,13 +19,13 @@
  *   · 解析：读 `lemo-make.mjs` 源码文本，按「变量赋值标记」定位候选清单所在行（标记行若是
  *     `{ MUSIC=` 这种赋值行、候选在上一行的 `for c in …`，就**向上回看 4 行**取最近的那条），
  *     抽出其中的 `"$D/<路径>"` 字面量（见 CANDIDATE_SPECS）。**任一类解析为空 ⇒ 判失明**（防空转）。
- *       - 声线   `{ VOICEFX=`  → `lemo-make.mjs:2048`
- *       - 自带TTS `{ TTSOWN=`   → `lemo-make.mjs:2055`
- *       - 配乐   `{ MUSIC=`    → `lemo-make.mjs:2062`
- *       - 混音   `{ MIX=`      → `lemo-make.mjs:2068`
- *       - 拟音   `{ FOLEY=`    → `lemo-make.mjs:2078`
- *       - 可复用混音产物 `"$D/mix.wav"` → `lemo-make.mjs:2307`
- *       - 配音行 `[ -f "$D/lines.json" ]` → `lemo-make.mjs:2095`
+ *       - 声线   `{ VOICEFX=`  → `lemo-make.mjs:2205`
+ *       - 自带TTS `{ TTSOWN=`   → `lemo-make.mjs:2212`
+ *       - 配乐   `{ MUSIC=`    → `lemo-make.mjs:2220`
+ *       - 混音   `{ MIX=`      → `lemo-make.mjs:2225`
+ *       - 拟音   `{ FOLEY=`    → `lemo-make.mjs:2235`
+ *       - 可复用混音产物 `"$D/mix.wav"` → `lemo-make.mjs:2593`
+ *       - 配音行 `[ -f "$D/lines.json" ]` → `lemo-make.mjs:2309`
  *   · 逐风格（`styles/*`，排除 `_template`）判定：
  *       - **混音**：`mix.py` → `sound.py` → `audio/mix.py` 取第一个存在的；找不到 ⇒ 混音步必失败。
  *       - **配乐**：`MUSIC` 候选取第一个存在的（注意 `MUSIC == MIX` 时编排器去重、只在混音步跑一次，
@@ -76,20 +76,20 @@ const AS_JSON = process.argv.includes('--json');
 // ★ 冻结基线：已知「编排器不支持其混音步」的风格（无 mix.py / sound.py / audio/mix.py）。
 //   新增一条 ⇒ 判 FAIL（见头注释 ② 的 Bnew）。改这里必须写清 why。
 const MIX_UNSUPPORTED_BASELINE = [
-  { slug: 'game-show', why: '音频是 music.py 直出 music.wav（配乐+音效+喊词一起混，44.1kHz），无 mix.wav 概念；自带 finish.sh 直混 music.wav（demo-manifest-all.json:469）' },
+  { slug: 'game-show', why: '音频是 music.py 直出 music.wav（配乐+音效+喊词一起混，44.1kHz），无 mix.wav 概念；自带 finish.sh 直混 music.wav（demo-manifest-all.json 的 game-show mux 步；该文件在仓外，按引用纪律第 12 条只写文件名不写行号）' },
   { slug: 'halftone-dossier', why: '完全另一套音频架构：music.py → music.wav，render.mjs 的 mux 子命令直混 music.wav（demo-manifest-all.json notes）' },
   { slug: 'pictogram-motion', why: '完全另一套音频架构：music/music.py → music/music.wav，mux.sh（zsh）直混（demo-manifest-all.json notes）' },
 ];
 
 // 候选清单定位规则（见头注释 ② 的「解析」表）。
 const CANDIDATE_SPECS = [
-  { key: 'voicefx', label: '声线后处理', marker: /\{ VOICEFX=/, srcLine: 'lemo-make.mjs:2048' },
-  { key: 'ttsown', label: 'demo 自带 TTS', marker: /\{ TTSOWN=/, srcLine: 'lemo-make.mjs:2055' },
-  { key: 'music', label: '配乐生成器', marker: /\{ MUSIC=/, srcLine: 'lemo-make.mjs:2062' },
-  { key: 'mix', label: '混音脚本', marker: /\{ MIX=/, srcLine: 'lemo-make.mjs:2068' },
-  { key: 'foley', label: '拟音/音效', marker: /\{ FOLEY=/, srcLine: 'lemo-make.mjs:2078' },
-  { key: 'mixwav', label: '可复用混音产物', marker: /"\$D\/mix\.wav"/, srcLine: 'lemo-make.mjs:2307' },
-  { key: 'lines', label: '配音行', marker: /\[ -f "\$D\/lines\.json" \]/, srcLine: 'lemo-make.mjs:2095' },
+  { key: 'voicefx', label: '声线后处理', marker: /\{ VOICEFX=/, srcLine: '`lemo-make.mjs:2205`' },
+  { key: 'ttsown', label: 'demo 自带 TTS', marker: /\{ TTSOWN=/, srcLine: '`lemo-make.mjs:2212`' },
+  { key: 'music', label: '配乐生成器', marker: /\{ MUSIC=/, srcLine: '`lemo-make.mjs:2220`' },
+  { key: 'mix', label: '混音脚本', marker: /\{ MIX=/, srcLine: '`lemo-make.mjs:2225`' },
+  { key: 'foley', label: '拟音/音效', marker: /\{ FOLEY=/, srcLine: '`lemo-make.mjs:2235`' },
+  { key: 'mixwav', label: '可复用混音产物', marker: /"\$D\/mix\.wav"/, srcLine: '`lemo-make.mjs:2593`' },
+  { key: 'lines', label: '配音行', marker: /\[ -f "\$D\/lines\.json" \]/, srcLine: '`lemo-make.mjs:2309`' },
 ];
 
 const readText = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };

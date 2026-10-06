@@ -3,7 +3,7 @@
  * check-dub-styles.mjs —— 「文案+风格」配置的纹理硬红线校验
  *
  * 背景：lib/dub-styles.json 的 `bgRecipe.texture` **不是纸面字段**，
- *   dub.mjs:1064 会调 lib/dub-core.mjs 的 bgFilters(spec)，把它翻成 lavfi 真渲染：
+ *   `dub.mjs:1088` 会调 lib/dub-core.mjs 的 bgFilters(spec)，把它翻成 lavfi 真渲染：
  *     grain      → noise=alls=14:allf=t
  *     scanlines  → drawgrid=w=W:h=4:c=black@0.22
  *     paper      → noise=alls=9
