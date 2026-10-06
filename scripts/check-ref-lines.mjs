@@ -337,7 +337,12 @@ for (const file of DOCS) {
         if (res && res.how === 'global-ambig') {
           backlog.push({ kind: '多义(无法核对)', where, fragment, detail: `全库 ${res.ambiguous.length} 处同名：${res.ambiguous.map((p) => path.relative(OPUSCAR, p).replace(/\\/g, '/')).join('、')}` });
         } else if (res && res.how === 'underspec') {
-          backlog.push({ kind: '欠指明(只列不判)', where, fragment, detail: `本风格树（styles/${slug}/）里没有 \`${refPath}\`，全库有 ${res.ambiguous.length} 处同名（${res.ambiguous.map((p) => path.relative(OPUSCAR, p).replace(/\\/g, '/')).join('、')}）—— 文档没说清指哪一个` });
+          // ★ 2026-10-06 文案订正（与下面 `missing` 分支**同因**，判据一律不动）：旧版只写
+          //   「全库有 N 处同名」，而这里的「全库」**只有 `styles/` 全树**（`treeIndex(STYLES)`）
+          //   —— 实测 `hd-2d/SKILL.md` 引 `` `mux.sh:152-162` `` 时列出的候选**全在 `styles/` 下**，
+          //   而正确答案是 `core/render/mux.sh`（同一段上文自己就写了这条全路径）⇒ 候选名单里
+          //   **根本没有正主**，照候选去挑会挑错。现如实说明**搜索范围**（同头注释 known limits）。
+          backlog.push({ kind: '欠指明(只列不判)', where, fragment, detail: `本风格树（styles/${slug}/）里没有 \`${refPath}\`，全库有 ${res.ambiguous.length} 处同名（${res.ambiguous.map((p) => path.relative(OPUSCAR, p).replace(/\\/g, '/')).join('、')}）—— 文档没说清指哪一个。★ **本计数只覆盖 \`styles/\` 全树**（按文件名找）；\`core/\`、\`scripts/\`、\`tools/\` 等树**不在内** —— 所以「候选名单里没有」**不等于**「仓里没有」（若该文件其实在 \`core/\` 下，请把引用写成**带目录**的路径，如 \`core/render/mux.sh\`）` });
         } else if (res && res.how === 'slug-ambig') {
           push('(a) 文件不存在', `本风格树（styles/${slug}/）里有 ${res.ambiguous.length} 处同名、无法定位：${res.ambiguous.map((p) => path.relative(OPUSCAR, p).replace(/\\/g, '/')).join('、')}`, { refPath });
         } else if (res && res.how === 'missing') {
