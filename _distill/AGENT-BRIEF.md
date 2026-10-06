@@ -413,6 +413,54 @@ node D:/lemo-tools/scripts/refresh-style-skill.mjs --only <slug>   # 或 --all
 自动在 SKILL.md 标「已修」。★ 反向情况（旧达标、新超标）它**只告警不自动写** ——
 那需要你新增一条缺陷并定扣分档，属人工判断。
 
+### ★★ 重蒸馏之前：先过三道前置检查（2026-10-06 立，治「越修越坏」）
+
+★ **病根**：`plan` 报出「待处理」**不等于**「该重渲」。本轮实测 33 个「待处理」里 **21 个是误标**
+（产物齐全、只是台账 `fp` 为 null），真待办只有 12 个；而这 12 个若直接重渲，还会踩到
+`dur.json` 缺失这个**更贵**的坑。⇒ 重渲**会覆盖已发布样板片**，动之前先把下面三道过完。
+
+**① 先判「这次源码变更**是否影响画面**」—— 非视觉变更**不需要**重渲**
+
+`plan` 的「源码已变更」是**内容哈希**判出来的，它**不知道**改的是什么。先看**改了哪一类文件**再决定：
+
+- **进**指纹的（`scripts/style-scan.mjs` 的 `CODE_EXT` + `ROOT_EXTRAS`，核法 `grep -n "CODE_EXT\|ROOT_EXTRAS" scripts/style-scan.mjs`）：
+  绘图代码 `.js/.mjs/.cjs/.ts/.html/.htm/.css` + 风格定义 `STYLE.md` / `DEMO.md` / `style.json`。
+- **不进**指纹的（`DENY_DIRS` + 非代码扩展名）：`voices/**`（含 `dur.json`）、`*.json` 数据、`*.py`、`*.srt`、
+  字体/素材 ⇒ 改这些**根本不会**让 `plan` 报变更。
+- ★ **两类「进了指纹但不影响画面」**（实测遇到）：
+  · **行尾归一**（`.gitattributes` 的 `* text=auto eol=lf`）⇒ **所有**被覆盖文件的哈希**一起**变
+    ⇒ 看到「**全库 43 个一起变**」就是这一类，**不是**视觉变更；
+  · `STYLE.md` / `DEMO.md` **纯文档**改动（进指纹，但只改文字）。
+
+⇒ 判法：`node D:/lemo-tools/scripts/style-scan.mjs --json` 读 `changed[].changedFiles` 的**逐文件名单**，
+只对**绘图代码**的重渲。
+
+**② 重渲前必须确认 `demo/voices/dur.json` 存在 —— 否则出的是「兜底时长」片，是**倒退**不是修复**
+
+`demo/*.js` 对它是**静默兜底**（实测 **34** 个风格文件出现该串，例 `styles/woodcut/demo/film.js:25`）：
+```js
+try { const r = await fetch('voices/dur.json'); if (r.ok) DURS = await r.json(); } catch (e) { }   // 未构建时留空表，用默认时长
+```
+它由 TTS 步产出（`core/tts/tts.py:56`、`core/tts/tts_indextts.py`，写 `out_dir/dur.json`），是**生成物、被 gitignore**。
+⇒ `dur.json` 不在时重渲，整片按**默认时长**排时间轴 ⇒ **时长 / 字幕时间窗全变**，
+新成片与已发布样板片**不一致**（**倒退**）。
+
+★ 核法 + 实测（2026-10-06）：
+```bash
+ls D:/lemo-opuscar/styles/<slug>/demo/voices/dur.json
+```
+⇒ 全库 **43/43 都没有**这个文件（不是只有那 21 个缺）⇒ **当前任何风格重渲都会踩这个坑** ——
+先把 `dur.json` 构建出来，再谈重渲。
+
+**③ `fp:null` ≠ 未蒸馏 —— 它只说明「上次出片失败」**
+
+`fp` 只在**渲染成功**时写（`scripts/style-distill.mjs` 的 `doRender`）⇒ 判「有没有蒸馏过」只能看**产物存在性**：
+`lib/style-skills/<slug>/SKILL.md` + `_distill.json`（`plan` 已按此分流）。
+★ 实测：43 个风格里 **21 个产物齐全而 `fp:null`** ⇒ 归「已蒸馏 · 台账缺指纹（上次出片失败）」、**未决（无法判定源码是否变更）**；
+旧版把它们印成「未蒸馏（新纳入）」⇒ **凭空多报 21 个待办**。
+★ 同源陷阱：`plan --backfill` 写的是**当前**指纹 ⇒ 会把「源码已变更」**洗白**成「已蒸馏且未变」
+（真实变更从此在 `plan` 里消失）⇒ 它**默认拒绝**，要显式 `--force` 才写。
+
 ---
 
 ## ★★ 动「两侧副本共享的文件」（尤其 `core/`）之前：先查有没有并发批量作业（2026-10-06 真实事故）

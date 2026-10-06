@@ -7,7 +7,8 @@
  * 这个脚本把「枚举 → 顺序出片 → 抽帧 → 记状态」固化成可重入的一条流水线。
  *
  * 用法：
- *   node scripts/style-distill.mjs plan                    ← 按**源码指纹**报出「新增 / 变更 / 未蒸馏」的风格
+ *   node scripts/style-distill.mjs plan                    ← 按**源码指纹 + 产物存在性**报出「新纳入 / 变更 / 缺成片 / 台账缺指纹（未决）」
+ *   node scripts/style-distill.mjs plan --backfill [--only a,b] [--force]  ← 补写台账指纹（默认拒绝「源码可能已变」的写入）
  *   node scripts/style-distill.mjs render [--force] [--only a,b] [--no-skip-sync]
  *   node scripts/style-distill.mjs frames [--force] [--only a,b]
  *   node scripts/style-distill.mjs status
@@ -46,6 +47,8 @@ const WORK = path.join(ROOT, '_distill');
 const STATE = path.join(WORK, 'state.json');
 const LOGS = path.join(WORK, 'logs');
 const FRAMES = path.join(WORK, 'frames');
+// 蒸馏产物根（每风格两份：SKILL.md + _distill.json）—— 判「有没有蒸馏过」只看这里，不看 state 的 fp
+const SKILLS_DIR = path.join(ROOT, 'lib', 'style-skills');
 const FFMPEG = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe';
 
 const argv = process.argv.slice(2);
@@ -94,6 +97,49 @@ async function currentFingerprints() {
   return map;
 }
 
+// ── 蒸馏产物存在性（「有没有蒸馏过」的唯一判据）────────────────
+//   ★★ 2026-10-06 修「工具说谎」：此前 `plan` 用 **state 的 `fp`** 判「有没有蒸馏过」——
+//   而 `fp` 只在**渲染成功**时写（见 doRender）⇒ `fp:null` 的真实含义是「**上次出片失败**」，
+//   不是「没蒸馏过」。实测 43 个风格里 21 个 `fp` 为 null，而这 **21/21 的 `SKILL.md` +
+//   `_distill.json` 都在**（真缺产物的是 0 个）⇒ 旧版把这 21 个全印成「未蒸馏（新纳入）」，
+//   凭空多报 21 个待办、并把「上次出片失败」这个真信息彻底遮住。
+//   ⇒ 现按**产物存在性**分流（不看 fp）。
+function artifactsOf(slug) {
+  const dir = path.join(SKILLS_DIR, slug);
+  const skill = fs.existsSync(path.join(dir, 'SKILL.md'));
+  const distill = fs.existsSync(path.join(dir, '_distill.json'));
+  return { skill, distill, complete: skill && distill };
+}
+
+// ── 失败归因：**关键词分类**（机械可执行，不做语义理解）──────────
+//   分类顺序即优先级：先匹配到的胜出。判据是**字面关键词**，所以可被复核、可被反驳。
+function classifyRenderErr(err) {
+  const s = String(err || '');
+  if (!s) return '无错误文本';
+  if (/INDEXTTS_MIN_FREE_MIB|显存|腾显存|MiB|VRAM/i.test(s)) return '显存守卫';
+  if (/人工对齐|对齐|wsl\.exe|-d Ubuntu|tr -d/i.test(s)) return '双副本未对齐';
+  if (/\bw\d+\s+\d+\/\d+|\bdone\s+[A-Za-z]:\\|frames\s+\d+s|killed/i.test(s)) return '渲染中途错误';
+  return '其它';
+}
+
+// ── 「台账缺指纹」这一组的**可判定性**（尽力而为的旁证，**不是结论**）──────
+//   背景：`fp:null` ⇒ 台账里**没有可比的指纹** ⇒ **无法判定**该风格源码自上次蒸馏后有没有变过。
+//   唯一能借的旁证是扫描器自建的**基线** `lib/style-fingerprints.json`（逐风格带 `hash`）。
+//   ★★ 但基线是**陈旧**的：实测 `generatedAt`/`lastScanAt` 停在 2026-10-02/10-03，**43/43 逐文件都与当前不同**
+//   ⇒ 「与基线不一致」在当前数据上**近乎必然**，**不许**读成「源码确已变更」。
+//   所以三种标记里只有「一致」是**硬结论**（拿一份旧基线还能对上 ⇒ 确实没动过）；
+//   「不一致」只是**疑已变**，必须连同基线的 `lastScanAt` 一起打印，让读者按「基线有多旧」自己打折。
+function baseVerdict(g) {
+  if (!g.baseHash) return { mark: '?', text: '无可比指纹（基线里没有这个风格）' };
+  if (g.baseHash === g.cur) return { mark: '✓', text: '与基线一致（可证未变）' };
+  return { mark: '✘', text: '与基线不一致（疑已变）' };
+}
+
+/** 历史指纹（用于 --backfill 的安全阀）：台账 state.fp + style-scan 的基线文件，两者都算「历史」。 */
+async function loadBaseline() {
+  try { const m = await import('./style-scan.mjs'); return m.loadFingerprintFile(); } catch { return null; }
+}
+
 // ── plan：按指纹报出「需要（重新）蒸馏」的风格 ──────────────────
 //   这是「新增风格自动纳入」的**检测端**：新丢进 styles/ 的目录、以及源码被改过的已有风格，
 //   都会在这里自己冒出来，不需要人工记得去跑。
@@ -101,42 +147,138 @@ async function doPlan() {
   const st = loadState();
   const all = allSlugs();
   const fp = await currentFingerprints();
+  // ★ 基线（扫描器自建的 style-fingerprints.json）—— 只用来给「台账缺指纹」那一组**补一个可判定性**，
+  //   **不参与**「待处理」计数。它是**陈旧**的，所以只能作从严参考（见 baseVerdict 的说明）。
+  //   ★ 同时供下面的 `--backfill` 安全阀复用（一次读盘，两处同源）。
+  const base = await loadBaseline();
 
-  const never = [], changed = [], noFilm = [], fresh = [];
+  const never = [], ledgerGap = [], changed = [], noFilm = [], fresh = [];
   for (const slug of all) {
     const rec = st.styles[slug];
     const cur = fp.get(slug) || null;
-    if (!rec || !rec.fp) { never.push(slug); continue; }
+    // ★ 分流按**产物存在性**，不按 fp：产物缺 ⇒ 真「未蒸馏（新纳入）」；产物齐 ⇒ 台账缺指纹 ⇒ **未决**（见下）。
+    if (!rec || !rec.fp) {
+      const art = artifactsOf(slug);
+      if (!art.complete) never.push(slug);
+      else ledgerGap.push({
+        slug,
+        fpState: rec ? 'null' : '无记录',
+        render: rec?.render || null,
+        renderAt: rec?.renderAt || null,
+        cause: classifyRenderErr(rec?.renderErr),
+        skill: art.skill,
+        distill: art.distill,
+        cur,                                            // 当前指纹（与基线比用）
+        baseHash: base?.styles?.[slug]?.hash || null,   // 基线指纹（null ⇒ 基线里没有 ⇒ 无可比）
+      });
+      continue;
+    }
     if (rec.fp !== cur) { changed.push({ slug, from: String(rec.fp).slice(0, 10), to: String(cur).slice(0, 10) }); continue; }
     const mp4 = path.join(FILM_DIR, slug, `${slug}.mp4`);
     if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 10000) { noFilm.push(slug); continue; }
     fresh.push(slug);
   }
 
-  console.log(`\n风格 ${all.length} 个  |  已蒸馏且未变 ${fresh.length}  |  待处理 ${never.length + changed.length + noFilm.length}\n`);
+  // ★ 汇总口径：`待处理` **只数真待办**（未蒸馏 / 源码已变更 / 缺成片）；
+  //   「台账缺指纹」**单列一个计数**并注明**未决** —— 它的产物齐全，但台账里没有可比指纹，
+  //   ⇒ **无法判定**源码自上次蒸馏后有没有变过（可能确实要重蒸馏，只是台账记不下来）。**这不是「没事」。**
+  const todo = never.length + changed.length + noFilm.length;
+  console.log(`\n风格 ${all.length} 个  |  已蒸馏且未变 ${fresh.length}  |  待处理 ${todo}  |  台账缺指纹 ${ledgerGap.length}（未决·无法判定源码是否变更）\n`);
   if (never.length) console.log(`  未蒸馏（新纳入）：${never.join(', ')}`);
   if (changed.length) {
     console.log(`  源码已变更（需重新蒸馏）：`);
     for (const c of changed) console.log(`    ${c.slug}  ${c.from}… → ${c.to}…`);
   }
   if (noFilm.length) console.log(`  缺成片：${noFilm.join(', ')}`);
-  if (!never.length && !changed.length && !noFilm.length) console.log('  全部已蒸馏且指纹未变 —— 无待办。');
+  if (ledgerGap.length) {
+    const baseAt = base?.lastScanAt || base?.generatedAt || null;
+    console.log(`\n  ★ 已蒸馏 · 台账缺指纹 ${ledgerGap.length} 个 —— **未决**（不是「没事」）`);
+    console.log('    产物齐全（SKILL.md + _distill.json 都在）；`fp` 只在**渲染成功**时写，');
+    console.log('    `fp:null` 的真实含义是「上次出片失败」；但台账里**没有可比指纹** ⇒');
+    console.log('    **无法判定**它的源码自上次蒸馏后有没有变过（可能确实要重蒸馏，只是台账记不下来）。');
+    console.log(`    可判定性（旁证）：拿基线 lib/style-fingerprints.json 的逐风格 hash 与**当前**指纹比（基线 lastScanAt=${baseAt || '未知'}）`);
+    console.log('    ★ 基线越旧，「不一致」越可能只是陈旧 ⇒ 本条只作从严参考，');
+    console.log('      **不许**把「与基线不一致」直接当成「确已变更」的结论。');
+    for (const g of ledgerGap) {
+      const v = baseVerdict(g);
+      console.log(`    ${g.slug.padEnd(20)} 归因=${g.cause.padEnd(7)} fp=${g.fpState.padEnd(5)} render=${String(g.render).padEnd(7)} 上次失败 ${g.renderAt || '未知'}  产物=SKILL.md ${g.skill ? '✓' : '✗'} / _distill.json ${g.distill ? '✓' : '✗'}  基线=${v.mark} ${v.text}`);
+    }
+  }
+  if (!todo) {
+    console.log(ledgerGap.length
+      ? `  无待办（另有 ${ledgerGap.length} 个风格「台账缺指纹」—— **未决**：无法判定源码是否变更，见上）。`
+      : '  全部已蒸馏且指纹未变 —— 无待办。');
+  }
   console.log('');
   // ★ --backfill：把「已有成片但 state 里没记指纹」的风格补上指纹。
   //   用途：出片循环是在加指纹字段**之前**启动的，跑完不会自动写 fp；跑一次 --backfill 即可补平，
   //   之后 `plan` 才能真正区分「已蒸馏且未变」与「新纳入」。
+  //   ★★ 2026-10-06 加**安全阀**：补写的是**当前**指纹 ⇒ 若该风格源码自上次成功出片后已变，
+  //   补写等于把「源码已变更」**洗白**成「已蒸馏且未变」，真实变更从此在 `plan` 里消失
+  //   （旧版对 `[...never, ...noFilm]` 无条件写，而 `never` 里恰恰混着源码确已变更的风格）。
+  //   判据（机械可执行）：把候选的**当前**指纹与它的**历史**指纹（台账 `state.fp` + 基线
+  //   `lib/style-fingerprints.json`，后者逐风格带 `hash`）比对 —— **有任一历史指纹不等、或一条
+  //   历史指纹都没有 ⇒ 判「无法证明源码未变」⇒ 默认拒绝**，要显式 `--force` 才写。
   if (argv.includes('--backfill')) {
-    let n = 0;
-    for (const slug of [...never, ...noFilm]) {
+    // ★ `base` 已在本函数开头读好（供 ledgerGap 的可判定性用），此处**复用同一份**（行为与原先逐字一致）。
+    const mp4Ok = (slug) => {
       const mp4 = path.join(FILM_DIR, slug, `${slug}.mp4`);
-      if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 10000) continue;
-      st.styles[slug] = { ...(st.styles[slug] || {}), fp: fp.get(slug) || null, fpBackfilledAt: new Date().toISOString() };
+      return fs.existsSync(mp4) && fs.statSync(mp4).size >= 10000;
+    };
+    const targets = [...never, ...ledgerGap.map((g) => g.slug), ...noFilm]
+      .filter(mp4Ok)
+      .filter((s) => !OPT.only.length || OPT.only.includes(s))
+      .filter((s) => (st.styles[s]?.fp || null) !== (fp.get(s) || null)); // 已经一致 ⇒ 无可写，剔除
+
+    if (!targets.length) {
+      console.log(`  --backfill：没有可补写的风格${OPT.only.length ? `（--only ${OPT.only.join(',')}）` : ''}。\n`);
+      return { never, ledgerGap, changed, noFilm, fresh };
+    }
+
+    const short = (h) => (h ? `${String(h).slice(0, 10)}…` : '(无)');
+    const judged = targets.map((slug) => {
+      const cur = fp.get(slug) || null;
+      const hist = [];
+      const recFp = st.styles[slug]?.fp || null;
+      if (recFp) hist.push({ src: '台账 state.fp', hash: recFp });
+      const b = base?.styles?.[slug];
+      if (b?.hash) hist.push({ src: '基线 style-fingerprints.json', hash: b.hash });
+      const bad = hist.filter((h) => h.hash !== cur);
+      const why = !hist.length ? '无历史指纹可比'
+        : bad.length ? `与「${bad.map((h) => h.src).join('、')}」不一致`
+          : `与「${hist.map((h) => h.src).join('、')}」一致`;
+      return { slug, before: recFp, cur, hist, bad, safe: hist.length > 0 && bad.length === 0, why };
+    });
+    const unsafe = judged.filter((j) => !j.safe);
+
+    console.log(`  --backfill 候选 ${judged.length} 个（已有成片${OPT.only.length ? `，--only 限定 ${OPT.only.join(',')}` : ''}）；历史指纹来源：台账 state.fp + 基线 lib/style-fingerprints.json`);
+    if (base) console.log(`    基线 lastScanAt = ${base.lastScanAt || base.generatedAt || '未知'}（基线越旧，逐条「不一致」越可能只是陈旧，**本阀一律从严判**）`);
+    for (const j of judged) {
+      console.log(`    ${j.slug.padEnd(20)} 指纹 ${short(j.before).padEnd(12)} → ${short(j.cur).padEnd(12)} ${j.safe ? '✓ 可证未变' : `✘ ${j.why}`}`);
+    }
+
+    if (unsafe.length && !OPT.force) {
+      console.log('');
+      console.log(`  ✘ 拒绝写入（${unsafe.length}/${judged.length} 个候选**无法证明源码未变**）—— **这会洗白源码变更**：`);
+      console.log('    补写的是**当前**指纹 ⇒ 这些风格的源码若自上次成功出片后已变，补写后 `plan` 再也报不出该变更。');
+      const noHist = unsafe.filter((j) => !j.hist.length).map((j) => j.slug);
+      const mis = unsafe.filter((j) => j.hist.length).map((j) => j.slug);
+      if (noHist.length) console.log(`    · 无历史指纹可比（台账 fp 为 null）：${noHist.join(', ')}`);
+      if (mis.length) console.log(`    · 与历史指纹不一致：${mis.join(', ')}`);
+      console.log('    ⇒ 确认要写：`--backfill --force`；只补可证未变的那些：`--backfill --only <slug,…>`。');
+      console.log('    ★ 本次**未写盘**（state.json 未改）。\n');
+      return { never, ledgerGap, changed, noFilm, fresh };
+    }
+
+    let n = 0;
+    for (const j of judged) {
+      st.styles[j.slug] = { ...(st.styles[j.slug] || {}), fp: j.cur, fpBackfilledAt: new Date().toISOString() };
       n++;
     }
-    if (n) { saveState(st); console.log(`  已为 ${n} 个风格补写源码指纹。\n`); }
-    else console.log('  没有可补写的风格。\n');
+    saveState(st);
+    console.log(`\n  ${unsafe.length && OPT.force ? '★ --force 已生效：' : ''}已为 ${n} 个风格补写源码指纹（state.json 已更新）。\n`);
   }
-  return { never, changed, noFilm, fresh };
+  return { never, ledgerGap, changed, noFilm, fresh };
 }
 
 function run(cmd, args, { cwd, timeoutMs = 1800000, logFile } = {}) {
@@ -214,7 +356,10 @@ async function doRender() {
       //   记成「已蒸馏」，于是 `plan` 把失败报成「已蒸馏且未变」—— **失败对 plan 不可见**，
       //   而成片其实仍是旧源渲的。实测：10 风格重渲首轮有 4 个失败（音频链问题），
       //   跑完 `plan` 仍报「待处理 0」，是靠读渲染汇总才发现失败的。
-      //   失败时记 `null` ⇒ `plan` 会把它报成「未蒸馏 / 待处理」⇒ 如实可见（符合「如实报告」纪律）。
+      // ★★ 2026-10-06 订正：失败时记 `null` 的含义是「**上次出片失败**」，**不是**「未蒸馏」。
+      //   旧版 `plan` 把二者混为一谈 ⇒ 把 21 个**产物齐全**的风格印成「未蒸馏（新纳入）」。
+      //   现在 `plan` 按**产物存在性**分流，`fp:null` 落进「台账缺指纹」这一类 —— 它**未决**：
+      //   台账里没有可比指纹 ⇒ 无法判定源码是否变更（见 doPlan 的 artifactsOf / ledgerGap / baseVerdict）。
       fp: status === 'ok' ? ((await currentFingerprints()).get(slug) || null) : null,
     };
     saveState(st);

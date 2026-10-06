@@ -63,7 +63,7 @@
  *
  * ★ ⑥ C 类判据（2026-10-05 补）：**样板片原生画幅**
  *   对每个风格，用 `ffprobe` 读**实际成片文件**的分辨率，要求**恰为 1920×1080**。
- *   依据：本项目约定**样板片一律 16:9**（`scripts/style-distill.mjs:189` 显式 `--ratio 16:9`），
+ *   依据：本项目约定**样板片一律 16:9**（`scripts/style-distill.mjs:331` 显式 `--ratio 16:9`），
  *   16:9 的原生像素即 1920×1080 ⇒ **实际文件不是 1920×1080 ⇒ FAIL**，
  *   报出 **slug + 实际值 + 期望值 + 文件 mtime**。
  *   · 文件路径：取 `_distill.json` 的 `generatedVideo.path` **相对默认根**（`D:/lemo-films`）的相对段，
@@ -102,7 +102,7 @@ const AS_JSON = process.argv.includes('--json');
 // 可覆盖（`LEMO_FILMS_ROOT`）—— 变异测试把数据源整体指向一棵**临时拷贝**，**绝不动真实成片**（见头注释 ⑥）。
 const DEFAULT_FILMS_ROOT = 'D:/lemo-films';
 const FILMS_ROOT = path.resolve(process.env.LEMO_FILMS_ROOT || DEFAULT_FILMS_ROOT);
-/** 样板片原生像素：16:9 的原生尺寸（`scripts/style-distill.mjs:189` 的 `--ratio 16:9`）。 */
+/** 样板片原生像素：16:9 的原生尺寸（`scripts/style-distill.mjs:331` 的 `--ratio 16:9`）。 */
 const NATIVE_W = 1920, NATIVE_H = 1080;
 /** ffprobe（与 `check-film-delivery.mjs:60` 同一套路径约定）。 */
 const FFPROBE = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffprobe.exe';
