@@ -17,7 +17,8 @@
 //         core/tts/tts_indextts.py <lines.json> <out_dir>'
 //     一次进程批量合成全部句子（模型只加载一次，首载 1~2 分钟是正常的）。
 //   · ffmpeg 只在 WSL 里有（6.1.1，带 libass + h264_nvenc）；Windows git-bash 没有。
-//   · 编码一律 h264_nvenc（RTX 4060），不用 CPU 软编。
+//   · 编码器由环境变量 LEMO_VENC 下发（用户硬规则：渲染一律本地 GPU 优先）：
+//       未设 ⇒ h264_nvenc（RTX 4060）；显式 libx264 ⇒ CPU；其它值 ⇒ 报错退出，绝不静默回落。
 //   · 产物全部写非 C 盘。
 
 import fs from 'node:fs';
@@ -52,6 +53,21 @@ const ok = (s) => say(`${C.g}✓${C.x} ${s}`);
 const die = (s) => { bad(s); process.exit(1); };
 const f3 = (n) => Number(n).toFixed(3);
 const f2 = (n) => Number(n).toFixed(2);
+
+// ── 视频编码器（用户硬规则：渲染一律本地 GPU 优先）─────────────────────
+// ★ 口径与 core/render/video.mjs / core/render/mux.sh / styles/*/demo/tools/video_png.mjs
+//   **逐字一致**，照抄同一形状，别在这里自创：
+//     未设 LEMO_VENC ⇒ h264_nvenc（GPU）；显式 libx264 ⇒ CPU；其它值 ⇒ 报错退出，绝不静默回落 CPU
+//     （把 h264_nvenc 打成 h264_nven 会以为在用显卡、实际走 CPU）。
+// ★ 本文件是「文案+口播+风格」通路的出片路径，**唯一**的编码器决策点就在这——下面两处混流命令
+//   都从这里取 VARG，别再往命令里硬写编码器名（闸门 scripts/check-render-venc.mjs 会扫这里）。
+const VENC = process.env.LEMO_VENC || 'h264_nvenc';
+if (VENC !== 'h264_nvenc' && VENC !== 'libx264') {
+  die(`LEMO_VENC must be h264_nvenc or libx264, or unset (which means h264_nvenc, the GPU encoder), got '${VENC}'. Refusing to fall back to the CPU encoder silently.`);
+}
+const VARG = VENC === 'h264_nvenc'
+  ? '-c:v h264_nvenc -preset p5 -rc vbr -cq 21 -b:v 0 -pix_fmt yuv420p'
+  : '-c:v libx264 -preset slow -crf 19 -pix_fmt yuv420p';
 
 function sanitizeName(s) {
   return String(s).replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^[._]+|[._]+$/g, '').slice(0, 60) || 'dub';
@@ -359,7 +375,7 @@ async function runKeepOriginal(ctx) {
     `-i ${shq(srcWsl)}`,
     `-filter_complex ${shq(fc)}`,
     applyLimit ? '-map "[v]" -map "[a]"' : '-map "[v]" -map 0:a?',
-    '-c:v h264_nvenc -preset p5 -rc vbr -cq 21 -b:v 0 -pix_fmt yuv420p',
+    VARG,   // ★ 编码器唯一决策点（LEMO_VENC：未设⇒h264_nvenc / 显式 libx264⇒CPU / 其它⇒报错），见文件头
     '-color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709',
     applyLimit ? '-c:a aac -b:a 192k' : '-c:a copy',
     '-movflags +faststart',
@@ -841,7 +857,7 @@ async function main() {
     say(`  · 拼时间轴 + 响度/真峰值归一（PCM 目标峰值 ${TARGET_PEAK_PCM} dBFS，响度 ${targetLufs} LUFS）`);
     if (form === 'B') say(`  · 素材 ${videoHost} 铺满 ${W}x${H}（保持比例居中裁切），fit=${o.fit}`);
     else say(`  · 生成 ${W}x${H} 深色渐变背景${bgHost ? `（改用 ${bgHost}）` : ''}`);
-    say(`  · 烧中文字幕（底部安全区）+ 导出 film.srt → h264_nvenc 编码 → film.mp4`);
+    say(`  · 烧中文字幕（底部安全区）+ 导出 film.srt → ${VENC} 编码 → film.mp4`);
     say(`  ${C.d}--dry-run 到此为止。${C.x}`);
     return;
   }
@@ -1100,7 +1116,7 @@ async function main() {
     inArgs.map((s) => (s.startsWith('_') || s.startsWith('/') || s.startsWith('0x') || /^-/.test(s) ? s : shq(s))).join(' '),
     `-filter_complex ${shq(`[0:v]${vf}[v]`)}`,
     `-map "[v]" -map 1:a -t ${f3(total)}`,
-    '-c:v h264_nvenc -preset p5 -rc vbr -cq 21 -b:v 0 -pix_fmt yuv420p -r 30',
+    `${VARG} -r 30`,   // ★ 编码器唯一决策点（LEMO_VENC 三分支），见文件头；-r 30 是输出帧率，非编码器参数
     // ★ 显式打色彩标记：nvenc 默认不写 color_range，成片里是 "unknown"，
     //   播放器只能猜（猜成 full range 就会整体发灰）。标记成 tv/bt709 后解码路径唯一。
     '-color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709',

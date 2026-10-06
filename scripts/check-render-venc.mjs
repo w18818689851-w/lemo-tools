@@ -16,13 +16,23 @@
  *     · `core/render/video.mjs`、`core/render/mux.sh`、以及**被编排器挑中的** `demo/tools/mux.sh`
  *       （挑选规则同 `check-mux-selection.mjs`：`demo/tools/mux.sh` → `demo/mux.sh`，门槛含 `A="$2"`，
  *        否则回退 `core/render/mux.sh`）。
+ *     · ★ 2026-10-07 补：`D:/lemo-tools/dub.mjs` —— **第三条通路**（文案+口播+风格）的最终编码。
+ *       它**不在 `D:/lemo-opuscar` 树里**（属 lemo-tools 仓），此前**既不被本闸门登记、也不读
+ *       `LEMO_VENC`**：两处混流命令**硬编码 `-c:v h264_nvenc`**（约 `:378` 与 `:1119`）。
+ *       它满足「一律本地 GPU / 禁止云端」，但**没有那个覆盖点**（谁把 `h264_nvenc` 打成 `h264_nven`、
+ *       或想临时走 CPU，都没有统一开关）⇒ 是**未被守住的编码决策点**。现纳入 A 类。
  *     · 必须满足：**未设 LEMO_VENC ⇒ h264_nvenc**；**显式 libx264 ⇒ CPU**；**其它值 ⇒ 非静默（报错退出）**。
  *     · 任何「未设或非法 ⇒ 静默 libx264」判 FAIL，报出**文件 + 行号 + 实际写法**。
+ *     · ★ A 类**不再全在 opuscar 树内**（`dub.mjs` 在 lemo-tools）⇒ 展示路径按「文件属于哪个仓」加前缀，
+ *       且 C 类双副本只比 **opuscar 树内**的文件（lemo-tools 无 WSL 副本）。
  *   B 类（**只列 backlog，不判 FAIL**）—— 不在出片路径上的 15 个手工脚本：
  *     · 列出「已支持 LEMO_VENC / 仍硬写 libx264」两类计数，供人工决定。符合本项目纪律
  *       （已记录积压不判 FAIL）。
  *   C. **两份副本一致性（判 FAIL）**：上述文件在 `D:/lemo-opuscar` 与 WSL `/home/lemo/lemo-opuscar`
  *     必须**逐字节一致**（比 md5）。
+ *     · ★ 2026-10-07：只比 **opuscar 树内**的 A/B 类文件 —— `dub.mjs` 属 lemo-tools 仓，
+ *       在 WSL 侧**没有对应副本**（它按设计在 Windows 跑、把媒体命令交给 WSL），故自动排除，
+ *       不参与比对（否则会报「WSL 侧缺失」这种**结构性假红**）。
  *   D 类（**判 FAIL**）—— 文档/注释里的**过期声称**：
  *     · 在 `D:/lemo-opuscar` 与 `D:/lemo-tools` 的文档/注释（.md/.sh/.mjs/.js/.cjs/.py/.html/.txt/
  *       .json/.bat/.css 与 CREDITS/README/DEMO/STYLE… 等无扩展名文件）里，
@@ -57,6 +67,10 @@
  *   · 只做**文本/语法级**判定，不跑 ffmpeg —— 「未设时真的会调 h264_nvenc」是靠读代码确认的，不是实测编码。
  *   · 只认 `case "${LEMO_VENC:-}" in` 这一种 shell 写法与 `process.env.LEMO_VENC` 这一种 mjs 写法；
  *     若将来有人用别的写法（如 `if [ -z "$LEMO_VENC" ]`）本闸门会**看不见**（假阴性）。
+ *   · ★ mjs 侧（`core/render/video.mjs` 与 `dub.mjs`）判的是**文件级**的「解析出 VENC/VARG + 非法值校验」，
+ *     **不核对每个调用点真的用了那个变量** —— 若有人把 `-c:v h264_nvenc` 重新硬写回某一处命令里，
+ *     本闸门**看不见**（假阴性）。有意取舍：调用点写法太多（数组元素 / 模板串 / 三元），
+ *     机械核对的误报率高于收益；现由 `check-venc-args.mjs`（真编一帧）+ 人工读 diff 兜底。
  *   · 双副本一致性检查只在 `LEMO_OPUSCAR` 指向**规范路径** `D:/lemo-opuscar` 时进行
  *     （做变异测试时指向临时目录，WSL 侧无对应副本，故自动跳过；也可用 `--no-wsl` 强制跳过）。
  *   · **防空转绿灯**：解析出的「编码器决策点」为 0 ⇒ **判 FAIL 并明说「本闸门已失明」**
@@ -107,6 +121,7 @@ function sh(cmd, args) {
 }
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const TOOLS = path.resolve(HERE, '..');   // ★ lemo-tools 仓根（`dub.mjs` 在这里，不在 opuscar 树内）
 const OPUSCAR = path.resolve(process.env.LEMO_OPUSCAR || path.join(HERE, '..', '..', 'lemo-opuscar'));
 const STYLES = path.resolve(process.env.LEMO_STYLES_ROOT || path.join(OPUSCAR, 'styles'));
 const CANON_WIN = path.resolve('D:/lemo-opuscar');
@@ -115,7 +130,18 @@ const DISTRO = 'Ubuntu-24.04';
 const JSON_OUT = process.argv.includes('--json');
 const NO_WSL = process.argv.includes('--no-wsl');
 
-const rel = (p) => path.relative(OPUSCAR, p).replace(/\\/g, '/');
+/** A 类决策点可能落在**两个仓**（opuscar 树 / lemo-tools 仓）⇒ 展示路径按所属仓加前缀。 */
+const rel = (p) => {
+  const a = path.resolve(p), o = path.resolve(OPUSCAR);
+  if (a === o || a.startsWith(o + path.sep)) return path.relative(o, a).replace(/\\/g, '/');
+  if (a === TOOLS || a.startsWith(TOOLS + path.sep)) return 'lemo-tools/' + path.relative(TOOLS, a).replace(/\\/g, '/');
+  return path.relative(o, a).replace(/\\/g, '/');
+};
+/** 文件是否在 opuscar 树内（只有这类文件才有 WSL 副本 ⇒ 才参与 C 类比对）。 */
+const underOpuscar = (p) => {
+  const a = path.resolve(p), o = path.resolve(OPUSCAR);
+  return a === o || a.startsWith(o + path.sep);
+};
 const read = (p) => fs.readFileSync(p, 'utf8');
 const md5 = (p) => crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex');
 
@@ -198,6 +224,10 @@ const pushA = (file, kind, label) => {
 };
 pushA(path.join(CORE, 'video.mjs'), 'mjs', 'core 渲染（逐帧分段编码）');
 pushA(path.join(CORE, 'mux.sh'), 'sh', 'core 混流（回退路径）');
+// ★ 2026-10-07 补：**第三条通路**（文案+口播+风格）`D:/lemo-tools/dub.mjs` 的最终编码。
+//   它此前硬编码 `-c:v h264_nvenc`（两处混流命令）且**不读 LEMO_VENC**、也**不被本闸门登记**
+//   —— 是出片路径上唯一没被守住的编码决策点（详见头注释 ②）。它属 lemo-tools，不参与 C 类双副本。
+pushA(path.join(TOOLS, 'dub.mjs'), 'mjs', 'dub 通路（文案+口播+风格）最终编码');
 
 const slugs = fs.existsSync(STYLES)
   ? fs.readdirSync(STYLES, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('_')).map((e) => e.name).sort()
@@ -357,7 +387,12 @@ const dBlind = dBlindRoots.length > 0;
 const dual = { checked: false, files: 0, mismatches: [] };
 const isCanon = path.resolve(OPUSCAR) === CANON_WIN;
 if (isCanon && !NO_WSL) {
-  const files = [...aRows.map((r) => rel(r.file)), ...bRows.filter((r) => r.status !== 'missing').map((r) => r.rel)];
+  // ★ 只比 **opuscar 树内**的文件：`dub.mjs` 属 lemo-tools，WSL 侧没有对应副本
+  //   （它按设计在 Windows 跑、把媒体命令交给 WSL）⇒ 纳入比对会报「WSL 侧缺失」的结构性假红。
+  const files = [
+    ...aRows.filter((r) => underOpuscar(r.file)).map((r) => path.relative(OPUSCAR, r.file).replace(/\\/g, '/')),
+    ...bRows.filter((r) => r.status !== 'missing').map((r) => r.rel),
+  ];
   const uniq = [...new Set(files)];
   const winMd5 = {};
   for (const f of uniq) { const p = path.join(OPUSCAR, f); if (fs.existsSync(p)) winMd5[f] = md5(p); }

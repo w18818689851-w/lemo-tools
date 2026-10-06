@@ -506,6 +506,11 @@ function orchestratorRuns(slug, demoRel, script) {
     //     export_cues.mjs   —— Windows 侧 exportEventsAndSubs() 第 ①-b 步（写 audio/cues.json）
     //     words.py          —— 音频脚本「asr_check.py 之后」（派生 voices/words_rel.json）
     `${d}/tools/trim_cmd.py`, `${d}/tools/export_cues.mjs`, `${d}/tools/words.py`,
+    // ★ 2026-10-07 补：risograph 的 tools/video_png.mjs —— 它**替换渲染器**（PNG 无损中间片），
+    //   不是「追加一步」。编排器的渲染段现在按候选探测它（demoRenderRel），所以它属于
+    //   「编排器本次**会执行**」这一类 ⇒ 必须进 runs[]，否则起飞前检查会继续把它报成
+    //   「编排器漏跑」（ORCH_SKIP_STEPS 里已不再登记它）。
+    `${d}/tools/video_png.mjs`,
   ];
   // TTS 是**两条互斥的后端**，编排器一次只跑一条（这里是 audioScript 配音段的镜像）：
   //   ① $D/lines.json 存在 → core/tts/tts.py（读 demo 根下的 lines.json，写 voices[_raw]/）；
@@ -549,16 +554,17 @@ function orchestratorRuns(slug, demoRel, script) {
  * ★ 本表是**候选**：报之前还要核两件事 —— ① 该脚本真在本 demo 里；② 编排器本次确实不跑它
  *   （走 orchestratorRuns）⇒ 将来某一步被编排器补上时，这里会**自动**不再报，不用改表。
  *   （pitch.py 就是第一例：它已在 2026-10-06 被补进编排器，因此本表**不登记它**。
- *     trim_cmd.py / export_cues.mjs / words.py 是 2026-10-07 的第二、三、四例，同样已从本表移除。）
+ *     trim_cmd.py / export_cues.mjs / words.py 是 2026-10-07 的第二、三、四例，同样已从本表移除；
+ *     video_png.mjs 是**第五例，也是形态不同的一例** —— 它不是「漏跑一步」，而是**替换渲染器**
+ *     （PNG 无损中间片）；编排器的渲染段现在按候选探测它，故同样已从本表移除、并加进 runs[] 镜像。）
  * ★ root='demo' 的 rel 相对 demo 目录（tools/xxx.py）；root='lib' 的 rel 相对库根（core/…）。
  *   两者都按「相对库根」拼出来核存在性 ⇒ **不写死任何 slug**。
  */
 const ORCH_SKIP_STEPS = [
   // ── 内容有影响（不跑 ⇒ 成片内容与 build.sh 不符）──
-  // ★ video_png.mjs（risograph）：它**替换**渲染器（PNG 无损中间片），不是「追加一步」——
-  //   编排器的渲染行硬编码 core/render/video.mjs 且带 --size，而它**不接受 --size** ⇒
-  //   直接接上会静默丢画幅。已评估为「风险过高，本轮不接」，详见 D:/lemo-tools/README.md 的差异清单。
-  { rel: 'tools/video_png.mjs',   root: 'demo', impact: 'content', what: '导出逐帧 PNG（**换渲染器**：PNG 无损中间片；编排器不替换，理由见 README）' },
+  // ★ 目前**空**：2026-10-07 前登记的最后一条 video_png.mjs（risograph，换渲染器 PNG 无损中间片）
+  //   已被编排器接上（渲染段候选探测 demoRenderRel + 给 video_png.mjs 补了 --size），
+  //   因此这里不再登记它；本表保留结构，供将来如实登记新发现的内容级缺口。
   // ── 已核实「不跑无差异」（确定性生成物；保留登记只为「build.sh 有、编排器不跑」这件事本身可见）──
   { rel: 'models/gen_volt.mjs',   root: 'demo', impact: 'none', what: '生成 volt 素材（确定性：重跑产物与入库版逐字节相同，实测 md5 一致）' },
   { rel: 'models/gen_kite.mjs',   root: 'demo', impact: 'none', what: '生成 kite 素材（确定性：重跑产物与入库版逐字节相同，实测 md5 一致）' },
@@ -1465,7 +1471,20 @@ async function main() {
     }
   }
 
-  const renderVArgs = ['core/render/video.mjs', demoRel, '--fps', String(o.fps), '--workers', String(o.workers),
+  // ── 渲染器选择：**候选探测**，不写死 ────────────────────────────────────────
+  // 有的 demo 用**自己的渲染器替换** core/render/video.mjs（当前全库只有 risograph 的
+  // tools/video_png.mjs）。它用 PNG 截图 + yuv444p 无损中间片 —— 这不是「锦上添花」：
+  // risograph 的网点色在 JPEG 的 4:2:0 里会被吃掉，用 core 版渲出的成片**视觉上是降级的**
+  // （网点被压掉），是产品正确性问题。所以这里按 demo 自带的脚本探测，形状照上面
+  // demoMuxRel 的 `.find()` 候选写法（**不写死 slug**：路径由 demoRel 拼出来）。
+  // ★ 前置条件已满足：tools/video_png.mjs 已补上 `--size`（照 core/render/page.mjs 的 takeSize
+  //   同源解析）⇒ 下面那份带 `--size WxH` 的参数表它可以照单全收，不会再静默丢画幅。
+  // ★ 输出名不变（仍是 --out 指到的 out/video_gpu.mp4）：下游 mux.sh 读的就是这个名，
+  //   所以换渲染器**不需要**动下游；本行刻意只换可执行脚本，参数与落点一字不动。
+  const demoRenderRel = [`${demoRel}/tools/video_png.mjs`]
+    .find(r => fs.existsSync(path.join(CFG.winLib, r)));
+  const renderScriptRel = demoRenderRel || 'core/render/video.mjs';
+  const renderVArgs = [renderScriptRel, demoRel, '--fps', String(o.fps), '--workers', String(o.workers),
     '--size', `${outSize.w}x${outSize.h}`,
     '--out', path.join(demoWin, 'out', 'video_gpu.mp4')];
   if (qRender) renderVArgs.push('--q', qRender);

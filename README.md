@@ -181,6 +181,28 @@ lemo-make.bat --help
 
 输出到 `D:\lemo-films\<slug>\`。
 
+### 三条通路（入口不同、产出不同）
+
+本层的出片入口**不止 `lemo-make.mjs` 一个**。共**三条通路**，根本区别是**画面主体从哪来**：
+
+| # | 通路 | 入口 | 画面主体来自 | 声音 |
+|---|---|---|---|---|
+| ① | **主题 + 风格** | `lemo-make.bat <slug>` / `node lemo-make.mjs <slug>` | 风格自带的 demo（按该风格的内容文件渲染） | 风格自带配音或 TTS |
+| ② | **文案 + 风格** | `node dub.mjs --script <文件> [--style <slug>]` | 生成的渐变背景（或 `--bg <图>`） | 现场 TTS 念你给的文案 |
+| ③ | **文案 + 口播 + 风格** | `node dub.mjs --script <文件> --video <mp4> [--style <slug>]` | **你给的那段口播素材**（保持比例、居中裁切铺满） | 现场 TTS；`--keep-original` 可保留原声原画 |
+
+②③ 是**同一个入口** `dub.mjs` 的两种形态：不给 `--video` 走形态 A（= ②），给了就走形态 B（= ③）。
+`dub.mjs --help` 有全部选项；输出同样落在 `D:\lemo-films\dub\<名字>\`。
+
+> **它和编排器不是一回事**：`dub.mjs` **不碰 demo 脚本** —— 不跑 `build.sh`、不做配乐/静帧、
+> 不读 `demo-manifest-all.json`。所以它**没有**编排器那种「漏跑生成器」的问题（那类缺口只存在于 ①：
+> `lemo-make.mjs` 按 manifest 挑步骤，漏了哪一步会静默沿用旧产物）。dub 的画面只有两种来源
+> —— **你给的素材**或**一张背景** —— 没有第三步可漏。
+
+**三条通路的编码器口径一致**（用户硬规则：渲染一律本地 GPU 优先）：`LEMO_VENC` 未设 ⇒ `h264_nvenc`；
+显式 `libx264` ⇒ CPU；其它值 ⇒ 报错退出（绝不静默回落）。这条由
+`scripts/check-render-venc.mjs` 把三条通路的决策点全数登记、逐个守。
+
 ## 六个步骤
 
 | # | 步骤 | 在哪 | 说明 |
@@ -218,7 +240,7 @@ lemo-make.bat --help
 | `tools/trim_cmd.py` | **成片内容** | microgame | ★ **已修（2026-10-07）**：编排器**现在会跑它**（原先漏跑 ⇒ 4 个命令词带元音尾巴、`dur.json` 停在未裁剪时长）。位置同 `pitch.py`：配音之后、ASR / 回传之前 |
 | `tools/export_cues.mjs` | **成片内容** | urban-sketch | ★ **已修（2026-10-07）**：编排器**现在会跑它**（Windows 侧 `exportEventsAndSubs()` 第 ①-b 步，产物 `audio/cues.json` 回传 WSL 供 `audio/foley.py` 直读）。原先漏跑 ⇒ 拟音按旧画面笔画/轨迹排 |
 | `tools/words.py` | **成片内容** | dataviz / swiss-motion | ★ **已修（2026-10-07）**：编排器**现在会跑它**（`asr_check.py` 之后、`VOICE_DONE` 之前；产物 `voices/words_rel.json` 由页面 `main.js` 直读驱动逐词高亮）。原先漏跑 ⇒ 逐词时间轴陈旧 5~6 天 |
-| `tools/video_png.mjs` | **成片内容** | risograph | ★ **未修（有意）**：它是**换渲染器**（PNG 无损中间片）而非追加一步，且**不接受 `--size`** ⇒ 直接接上会静默丢画幅。实现方案见本节末尾 |
+| `tools/video_png.mjs` | **成片内容** | risograph | ★ **已修（2026-10-07）**：编排器**现在会用它**。它是**换渲染器**（PNG 无损中间片）而非追加一步 —— 上一轮判「不接」是因为它**不接受 `--size`**、接上会静默丢画幅；本轮先给它补上 `--size`（照 `core/render/page.mjs` 的 `takeSize` 同源），再在编排器渲染段做**候选探测**（`demoRenderRel`，不写死 slug）。**为什么必须修**：网点色在 JPEG 4:2:0 里会被吃掉 ⇒ 用 `core/render/video.mjs` 出的 risograph 成片视觉上是**降级**的。列在此处只为标记「这一类缺口确实存在过」 |
 | `models/gen_volt.mjs` + `models/gen_kite.mjs` | 已核实**无差异** | hologram-hud | 生成 volt / kite 素材。2026-10-07 实测重跑产物与入库版**逐字节相同**（md5 volt `b25a8e24…` / kite `9f1badb7…`）⇒ 确定性生成物，**不跑与跑无差异**，故不为它改编排器 |
 | `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变）。2026-10-07 已量化（见下） |
 | `tools/still.mjs` | 只影响交付图 | rubber-hose | 同上 |
@@ -238,23 +260,56 @@ lemo-make.bat --help
 **静默** —— 与「让缺口可见」正好相反。所以单列一张登记表，报之前再核「脚本真在本 demo 里」**且**
 「`orchestratorRuns()` 确实返回 false」，于是将来某一步被编排器补上时它会**自动**不再报
 （`pitch.py` 是第一例；2026-10-07 补进编排器的 `trim_cmd.py` / `export_cues.mjs` / `words.py` 是第二、三、四例，
-它们已从登记表里**移除**，`runs[]` 镜像则同步**加入**）。
+它们已从登记表里**移除**，`runs[]` 镜像则同步**加入**。`video_png.mjs` 是**第五例，也是形态不同的一例** ——
+它不是「漏跑一步」而是**换渲染器**，同样已移除、已进 `runs[]`；移除后该表的 `impact: content` 一档**为空**，
+如实说明：内容级缺口目前**清零**，表结构保留，供将来如实登记新发现的内容级缺口。）
 
-★ **`tools/video_png.mjs`（risograph）为什么不接 —— 以及真要接该怎么做**：
+★ **`tools/video_png.mjs`（risograph）已接上（2026-10-07）—— 它是怎么修的**：
 它在 `build.sh:12` **替换** `core/render/video.mjs`：
 `node $D/tools/video_png.mjs $D --fps 24 --workers 3 --out $D/out/video24.mp4`。
-它用 **PNG 截图 + `yuv444p` 无损中间片**（`video.mjs` 用 JPEG q95 + `yuv420p`），画质不同、耗时更长。
-问题在于它的参数解析（`video_png.mjs:15-20`）**只认 `--fps / --workers / --q / --out / --from / --to`，
-不接受 `--size`**，而编排器的渲染行是硬编码的 `core/render/video.mjs` + `--size WxH` +
-`--out out/video_gpu.mp4` ⇒ 若只是「把 `renderVArgs` 换成 `video_png.mjs`」，`--size` 会被**静默丢掉**、
-画幅不对（9:16 尤其明显）；且它默认输出名是 `out/video24.mp4`（`build.sh:12`），
-与编排器下游要读的 `out/video_gpu.mp4` **对不上**（`mux.sh` 会找不到输入）。
-**真要接**需要三步（本轮**未做**，因为要动 `D:/lemo-opuscar` 的脚本，超出本次允许改动的范围）：
-① 给 `video_png.mjs` 补 `--size`（照 `core/render/video.mjs` 的 `takeSize` 语义接上 viewport）；
-② 在编排器里把它做成**替换**而不是追加（探测 `$D/tools/video_png.mjs` 存在时改走它）；
-③ 补一条「替换后仍要产出 `out/video_gpu.mp4`」的断言（或显式把 `--out` 指到 `video_gpu.mp4`）。
-在此之前，**它仍留在登记表里**（`impact: content`），
-让缺口保持可见 —— 要逐字节复现 risograph 的 `build.sh`，请直接跑它自带的 `build.sh`。
+它用 **PNG 截图 + `yuv444p` 无损中间片**（`video.mjs` 用 JPEG q95 + `yuv420p`）。
+★ **为什么这不是锦上添花**：risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 色度下采样里**会被吃掉** ——
+编排器此前出的 risograph 成片**网点被压掉**，视觉上就是降级版，属**产品正确性**问题。
+
+上一轮判「不接」的三条硬伤，本轮逐条处理：
+1. **它不接受 `--size`** ⇒ 已给 `video_png.mjs` 补上 `--size` / `--ratio`：照 `core/render/page.mjs` 的
+   `takeSize` **同源**解析（`{ w: W, h: H } = takeSize(args)`），**不自己发明一套**；`w/h` 传给**两处**
+   `openDemo`（probe 与每个 worker）；顺带补上 core 版有的 `requireDemo(dir)`。缺省仍是 1920x1080
+   （`FALLBACK_SIZE`）⇒ **不改默认、全库 35 个 `build.sh` 的调用零回归**。
+2. **它默认输出 `out/video24.mp4`，与下游要读的 `out/video_gpu.mp4` 对不上** ⇒ **经复核这条不成立**：
+   `video_png.mjs:18` 本来就吃 `--out`（`opt('--out', …)`），而编排器**显式传**了
+   `--out …/out/video_gpu.mp4` ⇒ 它写的就是 `video_gpu.mp4`。下游 `mux.sh` 读的正是这个名，
+   **无需改下游**。且渲染段原本就有「退出码 0 但没产出 `video_gpu.mp4` ⇒ 失败」的断言，输出名对不上会**大声拦下**。
+3. **补齐前两项要改 `D:/lemo-opuscar` 的脚本** ⇒ 本轮该文件**在允许改动范围内**，并已**镜像 WSL**、
+   逐字节核对 md5 两侧相同（`node scripts/check-dual-copy-sync.mjs` **exit 0**）。
+4. ★ **上一轮没发现、本轮端到端跑出来的第 4 条硬伤：拼接一步在本机必 EBUSY。**
+   `core/render/video.mjs:108` 的拼接显式传了 `execFileSync(…, { stdio: ['ignore','inherit','inherit'] })`，
+   而 `video_png.mjs:42` 的**同名同用途**调用**没传**（副本漂移）⇒ 默认 `['pipe','pipe','pipe']`。
+   本机实测：**Node 的 `spawnSync`/`execFileSync` 只要走 pipe 就 EBUSY**（连
+   `spawnSync('cmd.exe',['/c','echo','hi'])` 都 EBUSY；换 `stdio:'ignore'`/`'inherit'` 则 `status 0`）——
+   `lemo-make.mjs:261` 早就记过「本环境 spawnSync 一律 EBUSY」。**后果**：960 帧全渲完（86s、分段 1.4GB）
+   后在拼接处 `exit 1`，**全部白渲**。修法 = 照 core 版补上同一个 `stdio` 选项（**不是新发明**，是补齐副本漂移），
+   顺带让 ffmpeg 的报错能真的打到 stderr（pipe 时被 `execFileSync` 吞掉）。
+   ★ 这条**不是**本轮引入的：改前 `video_png.mjs` 也长这样 ⇒ 该 demo 自己的 `build.sh` 在本机同样跑不到底。
+
+编排器侧的做法（`lemo-make.mjs` 渲染段，**不写死 slug**）：
+```js
+const demoRenderRel = [`${demoRel}/tools/video_png.mjs`]
+  .find(r => fs.existsSync(path.join(CFG.winLib, r)));
+const renderScriptRel = demoRenderRel || 'core/render/video.mjs';
+const renderVArgs = [renderScriptRel, demoRel, '--fps', … ];   // 其余参数与落点一字不动
+```
+形状照同文件里 `demoMuxRel` 的 `.find()` 候选写法。**只换可执行脚本，参数与 `--out` 落点一字不动**
+⇒ 下游 `mux.sh` / 帧数闸门 / 新鲜度断言全部无需改。同步把 `${d}/tools/video_png.mjs` 加进
+`orchestratorRuns()` 的 `runs[]`（否则起飞前检查会继续把它报成「编排器漏跑」），并从 `ORCH_SKIP_STEPS` 移除。
+
+★ 顺带核过：risograph 自带的 `tools/mux.sh` 有 `V/A/O` 签名 ⇒ 编排器**本来就会**用它，那条不是缺口。
+
+★ **一处已知边界（本轮未动，如实登记）**：`qIntent()` 用 `pick('video.mjs')` 从 `build.sh` 的**渲染行**
+取字面量 `--q`，而 risograph 的渲染行写的是 `video_png.mjs` —— 子串 `video.mjs` **不匹配** ⇒ 这一行取不到 `--q`。
+**今天无影响**（全库只有 risograph 用 `video_png.mjs`，而它的渲染行本来就没有 `--q`，取不到与取到 `null` 等价）。
+若将来某个 demo 的 `video_png.mjs` 行带了字面量 `--q`，需要把 `qIntent()` 的 needle 扩成
+`['video.mjs', 'video_png.mjs']`（**有意不做**：为今天不存在的用例改编排器，风险大于收益）。
 
 ★ **静帧（`core/render/still.mjs`）陈旧度已量化（2026-10-07）**：只影响交付图，**成片不变**，故不为它加
 编排器步骤（风险高、收益低）。实测做法与结论如下（原始数据见 `D:/lemo-tmp/agent-orchgap/`）：
@@ -453,7 +508,8 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 
 ```
 lemo-make.bat          入口（找 node → 转调 .mjs）
-lemo-make.mjs          主编排器
+lemo-make.mjs          主编排器（通路 ①：主题 + 风格）
+dub.mjs                第二入口（通路 ②③：文案 + 风格 / 文案 + 口播 + 风格）
 README.md              本文件
 test/smoke.mjs         冒烟测试入口（零依赖）
 test/cases.mjs         冒烟测试用例

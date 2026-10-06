@@ -1005,6 +1005,10 @@ async function main() {
         if (batch.length >= 2) break;
         await sleep(300);
       }
+      // ★ 先登记、再断言：万一下面的断言红了，这两个任务也已经进了 JOB_IDS，会由 finally 的
+      //   cleanupJobs() 从注册表 + 日志里摘掉。否则「失败的 B7」会把自己刚建的批次标记**留在
+      //   .console/index.json 里**，成为下一次运行的毒点（本用例原先「越跑越红」的自我投毒路径）。
+      for (const j of batch) JOB_IDS.add(j.id);
       need(batch.length === 2,
         `本次新增的批次任务应为 2 条，实际 ${batch.length} 条` +
         `（入队前已有 ${priorBatchIds.size} 个历史批次，已排除）`);
@@ -1012,17 +1016,32 @@ async function main() {
       need(a.batchId === b.batchId, `两条任务的 batchId 不同：${a.batchId} / ${b.batchId}`);
       need(a.batchIndex === 1 && b.batchIndex === 2, `批次序号是 ${a.batchIndex}/${b.batchIndex}，期望 1/2`);
       need(a.batchTotal === 2 && b.batchTotal === 2, `批次总数是 ${a.batchTotal}/${b.batchTotal}，期望 2`);
-      for (const j of batch) JOB_IDS.add(j.id);
       state.batchId = a.batchId;
       state.batchSlugs = batch.map((j) => j.slug);
       notes.push(`B7 入队 2 条：${batch.map((j) => `${j.slug}(${j.batchIndex}/${j.batchTotal})`).join(' ')} · batchId=${a.batchId}`);
 
       // 任务列表 DOM 里也要能看到批次标记（不是只有接口里有）
+      // ★ 只认**本次新建这一批**的标记。任务列表是**跨运行累积**的（注册表 lib/store.mjs 落盘，
+      //   上一次运行留下的批次标记会原样留在表里）⇒ 扫全表 `[...#jobs .jbatch]` 会被历史残留绊倒
+      //   （实测踩过：表里混进历史 `批 1/1` / `批 2/3` ⇒ 本用例假红，见 test/README.md）。
+      //   每个标记都带 `data-batch-id`（web/app.js 渲染时写入）⇒ 据此过滤到本次这批。
+      const bid = JSON.stringify(a.batchId);
+      const grab = `[...document.querySelectorAll('#jobs .jbatch')].map(n => ({ id: n.dataset.batchId, t: n.textContent }))`;
       await cdp.evalJs(`document.getElementById('btnRefreshJobs').click()`);
-      await waitFor(cdp.evalJs, `document.querySelectorAll('#jobs .jbatch').length >= 2`, { timeoutMs: 15000 });
-      const badges = await cdp.evalJs(`[...document.querySelectorAll('#jobs .jbatch')].map(n=>n.textContent)`);
-      need(badges.every((t) => /^批 \d+\/2$/.test(t)), `任务列表里的批次标记长这样：${JSON.stringify(badges)}，期望「批 N/2」`);
-      notes.push(`B7 任务列表批次标记：${badges.join(' / ')}`);
+      await waitFor(cdp.evalJs,
+        `${grab}.filter((n) => n.id === ${bid}).length >= 2`, { timeoutMs: 15000 });
+      const rows = await cdp.evalJs(grab);
+      const badges = rows.filter((n) => n.id === a.batchId).map((n) => n.t);
+      // 判据（**未放宽**）：这一批的标记必须**恰好 2 个**，且**恰好是**「批 1/2」与「批 2/2」——
+      //   既钉住格式（`批 <序号>/<总数>`），也钉住序号覆盖 1..2、总数 == 2。
+      need(badges.length === 2,
+        `本次这批（batchId=${a.batchId}）在任务列表里应有 2 个标记，实际 ${badges.length} 个：${JSON.stringify(badges)}`);
+      const wantBadges = ['批 1/2', '批 2/2'];
+      const gotBadges = badges.slice().sort();
+      need(gotBadges.join('|') === wantBadges.join('|'),
+        `本次这批（batchId=${a.batchId}）的任务列表标记是 ${JSON.stringify(gotBadges)}，期望 ${JSON.stringify(wantBadges)}` +
+        `（全表标记 = ${JSON.stringify(rows.map((n) => n.t))}，其中历史残留已按 batchId 排除）`);
+      notes.push(`B7 任务列表批次标记（仅本次 batchId=${a.batchId}）：${badges.join(' / ')}`);
     });
 
     await runCase('B8 Ctrl+Enter 真的能启动任务（不是只绑了个监听器）', async () => {

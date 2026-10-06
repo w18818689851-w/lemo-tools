@@ -405,6 +405,15 @@ const DOCS = [
 //     `vendor/`、`node_modules/`、`.git/`、`*.min.js`。
 const SRC_SKIP = /[\\/](?:vendor|node_modules|\.git)[\\/]|\.min\.js$/;
 const SRC_EXT = /\.(?:mjs|js|py|sh)$/;
+/**
+ * ★ 2026-10-07 扩扫描范围③：`scripts/**` **纳入**，但**本闸门自己不扫自己**（见头注释「扩扫描范围③」）。
+ *   理由（实测）：本闸门头注释**必须**用反引号举「引用形态」的例子（`a.js:1` / `foo.js:12` /
+ *   `X.md:100` / `r.classId:0`…）并**引用真实语料实例**当判据证据（(d) 清单 13 条、
+ *   `_distill.json` 清单 17 条）—— 这些是**引用形态规范 / 某一时刻的快照**，
+ *   头注释自己就写明「语料在动，本清单不是永久名单」⇒ 拿它们当真引用核 = **结构性误报**。
+ *   实测：该文件占 `scripts/**` 引用的 **97/157 = 62%**、占全部命中的 **41/44 = 93%**。
+ */
+const SELF_REF_GATE = path.join(ROOT, 'scripts', 'check-ref-lines.mjs');
 /** 目录下**根级**（不递归）匹配的文件 —— 用于 `lib/*.mjs` 与工具仓根 `*.mjs` */
 const topLevel = (dir, re) => {
   try { return fs.readdirSync(dir).filter((n) => re.test(n)).map((n) => path.join(dir, n)); } catch { return []; }
@@ -426,6 +435,8 @@ const SRCS = [...new Set([
   ...styleSlugs.flatMap((s) => collectSrc(path.join(STYLES, s, 'demo'), SRC_EXT)),  // styles/*/demo/**
   ...collectSrc(path.join(OPUSCAR, 'core'), SRC_EXT),                 // core/**
   ...collectSrc(path.join(OPUSCAR, 'tools'), SRC_EXT),                // tools/**
+  // ★ 2026-10-07 扩扫描范围③：`scripts/**`（29 个闸门 + 工具脚本）—— **排除本闸门自己**（见头注释）。
+  ...collectSrc(path.join(ROOT, 'scripts'), SRC_EXT).filter((p) => p !== SELF_REF_GATE),
 ])].sort();
 
 /** 本次真正扫的文件 = 文档 + 源码 */
@@ -499,6 +510,10 @@ function rootsFor(file) {
   out.push(path.dirname(file));
   out.push(ROOT, path.join(ROOT, 'scripts'), path.join(ROOT, 'lib'), path.join(ROOT, 'test'),
     path.join(ROOT, '_distill'), path.join(ROOT, '_distill', 'logs'));
+  // ★ 2026-10-07：补 `lib/style-skills/`（`DISTILL`）—— SKILL.md 的**正主目录**此前**不在解析根里**
+  //   ⇒ 脚本里写 `<slug>/SKILL.md:N`（如 `paper-lantern/SKILL.md:114`）会被误判成「(a) 文件不存在」。
+  //   实测（逐条对比 971 份语料 / 3824 处引用的解析结果）：**0 差异** ⇒ 纯误报修正，不动判据。
+  out.push(DISTILL);
   out.push(OPUSCAR, path.join(OPUSCAR, 'core'), path.join(OPUSCAR, 'tools'), STYLES);
   return [...new Set(out)];
 }
@@ -722,7 +737,8 @@ console.log(`        ${DOCS.filter((p) => p.endsWith('_distill.json')).length} �
 console.log(`  源码：${topLevel(path.join(ROOT, 'lib'), /\.mjs$/).length} 份 lib/*.mjs、${topLevel(ROOT, /\.mjs$/).length} 份工具仓根 *.mjs、` +
   `${SRCS.filter((p) => /[\\/]demo[\\/]/.test(p)).length} 份 styles/*/demo/**、` +
   `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'core'))).length} 份 core/**、` +
-  `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'tools'))).length} 份 tools/**（.mjs/.js/.py/.sh；已排除 vendor/、node_modules/、*.min.js）`);
+  `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'tools'))).length} 份 tools/**、` +
+  `${SRCS.filter((p) => p.startsWith(path.join(ROOT, 'scripts'))).length} 份 scripts/**（.mjs/.js/.py/.sh；已排除 vendor/、node_modules/、*.min.js；**本闸门自己不扫自己**）`);
 console.log(`引用：${refCount} 处；解析到文件 ${resolvedCount} 处；其中 ${cApplied} 处进入 (c) 内容比对\n`);
 
 const SHOW = { '(a)': '(a) 文件不存在', '(b)': '(b) 行号超范围', '(c)': '(c) 内容对不上', '(d)': '(d) 被引行没有内容（空行/分隔线/围栏/幻影行）' };

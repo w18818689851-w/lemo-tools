@@ -44,7 +44,7 @@ node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 �
 
 | 用例 | 断言 |
 |---|---|
-| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `58e2bcbae682b4167444f0dd66445771` |
+| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `315887dd9e38702bb057e02f38a97b54` |
 
 控制台只是**包装层**，绝不能改编排器。这条是整个项目的红线，失败信息直说「编排器被改动了 —— 控制台不应该修改它」。
 
@@ -187,13 +187,6 @@ hologram-hud 的确定性素材生成器 `gen_volt.mjs` / `gen_kite.mjs` 新增�
 
 ★ 另两条**判断为不改编排器**（如实登记，不硬做）：
 
-- **`tools/video_png.mjs`（risograph）—— 不接，理由：换渲染器 + 会静默丢画幅。** 它**替换**
-  `core/render/video.mjs`（PNG 截图 + `yuv444p` 无损中间片），不是「追加一步」；而它的参数解析
-  （`video_png.mjs:15-18`）只认 `--fps / --workers / --q / --out`，**不接受 `--size`** —— 编排器的
-  `renderVArgs` 硬编码 `core/render/video.mjs` + `--size WxH`，直接接上会**静默丢掉画幅**（9:16 会不对）。
-  它是「换渲染命令」而非「加一步」，风险过高，**本轮不接**；仍留在 `ORCH_SKIP_STEPS`（`impact: content`），
-  实现方案见 `README.md` 的「编排器与 `build.sh` 的差异清单」表。顺带核过：risograph 自带的 `tools/mux.sh`
-  有 `V/A/O` 签名 ⇒ 编排器**本来就会**用它，那条不是缺口。
 - **`models/gen_volt.mjs` / `models/gen_kite.mjs`（hologram-hud）—— 不跑无差异。** 重跑产物与入库版
   **逐字节相同**（实测 md5：volt `b25a8e24f408fd44b241b3ee1f9169e4` / kite
   `9f1badb70c1bf786c285bec358a4c168`）⇒ 是确定性生成物，不重生成**不产生任何差异**。故不为它改编排器；
@@ -202,6 +195,119 @@ hologram-hud 的确定性素材生成器 `gen_volt.mjs` / `gen_kite.mjs` 新增�
 
 这是**有意改编排器**（补三个真缺口 + 如实降级一条误报，不削弱任何校验），故基线 md5 由
 `caab495c8104130732266e5d1bf2db8b` → `58e2bcbae682b4167444f0dd66445771`。红线本身**未动**（仍然拦人）。
+
+★ **2026-10-07 下半场更新（接上 risograph 的 `tools/video_png.mjs`：换渲染器，PNG 无损中间片）**：
+上面「另两条判断为不改编排器」里的 `tools/video_png.mjs` 当时判「不接」，本轮**已接上**。这不是画质偏好 ——
+risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/render/video.mjs` 用 `mjpeg` + `yuv420p`
+⇒ 编排器此前出的 risograph 成片**视觉上是降级的**（网点被压掉），属**产品正确性**问题。
+它在 `build.sh:12` **替换**渲染器（PNG 截图 + `yuv444p` 无损中间片），不是「追加一步」。
+上一轮列了三条硬伤；本轮逐条处理时**又跑出第 4 条**（2b，拼接一步在本机必 EBUSY）—— 4 条都记在下面。
+
+1. **给 `styles/risograph/demo/tools/video_png.mjs` 补 `--size` / `--ratio`**（上一轮列的第 ① 条硬伤）。
+   照 `core/render/page.mjs` 的 `takeSize` **同源**解析（`const args = …, { w: W, h: H } = takeSize(args), …`），
+   **不自己发明一套解析**；`w/h` 传给**两处** `openDemo`（probe 与每个 worker），顺带补上 core 版有的
+   `requireDemo(dir)`（本文件自称是 `core/render/video.mjs` 的副本，这是副本该有的契约）。缺这个口时
+   编排器传的 `--size WxH` 会被**静默丢掉**、按缺省 1920x1080 出片（9:16 尤其明显）。
+   缺省值仍是 1920x1080（`FALLBACK_SIZE`，与全库 35 个 `build.sh` 的调用一致）⇒ **不改默认、无回归**。
+2. **编排器渲染段改成候选探测**（上一轮列的第 ③ 条硬伤里「要改编排器」的那一半）：新增
+   `const demoRenderRel = [`${demoRel}/tools/video_png.mjs`].find(r => fs.existsSync(path.join(CFG.winLib, r)))`
+   → `renderScriptRel = demoRenderRel || 'core/render/video.mjs'`，再拿它当 `renderVArgs[0]`。
+   形状照同文件里 `demoMuxRel` 的 `.find()` 候选写法；**不写死 slug**（路径由 `demoRel` 拼出来）。
+   ★ **只换可执行脚本，参数与落点一字不动**：`--fps / --workers / --size WxH / --out out/video_gpu.mp4 / --q`
+   全部照旧。
+2b. ★ **上一轮漏掉的第 4 条硬伤（本轮端到端跑出来的）：`video_png.mjs` 的拼接一步在本机必 EBUSY。**
+   `core/render/video.mjs:108` 的拼接显式传了 `execFileSync(…, { stdio: ['ignore','inherit','inherit'] })`，
+   而 `video_png.mjs:42` 的**同名同用途**调用**没传**（副本漂移）⇒ 默认 `['pipe','pipe','pipe']`。
+   本机实测：**Node 的 `spawnSync`/`execFileSync` 只要走 pipe 就 EBUSY**（`spawnSync('cmd.exe',['/c','echo','hi'])`
+   同样 EBUSY；换成 `stdio:'ignore'` 或 `'inherit'` 则 `status 0`）—— `lemo-make.mjs:261` 早就记过
+   「本环境 spawnSync 一律 EBUSY」。**实测后果**：第一次端到端跑，6 个 worker 把 960 帧全渲完
+   （86s、分段合计 1.4GB）后在拼接处 `EBUSY` 退出码 1 —— **全部白渲**。修法是照 core 版补上同一个
+   `stdio` 选项（**不是新发明**，是补齐副本漂移），顺带让 ffmpeg 的报错能真的打到 stderr
+   （pipe 时被 `execFileSync` 吞掉）。
+   ★ 这条**不是**本轮引入的：改前 `video_png.mjs` 也长这样 ⇒ 该 demo 自己的 `build.sh` 在本机同样跑不到底。
+3. ★ **上一轮列的第 ② 条硬伤（输出名对不上）经复核不成立、无需改**：`video_png.mjs:18` 本来就吃
+   `--out`（`opt('--out', …)`），而编排器**显式传**了 `--out …/out/video_gpu.mp4` ⇒ 它写的就是
+   `video_gpu.mp4`，`mux.sh` 读的正是这个名。另：渲染段原本就有「**退出码 0 但没产出 `video_gpu.mp4`
+   ⇒ 失败**」的断言（`if (!fs.existsSync(v)) return { ok:false, … }`），所以「输出名对不上」会被**大声拦下**，
+   不会静默出一部错片 —— 上一轮想要的那条断言本来就在。
+   （上一轮的第 ③ 条「要改 `D:/lemo-opuscar` 的脚本」由第 2 条 + 第 5 条覆盖：本轮该文件在允许改动范围内，
+   且已镜像 WSL。）
+4. ★ **红线三处同步**（本表 + `test/cases.mjs` 的 `ORCH_MD5` + `README.md` 的差异清单）：
+   `58e2bcbae682b4167444f0dd66445771` → `315887dd9e38702bb057e02f38a97b54`。
+   另同步 `orchestratorRuns()` 的 `runs[]`（加入 `${d}/tools/video_png.mjs`，否则起飞前检查会继续把它
+   报成「编排器漏跑」）并从 `ORCH_SKIP_STEPS` **移除**该条（它已被编排器跑；移除后该表的
+   **impact: content 一档为空**，如实说明：内容级缺口目前清零，表结构保留）。
+5. ★ **库仓文件已镜像 WSL 并逐字节核对**（`D:/lemo-opuscar/.../tools/video_png.mjs` →
+   `/home/lemo/lemo-opuscar/.../tools/video_png.mjs`，`tr -d "\r"` 后 md5 两侧相同；
+   `node scripts/check-dual-copy-sync.mjs` **exit 0**）。
+6. ★ **端到端证据**（`node lemo-make.mjs risograph --out D:/lemo-tmp/agent-risograph/e2e --ratio 16:9 --skip-sync`，
+   `--out` 指临时目录，**不碰已发布样板片**）：
+   - **走的是 video_png.mjs**：编排器日志/dry-run 里的渲染命令行是
+     `node styles/risograph/demo/tools/video_png.mjs styles/risograph/demo --fps 24 --workers 6 --size 1920x1080 --out D:\lemo-opuscar\…\out\video_gpu.mp4`
+     （`--size 1920x1080` 由 `--ratio 16:9` 推出 ⇒ 画幅没丢）。
+   - **中间片是 PNG 不是 JPEG**：渲染期抓到的 ffmpeg 进程命令行（Windows `Win32_Process`，见
+     `D:/lemo-tmp/agent-risograph/ffargv.txt`）为
+     `ffmpeg -f image2pipe -c:v png -i - -c:v h264_nvenc -preset p5 -rc constqp -qp 0 -profile high444p -pix_fmt yuv444p …\out\seg_N.mp4`
+     —— 输入是 **`-c:v png`**、输出是 **`yuv444p` / `high444p`**；中间片 `ffprobe`：
+     `profile=High 4:4:4 Predictive, pix_fmt=yuv444p, 1920x1080, 960 帧, 1316.5 MB`。
+     对照：同一部片用 `core/render/video.mjs`（JPEG 中间片）渲 = `profile=High, pix_fmt=yuvj420p, 74.1 MB`。
+   - **两版有可见差异（像素比对：同一部片 / 同 960 帧 / 同 `--size 1920x1080` / 同 `--fps 24`，只换渲染器）**：
+     `SSIM  Y 0.969497 | U 0.781050 | V 0.773607 | All 0.841384`；
+     `PSNR  y 31.596 | u 25.213 | v 27.114 | avg 27.253 dB`。
+     逐平面**平均绝对差**（`ffmpeg -pix_fmt yuv444p -f rawvideo` 全片流式比对 1,990,655,525 个像素；
+     **注意 yuv444p 是 planar，三平面各 1920×1080 字节，别按交织读**）：
+     `Y 13.482（max 190，差>16 占 43.87%）| U 9.323（max 131，18.82%）| V 7.554（max 120，12.96%）`，三平面合计 **10.120/255**。
+     RGB 交织口径另算：`R 12.701 / G 12.622 / B 12.734`，合计 **12.685/255**，单像素最大通道差 **252**，
+     **通道差 >16 的像素占 45.60%**。
+     ★ **差异的重心在色度**：SSIM 上 `Y 0.970` 而 `U/V 只有 0.78` —— 亮度里网点的**结构**还在，
+     色度里已被 4:2:0 抹平，正是「网点色被吃掉」的特征（绝对差 Y 最大是因为 JPEG 在网点边缘有振铃）。
+   - **抽帧亲眼看**：`D:/lemo-tmp/agent-risograph/riso-frames/` 下 `{jpeg,png}_f485_zoom.png`（t=20.17s）与
+     `{jpeg,png}_t10_zoom.png`（t=10s）。**PNG 版**：蓝点/绿点**颗颗分离、边缘锐利**，底色是**干净的白**，
+     `BAKERY` 白字压在蓝底上**无彩边**。**JPEG 版**：同位置的网点被抹开、白底泛**米黄/灰**，
+     粉伞边缘有**品红彩边**、伞内白区出现**灰色斑点**（4:2:0 色度下采样的典型伪影）。
+   - **GPU 证据两条**：① 渲染期抓到的 ffmpeg 命令行含 **`-c:v h264_nvenc -preset p5`**；
+     ② 混流期在 WSL 抓 `/proc/<pid>/cmdline`（`D:/lemo-tmp/agent-risograph/mux-proc.txt`）得到
+     `ffmpeg … -map [v] -map [a] -c:v h264_nvenc -preset p5 -profile high -rc vbr -cq 20 -b:v 0 -r 24 -c:a aac …`
+     —— 且这次重跑 mux 的成片与编排器交付的那份**逐字节相同**（md5 均 `5edf6a4ee3a64436d827b0299c68b9ff`）
+     ⇒ 抓到的是**同一次编码**。
+     ③ ★ **从成片文件本身读编码器特征串（有字面量，不是只能读 profile）**：
+     `ffprobe -show_streams` 读**成片**得 `streams[0].TAG:encoder = "Lavc60.31.102 h264_nvenc"`
+     （`Lavc60.31.102` 是 **WSL 侧** ffmpeg 的版本号，与「混流跑在 WSL」一致）；
+     PNG 中间片得 `TAG:encoder = "Lavc63.1.102 h264_nvenc"`（**Windows 侧** ffmpeg）。
+     （`format` 级的 `TAG:encoder=Lavf60.16.100` 才是 muxer 名，别拿它当编码器。）
+     另做**判别器**对照实验（同源 12 帧分别编码）：`libx264` 会把 `x264 - core 165 r3223` 写进 bitstream，
+     `h264_nvenc` **不写**；本次成片与中间片**都不含 `x264 - core` 串** ⇒ 与 `nvenc` 标签互证。
+   - **样板片未被动过**：`D:/lemo-films/risograph/risograph.mp4` 与 `.srt` 跑前跑后 md5 **完全相同**
+     （`6b2b5a7d8d0bec2deb8894a9b128e3f1` / `9db104a4c80bc11cae8495f59091dbc6`）。
+   - **两仓 git status 对照**：库仓跑前**干净**、跑后**只有** `M styles/risograph/demo/tools/video_png.mjs`
+     （本次有意改动）—— `.srt` / `events.json` / `stills/*` / `poster.jpg` **一个都没被覆写**
+     （编排器把 `.srt` 写在 **WSL 侧**的库里，Windows 侧那份未动）；工具仓跑前干净、跑后 5 个本次改动文件。
+     ⇒ **无需从备份还原**（备份在 `D:/lemo-tmp/agent-risograph/backup/`，已核对无差异）。
+   红线本身**未动**（仍然拦人）。
+   ★ **本次端到端跑出来的两处环境/仓库事实（如实记录）**：
+   （i）本机 **Node `spawnSync`/`execFileSync` 只要 stdio 走 pipe 就 EBUSY**（见 2b）；
+   （ii）**`D:/lemo-tmp/agent-risograph/` 被另一个并发智能体同时写入**（目录里出现 `jpg.raw` / `png.raw`
+   各 ≈5.97 GB、`frames/jpg_10.0.png` 等**非本次产物**）⇒ 该目录**不是**独占的；本次自己的产物一律放在
+   子目录 `e2e/`、`jpeg/`、`riso-frames/`、`backup/` 下，未删改任何非本次文件。
+7. ★ **验收跑的退出码（本次执行实测，如实记录；含两条「不是本次改动引入」的红）**：
+   - `node --check lemo-make.mjs` / `video_png.mjs` **exit 0**；五个改动文件 CR 计数全为 **0**（纯 LF）。
+   - **30 个闸门全 `exit 0`**（逐个跑 `scripts/check-*.mjs`，含 `check-film-delivery` / `check-dual-copy-sync`
+     / `check-render-venc` / `check-ref-lines`）。★ 顺带一条：`check-render-venc.mjs` 的 **B 类 backlog 清单**
+     仍把 `styles/risograph/demo/tools/video_png.mjs` 列作「**不在出片路径上的**手工脚本」——
+     本轮之后它**已经**在出片路径上了，该清单的**分类过期**（只是措辞，B 类**不判 FAIL**，故闸门仍 exit 0）。
+     本条**不在允许改动范围内**（`scripts/` 不许动），**留给下一轮**：把它从 `B_FILES` 挪到 `pushA(...)`。
+   - **17 个测试入口**：15 个首跑即 `exit 0`。两个红，**都不是本次改动引入**，且都有独立证据：
+     · `test/smoke.mjs` 首跑 `exit 1`（⑤ CLI dry-run 2 条红）—— **原因是并发锁竞争**：
+       同一时刻另一个 `lemo-make ascii-crt` 占着 `D:\lemo-films\.ascii-crt.lock`，
+       手动复现得到一模一样的「已有另一个 lemo-make 在跑同一个 demo（pid 12720）」。
+       把锁目录隔离（`LEMO_LOCK_DIR=<临时目录> node test/smoke.mjs`）后 **40 passed / 0 failed / exit 0**。
+     · `test/ui.test.mjs` 三次干净重跑：`56/3`（B7,C2,C3）→（日志被两个进程混写，作废）→ **`58 passed / 1 failed`（只剩 B7）**。
+       B7 的失败断言是**扫全表**的：`[...document.querySelectorAll('#jobs .jbatch')]` 里每一条都得是 `批 N/2`，
+       而持久化的任务历史 `D:\lemo-films\.console\index.json`（**不可用环境变量隔离**，`lib/store.mjs:25` 硬编码）
+       里有**另一个并发智能体**在 `2026-10-06T19:10:23Z` 留下的 `batchTotal:1` 任务（`jmux200kg-1` / `impasto`）
+       ⇒ 列表里混进一个 `批 1/1`。**本次改动与它无关**：B7 走 `--dry-run --skip-sync`，根本不进渲染段，
+       且本次从未起过控制台/批次。★ 这是 `ui.test.mjs` 自身的**用例脆弱性**（API 侧已按 `priorBatchIds` 排除历史、
+       DOM 侧没有）—— 修它要改 `test/ui.test.mjs`，**不在允许改动范围内**，如实登记留给下一轮。
 
 ### ② 行尾规则未被破坏
 
@@ -702,7 +808,7 @@ test/README.md      本文件
 | `scripts/check-aspect-prose.mjs` | **SKILL.md 画幅论述闸门**（拦「文档撒谎 / 人读到的与机器读到的不同」）。★ 由来：事实源是 `lib/aspects.mjs` 的 `styleAspects(slug)`（读 `styles/<slug>/demo/film*.js` 的 `FILM_META.aspects` **字面量**，**没声明 = 只支持 16:9**），文档源是 `lib/style-skills/<slug>/SKILL.md` 的 §2 / §9 / §11；**实测事故**：某风格已改造为支持 9:16，但 `SKILL.md` **只改了一半**、还残留 1 处「只支持 16:9」，**当时 21 个闸门全绿**，是人工 `grep -c "只支持 16:9"` 才抓到的 ⇒ 立此闸门。判据**双向**：**正向（FAIL）** 已支持 9:16 却仍称「只支持 16:9 / 9:16 不可用 / 会裁右侧 43.75% / 架构级缺陷」；**反向（FAIL）** 未支持 9:16 却称「已适配 9:16 / 已支持竖屏」。★ 历史语境豁免与 `check-tp-prose` **同源**（项目习惯「保留原句 + 历史标记」）：① 命中落在引号（`「」`/`『』`/`“”`）或删除线（`~~…~~`）内 ⇒ 豁免；② 整行含历史标记（`已修/原记/已作废/旧文档`…）也豁免，**但若整行同时含「当前结论」标记**（`现状/当前结论/目前/仍然/依旧`）⇒ **不豁免**（防「一刀切豁免」把「披着历史外衣的当前结论」放过）。行内提到**别的风格名**的单列「交叉引用」不计 FAIL。★ **失明守卫**：风格文档目录不存在 / 枚举到 0 个风格 / 事实源目录不存在 / `styleAspects()` 对全部风格都探不到影片模块 ⇒ **FAIL 并明说「本闸门已失明」**。★ 事实源须在 **Windows 侧**跑（WSL 里会降级成默认值、把全部风格误报 `declared=false`）。`--ignore <slug,…>`（或 `LEMO_ASPECT_PROSE_IGNORE`）可显式排除**正在并行改造**的风格（默认查全部 43 个，非硬编码豁免）。支持 `LEMO_SKILL_ROOT` / `LEMO_STYLES_ROOT` 覆盖（变异测试用） | 秒级 |
 | `scripts/check-dual-copy-sync.mjs` | **全仓「两份副本必须同步」闸门**（约定三）。★ 由来：2026-10-04 一次只读全仓审计发现 —— **渲染读 WSL 侧**（`lemo-make.mjs` 用 `CFG.wslLib`）、**源码指纹读 WIN 侧**（`style-scan.mjs` 默认 `D:/lemo-opuscar/styles`）⇒ 两份一旦不一致，**指纹记录的根本不是被渲染的那份**，`style-distill.mjs plan` 会**永远报「已蒸馏且未变」**（静默失效）。实测真漂移：`engraving` 风格 **9 个源文件**（WIN 10-02 新增 3 个 `subjects/*` + 加 `setFonts()` CJK 支持，**从未同步到 WSL**）与根级 `MAINTAINING.md`。判据：**源文件（`.sh .mjs .js .py .html .css` + 根级 `STYLE.md`/`DEMO.md`/`style.json`）逐字节不一致或单侧缺失 ⇒ FAIL**；**生成物**（`*.srt`、`dur/words/cues/events/lines/score/lips*.json`、`demo/out|voices|voices_raw/**`、`content*.json`）与**资产**（`core/audio/instruments/**`、`core/lang/fonts/**`、WIN 独有工作区 `creative/**`）只列 backlog **不判 FAIL**（不同宿主由流水线各自生成，漂移正常）；★ **防空转**：任一侧扫到 0 个文本文件或 WSL 不可达 ⇒ **判失明**（实测把 `LEMO_WSL_ROOT` 指到不存在路径 ⇒ 正确判失明 exit 1）。★★ **2026-10-06 补第 ⑤ 条判据「git 历史一致性」（参考级，一律不判 FAIL）**：上面那些判据**只比工作区文件 md5** —— 而两份副本是**两份独立仓库**（各有 `.git`、同一个 `origin`）⇒ **两侧 git 历史分叉时旧版闸门看不见**。实测（本次）：WIN HEAD `b0de9e7`（刚提交）、WSL HEAD `f3c590d`、WSL `status` **307** 条；WSL **看不到** `b0de9e7`（`cat-file` ⇒ `Not a valid object name`）⇒ **那个提交只在 WIN 侧**；而**文件是同步的** ⇒ 旧版**全绿**、历史却已分叉。★ 危害：WSL 那份一旦被**当权威**或**重新克隆**，会**丢掉本会话的全部提交**。判据（**只读、便宜、不扫全仓**）：两侧各跑一次 `git status --porcelain=v2 --branch`（**一次调用**同时拿 HEAD / 分支 / 未提交条数），再**双向** `git cat-file -t <对方 HEAD>` 探「一侧能否看到另一侧 HEAD」，若对象都在再用 `git rev-list --left-right --count A...B` **一次**拿领先/落后；报告两侧 HEAD + 分支 + 未提交条数 + 领先/落后 + **哪一侧看不到对方 HEAD** + **后果**。★★ **为什么一律不判 FAIL（本判据最容易做错的地方）**：① **今天就会红** —— 实测历史**已经**分叉（WIN 领先 1）⇒ 判 FAIL 会**立刻打破「27 闸门全绿」**，而项目习惯是「**先测误报率再定判据**、不轻易让既有闸门变红」；② **不重复** —— 真正**已造成损害**的形态是「两侧工作区文件不一致」，那是**既有判据**的职责（判 FAIL），历史分叉只是**潜在**风险；③ **不可自动修** —— 收敛要动仓库（push/pull/merge），本闸门**只读、不改任何仓库状态**，报 FAIL 等于「报一个本闸门无权修的错」，会诱导用 `--no-wsl` 绕过；④ **良性形态多** —— 一侧刚 commit 未 push、一侧正在 rebase、两侧各有未提交都是正常中间态，判死会把正常流程打红。⇒ 只**报告事实 + 后果**，方向由人定。★ **失明守卫**（失明**不许** FAIL、但必须**明说**）：任一侧 root 不存在 / 该路径下**没有 `.git`** / 该侧**没有 git 命令** / git 块未出现在 WSL 输出里 ⇒ 打印「**本判据已失明（原因）**」、**不判 FAIL、不影响退出码**。★ **性能**：WIN 侧最多 3 次 `git`（status/cat-file/rev-list，都 O(1)、不扫历史），WSL 侧**搭车**在既有那次 bash 调用里（**不额外起 `wsl.exe`**）⇒ 实测整闸门 **1.11s → 1.44s（+0.33s）**。★ 已知局限：只比**提交图与工作区脏污**，**不比 remote 配置**（两侧 URL 写法不同 —— HTTPS vs SSH —— 是良性的，判死会误报）；**不 `fetch`**（联网且会改仓库状态）。★ 变异验证（**临时仓库对**，不动真实仓库）：① 两侧 HEAD 相同 ⇒ 报「✓ 两侧 HEAD 相同」exit 0；② 只在一侧加一个**不改被比文件**的提交（改 `.gitignore`）⇒ 报「已分叉 + 对方看不到该 HEAD + 后果」、**源文件漂移 0 处、exit 0**（旧版此情形**全绿**，正是本次要止住的盲区）；③ 该侧存在但**无 `.git`** ⇒ 报「本判据已失明（没有 .git）」、exit 0；④ WSL 路径不存在 / WIN 路径不存在 ⇒ git 判据报失明（**不 FAIL**），exit 1 来自**既有文件判据**的失明守卫（原有行为）。★★ **2026-10-06 补第 ②b 条判据「无扩展名的控制文件」（**已实证**的盲区，不是推测）**：旧版 `isText()` = 「扩展名在 `TEXT_EXT` 里」**或**「文件名正好是 `TEXT_NAMES` 那五个」⇒ **`.gitignore` 这类点开头、无扩展名的控制文件一条都不匹配**（`isText('.gitignore')` ⇒ false）⇒ **两份副本的 `.gitignore` 内容不同（实测曾为 `a25c8d…` / `96112b…`）而本闸门全绿**。这类漂移是**真漂移**且更隐蔽：`.gitignore` 决定**哪些文件入库** ⇒ 两份不一致时「同一份源码在两边入库状态不同」、新克隆**少文件**。实测同类盲区还有 `styles/watercolor/demo/vendor/LICENSE-topojson-client` / `LICENSE-world-atlas`（无扩展名的许可边车，旧 `isText()` 同样判 false ⇒ 从不比对）。判据：`TEXT_NAME_GLOBS = ['.gitignore', '.gitattributes', '.editorconfig', '.gitmodules', 'LICENSE-*']` —— **同一份 glob 列表**同时喂给 WIN 侧匹配器（`globToRe`）与 WSL 侧 `find -name` ⇒ 两侧枚举**由构造保证一致**；命中即按**源文件**处理（漂移判 FAIL）；**不限层级**（本仓实测 2 个 `.gitignore`：根目录 + `styles/engraving/demo/music/.gitignore`）。★ 为什么是「固定 glob 列表」而不是「所有无扩展名文件」：后者会把 `.venv/bin/pip`、`demo/out/.video_gpu_segs-<rand>/pid` 这类**生成/第三方**无扩展名文件也拖进来，既拖慢又全是噪声。★ **失明守卫沿用既有那一条**（不另设）。★ **已知假阴（别当它不存在）**：glob 写漏/写错时两侧**同时**漏 ⇒ 闸门仍绿；本判据只保证「**被枚举到的**文件一致」，**不保证**「该枚举的都枚举到了」。★ **性能**：`find` 多 5 个 `-name`、WIN 侧每文件多 5 次正则 ⇒ 实测 ~3.1s **无可测变化**。★ **变异验证（WSL 侧临时硬链接镜像 + `LEMO_WSL_ROOT` 覆盖点，全程不动真实仓库）**：镜像基线「源文件漂移 0 / 生成物 95 / 资产 46」、exit 0（与真实仓库**逐项相同**）⇒ ① 镜像 `.gitignore` 尾部加 **1 字节**（`a25c8d…` 4901B → `11a43861…` 4902B）⇒ 报 `✘ .gitignore 两侧不一致 | WIN a25c8de8a3… 4901B | WSL 11a43861fd… 4902B | WSL 新`、**源文件漂移 1 处、exit 1**（旧版此情形**全绿**，正是本次要止住的盲区）；② 还原 ⇒ **复绿 exit 0**；③ 同理变异 `LICENSE-topojson-client` ⇒ 报出、exit 1（证明 `LICENSE-*` 这条 glob 也有牙）。真实仓库全程未动（`.gitignore` md5 前后一致）| ~1.5 秒 |
 | `scripts/check-venc-args.mjs` | **编码器参数组合的「真编一帧」闸门**。★ 由来：GPU 优先改造把 26 个编码器决策点的参数都动过，而**没人验证过 ffmpeg/nvenc 真的接受这些参数** —— 参数写错（如把 `-rc constqp` 写成 `-cq`）会**到出片时才炸**且没人拦。判据：从 `core/render/**` + `styles/*/demo/**`（`.sh`/`.mjs`）+ `tools/*.sh` 抽出**去重后的每个编码参数组合**，逐个跑 `ffmpeg … -f null -` 编 1 帧 320x240 纯色，**退出码 ≠ 0 ⇒ FAIL**（报出组合 + 出处文件:行 + ffmpeg 报错）。实测 **32 个组合（16 nvenc + 16 libx264）、来自 26 个源文件、~4 秒全绿**。★ 防空转：抽到 0 个组合 ⇒ **判失明**；`$(awk …)`/`$CRF` 等运行期变量会代入具体值，代入不了 ⇒ 判 FAIL 并逐条列出（不静默跳过）。已知局限：只验「ffmpeg 接受参数」，**不验画质/体积** | ~4 秒 |
-| `scripts/check-render-venc.mjs` | **「渲染一律 GPU 优先」硬规则的机器守卫**。★ 由来：用户硬规则（最高优先级）「渲染必须用我的显卡 GPU 跑，整个项目只要涉及渲染都要 GPU 优先渲染」；审计发现**出片路径上的编码器决策点**此前是「未设 `LEMO_VENC` ⇒ 静默 `libx264`(CPU)」（`core/render/video.mjs`、`core/render/mux.sh`、9 个被挑中的 `demo/tools/mux.sh`）—— 编排器默认导出 `h264_nvenc` 所以出片本来走 GPU，但**手工构建**（`sh styles/<slug>/demo/build.sh`）不设该变量 ⇒ 改之前真的走 CPU。判据：**未设 ⇒ `h264_nvenc`；显式 `libx264` ⇒ 才 CPU；其它值 ⇒ 报错退出**。A 类（出片路径）违规 ⇒ **FAIL**；B 类（15 个不在出片路径的手工脚本）只列 backlog（符合「已记录积压不判 FAIL」）；D 类（`D:/lemo-opuscar` + `D:/lemo-tools` 的文档/注释里**把「未设时走 CPU 软编」当成默认行为的过期声称**，报文件+行号+片段）⇒ **FAIL**（★ 只做关键词/上下文判定，**不做语义理解**，边界会漏；扫到 0 个文件 ⇒ 判失明）；★★ **2026-10-06 修一个已确认的假红：D 类判据加「相邻性」(e)** —— 旧**守卫**判据只要求「同一小句内同时出现 `libx264` + 默认类词 + 编码语境」；于是本**守卫**把表格里的 `\| libx264 \| 默认安装即有的软件编码器 \|` 判成过期声称（`默认` 修饰的是「默认**安装**」而非「编码器默认值」）—— 假红 3/3；新判据 (e)：限定词必须**直接修饰** `libx264` —— 二者之间只能是「空白 / 标点（**不含表格竖线 `\|`**）/ 连接词白名单（使用·用·走·是·为·的·时·编码器·情况·means·is·use·by·…·`LEMO_VENC`）」；且限定词在编码器名**之后**时其右侧须紧接边界/标点/连接词。**验证**：假红夹具 `fx-fp`（3 条）**改后 exit 0**、**改前 HEAD exit 1**；真声称**守卫**夹具 `fx-tp`（7 形态，含「默认使用 `libx264` 编码」）**改前 exit 1 / 改后仍 exit 1 且 7 条全中**（**守卫没瞎**）；真阴性真实语料（1548 文件）**改前改后输出逐字节一致、exit 0**；★ 新局限（有意取舍）：限定词与编码器名之间垫了实词/整段说明、或**分处表格两格**的真声称会被 (e) 漏报 —— 同形态也是假红来源，纯文本判据无法两全，本**闸门**选「宁漏不乱报」；★ **两份副本（`D:/lemo-opuscar` ↔ WSL `/home/lemo/lemo-opuscar`）逐字节不一致 ⇒ FAIL**；★ 解析出 0 个决策点 ⇒ **判失明**（防空转绿灯）。配套幂等回灌器 `scripts/patch-render-venc.mjs`（双副本 + `tr -d "\r"` + 两侧 `sh -n`/`node --check`） | 秒级 |
+| `scripts/check-render-venc.mjs` | **「渲染一律 GPU 优先」硬规则的机器守卫**。★ 由来：用户硬规则（最高优先级）「渲染必须用我的显卡 GPU 跑，整个项目只要涉及渲染都要 GPU 优先渲染」；审计发现**出片路径上的编码器决策点**此前是「未设 `LEMO_VENC` ⇒ 静默 `libx264`(CPU)」（`core/render/video.mjs`、`core/render/mux.sh`、9 个被挑中的 `demo/tools/mux.sh`）—— 编排器默认导出 `h264_nvenc` 所以出片本来走 GPU，但**手工构建**（`sh styles/<slug>/demo/build.sh`）不设该变量 ⇒ 改之前真的走 CPU。判据：**未设 ⇒ `h264_nvenc`；显式 `libx264` ⇒ 才 CPU；其它值 ⇒ 报错退出**。A 类（出片路径）违规 ⇒ **FAIL**；B 类（15 个不在出片路径的手工脚本）只列 backlog（符合「已记录积压不判 FAIL」）；D 类（`D:/lemo-opuscar` + `D:/lemo-tools` 的文档/注释里**把「未设时走 CPU 软编」当成默认行为的过期声称**，报文件+行号+片段）⇒ **FAIL**（★ 只做关键词/上下文判定，**不做语义理解**，边界会漏；扫到 0 个文件 ⇒ 判失明）；★★ **2026-10-06 修一个已确认的假红：D 类判据加「相邻性」(e)** —— 旧**守卫**判据只要求「同一小句内同时出现 `libx264` + 默认类词 + 编码语境」；于是本**守卫**把表格里的 `\| libx264 \| 默认安装即有的软件编码器 \|` 判成过期声称（`默认` 修饰的是「默认**安装**」而非「编码器默认值」）—— 假红 3/3；新判据 (e)：限定词必须**直接修饰** `libx264` —— 二者之间只能是「空白 / 标点（**不含表格竖线 `\|`**）/ 连接词白名单（使用·用·走·是·为·的·时·编码器·情况·means·is·use·by·…·`LEMO_VENC`）」；且限定词在编码器名**之后**时其右侧须紧接边界/标点/连接词。**验证**：假红夹具 `fx-fp`（3 条）**改后 exit 0**、**改前 HEAD exit 1**；真声称**守卫**夹具 `fx-tp`（7 形态，含「默认使用 `libx264` 编码」）**改前 exit 1 / 改后仍 exit 1 且 7 条全中**（**守卫没瞎**）；真阴性真实语料（1548 文件）**改前改后输出逐字节一致、exit 0**；★ 新局限（有意取舍）：限定词与编码器名之间垫了实词/整段说明、或**分处表格两格**的真声称会被 (e) 漏报 —— 同形态也是假红来源，纯文本判据无法两全，本**闸门**选「宁漏不乱报」；★ **两份副本（`D:/lemo-opuscar` ↔ WSL `/home/lemo/lemo-opuscar`）逐字节不一致 ⇒ FAIL**；★ 解析出 0 个决策点 ⇒ **判失明**（防空转绿灯）。★★ **2026-10-07 纳入第三个编码决策点：`D:/lemo-tools/dub.mjs`（第三条通路「文案+口播+风格」的最终编码）** —— 它此前**两处混流命令硬编码 `-c:v h264_nvenc`**、**不读 `LEMO_VENC`**、且**不被本闸门登记**：满足「一律本地 GPU / 禁止云端」，但**没有覆盖点**（打错成 `h264_nven`、或想临时走 CPU，都没有统一开关）⇒ 是出片路径上**唯一没被守住**的编码决策点。现纳入 A 类，口径照抄既有形状：**未设 ⇒ `h264_nvenc`；显式 `libx264` ⇒ CPU；其它值 ⇒ 报错退出**（错误文案与 `core/render/video.mjs` / `core/render/mux.sh` / `video_png.mjs` 逐字一致）。★ 它属 **lemo-tools 仓**（WSL 侧无副本）⇒ 展示路径加 `lemo-tools/` 前缀，且**不参与 C 类双副本比对**（否则报「WSL 侧缺失」这种**结构性假红**）。★ **误报率实测（先测再定稿）**：真实语料上 A 类决策点 11 → **12**（新增那 1 条判 ✓）、D 类扫描集与命中数与改动前**逐字不变**（1550 文件 / 0 命中）、C 类仍比 26 个文件 ⇒ **新增误报 0**。★ **变异验证**（临时树 `D:/lemo-tmp/agent-dubvenc/mut/faketools/`：把本闸门拷进去、`LEMO_OPUSCAR` 指向真实仓、`--no-wsl`，**全程不动真实 `dub.mjs`**）：① 还原成修复前形态（不读 `LEMO_VENC`）⇒ **exit 1 并点名 `lemo-tools/dub.mjs`**（「找不到 `process.env.LEMO_VENC || …`」）；② 把未设时的默认值改成 CPU 软编 ⇒ **exit 1 / `L64：未设 LEMO_VENC ⇒ 'libx264'（应为 h264_nvenc，GPU 优先）`**；③ 删掉非法值校验 ⇒ **exit 1 / `L20：没有「非法值 ⇒ 报错退出」的校验`**；对照组（修复后）**exit 0** ⇒ 新决策点**真的被判**（不是橡皮图章）。★ **新局限（已写进头注释 ③）**：mjs 侧只判**文件级**的「解析出 VENC/VARG + 非法值校验」，**不核对每个调用点真的用了那个变量** ⇒ 有人把 `-c:v h264_nvenc` 重新硬写回某一处命令里，本闸门**看不见**（假阴性；由 `check-venc-args.mjs` 真编一帧 + 人工读 diff 兜底）。配套幂等回灌器 `scripts/patch-render-venc.mjs`（双副本 + `tr -d "\r"` + 两侧 `sh -n`/`node --check`） | 秒级 |
 | `scripts/patch-render-venc.mjs` | 按上述判据**幂等回灌** 26 个编码器决策点（双副本一起写）。★ 为何另立而不复用 `patch-style-mux.mjs`：后者是**历史补丁工具**，对已含 `LEMO_LN_TP` 的文件**自动跳过**（它自己的头注释 :16-17 写明），13 个目标里 8 个已含 ⇒ 实际已不生效 | 秒级 |
 | `scripts/patch-style-mux.mjs` | 给各 demo 自带的 `mux.sh` 回灌 core 版已修的两处（幂等，支持 `--dry` / `--revert`） | 秒级 |
 | `scripts/check-esm-import-paths.mjs` | **动态 `import()` 传「运行时拼出来的绝对路径」的跨平台闸门**。★ 由来：2026-10-05 在 **Windows** 下跑 `styles/hologram-hud/demo/tools/export.mjs` **直接崩** —— `Error [ERR_UNSUPPORTED_ESM_URL_SCHEME]: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. On Windows, absolute paths must be valid file:// URLs. Received protocol 'd:'`。根因：`await import(path.join(ROOT, 'core/render/page.mjs'))` —— `path.join` 产出 `D:\…`，而 Node 的 ESM loader **只认 `file://` URL**（POSIX 下绝对路径可用 ⇒ 以前走 WSL 跑没暴露）。全库同款写法共 **6 处**（hologram-hud/export、silent-film 与 art-deco 的 dump_timeline、midcentury-toon/cues、crayon-book/subs、blueprint/tools/subs），已全改为 `import(pathToFileURL(p).href)`。判据：扫 `styles/<slug>/demo/**` 与 `core/**` 的 `.mjs/.js`，找动态 `import(<arg>)`，`<arg>` 是运行时拼的路径且**没有** `file://`/`pathToFileURL` ⇒ **FAIL**（报 `file:line` + 原始行）；`path.join/resolve/normalize` 直接命中，模板/拼接则看**首片段**（`./` `../` `/` 或 scheme ⇒ 放行，故 `import('./' + f + '.js')` 与 `import('data:…' + readFileSync(path.join(…)))` 不误报）。★ **失明守卫**：扫描根不存在 / 收集到 0 个文件 ⇒ FAIL 并明说「本闸门已失明」。★ 已知局限：**启发式（非 AST）** —— 路径来自变量 / `createRequire` / importmap 等**看不见**（假阴）；自定义 scheme 可能**误报** ⇒ 命中应**人工确认，别自动改代码**。修法：`import(pathToFileURL(<原表达式>).href)` | 秒级 |

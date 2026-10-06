@@ -227,14 +227,33 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     ★ 同步改了 orchestratorRuns() 的 runs[] 镜像（加入这三个脚本路径），否则起飞前检查会把它们
 //       继续报成「编排器漏跑」；同时从 `ORCH_SKIP_STEPS` 登记表里**移除**这三条（它们已被编排器跑）。
 //     ★ 另两条**判断为不改编排器**（如实登记，不硬做）：
-//        · `tools/video_png.mjs`（risograph）是**换渲染器**（PNG 无损中间片）而非追加一步，且它
-//          **不接受 --size**（编排器渲染行硬编码 core/render/video.mjs + --size）⇒ 直接接上会静默
-//          丢画幅。风险过高，本轮不接，仍留在登记表里（impact: content）+ README 给实现方案。
 //        · `models/gen_volt.mjs` / `gen_kite.mjs`（hologram-hud）：重跑产物与入库版**逐字节相同**
 //          （实测 md5 一致）⇒ 不跑无差异，登记表 impact 由 content 降为新增的 `none` 档。
+//        · （`tools/video_png.mjs` 当时也判为「不接」，2026-10-07 下半场已接上，见下一条。）
 //     这是**有意改编排器**（补三个真缺口 + 如实降级一条误报，不削弱任何校验），基线值随之更新
 //     （红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = '58e2bcbae682b4167444f0dd66445771';
+//   2026-10-07 下半场更新：**接上 risograph 的 `tools/video_png.mjs`（换渲染器：PNG 无损中间片）**。
+//     它**替换** core/render/video.mjs 而不是「追加一步」—— 原因不是画质偏好：risograph 的网点色在
+//     JPEG 的 4:2:0 里会被吃掉，用 core 版渲出的成片**视觉上是降级的**（网点被压掉），属产品正确性。
+//     (a) 给 `styles/risograph/demo/tools/video_png.mjs` 补上 `--size` / `--ratio`：照 core 的
+//         `core/render/page.mjs` 的 `takeSize` **同源**解析（不自己发明一套），并把 w/h 传给两处
+//         `openDemo`（probe 与每个 worker），顺带补上 core 版有的 `requireDemo`。缺这个口时编排器
+//         传的 `--size WxH` 会被**静默丢掉**、按 1920x1080 出片（9:16 尤其明显）。
+//     (a2) ★ 端到端跑出来的**第 4 条硬伤**：`video_png.mjs:42` 的拼接 `execFileSync` **没传 stdio**，
+//         而 `core/render/video.mjs:108` 的同名调用传了 `['ignore','inherit','inherit']`（副本漂移）。
+//         本机 Node 的 spawnSync/execFileSync **只要走 pipe 就 EBUSY**（lemo-make.mjs:261 早记过）⇒
+//         960 帧全渲完后在拼接处 exit 1、**全部白渲**。已照 core 版补齐同一个 stdio 选项。
+//         这条不是本轮引入的：改前 video_png.mjs 也长这样 ⇒ 该 demo 自己的 build.sh 在本机也跑不到底。
+//     (b) 编排器渲染段改成**候选探测**（`demoRenderRel`，形状照 `demoMuxRel` 的 `.find()`；
+//         **不写死 slug**：路径由 demoRel 拼出来）：demo 自带 `tools/video_png.mjs` 就用它，
+//         否则回退 `core/render/video.mjs`。**只换可执行脚本，参数与落点一字不动** ——
+//         `--out` 仍指到 `out/video_gpu.mp4`（video_png.mjs 本来就吃 `--out`），下游 mux.sh 无需改；
+//         且渲染段原有的「退出码 0 但没产出 video_gpu.mp4 ⇒ 失败」断言已覆盖「输出名对不上」。
+//     (c) ★ 红线三处同步：本文件 ORCH_MD5、test/README.md 那张表与「本次改了什么」段、
+//         README.md 的「编排器与 build.sh 的差异清单」。另同步了 orchestratorRuns() 的 runs[]
+//         （加 `${d}/tools/video_png.mjs`）并从 ORCH_SKIP_STEPS **移除**该条（它已被编排器跑）。
+//     ★ 库仓文件（video_png.mjs）改动已**镜像 WSL** 并逐字节核对（见 test/README.md）。
+export const ORCH_MD5 = '315887dd9e38702bb057e02f38a97b54';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;
