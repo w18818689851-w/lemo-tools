@@ -11,14 +11,14 @@
     "audio": 17
   },
   "defects": [
-    "composition −3：平移镜头里竖排题跋标题列被画面左缘裁掉（帧 f04 已切出画外，f02 完整），DEMO.md:82 承认同类问题「subtitles inherited the world camera transform and slid off screen」。",
-    "typography −3：本次 .srt 未随片重新生成，出片日志明确告警「该 demo 没有本编排器支持的字幕生成器 —— .srt 将沿用仓库里已提交的旧文件」，成片字幕与随片 .srt 可能不同步；且 STYLE.md:44 点名的 Cormorant Garamond italic 本机不存在，dub 通路回退 KaiTi。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立",
-    "rhythm −2：断流瞬间（帧 f17）溅墨点密度偏高，局部接近糊成一片，与 DEMO.md:84「the cut began splitting the wave while the stroke was still crossing the frame」的旧坑同源。",
+    "composition −3：平移镜头里竖排题跋标题列被画面左缘裁掉（帧 f04 已切出画外，f02 完整），`DEMO.md:82` 承认同类问题「subtitles inherited the world camera transform and slid off screen」。",
+    "typography −3：本次 .srt 未随片重新生成，出片日志明确告警「该 demo 没有本编排器支持的字幕生成器 —— .srt 将沿用仓库里已提交的旧文件」，成片字幕与随片 .srt 可能不同步；且 `STYLE.md:44` 点名的 Cormorant Garamond italic 本机不存在，dub 通路回退 KaiTi。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立",
+    "rhythm −2：断流瞬间（帧 f17）溅墨点密度偏高，局部接近糊成一片，与 `DEMO.md:84`「the cut began splitting the wave while the stroke was still crossing the frame」的旧坑同源。",
     "audio −3：实测整片 −13.8 LUFS，与 mux 目标 −14 LUFS 有 0.2 LU 偏差；LRA 8.0 LU（ebur128）偏宽，静默与泼墨段之间的留白对比被削弱——这 3 分来自响度偏差与动态/留白，**不含真峰值**。★ 真峰值口径更正（本次补记）：成片真峰值 = loudnorm 的 input_tp（4× 过采样）**−1.62 dBTP**，在 −1.2 dBTP 交付线内（余量 0.42 dB）、未削波；此前写的「真峰值 −1.6 dBFS」是 ebur128 的 1 位小数读数、astats 采样峰值 −1.630804 是下界，都不能当真峰值用，也不构成扣分项。"
   ],
   "assetGaps": [
     "无外部图像/视频素材缺口：纸、墨、山、水、人物、书法、印章全部由 demo/ 引擎程序化生成（ink.js / comp.js / land.js / wave.js / glyph.js / seal.js / hero.js）。",
-    "字体缺口：STYLE.md:44 声明的 Cormorant Garamond italic 本机无此字体，dub-styles.json#ink-wash 回退 KaiTi（楷体），仅能近似题跋手写感。",
+    "字体缺口：`STYLE.md:44` 声明的 Cormorant Garamond italic 本机无此字体，dub-styles.json#ink-wash 回退 KaiTi（楷体），仅能近似题跋手写感。",
     "字体骨架依赖：书法需要一支 OFL 毛笔字体当骨架（demo 用 Ma Shan Zheng 描中心线），若换机器缺字体则书法元素需替换骨架来源。"
   ],
   "limits": [

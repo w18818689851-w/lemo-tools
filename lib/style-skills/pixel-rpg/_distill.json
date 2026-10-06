@@ -11,16 +11,16 @@
     "audio": 20
   },
   "defects": [
-    "rhythm −2 / typography −2：成片字幕轨未在本次重新生成。混流阶段明确告警「本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成」（logs/pixel-rpg.log:167）。虽然 tools/subs.mjs 本次输出了 8 条 cue，但成片用的是仓库里的旧 .srt，与本次画面/人声的逐字对齐未经验证。",
+    "rhythm −2 / typography −2：成片字幕轨未在本次重新生成。混流阶段明确告警「本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成」（`logs/pixel-rpg.log:167`）。虽然 tools/subs.mjs 本次输出了 8 条 cue，但成片用的是仓库里的旧 .srt，与本次画面/人声的逐字对齐未经验证。",
     "composition −3：本风格按 320×180 ×6 的 1920×1080 绝对像素构图、无 aspects 声明。硬渲产品默认的 9:16 时右侧约 43.75%（≈840px）丢失、下方 840px 全黑：对话框右半（含右端 ▼）被切，战斗镜头右下角的 FIGHT / ITEM / MAGIC / RUN 菜单（f13 布局）被整块切没，片尾卡与片名居中文字的右半被切，状态条右侧数值被切；且裁切会同时破坏「像素网格对齐」这一根本约束（正确做法是改原生帧缓冲为竖向 180×320 重新构图，属设计决策）。本次未实渲 9:16 复核，属按口径推导的未验证缺陷。 ★ **2026-10-06 已实渲复核确认 = 裁切**（非等比装入/contain）：探针证据 —— 同一 t=10 帧在 16:9 与 9:16 两视口下，左上 1080×1080 裁切逐字节相同（168,973 B，`Buffer.compare` = 0）；`styles/pixel-rpg/index.html` 单笔提交、无任何视口/外壳适配代码。原「按口径推导的未验证缺陷」升级为已验证事实。",
-    "typography −2（dub 通路）：dub-styles.json#pixel-rpg 的 subtitle.fontFamily = \"Microsoft YaHei\"、outlineFactor = 0，与本风格「原创可变宽像素字体 + 1px 夜色暗影」的要求冲突；该条目的 bgRecipe.type = \"gradient\" 也违反「渐变是有序抖动、绝不是混合」（STYLE.md:9）。三条合计使 dub 通路的观感与本风格几乎无法对齐。",
-    "复核陷阱（非成片缺陷，记入文档）：遇敌旋涡末尾 Bayer 溶解到全白，抽帧 f12（≈26.0s）是纯白一帧，属设计内过渡峰值（main.js:189-199）；孤立看一张全白抽帧容易被误判为坏帧。",
+    "typography −2（dub 通路）：dub-styles.json#pixel-rpg 的 subtitle.fontFamily = \"Microsoft YaHei\"、outlineFactor = 0，与本风格「原创可变宽像素字体 + 1px 夜色暗影」的要求冲突；该条目的 bgRecipe.type = \"gradient\" 也违反「渐变是有序抖动、绝不是混合」（`STYLE.md:9`）。三条合计使 dub 通路的观感与本风格几乎无法对齐。",
+    "复核陷阱（非成片缺陷，记入文档）：遇敌旋涡末尾 Bayer 溶解到全白，抽帧 f12（≈26.0s）是纯白一帧，属设计内过渡峰值（`main.js:189-199`）；孤立看一张全白抽帧容易被误判为坏帧。",
     "【palette −1】细纹理 `textureRaw: pixel` 声明了但渲染未实现：`lib/dub-styles.json#pixel-rpg.bgRecipe.textureRaw` 是 `pixel`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `pixel` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `pixel` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "resolvedDefects": [
     "palette −1：dub-styles.json#pixel-rpg 的 bgRecipe.texture = \"grain\"，与本风格「grain = 0」「不是 CRT 怀旧，没有扫描线、没有颗粒」的硬规则直接冲突。（★ 2026-10-03 校正：该缺陷已修 —— 当前 lib/dub-styles.json#pixel-rpg 的 bgRecipe.texture = \"none\"，已符合本风格「grain 0 / 无颗粒」硬规则。）",
-    "audio −6（之二）：真峰值口径未达标却未被告警。成片 ebur128 读值 Peak 0.1 dBFS、astats 采样峰值 −1.536 dBFS，mux.sh 未告警；而同一次流水线里 papercut-red 的 astats 采样峰值 0.328 dB 触发了告警（logs/papercut-red.log:137）。说明 mux.sh 的告警判据落在采样峰值上，按真峰值口径 0.1 dBFS 已超 −1.2 dBTP 目标却沉默——判据不一致。 **【2026-10-03 已修复】**：该判据缺陷已修 —— core/render/mux.sh 的达标判据补上了 loudnorm input_tp 真峰值复核（此前只用 astats 采样峰值，会漏报）；全量 43 部实测有 5 部落在这个缝里（本风格差 1.62 dB，最大）。同时默认 LN_TP 由 −1.7 改为 −3.5。★ 注意：**修的是管线，不是已交付的这部成片** —— 该成片文件未重混，真峰值仍是 +0.08 dBTP（超标）；此修复只对**今后的渲染**生效。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 Peak 0.1 dBFS → **−1.72 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +4（见第 10 节）。",
-    "audio −6（之一）：本风格的 lib/style-dna/pixel-rpg 档案没有抽出 LUFS 数值——mix_rules 只写「音乐在人声下闪避约 7–8 dB（快起慢放，用包络算 duck 曲线）；母带峰值归一到 0.89 满量程；grain = 0」（style-dna/pixel-rpg.md:149、style-dna/pixel-rpg.json#sound_palette.mix_rules），全 43 个风格里唯一一个缺 targetLufs 的。−14 LUFS 只出现在 STYLE.md:74 与 DEMO.md:60，不在 style-dna 档案里。已如实记录，未替它补值。\n★ **2026-10-03 已修**：已按本风格的源头文档（`STYLE.md:74`「−14 LUFS, grain 0」、`DEMO.md:60`「Mix to −14 LUFS, grain 0」）把「整体 −14 LUFS」补进 `lib/style-dna/pixel-rpg.json#sound_palette.mix_rules`（并注明来源）。全 43 份 style-dna 档案现在都能解析出 `targetLufs`；「文案+口播」通路不再回落到默认 −16 LUFS。"
+    "audio −6（之二）：真峰值口径未达标却未被告警。成片 ebur128 读值 Peak 0.1 dBFS、astats 采样峰值 −1.536 dBFS，mux.sh 未告警；而同一次流水线里 papercut-red 的 astats 采样峰值 0.328 dB 触发了告警（`logs/papercut-red.log:137`）。说明 mux.sh 的告警判据落在采样峰值上，按真峰值口径 0.1 dBFS 已超 −1.2 dBTP 目标却沉默——判据不一致。 **【2026-10-03 已修复】**：该判据缺陷已修 —— core/render/mux.sh 的达标判据补上了 loudnorm input_tp 真峰值复核（此前只用 astats 采样峰值，会漏报）；全量 43 部实测有 5 部落在这个缝里（本风格差 1.62 dB，最大）。同时默认 LN_TP 由 −1.7 改为 −3.5。★ 注意：**修的是管线，不是已交付的这部成片** —— 该成片文件未重混，真峰值仍是 +0.08 dBTP（超标）；此修复只对**今后的渲染**生效。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 Peak 0.1 dBFS → **−1.72 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +4（见第 10 节）。",
+    "audio −6（之一）：本风格的 lib/style-dna/pixel-rpg 档案没有抽出 LUFS 数值——mix_rules 只写「音乐在人声下闪避约 7–8 dB（快起慢放，用包络算 duck 曲线）；母带峰值归一到 0.89 满量程；grain = 0」（`style-dna/pixel-rpg.md:149`、style-dna/pixel-rpg.json#sound_palette.mix_rules），全 43 个风格里唯一一个缺 targetLufs 的。−14 LUFS 只出现在 `STYLE.md:74` 与 `DEMO.md:60`，不在 style-dna 档案里。已如实记录，未替它补值。\n★ **2026-10-03 已修**：已按本风格的源头文档（`STYLE.md:74`「−14 LUFS, grain 0」、`DEMO.md:60`「Mix to −14 LUFS, grain 0」）把「整体 −14 LUFS」补进 `lib/style-dna/pixel-rpg.json#sound_palette.mix_rules`（并注明来源）。全 43 份 style-dna 档案现在都能解析出 `targetLufs`；「文案+口播」通路不再回落到默认 −16 LUFS。"
   ],
   "assetGaps": [
     "每段年代的场景与精灵都要为每个主题重画：scenes.js（走廊 / 最终之门）与 memscenes.js（村庄 160×90 / 篝火 8-bit / 战斗 16-bit / 缩略图 / 标题 / 片尾卡）是人力最重的一块。",
@@ -34,7 +34,7 @@
     "相机必须整数像素、逐帧动，做不了平滑长镜或大透视运镜。",
     "色深塌缩的每一级都必须原生画（不能事后量化），每多一档年代就多一套绘制与 LUT 工作量。",
     "片长通常 40–90s，由年代段数决定（每段 5–12s）；段数太少讲不出「时间」，太多则每段建立成本过高。",
-    "响度指标口径受限：style-dna 未抽 targetLufs（全 43 个风格唯一），本风格只能以 STYLE.md:74 / DEMO.md:60 的 −14 LUFS 或实测 −14.1 LUFS 为准；可核验的替代口径是母带峰值 0.89 满量程 = −1.01 dBFS（实测 mix.wav 峰值 −1.0122 dBFS 与之精确吻合）。",
+    "响度指标口径受限：style-dna 未抽 targetLufs（全 43 个风格唯一），本风格只能以 `STYLE.md:74` / `DEMO.md:60` 的 −14 LUFS 或实测 −14.1 LUFS 为准；可核验的替代口径是母带峰值 0.89 满量程 = −1.01 dBFS（实测 mix.wav 峰值 −1.0122 dBFS 与之精确吻合）。",
     "最高可达分说明：因 style-dna 缺 targetLufs 且真峰值判据不一致，audio 最高只能给 14/20；因 9:16 是产品默认而本风格只支持 16:9，composition 最高 17/20；因成片 .srt 未本次重新生成，rhythm 与 typography 各扣 2。综合最高可达 86/100，本次即 86。 **【2026-10-03 已修复】**：该判据缺陷已修 —— core/render/mux.sh 的达标判据补上了 loudnorm input_tp 真峰值复核（此前只用 astats 采样峰值，会漏报）；全量 43 部实测有 5 部落在这个缝里（本风格差 1.62 dB，最大）。同时默认 LN_TP 由 −1.7 改为 −3.5。★ 注意：**修的是管线，不是已交付的这部成片** —— 该成片文件未重混，真峰值仍是 +0.08 dBTP（超标）；此修复只对**今后的渲染**生效。"
   ],
   "evidenceFrames": [
@@ -120,7 +120,7 @@
       "lra": 8,
       "ebur128PeakDbfs": 0.1,
       "targetLufsInStyleDna": null,
-      "targetLufsNote": "lib/style-dna/pixel-rpg 的 mix_rules 未抽出 LUFS 数值，只写了 duck 7–8 dB 与母带峰值归一 0.89 满量程；−14 LUFS 只出现在 STYLE.md:74 与 DEMO.md:60",
+      "targetLufsNote": "lib/style-dna/pixel-rpg 的 mix_rules 未抽出 LUFS 数值，只写了 duck 7–8 dB 与母带峰值归一 0.89 满量程；−14 LUFS 只出现在 `STYLE.md:74` 与 `DEMO.md:60`",
       "mixWavPeak": -1.0122,
       "masterPeakTarget": 0.89,
       "masterPeakTargetDbfs": -1.01,

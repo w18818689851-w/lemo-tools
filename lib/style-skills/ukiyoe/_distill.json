@@ -20,9 +20,9 @@
     "新主题需要的颜料组（6-9 平涂色相）与母题资产（山/浪/松/旅人）必须自建，不能沿用《Toward the Mountain》的五景"
   ],
   "limits": [
-    "骨架三条不可拆：纸即画框 + 一色一版且套色错位 + 平涂叠层出纵深（STYLE.md:100-106），撑不起写实光影与 3D 透视",
+    "骨架三条不可拆：纸即画框 + 一色一版且套色错位 + 平涂叠层出纵深（`STYLE.md:100-106`），撑不起写实光影与 3D 透视",
     "人物在风景里只有约 80-130 px，撑不起多角色复杂表演与精细面部戏",
-    "native move 需约一秒停留才读得出来，节奏天然偏慢（STYLE.md:47）",
+    "native move 需约一秒停留才读得出来，节奏天然偏慢（`STYLE.md:47`）",
     "最高可达分受限：真峰值未达标（audio 扣 4）+ 字体回退（typography 扣 4），故封顶约 89/100"
   ],
   "evidenceFrames": [
@@ -70,8 +70,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "warnings": [
-      "mux.sh 告警：成片未达目标（-14 LUFS, true peak <= -1.2 dB），实测 -14.1 LUFS / peak -0.643 dB（logs/ukiyoe.log:118）",
-      "whisper ASR 把 L5 的句号听成逗号，mismatches 0，判 OK（logs/ukiyoe.log:61-62）",
+      "mux.sh 告警：成片未达目标（-14 LUFS, true peak <= -1.2 dB），实测 -14.1 LUFS / peak -0.643 dB（`logs/ukiyoe.log:118`）",
+      "whisper ASR 把 L5 的句号听成逗号，mismatches 0，判 OK（`logs/ukiyoe.log:61-62`）",
       "渲染 1056 帧仅 19s（Canvas2D，非 GPU 重负载）"
     ],
     "loudness": {
@@ -86,7 +86,7 @@
     }
   },
   "resolvedDefects": [
-    "成片真峰值 -0.6 dBFS，未达 mux.sh 的 ≤ -1.2 dBTP 目标；mux 告警 the mix is probably clipping or has very hot peaks（logs/ukiyoe.log:113-121）\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 -0.6 dBFS → **−2.60 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +2（见第 10 节）。",
+    "成片真峰值 -0.6 dBFS，未达 mux.sh 的 ≤ -1.2 dBTP 目标；mux 告警 the mix is probably clipping or has very hot peaks（`logs/ukiyoe.log:113-121`）\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 -0.6 dBFS → **−2.60 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +2（见第 10 节）。",
     "composition −1（原缺陷）：无 aspects 声明，硬渲 9:16 会丢失右侧约 43.75% 并留下方黑区（见 SKILL 第 2 节）（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 91→92（分数于 2026-10-05 回补）。原记录保留作历史。"
   ]
 }

@@ -11,11 +11,11 @@
     "audio": 18
   },
   "defects": [
-    "编排器不认本 demo 的字幕生成器，第 3 步报警，.srt 沿用仓库里已提交的旧文件、未重新生成（logs/urban-sketch.log:29,119） ★ 2026-10-06 复核：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导』部分已消解；但**本条主张的是「`.srt` 真旧」**（非仅告警误导）：本 demo 无编排器认得的 srt 生成器（`tools/srt.py`/`make_srt.py`/`subs_export.py` 均无），`demo/subs.json` 为静态文件、`tools/export_cues.mjs` 只写 `audio/cues.json`（不在第 6 步「本次新写出的字幕源」候选 `out/subs.json`/`out/srt.json`/`out/cues.json`/`subs.json`/`cues.json` 里）⇒ 第 6 步混流同样不会重生成，实测成片旁挂的 `D:/lemo-films/urban-sketch/urban-sketch.srt`（221 B）与仓库 `styles/urban-sketch/urban-sketch.srt`（221 B）**同为仓库旧文件**。⇒ **本条不消解、仍成立**，评分不变。（注：本条引用的 `logs/urban-sketch.log:29,119` 是更早一次成功运行的日志，该文件其后被一次 `[1] 环境自检` 双端不一致的失败运行覆盖，故本次只能以源码与产物核对。）",
+    "编排器不认本 demo 的字幕生成器，第 3 步报警，.srt 沿用仓库里已提交的旧文件、未重新生成（`logs/urban-sketch.log:29,119`） ★ 2026-10-06 复核：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导』部分已消解；但**本条主张的是「`.srt` 真旧」**（非仅告警误导）：本 demo 无编排器认得的 srt 生成器（`tools/srt.py`/`make_srt.py`/`subs_export.py` 均无），`demo/subs.json` 为静态文件、`tools/export_cues.mjs` 只写 `audio/cues.json`（不在第 6 步「本次新写出的字幕源」候选 `out/subs.json`/`out/srt.json`/`out/cues.json`/`subs.json`/`cues.json` 里）⇒ 第 6 步混流同样不会重生成，实测成片旁挂的 `D:/lemo-films/urban-sketch/urban-sketch.srt`（221 B）与仓库 `styles/urban-sketch/urban-sketch.srt`（221 B）**同为仓库旧文件**。⇒ **本条不消解、仍成立**，评分不变。（注：本条引用的 `logs/urban-sketch.log:29,119` 是更早一次成功运行的日志，该文件其后被一次 `[1] 环境自检` 双端不一致的失败运行覆盖，故本次只能以源码与产物核对。）",
     "字体通路回退 KaiTi：demo 全片文字是手写体 Reenie Beanie（页角批注）+ Caveat 500-600（标题/版权页），本机无，手写感有损（dub-styles.json#urban-sketch.notes）",
     "通路不承载「手写 reveal + 写在页边」这一核心形态，只给一个楷体字幕位；motion.subtitleFadeIn 0 但通路仍是通用字幕条语义",
-    "still.mjs 报 still waiting for window.READY after 20 s 共 7 次（logs/urban-sketch.log:74-94），页面在 headless 下未及时置 READY，海报/风格帧步骤可能未产出",
-    "音视频时长微差：视频 32.413411s 长于音频 32.400s，mux 补静音到 32.455s（logs/urban-sketch.log:127）",
+    "still.mjs 报 still waiting for window.READY after 20 s 共 7 次（`logs/urban-sketch.log:74-94`），页面在 headless 下未及时置 READY，海报/风格帧步骤可能未产出",
+    "音视频时长微差：视频 32.413411s 长于音频 32.400s，mux 补静音到 32.455s（`logs/urban-sketch.log:127`）",
     "【palette −1】细纹理 `textureRaw: pen-wash` 声明了但渲染未实现：`lib/dub-styles.json#urban-sketch.bgRecipe.textureRaw` 是 `pen-wash`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），不读 `textureRaw` ⇒ `pen-wash` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `pen-wash` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
@@ -23,7 +23,7 @@
     "新主题需要的世界资产（静态页 + 颜色到达源 + 帽子/物件轨迹）必须自建，不能沿用《Where the Wind Went》的公园与草帽"
   ],
   "limits": [
-    "骨架不可拆：线 + 淡彩两者必须同时在，且什么都没画满边（STYLE.md:19,21），撑不起满版实拍质感与写实光影",
+    "骨架不可拆：线 + 淡彩两者必须同时在，且什么都没画满边（`STYLE.md:19,21`），撑不起满版实拍质感与写实光影",
     "墨只有一种颜色，天然不支持用颜色区分多个并列品类",
     "颜色只能「到达」不能 snap，快切式信息投放相性差",
     "本 demo 无 lines.json、无旁白；换主题要加旁白需自建 lines.json 并确认编排器认得字幕生成器",
@@ -74,10 +74,10 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "warnings": [
-      "本 demo 无 lines.json，编排器跳过 TTS 与 whisper（logs/urban-sketch.log:36）",
-      "本 demo 无编排器支持的字幕生成器，.srt 未重新生成、沿用仓库旧文件（logs/urban-sketch.log:29,119）",
-      "still.mjs 报 window.READY 20s 超时 7 次（logs/urban-sketch.log:74-94）",
-      "mux note: 音频 32.400s 短于视频 32.413411s，补静音到 32.455s（logs/urban-sketch.log:127）",
+      "本 demo 无 lines.json，编排器跳过 TTS 与 whisper（`logs/urban-sketch.log:36`）",
+      "本 demo 无编排器支持的字幕生成器，.srt 未重新生成、沿用仓库旧文件（`logs/urban-sketch.log:29,119`）",
+      "still.mjs 报 window.READY 20s 超时 7 次（`logs/urban-sketch.log:74-94`）",
+      "mux note: 音频 32.400s 短于视频 32.413411s，补静音到 32.455s（`logs/urban-sketch.log:127`）",
       "真峰值 -1.5 dBFS 达标（<= -1.2 dBTP）；静音窗 20.4-21.58s 实测 -52.5 dBFS"
     ],
     "loudness": {

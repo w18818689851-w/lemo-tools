@@ -11,21 +11,21 @@
     "audio": 15
   },
   "defects": [
-    "ASR 校对未通过 2 条：mismatches=2（lang=en, model=base.en），v08 'Two, at one of two points.' 被转成 'Two and one of two points.'、v18 '…tick slightly slow.' 被转成 '…take slightly slow.'，日志触发 STEP_WARN asr_check 未通过（继续）（logs/whiteboard.log:115,128,130-131）。",
-    "混音三段实测 RMS（vo/music/foley = -20.1 / -28.9 / -20.9 dB）与 DEMO.md:57 声明的 6.5dB（music）/ 11dB（foley）规则不完全吻合：music 实测低 8.8dB，foley 整段 RMS 仅比 VO 低 0.8dB（logs/whiteboard.log:136）——疑为整段 RMS 把 VO 静默间隙计入的度量口径差异，但需复核。",
-    "dub-styles.json#whiteboard 为 derived:true 派生条目，bg #e9ebee / bg2 #9aa0a8 是代理值，与 DEMO.md:61 的板面 #fbfbf9 → #eeede9 不是同一组，通路出片会比样片更冷更灰。",
+    "ASR 校对未通过 2 条：mismatches=2（lang=en, model=base.en），v08 'Two, at one of two points.' 被转成 'Two and one of two points.'、v18 '…tick slightly slow.' 被转成 '…take slightly slow.'，日志触发 STEP_WARN asr_check 未通过（继续）（`logs/whiteboard.log:115,128,130-131`）。",
+    "混音三段实测 RMS（vo/music/foley = -20.1 / -28.9 / -20.9 dB）与 `DEMO.md:57` 声明的 6.5dB（music）/ 11dB（foley）规则不完全吻合：music 实测低 8.8dB，foley 整段 RMS 仅比 VO 低 0.8dB（`logs/whiteboard.log:136`）——疑为整段 RMS 把 VO 静默间隙计入的度量口径差异，但需复核。",
+    "dub-styles.json#whiteboard 为 derived:true 派生条目，bg #e9ebee / bg2 #9aa0a8 是代理值，与 `DEMO.md:61` 的板面 #fbfbf9 → #eeede9 不是同一组，通路出片会比样片更冷更灰。",
     "通路字幕字体回退 KaiTi（本机无 Architects Daughter / EMS Tech 的 OFL 文件），手写感弱于样片（dub-styles.json#whiteboard.subtitle）。",
-    "本次出片走 --skip-sync（logs/whiteboard.log:1），未做双份库同步校验。",
+    "本次出片走 --skip-sync（`logs/whiteboard.log:1`），未做双份库同步校验。",
     "【palette −1】细纹理 `textureRaw: whiteboard` 声明了但渲染未实现：`lib/dub-styles.json#whiteboard.bgRecipe.textureRaw` 是 `whiteboard`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `whiteboard` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `whiteboard` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
     "依赖单线（单笔画）手写字体（样片 EMS Tech，需经 demo/tools/svgfont2json.py 转 JSON）；换题材若没有同类单笔画字体，手写感会塌。",
     "依赖可用的 Kokoro 音色（样片 bm_george / en-gb）；换语言需自带对应音色并重跑 ASR 核对。",
-    "引擎手工补的字形有限（μ ≈ → × − ✓ ² ↓ ° ± .，engine/wb.js:181-193）；中文题材需另建字形表。",
+    "引擎手工补的字形有限（μ ≈ → × − ✓ ² ↓ ° ± .，`engine/wb.js:181-193`）；中文题材需另建字形表。",
     "无 CJK 手写字体随库分发，中文题材的手写体需自备。"
   ],
   "limits": [
-    "中速讲解风格：STYLE.md:6 定位 60–120s、一条论证链、一条线一个想法；撑不起快节奏、强情绪、真人出镜或并列多观点的密集片。",
+    "中速讲解风格：`STYLE.md:6` 定位 60–120s、一条论证链、一条线一个想法；撑不起快节奏、强情绪、真人出镜或并列多观点的密集片。",
     "硬约束「没有手」：所有移动只能由悬浮笔、磁贴、板擦完成，不能画出手/手臂/光标。",
     "板面上不允许切镜，只允许甩镜（camera whip）；换区域必须靠画一条线走过去。",
     "需要阅读时（方程/定义/清单）镜头必须停住，不能靠运镜制造节奏。"
@@ -98,9 +98,9 @@
       "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.62 dBTP，在 −1.2 dBTP 交付线内（余量 0.42 dB）、未削波。此前 §6 写的「Peak -1.6 dBFS」是 ebur128 的 1 位小数读数（口径不对），本次改为 input_tp 口径；astats 采样峰值 −1.638909 是下界。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
     },
     "warnings": [
-      "STEP_WARN asr_check 未通过（继续）：mismatches 2（v08 / v18），logs/whiteboard.log:130-131",
-      "本次编排器调用带 --skip-sync --no-preflight，未做双份库同步（logs/whiteboard.log:1）",
-      "混音实测 rms vo/music/foley -20.1 / -28.9 / -20.9，与声明的 6.5/9/11dB 规则不完全吻合（logs/whiteboard.log:136）"
+      "STEP_WARN asr_check 未通过（继续）：mismatches 2（v08 / v18），`logs/whiteboard.log:130-131`",
+      "本次编排器调用带 --skip-sync --no-preflight，未做双份库同步（`logs/whiteboard.log:1`）",
+      "混音实测 rms vo/music/foley -20.1 / -28.9 / -20.9，与声明的 6.5/9/11dB 规则不完全吻合（`logs/whiteboard.log:136`）"
     ]
   },
   "resolvedDefects": [

@@ -10,11 +10,11 @@
     "rhythm": 19,
     "audio": 18
   },
-  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.03 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.17 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**按 2026-10-03 统一口径减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲），非本风格音频链所致，属项目级既有缺陷。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半。另 −2 为既有：成片 I=−13.9 LUFS 比 −14 目标高 0.1 LU、LRA 4.5 LU 偏紧（logs/blueprint.log:164-166）。音频链本次真实跑过（TTS 6 行 + ASR 6/6 OK + score.py + mix.py，logs:40-152）。",
+  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.03 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.17 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**按 2026-10-03 统一口径减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲），非本风格音频链所致，属项目级既有缺陷。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半。另 −2 为既有：成片 I=−13.9 LUFS 比 −14 目标高 0.1 LU、LRA 4.5 LU 偏紧（`logs/blueprint.log:164-166`）。音频链本次真实跑过（TTS 6 行 + ASR 6/6 OK + score.py + mix.py，logs:40-152）。",
   "defects": [
-    "【typography −4】本次出片字幕源未重新生成：日志告警 styles/blueprint/demo/tools/subs.mjs 退出码 1（logs/blueprint.log:27/33/161），.srt 沿用仓库里已提交的旧文件，成片字幕时间不是本次新算的、与本次音频的对齐未被验证。",
+    "【typography −4】本次出片字幕源未重新生成：日志告警 styles/blueprint/demo/tools/subs.mjs 退出码 1（`logs/blueprint.log:27/33/161`），.srt 沿用仓库里已提交的旧文件，成片字幕时间不是本次新算的、与本次音频的对齐未被验证。",
     "【typography −4 补充】下游 dub-styles.json#blueprint 因本机无 Architects Daughter / B612，subtitle.fontFamily 退回 KaiTi，字形观感与样片（手写体注记框 + B612 的 NOTE/n 单元格）不一致。",
-    "【audio −2】成片实测 I = −13.9 LUFS，比 −14 LUFS 目标高 0.1 LU；LRA 4.5 LU 说明动态被压得较紧（logs/blueprint.log:164-166）。音频链本次真实跑过（TTS 6 行 + ASR 6/6 OK + score.py + mix.py，logs:40-152），音乐 duck 0.36、whoosh 低通 2.5kHz、×1.35 泄气减速均已在新 mix 中生效。",
+    "【audio −2】成片实测 I = −13.9 LUFS，比 −14 LUFS 目标高 0.1 LU；LRA 4.5 LU 说明动态被压得较紧（`logs/blueprint.log:164-166`）。音频链本次真实跑过（TTS 6 行 + ASR 6/6 OK + score.py + mix.py，logs:40-152），音乐 duck 0.36、whoosh 低通 2.5kHz、×1.35 泄气减速均已在新 mix 中生效。",
     "【composition −3 补充】样片把字幕放在「空白天空」而非底部，这是风格要求也是使用门槛；任何通用「底部居中字幕」模板套进来都会立刻破风格。"
   ],
   "assetGaps": [
@@ -24,11 +24,11 @@
   ],
   "limits": [
     "只支持 16:9（无 aspects 声明）；9:16 需先重排构图才能用，不能直接套用 16:9 时间线。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
-    "禁止 3D 渲染 / 3D 环绕：只允许正投影与斜二测/等轴测，斜二测深度因子仅在 0 → 0.5 之间动画（STYLE.md:12、film.js:125）。",
-    "全片只允许蓝与白两种色相，且只允许一次非蓝色（红橡皮章 #C23B2E，DEMO.md:93）。",
-    "不能有真人：人物只以拿笔的手影（sheet.js:250-268）或签名（Allura）出现。",
-    "静默段是真数字静音（实测 24.3-26.6s 与 27.4-28.85s 的 RMS = −200 dB，logs/blueprint.log:118-121）；下游若自动加底噪或强压缩会破坏该设计。",
-    "风格适合 30–60s（STYLE.md:6）；样片 46.667s，塞进三秒抓眼球的短格式会显得极慢。"
+    "禁止 3D 渲染 / 3D 环绕：只允许正投影与斜二测/等轴测，斜二测深度因子仅在 0 → 0.5 之间动画（`STYLE.md:12`、`film.js:125`）。",
+    "全片只允许蓝与白两种色相，且只允许一次非蓝色（红橡皮章 #C23B2E，`DEMO.md:93`）。",
+    "不能有真人：人物只以拿笔的手影（`sheet.js:250-268`）或签名（Allura）出现。",
+    "静默段是真数字静音（实测 24.3-26.6s 与 27.4-28.85s 的 RMS = −200 dB，`logs/blueprint.log:118-121`）；下游若自动加底噪或强压缩会破坏该设计。",
+    "风格适合 30–60s（`STYLE.md:6`）；样片 46.667s，塞进三秒抓眼球的短格式会显得极慢。"
   ],
   "evidenceFrames": [
     "_contact.jpg",
@@ -77,14 +77,14 @@
       "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.03 dBTP，超 −1.2 dBTP 交付线 0.17 dB、未削波（真峰值为负）。astats 采样峰值 −1.611899 是下界、ebur128 的 Peak −1.0 只有 1 位小数，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。 ★ 2026-10-05 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-2.4 dBTP**、astats 采样峰值 **-2.754564 dBFS**。原记（真峰值 -1.03 dBTP / astats -1.611899）属修复前或重渲前版本，已按实测更正。"
     },
     "warnings": [
-      "styles/blueprint/demo/tools/subs.mjs 退出码 1：字幕源未重新生成，.srt 沿用仓库里已提交的旧文件（logs/blueprint.log:27/33/161）",
+      "styles/blueprint/demo/tools/subs.mjs 退出码 1：字幕源未重新生成，.srt 沿用仓库里已提交的旧文件（`logs/blueprint.log:27/33/161`）",
       "本次以 --skip-sync --no-preflight 运行：--skip-sync 只跳过「同步两份库」（logs:20-22）；音频链路（TTS 配音 → ASR 校对 → score.py 配乐 → mix.py 混音）在本次运行中真实跑过（logs:40-152）",
       "TTS 6 行配音全部产出并带时长：v1 2.907 / v2 4.361 / v3 3.499 / v4 1.978 / v5 3.446 / v6 2.212 s（logs:41-52）",
-      "事件导出 events.mjs → 343 个事件 / dur 46.66666666666667（logs/blueprint.log:26）",
-      "ASR 逐句校对 6/6 OK，mismatches: 0（lang=en, model=base.en）（logs/blueprint.log:53-66）",
-      "mix 电平 music -23.6 / fx -32.8 / vo -26.2 dB（logs/blueprint.log:151）",
-      "成片实测 I = -13.9 LUFS / LRA 4.5 LU / Peak -1.0 dBFS，目标 -14 LUFS（logs/blueprint.log:164-166）",
-      "混流 MUX_OK 46063127 src_frames=1120 out_frames=1120（logs/blueprint.log:168）"
+      "事件导出 events.mjs → 343 个事件 / dur 46.66666666666667（`logs/blueprint.log:26`）",
+      "ASR 逐句校对 6/6 OK，mismatches: 0（lang=en, model=base.en）（`logs/blueprint.log:53-66`）",
+      "mix 电平 music -23.6 / fx -32.8 / vo -26.2 dB（`logs/blueprint.log:151`）",
+      "成片实测 I = -13.9 LUFS / LRA 4.5 LU / Peak -1.0 dBFS，目标 -14 LUFS（`logs/blueprint.log:164-166`）",
+      "混流 MUX_OK 46063127 src_frames=1120 out_frames=1120（`logs/blueprint.log:168`）"
     ]
   },
   "resolvedDefects": [

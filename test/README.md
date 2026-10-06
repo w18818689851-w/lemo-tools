@@ -5,8 +5,9 @@
 
 ```bash
 node test/smoke.mjs              # 全部用例，不含完整回归（约 15–40 秒；本机 WSL 冷启动时会到 1–2 分钟）
-node test/smoke.mjs --full       # 额外跑完整回归：全链路出片 + **现场 GPU TTS**（约 3–9 分钟）
-                                 #   ★ 波动几乎全来自 WSL 冷启动；新增的现场 TTS 用例本身稳定 ~35 秒
+node test/smoke.mjs --full       # 额外跑完整回归：全链路出片 + **现场 GPU TTS** + 第三条通路（`--keep-original`，不占 GPU）
+                                 #   ★ 波动几乎全来自 WSL 冷启动；现场 TTS 用例本身稳定 ~35 秒，
+                                 #     而新增的三条 `--keep-original`/`--fit` 用例合计约 25 秒且**不吃 GPU**
 node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
 
@@ -38,7 +39,7 @@ node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 �
 
 ---
 
-## 覆盖了什么（40 条，`--full` 时 42 条）
+## 覆盖了什么（40 条，`--full` 时 45 条）
 
 ### ① 编排器未被改坏（红线）
 
@@ -420,6 +421,58 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 **默认不跑**（用例本身约 35 秒；`--full` 整体约 3–9 分钟，波动几乎全来自 WSL 冷启动 ——
 实测 `⑤+` 那段从 147 秒到 441 秒不等，而 `⑤++` 稳定在 34 秒）。
 
+### ⑤+++ / ⑤++++ / ⑤+++++ 第三条通路（`--keep-original` / `--keep-original-limit` / `--fit`）
+（只在 `--full` 时跑，★ **不占 GPU**、合计约 25 秒）
+
+**为什么要有它（2026-10-07 补的缺口）**：`⑤++` 是此前**唯一**真跑 `dub.mjs` 出片的用例，而它**没传 `--video`**
+⇒ 跑的是**形态 A**（生成的渐变背景）。于是「**形态 B**：口播素材铺画面」这条通路、
+以及 `--keep-original` / `--keep-original-limit` / `--fit` 三个开关**从来没有过 CLI 级出片覆盖**
+（`grep -n -- "--video\|--keep-original\|--fit" test/cases.mjs` 曾经 **0 命中**）。
+
+**★ 为什么这三条不占 GPU、几秒就能跑完**：`--keep-original` 明令「不跑 TTS、不动素材的时长/画面/声音」，
+只在素材上叠字幕与叠加层 —— `dub.mjs` 的 `runKeepOriginal` 在「出片前显存预检」**之前**就 `return` 了，
+所以这条覆盖**完全不依赖 Index-TTS**（`⑤++` 那条要）。
+
+**夹具（用例里现造，不依赖任何手工准备的文件）**：WSL 的 ffmpeg `lavfi` 造一个 **270×480 / 1.6s** 的 mp4
+（`color` 画面 + `sine` 音轨，`volume=20.8dB` 推到满刻度）到 `_smoke-*` 临时目录。
+
+- ★ Windows 侧**没有 ffmpeg**（`which ffprobe` 无结果，实测），所以只能在 WSL 里造；造的是**输入素材**，不是出片。
+- ★ 音轨**必须**存在：`--keep-original` 的混流用 `-map 0:a?` / `[0:a]`，无声素材会让「音轨逐字节相同」无从谈起。
+- ★★ 音轨**必须**推到超交付线（夹具真峰值实测 **+0.02 dBTP** > `HARD_PEAK_LIMIT` **−1.2 dBTP**）：
+  否则 `⑤++++` 那条「限幅把真峰值压进交付线」就是**空转**（素材本来就在线内，限不限都过）。
+  两个用例里都各有一条「**素材真峰值 > HARD_PEAK_LIMIT**」的守卫断言盯着夹具 ——
+  夹具哪天被改弱，用例会**当场报错**，而不是静默退化成空转。
+
+| 用例 | 跑法 | 断言 |
+|---|---|---|
+| **⑤+++** 形态 B（`--keep-original`）真出片 | `dub.mjs --script <文案> --video <夹具> --keep-original --srt <SRT> --size 1080x1920 --ratio 16:9 --out <临时目录>` | ① exit 0；② 结果 JSON `keepOriginal:true` / `align:"srt"` / `audioIdentical:true`；③ stdout 含「在 `--keep-original` 下不生效」（用户点名了 `--size`/`--ratio`，必须**被明确告知**忽略了）；④ **ffprobe 独立复验**成片是 **270x480 = 素材尺寸**（**不是**点名的 1080x1920 ⇒ 钉住「沿用素材尺寸」）；⑤ 成片**有音轨**；⑥ **两条音轨各自解成 PCM 再比 md5 ⇒ 逐字节相同**（「没被偷偷重编码 / 替换」的硬证据）；⑦ **真峰值 == 素材真峰值**（差 ≤0.05 dB）**且素材真峰值 > 交付线** ⇒ 钉住「`--keep-original` 明令不改声音，素材超标时成片也超标、**不做归一**」；⑧ `film.srt` 去空白拼接**逐字等于文案**；⑨ 成片时长 = 素材时长 |
+| **⑤++++** `--keep-original-limit` | 同上 + `--keep-original-limit` | ① exit 0；② JSON `keepOriginalLimit:true` / `audioIdentical:false`；③ PCM md5 **必须不同**（`alimiter` 是音频滤镜，绕不开「解码 → 滤镜 → 编码」）；④ 素材真峰值 > 交付线（守卫，防空转）；⑤ **成片真峰值 ≤ −1.2 + 0.25 dBTP**（容差与 `⑤++` 同口径：AAC 有损编码会把真峰值挪 0.08~0.22 dB）且**低于素材**；⑥ 限幅**只压峰** —— 尺寸 / 时长 / 字幕内容一律未动 |
+| **⑤+++++** `--fit` | `dub.mjs … --video <夹具> --dry-run --fit loop\|trim\|slow` | ① 三个合法值都 exit 0 且计划行含 `fit=<值>`；② dry-run 真**不跑 TTS**（stdout 无 `TTS_DONE`）也**不出成片**（无 `film.mp4`）；③ 非法值 `--fit bogus` ⇒ exit≠0 且报「`--fit 只能是 loop\|trim\|slow`」；④ ★ 同样的非法值**配上 `--keep-original`**（此时 fit 根本用不到）也**必须**当场拒 —— 取值校验是**无条件**的，不许退化成「用得到才校验」 |
+
+**★ 夹具 SRT 的文本故意与文案不同**（`占位文本甲/乙`）：`--keep-original` 的契约是
+「`--srt` 只提供**时间轴**，字幕文本一律用**文案**」（`lib/dub-core.mjs` 的「字幕文本一律用文案」那条）。
+两边写成一样的话，「字幕逐字等于文案」就**分不清**成片字幕到底取自哪一边 —— 那是一条假绿。
+实测（手工复验）：输入 SRT 是占位文本（`文本匹配率 0.0%`），成片 `film.srt` 里仍是**文案**的两句。
+
+**★ 变异验证（证明断言不是空转）**：
+
+- 把 `⑤+++` 的 `--keep-original` 换成 `--keep-original` + `--keep-original-limit` ⇒ **变红**，
+  报「成片音轨与素材**不再逐字节相同**：素材 `b7b37a84…` / 成片 `60cb6692…`」。
+  （工具自检那条 `audioIdentical` 与测试**自己算**的 PCM md5 两条**都会**响 —— 分别单独验过。）
+- 把 `⑤+++` 的期望尺寸改成点名的 `1080x1920` ⇒ **变红**，报 `成片尺寸 270x480 ≠ 1080x1920`
+  —— 证明成片确实是**素材**尺寸，不是我们点名的那个。
+- 把 `⑤++++` 的 `--keep-original-limit` 去掉 ⇒ **变红**，报「开了限幅，音轨却仍与素材逐字节相同」。
+
+**单独跑**：`node test/smoke.mjs --full --filter 形态` / `--filter --keep-original-limit` / `--filter --fit`
+（`--full` 是必须的 —— 这三条登记在 `FULL_CASES` 里，与 `⑤+`/`⑤++` 同一组）。
+
+**★ 没覆盖到的一格（如实记）**：`--fit` 的**真出片**行为（`trim` 的 `tpad` 冻结末帧 / `slow` 的
+`setpts` 放慢 / `loop` 的 `-stream_loop -1`）只在**形态 B 的非 keep-original** 路径上生效，
+而那条路径**必须跑 TTS**（占 GPU、30 秒以上）⇒ 本批只做到 `--dry-run` 级的参数覆盖。
+要真覆盖它，只能加在 `⑤++` 那一类 GPU 用例上。
+★ 另记一条：`--fit` 在 `--keep-original` 下**完全不生效**（`runKeepOriginal` 一个字都不读它），
+所以「用 `--keep-original` 顺便把 `--fit` 也测了」这条路是**不通的**。
+
 ### ⑥ 任务取消 + 进程树真的被收掉
 
 | 用例 | 断言 |
@@ -500,8 +553,10 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ## 没覆盖什么（如实写）
 
-- **真实渲染 / 混流**：默认全部跳过，只有 `--full` 才跑 —— 现在跑两条：
-  `ascii-crt` 全链路（⑤+，预生成配音混流）+ **现场 GPU TTS**（⑤++，真调 Index-TTS 合成 + style-dna 响度归一）。
+- **真实渲染 / 混流**：默认全部跳过，只有 `--full` 才跑 —— 现在跑五条：
+  `ascii-crt` 全链路（⑤+，预生成配音混流）+ **现场 GPU TTS**（⑤++，真调 Index-TTS 合成 + style-dna 响度归一）
+  + **第三条通路**（⑤+++/⑤++++/⑤+++++：`--keep-original` / `--keep-original-limit` 真出片 + `--fit` 参数覆盖；
+  ★ 这三条**不跑 TTS、不吃 GPU**）。
 - **Web UI 交互**：`web/app.js` / `index.html` / `style.css` 的浏览器行为（点击、表单、播放器、进度条）**本套件**不测 —— 它只保证「服务端发给前端的数据是对的」，不保证前端渲染对。
   → **这一块由 `test/ui.test.mjs` 覆盖**（第四批新增，独立入口）：无头 Edge `--dump-dom` 拿渲染后的 DOM、再用 CDP 真的去点击/按键。见本文末尾。
 - **`/api/setup/run` 的「真跑一次安装」（走 HTTP）**：仍不测 —— 它会真的改环境（apt / clone / pip）。

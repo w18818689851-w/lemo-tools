@@ -14,30 +14,30 @@
   "defects": [
     "编码余量机制性不足（扣 2 分，audio 20→17 的一部分）：mix.wav 真峰值 -1.00 dBFS，而 core/render/mux.sh 的 loudnorm 目标 LN_TP=-1.7——素材本身比目标高 0.7 dB，全靠 loudnorm 的动态模式把峰压下来。本片最终落在 -1.65 dBTP，虽达标但离 -1.2 dBTP 交付上限只剩 0.45 dB 余量。同一机制在队里别的风格上已经真的削波（团队实测：pictogram-motion +0.28 dBTP、game-show -0.22 dBTP，现有 6 个风格最高到 halftone-dossier +0.434）。★ 不要用手工预压限腾余量：团队实测反而更差（原 mix.wav +0.248 → 预压 TP=-2.0 变 +0.445 → 预压 TP=-4.2 变 +0.879），因为 loudnorm 总会把响度拉回 -14，真正起作用的是波峰因数；正解在 mux.sh 的 LN_TP（核心共享文件，未擅改）。",
     "音色与编排未独立验证（扣 1 分，audio 20→17 的一部分）：本次只核到响度/真峰值这类聚合指标，无法核验纸 foley（翻页 swish / 卡纸 thump / 弹起 snap / 脚步 tap+crinkle 等）是否逐类可闻、打字 blip 的波形与音高范围（Pip 方波 C6 附近 / Crumple 180-240 Hz / Fold 三角波）是否落实、三段曲的小节对齐内部跳剪（73.21s → 102.79s，0.42s 交叉淡化）是否真让原曲结尾落在 104.22s、人声/伴奏差是否真是 8.5 dB、音乐 duck 是否真是 40%。这些声明值本次未做听感或频谱核验。",
-    "rhythm（扣 4 分，20→16）：成片 ffprobe 实测 r_frame_rate=24/1、3192 帧，而 STYLE.md:43 明确「On ones（60 fps 适合平滑的微距相机）」、样片是 7980 帧；demo 自带 mux.sh 也写 -r 60。24fps 下 0.55s 的弹起过冲只剩约 13 帧，back()/spring() 的收尾与微距慢移的顺滑度低于声明值。音频修复未改变这一点——新片仍是 24fps，混流仍走 core/render/mux.sh 而非 demo 自带的 60fps mux.sh。全片时长 133.000s 与 style.json 的 dur=133.0 完全一致，此项不再额外扣分。",
-    "typography（扣 3 分，20→17）：(a) 字幕压在真实世界的亮虚化背景上几乎不可读——帧 f18（≈97.0s）与 f19（≈102.4s）里台灯散景接近白/琥珀，而字幕是奶油 #fffaf0 填色 + rgba(28,18,12,.78) 描边（hud.js:22），明度太近只剩描边在撑，f18 还叠加了淡入中的半透明；(b) 折行宽度 wrap(x, en, 1720)（hud.js:19）对 1920px 画幅只留左右各 100px，最长的英文行（v05 共 108 字符）几乎顶到画框（帧 f01/f05/f08），并把 9:16 下的损失放大成「右半整段被切」。",
-    "composition（扣 2 分，20→18）：近镜头前景的虚化剪纸反复占据画面下缘约四分之一——帧 f04/f05/f06/f07/f08/f11/f13 下缘都有一块大而糊的绿色剪纸（花/灌木/蕨）。DEMO.md:103 自己记下了这个坑（forest ferns and a bush at 20.9s filled the frame near the lens）。它按风格是故意的浅景深，但占比偏大时吃掉太多画面。",
+    "rhythm（扣 4 分，20→16）：成片 ffprobe 实测 r_frame_rate=24/1、3192 帧，而 `STYLE.md:43` 明确「On ones（60 fps 适合平滑的微距相机）」、样片是 7980 帧；demo 自带 mux.sh 也写 -r 60。24fps 下 0.55s 的弹起过冲只剩约 13 帧，back()/spring() 的收尾与微距慢移的顺滑度低于声明值。音频修复未改变这一点——新片仍是 24fps，混流仍走 core/render/mux.sh 而非 demo 自带的 60fps mux.sh。全片时长 133.000s 与 style.json 的 dur=133.0 完全一致，此项不再额外扣分。",
+    "typography（扣 3 分，20→17）：(a) 字幕压在真实世界的亮虚化背景上几乎不可读——帧 f18（≈97.0s）与 f19（≈102.4s）里台灯散景接近白/琥珀，而字幕是奶油 #fffaf0 填色 + rgba(28,18,12,.78) 描边（`hud.js:22`），明度太近只剩描边在撑，f18 还叠加了淡入中的半透明；(b) 折行宽度 wrap(x, en, 1720)（`hud.js:19`）对 1920px 画幅只留左右各 100px，最长的英文行（v05 共 108 字符）几乎顶到画框（帧 f01/f05/f08），并把 9:16 下的损失放大成「右半整段被切」。",
+    "composition（扣 2 分，20→18）：近镜头前景的虚化剪纸反复占据画面下缘约四分之一——帧 f04/f05/f06/f07/f08/f11/f13 下缘都有一块大而糊的绿色剪纸（花/灌木/蕨）。`DEMO.md:103` 自己记下了这个坑（forest ferns and a bush at 20.9s filled the frame near the lens）。它按风格是故意的浅景深，但占比偏大时吃掉太多画面。",
     "9:16 导出会横切字幕并丢失右侧主体（产品默认路径的已知缺陷，未实渲复核）：本风格按 1920×1080 绝对像素构图、style.json 无 aspects 声明，硬渲 1080×1920 时画面被 1:1 塞在左上角，右侧约 43.75%（840px）丢失、下方 840px 整片黑。字幕居中在 x=960、可见区右缘 x=1080，字幕中心距可见右缘只剩 120px，而折行宽度可达 1720px（半宽 860px），因此长行右半整段被切；32px 的中文长行（v05 中文 44 字 ≈1408px）损失更多；章节横幅（f10/f14/f17）与右侧气泡、片尾卡的右半（茶杯/盆栽/闹钟，f20/f24）同样被切。字幕垂直方向不会掉进黑区（基线 966/1022 仍在顶部 1080px 内）。以上为按既有口径的推导，标注为已知缺陷而非实测结论。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
     "编排器不会使用 demo 自带的 mux.sh：日志告警「styles/paper-popup/demo/mux.sh 存在，但它的接口不是 V A O [fps] [grain]，回退 core/render/mux.sh」。demo 的 mux.sh 用 libx264 -preset slow -crf 17 -r 60 + noise=c0s=2:c0f=t+u + loudnorm I=-14:TP=-1.2:LRA=11（原生 60fps 出片），本次（首版与音频修复后的新片都是）实际走的是 core/render/mux.sh（24fps、h264_nvenc cq23、颗粒默认 2）。",
     "字幕源未重新生成：日志告警「该 demo 没有本编排器支持的字幕生成器——字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件」。成片用的 D:/lemo-films/paper-popup/paper-popup.srt 是仓库里那份 21 条 cue 的双语旧文件；改 story.js 的 VO 之后必须手工跑 node demo/make_srt.mjs，否则字幕与画面不同步。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立",
-    "本 demo 没有 build.sh：构建链只有 DEMO.md:135-158 的 7 步（fonts → voice → 校对 → 时间线 → 配乐 → 事件+混音 → 渲染 → 混流+字幕），没有一键复现脚本，第 9 节只能给分步命令。",
+    "本 demo 没有 build.sh：构建链只有 `DEMO.md:135-158` 的 7 步（fonts → voice → 校对 → 时间线 → 配乐 → 事件+混音 → 渲染 → 混流+字幕），没有一键复现脚本，第 9 节只能给分步命令。",
     "【历史根因·已修复】首版成片音轨曾是数字静音：首版出片带 --skip-audio，整条音频链被跳过，core/render/mux.sh 打印 warning: the audio is silent or quieter than -70 LUFS, so loudness normalisation was skipped（日志 I: -70.0 LUFS / LRA: 0.0 LU / Peak: -inf dBFS），我复核成片实测 mean/max 均 -91.0 dB。根因链是「--skip-audio → 一条静音占位轨被照常混入 → mux 跳过 loudnorm → 出片有声轨但无声」。已由 fix-paperpopup-audio 修好（去掉 --skip-audio、修 mix.py 的卷积、重新混流出新片，视频轨未动），现成片实测 I=-14.04 LUFS / -1.65 dBTP。保留此条是因为它是个通用验收陷阱：有音轨 ≠ 有声音。"
   ],
   "assetGaps": [
-    "真实世界那半边全靠外部素材：HDRI（lythwood_lounge_2k.hdr）与五件 CC0 道具（台灯、茶杯、闹钟、铅笔、盆栽）来自 Poly Haven，换主题就要换一整套桌面；DEMO.md:107 记录 Poly Haven 的 API 对 Python urllib 返回 403，必须用 curl 下载。",
-    "四套 OFL 字体是外部依赖：Fredoka 500/600/700、Lilita One、IM Fell English、ZCOOL KuaiLe，由 fetch_fonts.mjs 下载到 demo/fonts/。中文子集只含下载那一刻源码里出现过的字（DEMO.md:108），改任何中文文案都必须重跑 fetch_fonts.mjs；ZCOOL KuaiLe 子集没有拉丁字形，中文行里的英文必须靠 '\"ZCOOL KuaiLe\", Fredoka' 的 font stack 兜底。",
-    "音乐是三首固定的 CC BY 4.0 曲（是工作流依赖，不是版权障碍）：Dreamy Flashback / Jaunty Gumption / Heartwarming，作者 Kevin MacLeod（incompetech.com），署名即可用，已与 story.js:42 的 CREDITS 一致；三份 mp3 的 ID3 我核过（artist 均为 Kevin MacLeod），并已转成 48 kHz / pcm_s16le / 立体声 WAV 落在 demo/music/。换主题时的真实成本是重跑 music/jump.py、jump2.py 的小节对齐跳剪搜索（节拍同步 chroma + MFCC 自相似，切长取 4 拍整数倍），让原曲的真实结尾落在你要的那一帧上。",
+    "真实世界那半边全靠外部素材：HDRI（lythwood_lounge_2k.hdr）与五件 CC0 道具（台灯、茶杯、闹钟、铅笔、盆栽）来自 Poly Haven，换主题就要换一整套桌面；`DEMO.md:107` 记录 Poly Haven 的 API 对 Python urllib 返回 403，必须用 curl 下载。",
+    "四套 OFL 字体是外部依赖：Fredoka 500/600/700、Lilita One、IM Fell English、ZCOOL KuaiLe，由 fetch_fonts.mjs 下载到 demo/fonts/。中文子集只含下载那一刻源码里出现过的字（`DEMO.md:108`），改任何中文文案都必须重跑 fetch_fonts.mjs；ZCOOL KuaiLe 子集没有拉丁字形，中文行里的英文必须靠 '\"ZCOOL KuaiLe\", Fredoka' 的 font stack 兜底。",
+    "音乐是三首固定的 CC BY 4.0 曲（是工作流依赖，不是版权障碍）：Dreamy Flashback / Jaunty Gumption / Heartwarming，作者 Kevin MacLeod（incompetech.com），署名即可用，已与 `story.js:42` 的 CREDITS 一致；三份 mp3 的 ID3 我核过（artist 均为 Kevin MacLeod），并已转成 48 kHz / pcm_s16le / 立体声 WAV 落在 demo/music/。换主题时的真实成本是重跑 music/jump.py、jump2.py 的小节对齐跳剪搜索（节拍同步 chroma + MFCC 自相似，切长取 4 拍整数倍），让原曲的真实结尾落在你要的那一帧上。",
     "dub 通路的字体退路是 SimSun（dub-styles.json#paper-popup 的 subtitle.fontFamily），本机/该条目没有 Fredoka，脱离 demo 环境拿不到原字面。",
-    "音频修复依赖一处对 D:/lemo-opuscar 源码的极小改动（mix.py:196,202 的 np.convolve → scipy.signal.fftconvolve，已复验逐位等价）；回滚备份在 D:/tmp/mix.py.orig。该修正未回写上游仓库，新 clone 会再次撞上 30+ 分钟不结束的直卷。"
+    "音频修复依赖一处对 D:/lemo-opuscar 源码的极小改动（`mix.py:196,202` 的 np.convolve → scipy.signal.fftconvolve，已复验逐位等价）；回滚备份在 D:/tmp/mix.py.orig。该修正未回写上游仓库，新 clone 会再次撞上 30+ 分钟不结束的直卷。"
   ],
   "limits": [
     "audio 维度最高可达 17/20（不是 20/20）：扣 2 分给编码余量机制性不足（mix.wav -1.00 dBFS 高于 loudnorm 的 LN_TP=-1.7，本片只剩 0.45 dB 余量，同机制已在 pictogram-motion / game-show 上真的削波；正解在 mux.sh 的 LN_TP，属核心共享文件，未擅改），扣 1 分给音色与编排未独立验证（只能核到响度/真峰值这类聚合指标，未做听感或频谱核验）。要达到 audio 20/20 需要先解决 mux.sh 的编码余量口径，并补一轮听感/频谱核验。",
     "rhythm 维度最高可达 16/20：成片帧率由编排器固定为 24fps，而风格原生是 60fps；音频修复没有改变这一点。要拿回这 4 分必须改用 demo 自带的 mux.sh（-r 60）或给 core/render/mux.sh 传 fps=60 并核 7980 帧。",
     "9:16 结论是推导而非实测：本风格按 1920×1080 绝对像素构图且 style.json 无 aspects 声明，本次没有实渲 9:16 复核，右侧丢失 43.75%、下方 840px 黑、字幕被横切这三条均按既有口径推导，标注为已知缺陷。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
-    "角色表现力有上限：脸只有大黑椭圆眼 + 两个白高光 + 弯嘴 + 粉脸颊，表情靠 eyes（open/happy/wide/closed/dizzy）与 mouth（smile/open/o/grin/worried/determined）的量化换片（DEMO.md:48,70），做不了细腻情绪特写。",
-    "转身只能翻面：rotation.y 会让卡片侧面朝上露出空白背面，一律用 scale.x 翻转并在正/背两套画之间切（STYLE.md:93）；负缩放会交换前后材质，镜像道具必须另画一张。",
-    "纸的 3D 全靠叠卡：任何有体积的东西都是几片扁平卡（前后层、铰在龙骨上的三角），做不了真正旋转的立体物（STYLE.md:19）。",
-    "前景弹起件不能挡镜头：近镜头的弹起件会填满画面成一片模糊，只能移开或收小光圈（STYLE.md:95）。",
+    "角色表现力有上限：脸只有大黑椭圆眼 + 两个白高光 + 弯嘴 + 粉脸颊，表情靠 eyes（open/happy/wide/closed/dizzy）与 mouth（smile/open/o/grin/worried/determined）的量化换片（`DEMO.md:48,70`），做不了细腻情绪特写。",
+    "转身只能翻面：rotation.y 会让卡片侧面朝上露出空白背面，一律用 scale.x 翻转并在正/背两套画之间切（`STYLE.md:93`）；负缩放会交换前后材质，镜像道具必须另画一张。",
+    "纸的 3D 全靠叠卡：任何有体积的东西都是几片扁平卡（前后层、铰在龙骨上的三角），做不了真正旋转的立体物（`STYLE.md:19`）。",
+    "前景弹起件不能挡镜头：近镜头的弹起件会填满画面成一片模糊，只能移开或收小光圈（`STYLE.md:95`）。",
     "成片实测（音频修复后）：1920×1080 / 24fps / 133.000000s / 93,346,551 B（≈89.0MB）/ 3192 帧，h264 + aac 48kHz 立体声；视频轨与首版逐项一致，只换了音轨。首版渲染 3192 帧用 130s（6 workers）、总耗时 199.4s。"
   ],
   "evidenceFrames": [
@@ -129,7 +129,7 @@
       "该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，.srt 将沿用仓库里已提交的旧文件（已探测 tools/subs.mjs / subs.mjs / tools/export.mjs / tools/subs.py / subs.py / tools/cues.py / cues_export.py 均不匹配）",
       "首版出片曾告警：mux.sh: warning: the audio is silent or quieter than -70 LUFS, so loudness normalisation was skipped（成片音轨实测 mean/max -91.0 dB，为数字静音；首版带 --skip-audio）。该短板已由 fix-paperpopup-audio 修复并重新混流，成片现为 I=-14.04 LUFS / 真峰值 -1.65 dBTP",
       "首版出片命令为 node lemo-make.mjs paper-popup --skip-sync --no-preflight --ratio 16:9 --skip-audio（跳过两份库同步、预检与音频链；音频链后单独补齐并重混，视频轨未重渲）",
-      "mix.py:196,202 的 np.convolve 直卷 6384000x14400 实测 30+ 分钟不结束（530% CPU / 34 线程 / load average 21，极易误判为卡死），已改为 scipy.signal.fftconvolve（<75 秒，输出逐位相同）；该修正未回写上游仓库"
+      "`mix.py:196,202` 的 np.convolve 直卷 6384000x14400 实测 30+ 分钟不结束（530% CPU / 34 线程 / load average 21，极易误判为卡死），已改为 scipy.signal.fftconvolve（<75 秒，输出逐位相同）；该修正未回写上游仓库"
     ],
     "loudness": {
       "truePeakDbtp": -2.33,

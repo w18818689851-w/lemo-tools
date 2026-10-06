@@ -10,14 +10,14 @@
     "rhythm": 18,
     "audio": 18
   },
-  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.02 dBTP（4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.18 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位用 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量（本风格副本 demo/tools/mux.sh:6,8 写死 TP=-1.2，未采用 core 版 LN_TP=-1.7）故减半 = −1，audio 18→17。另 −2 为既有：人声与底噪差 n6 仅 6.6 dB、低于声明的 7–10 dB 区间（logs:113-119），LRA 7.5 LU 偏宽，I=−14.1 LUFS 偏目标 0.1 LU。音频链本次真实跑过（TTS 7 行 + ASR 7/7 OK + score.py + mix.py，logs:40-120）。",
+  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.02 dBTP（4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.18 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位用 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量（本风格副本 `demo/tools/mux.sh:6,8` 写死 TP=-1.2，未采用 core 版 LN_TP=-1.7）故减半 = −1，audio 18→17。另 −2 为既有：人声与底噪差 n6 仅 6.6 dB、低于声明的 7–10 dB 区间（logs:113-119），LRA 7.5 LU 偏宽，I=−14.1 LUFS 偏目标 0.1 LU。音频链本次真实跑过（TTS 7 行 + ASR 7/7 OK + score.py + mix.py，logs:40-120）。",
   "defects": [
-    "【typography −3】本次出片字幕源未重新生成（已用实例证实，不是空口告警）：步骤[3] styles/crayon-book/demo/subs.mjs 退出码 1「该 demo 的字幕源没有更新」，步骤[6]「本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成」（logs/crayon-book.log:27/33/133）。成片 .srt 第 5 行写的是「and sang the softest song she knew.」，而本次 TTS 实际念的是「and sang, the softest song she knew.」（带逗号，logs:51）——.srt 比当前 lines.json 旧，字幕文本与音频不完全一致。",
+    "【typography −3】本次出片字幕源未重新生成（已用实例证实，不是空口告警）：步骤[3] styles/crayon-book/demo/subs.mjs 退出码 1「该 demo 的字幕源没有更新」，步骤[6]「本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成」（`logs/crayon-book.log:27/33/133`）。成片 .srt 第 5 行写的是「and sang the softest song she knew.」，而本次 TTS 实际念的是「and sang, the softest song she knew.」（带逗号，logs:51）——.srt 比当前 lines.json 旧，字幕文本与音频不完全一致。",
     "【typography −3 补充】字幕字体缺口：样片用 Patrick Hand 54px（字幕）与 Gaegu Bold（片名），均 OFL；dub-styles.json#crayon-book 的 subtitle.fontFamily 因本机无这些字体退回 KaiTi，字形与样片不同。",
     "【palette −1】dub-styles.json#crayon-book 是派生条目（derived:true，derivedFrom 含 contrast-rule(WCAG)），配色不是逐行手抽。其 bg #f4efe3 / fg #2d3263 / accent #d4483c 三项与样片完全对得上，但知识库更新时应优先用 pal.js 的代码抽取值替换派生值。",
-    "【rhythm −2】沸腾幅度有两处口径差异：DEMO.md:66 记角色睡着后降到 ×0.5，style-dna/crayon-book.md:114 记 0.55 倍（都引 film.js:157）。以源码为准，文档层面未统一。",
+    "【rhythm −2】沸腾幅度有两处口径差异：`DEMO.md:66` 记角色睡着后降到 ×0.5，`style-dna/crayon-book.md:114` 记 0.55 倍（都引 `film.js:157`）。以源码为准，文档层面未统一。",
     "【rhythm −2 补充】本次以 --skip-sync 复用仓库已有产物，12fps 动画步进（线条/涂色/角色/沸腾种子）与 24fps 相机/水彩前沿/闪烁的分层未被重新验证。",
-    "【audio −2】人声与底噪的差值有一条跌出声明区间：STYLE.md:66 / DEMO.md:59 声明「人声比底噪高 7–10 dB」，本次实测 n1 9.7 / n2 8.5 / n3 12.9 / n4 7.5 / **n6 6.6** / n5 10.7 / n7 17.9 dB（logs/crayon-book.log:113-119）——n6 只有 6.6 dB，低于下限；n3（12.9）与 n7（17.9）又明显高于上限。此外成片 LRA 7.5 LU 偏宽（无词段音乐 +4dB 抬升带来的动态），I = −14.1 LUFS 比目标 −14 高 0.1 LU（logs:136-137）。音频链本次真实跑过（TTS 7 行 + ASR 7/7 OK + score.py + mix.py，logs:40-120），去齿音最大衰减 −4.2~−4.4 dB、混响湿声与 72 BPM 网格均已在新 mix 中生效。",
+    "【audio −2】人声与底噪的差值有一条跌出声明区间：`STYLE.md:66` / `DEMO.md:59` 声明「人声比底噪高 7–10 dB」，本次实测 n1 9.7 / n2 8.5 / n3 12.9 / n4 7.5 / **n6 6.6** / n5 10.7 / n7 17.9 dB（`logs/crayon-book.log:113-119`）——n6 只有 6.6 dB，低于下限；n3（12.9）与 n7（17.9）又明显高于上限。此外成片 LRA 7.5 LU 偏宽（无词段音乐 +4dB 抬升带来的动态），I = −14.1 LUFS 比目标 −14 高 0.1 LU（logs:136-137）。音频链本次真实跑过（TTS 7 行 + ASR 7/7 OK + score.py + mix.py，logs:40-120），去齿音最大衰减 −4.2~−4.4 dB、混响湿声与 72 BPM 网格均已在新 mix 中生效。",
     "【palette −1】细纹理 `textureRaw: crayon` 声明了但渲染未实现：`lib/dub-styles.json#crayon-book.bgRecipe.textureRaw` 是 `crayon`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），不读 `textureRaw` ⇒ `crayon` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `crayon` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
@@ -30,10 +30,10 @@
     "只支持 16:9（无 aspects 声明）；9:16 需重排页面构图、印字区位置与纸纹锚定（未实渲复核，按既有 1:1 左上角塞入口径推导）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
     "不能用纯黑做轮廓：必须靛蓝 / 深棕 / 梅子色；一盒蜡笔约 12 支，绝不超过。",
     "全片最多一道水彩，且水彩不能画在角色身上（角色必须在水彩之后合成）。",
-    "不能让蜡笔淡入淡出：片名只能靠镜头移开、翻页或被涂掉来离开（STYLE.md:32）。",
-    "不能屏幕固定纸纹：必须锚定在页面上，否则文件从 74MB 膨胀到 190MB（DEMO.md:96）。",
+    "不能让蜡笔淡入淡出：片名只能靠镜头移开、翻页或被涂掉来离开（`STYLE.md:32`）。",
+    "不能屏幕固定纸纹：必须锚定在页面上，否则文件从 74MB 膨胀到 190MB（`DEMO.md:96`）。",
     "不能加 ffmpeg 颗粒（纸本身就是颗粒，mux grain 0）。",
-    "题材上是温柔不着急的绘本叙事（DEMO.md:14 给的故事弧 45–55s），撑不起快节奏、强冲突、密集信息量与图表。",
+    "题材上是温柔不着急的绘本叙事（`DEMO.md:14` 给的故事弧 45–55s），撑不起快节奏、强冲突、密集信息量与图表。",
     "旁白是「印在书页上的文字」：第三人称、过去时、短句（实测 13–47 字符、6–8 行），不适合第一人称抒情与长复合句。"
   ],
   "evidenceFrames": [
@@ -72,7 +72,7 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "warnings": [
-      "styles/crayon-book/demo/subs.mjs 退出码 1：该 demo 的字幕源没有更新（logs/crayon-book.log:27）",
+      "styles/crayon-book/demo/subs.mjs 退出码 1：该 demo 的字幕源没有更新（`logs/crayon-book.log:27`）",
       "步骤[6] 告警：本 demo 没有本次新生成的字幕源 —— .srt 沿用仓库里已提交的旧文件，未重新生成（logs:133）。已证实：成片 .srt 第 5 行为「and sang the softest song she knew.」，而本次 TTS 念「and sang, the softest song she knew.」（logs:51），.srt 比当前 lines.json 旧",
       "本次以 --skip-sync --no-preflight 运行：--skip-sync 只跳过「同步两份库」（logs:20-22）；音频链路（TTS 配音 → ASR 校对 → score.py 配乐 → mix.py 混音）在本次运行中真实跑过（logs:40-120）",
       "TTS 7 行配音全部产出并带时长：n1 1.446 / n2 2.648 / n3 2.35 / n4 2.441 / n5 2.22 / n6 2.026 / n7 1.073 s（logs:41-53）",
@@ -96,7 +96,7 @@
     }
   },
   "resolvedDefects": [
-    "【audio −1】成片真峰值 -1.02 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 -1.2 dBTP 交付线 0.18 dB；真峰值为负 ⇒ 未削波，属『仅超线』。根因在下游 AAC 编码余量：本风格副本 demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（tools/mux.sh:6,8），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），AAC 编码过冲把真峰值顶到 -1.02。属项目级既有缺陷、非本风格音频链所致。扣分按 AGENT-BRIEF『真峰值超标怎么扣』：真峰值为负但超线取 -2 档，根因在下游 AAC 故减半 = -1。此前 §6 只写了 I/LRA、未记真峰值，本次补记。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −1.02 dBTP → **−2.08 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。",
+    "【audio −1】成片真峰值 -1.02 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 -1.2 dBTP 交付线 0.18 dB；真峰值为负 ⇒ 未削波，属『仅超线』。根因在下游 AAC 编码余量：本风格副本 demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（`tools/mux.sh:6,8`），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），AAC 编码过冲把真峰值顶到 -1.02。属项目级既有缺陷、非本风格音频链所致。扣分按 AGENT-BRIEF『真峰值超标怎么扣』：真峰值为负但超线取 -2 档，根因在下游 AAC 故减半 = -1。此前 §6 只写了 I/LRA、未记真峰值，本次补记。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −1.02 dBTP → **−2.08 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。",
     "composition −2（原缺陷）：【composition −2】只支持 16:9：styles/crayon-book/ 全目录无 aspects 声明。产品默认 9:16 导出会裁掉右侧约 43.75%、下方整片黑：一镜到底横跨一页的横向运镜被截断，画面下方保留的印字区落在黑边上，纸纹锚定与暖暗角位置失配（未实渲复核，按既有 1:1 左上角塞入口径推导）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 18→20，matchScore 90→92（分数于 2026-10-05 回补）。原记录保留作历史。"
   ]
 }

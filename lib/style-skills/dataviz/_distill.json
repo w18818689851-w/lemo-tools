@@ -10,10 +10,10 @@
     "rhythm": 19,
     "audio": 16
   },
-  "audioScoreBasis": "audio 15/20（本轮由 16 扣为 15）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.12 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.08 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**按 2026-10-03 统一口径减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲），非本风格音频链所致，属项目级既有缺陷。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半。另 −4 为既有：闪避值 −11 dB / ~−8 dB 两处矛盾未抹平（style-dna/dataviz.json#sound_palette.mix_rules 与 style-dna/dataviz.md:156 对 :281），第 4 句旁白 SNR 实测 8.5 dB 低于声明的 8.6–16 dB 下限（logs/dataviz.log:92）。音频链本次真实跑过（TTS 5 行 + ASR 5/5 OK + score.py + mix.py，logs:40-96）。",
+  "audioScoreBasis": "audio 15/20（本轮由 16 扣为 15）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.12 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.08 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**按 2026-10-03 统一口径减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲），非本风格音频链所致，属项目级既有缺陷。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半。另 −4 为既有：闪避值 −11 dB / ~−8 dB 两处矛盾未抹平（style-dna/dataviz.json#sound_palette.mix_rules 与 `style-dna/dataviz.md:156` 对 :281），第 4 句旁白 SNR 实测 8.5 dB 低于声明的 8.6–16 dB 下限（`logs/dataviz.log:92`）。音频链本次真实跑过（TTS 5 行 + ASR 5/5 OK + score.py + mix.py，logs:40-96）。",
   "defects": [
-    "闪避值两处矛盾未抹平：style-dna/dataviz.json#sound_palette.mix_rules 主值写 ~−11 dB、括号内注明 mix.py 文档串写 ~−8 dB；style-dna/dataviz.md:156 写 −11 dB，:281 证据行写 mix.py ~−8 dB（audio −4 之一）。",
-    "第 4 句旁白 SNR 实测 8.5 dB，略低于声明的 8.6–16 dB 下限（logs/dataviz.log:92，audio 相关）。",
+    "闪避值两处矛盾未抹平：style-dna/dataviz.json#sound_palette.mix_rules 主值写 ~−11 dB、括号内注明 mix.py 文档串写 ~−8 dB；`style-dna/dataviz.md:156` 写 −11 dB，:281 证据行写 mix.py ~−8 dB（audio −4 之一）。",
+    "第 4 句旁白 SNR 实测 8.5 dB，略低于声明的 8.6–16 dB 下限（`logs/dataviz.log:92`，audio 相关）。",
     "dub-styles.json#dataviz 为派生条目：字幕字体由 demo 的 Newsreader 换成 SimHei（Consolas 无中文字形），中文内容下与图注衬线气质有偏差（typography −2）。",
     "accent #d97757 仅用于引擎演示的非数据标记，主数据全靠色带；通路派生色值来自 lib/dub-visual.json 而非 STYLE.md 明文（palette −1）。"
   ],

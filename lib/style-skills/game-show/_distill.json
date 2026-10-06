@@ -100,7 +100,7 @@
       },
       "voiceChain": "core/tts/tts.py（离线 Kokoro，模型 core/tts/kokoro-v1.0.onnx）+ demo/make_voices_kokoro.py；原 make_voices.sh 未改（md5 57f0900bbfea7360f5a98e0a5b3bdb2c）",
       "eventHitRate": "79/79 v: 事件全部命中（修复前 78/79）",
-      "titleFix": "music.py:279 else 分支 t-0.03 → max(0.0, t-0.03)；title 窗口差分 RMS 从 -64.6 dBFS → -23.09 dBFS"
+      "titleFix": "`music.py:279` else 分支 t-0.03 → max(0.0, t-0.03)；title 窗口差分 RMS 从 -64.6 dBFS → -23.09 dBFS"
     },
     "warnings": [
       "成片真峰值 -0.22 dBTP 超出项目 -1.2 dBTP 交付目标 0.98 dB（AAC 256k 过冲 +1.48 dB，项目级既有缺陷）（★ 原记·2026-10-03；成片已于 2026-10-03 用 scripts/fix-truepeak.mjs 重混，实测真峰值 -2.00 dBTP 达标）",

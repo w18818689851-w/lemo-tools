@@ -10,12 +10,12 @@
     "rhythm": 19,
     "audio": 18
   },
-  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−0.86 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.34 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位取 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量——本风格副本 styles/microgame/demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（tools/mux.sh:5,9），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），故**减半 = −1**，audio 18→17。属项目级既有缺陷、非本风格音频链所致。另 −2 为既有：ASR mismatches 4（d_ah/fx_choo1/d_ah2/fx_choo2，按 DEMO.md:58 属当 SFX 处理、豁免 whisper 校验的条目）、mix.wav peak 0.89 距削波约 1 dB（logs/microgame.log:87-118）。音频链本次真实跑过（TTS + ASR + score.py + mix.py）。",
+  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−0.86 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.34 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位取 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量——本风格副本 styles/microgame/demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（`tools/mux.sh:5,9`），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），故**减半 = −1**，audio 18→17。属项目级既有缺陷、非本风格音频链所致。另 −2 为既有：ASR mismatches 4（d_ah/fx_choo1/d_ah2/fx_choo2，按 `DEMO.md:58` 属当 SFX 处理、豁免 whisper 校验的条目）、mix.wav peak 0.89 距削波约 1 dB（`logs/microgame.log:87-118`）。音频链本次真实跑过（TTS + ASR + score.py + mix.py）。",
   "defects": [
     "lib/dub-styles.json#microgame 是 derived:true 的派生条目，subtitle.fontFamily=KaiTi、bold=true、subtitleBack=#B3000000（黑底条），而原生字幕是 Titan One 白字 + 22px 墨描边 + 品红投影 + 金色爆点、斜 -6 度、命令词即字幕且无底框；走 dub.mjs 通路时本风格最标志性的视觉元素全部丢失（typography 扣分）。",
-    "本次 ASR 未全通过：mismatches 4（d_ah / fx_choo1 / d_ah2 / fx_choo2），日志打 STEP_WARN asr_check 未通过（继续）（logs/microgame.log:87-110）。按 DEMO.md:58 这四条属当 SFX 处理、豁免 whisper 校验的条目，非真缺陷但流程亮黄灯（audio 扣分）。",
-    "混音峰值偏高：mix.wav peak 0.89（logs/microgame.log:118），距削波仅约 1 dB（audio 扣分）。",
-    "mux.sh 提示音视频长度不一致：audio 59.826792s 短于 video 59.833333s，已自动 padding 到 59.875s（logs/microgame.log:132），无实际影响但属告警。",
+    "本次 ASR 未全通过：mismatches 4（d_ah / fx_choo1 / d_ah2 / fx_choo2），日志打 STEP_WARN asr_check 未通过（继续）（`logs/microgame.log:87-110`）。按 `DEMO.md:58` 这四条属当 SFX 处理、豁免 whisper 校验的条目，非真缺陷但流程亮黄灯（audio 扣分）。",
+    "混音峰值偏高：mix.wav peak 0.89（`logs/microgame.log:118`），距削波仅约 1 dB（audio 扣分）。",
+    "mux.sh 提示音视频长度不一致：audio 59.826792s 短于 video 59.833333s，已自动 padding 到 59.875s（`logs/microgame.log:132`），无实际影响但属告警。",
     "【palette −1】细纹理 `textureRaw: toon` 声明了但渲染未实现：`lib/dub-styles.json#microgame.bgRecipe.textureRaw` 是 `toon`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），不读 `textureRaw` ⇒ `toon` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `toon` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
@@ -24,10 +24,10 @@
     "缺 9:16 版舞台布局参数（TV 尺寸、讲台与生命板位置、关卡牌位置），竖版必须重排，无法从现有文件推导。"
   ],
   "limits": [
-    "格式硬上限 45-60s，更长就失去 frenzy（STYLE.md:6）；想做长内容必须换风格。",
-    "依赖 WebGL2 材质 shader（riso / crayon / CRT / ink / blueprint paper 五种，glpass.js）与大量离屏 Canvas 渲染；setCtx 一旦漏调就会画到错误的画布（DEMO.md:115）。",
-    "单字命令在 Kokoro 里会加元音尾巴（Pump! 变 Pompey、Zip! 变 Zipper），必须生成两词短语再按 ASR 时间戳切词（tools/trim_cmd.py）（DEMO.md:59）。",
-    "角色帧率必须能独立于相机帧率步进（8/12/24 fps），否则五件事一起加速的阶梯做不出来（STYLE.md:45-46）。",
+    "格式硬上限 45-60s，更长就失去 frenzy（`STYLE.md:6`）；想做长内容必须换风格。",
+    "依赖 WebGL2 材质 shader（riso / crayon / CRT / ink / blueprint paper 五种，glpass.js）与大量离屏 Canvas 渲染；setCtx 一旦漏调就会画到错误的画布（`DEMO.md:115`）。",
+    "单字命令在 Kokoro 里会加元音尾巴（Pump! 变 Pompey、Zip! 变 Zipper），必须生成两词短语再按 ASR 时间戳切词（tools/trim_cmd.py）（`DEMO.md:59`）。",
+    "角色帧率必须能独立于相机帧率步进（8/12/24 fps），否则五件事一起加速的阶梯做不出来（`STYLE.md:45-46`）。",
     "本风格撑不起需要连续论证、长句解说、细腻情感递进或真实人物访谈的内容；也撑不起只用一个统一画风的需求（会退化成 Game Show Flat）。"
   ],
   "evidenceFrames": [
@@ -99,7 +99,7 @@
     ]
   },
   "resolvedDefects": [
-    "【audio −1，本次新补记】成片真峰值 −0.86 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.34 dB；真峰值为负 ⇒ 未削波，属『仅超线』。根因在下游 AAC 编码余量：本风格副本 styles/microgame/demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（tools/mux.sh:5,9），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），AAC 编码过冲把真峰值顶到 −0.86。属项目级既有缺陷、非本风格音频链所致。扣分按 AGENT-BRIEF『真峰值超标怎么扣』：真峰值为负但超线取 −2 档，根因在下游 AAC 故减半 = −1，audio 18→17。此前 §6 只写了 mix.wav peak 0.89、未记成片真峰值。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −0.86 dBTP → **−2.18 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。",
-    "composition −1（原缺陷）：本风格无 aspects 声明、按 1920x1080 绝对像素构图；产品默认 9:16 导出时右侧约 43.75% 丢失，讲台/大红按钮/生命板/关卡牌整体消失——生命板是本风格唯一的情绪载体（STYLE.md:87），丢它风格即塌（composition 扣分）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 92→93（分数于 2026-10-05 回补）。原记录保留作历史。"
+    "【audio −1，本次新补记】成片真峰值 −0.86 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.34 dB；真峰值为负 ⇒ 未削波，属『仅超线』。根因在下游 AAC 编码余量：本风格副本 styles/microgame/demo/tools/mux.sh 的 loudnorm 目标写死 TP=-1.2（`tools/mux.sh:5,9`），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），AAC 编码过冲把真峰值顶到 −0.86。属项目级既有缺陷、非本风格音频链所致。扣分按 AGENT-BRIEF『真峰值超标怎么扣』：真峰值为负但超线取 −2 档，根因在下游 AAC 故减半 = −1，audio 18→17。此前 §6 只写了 mix.wav peak 0.89、未记成片真峰值。\n★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −0.86 dBTP → **−2.18 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。",
+    "composition −1（原缺陷）：本风格无 aspects 声明、按 1920x1080 绝对像素构图；产品默认 9:16 导出时右侧约 43.75% 丢失，讲台/大红按钮/生命板/关卡牌整体消失——生命板是本风格唯一的情绪载体（`STYLE.md:87`），丢它风格即塌（composition 扣分）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 19→20，matchScore 92→93（分数于 2026-10-05 回补）。原记录保留作历史。"
   ]
 }

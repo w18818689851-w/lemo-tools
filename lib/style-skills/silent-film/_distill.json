@@ -12,10 +12,10 @@
   },
   "defects": [
     "composition −3：帧 f19（温柔段跪姿）里主角跪地那条腿的小腿与大腿在膝处断开且明显过长，2.5D 骨架在大幅屈膝姿态下投影错位。",
-    "composition −1：帧 f03（虹膜镜）右半有一条贯穿整个片门高度的 1 px 亮线，读起来像数字直线，不符合 STYLE.md:19 要求的「断续竖划痕、每条只活几帧、沿长度断开」。",
-    "composition −1：帧 f21 里女孩的脸在片门内约占 1/6 画高时五官边缘生硬、偏人偶感（STYLE.md:59 已预警大特写会像人偶，中景仍是可读性上限）。",
-    "palette −1：STYLE.md:25 声明的「事情变糟更冷更狠、温柔更暖更干净」在抽帧上不可辨——对比 f07（追逐）与 f19（温柔）几乎看不出可辨的暖冷差，sepia 只在 0.10–0.36 之间调，幅度太窄。",
-    "typography −1：CARD2（帧 f13「STOP THAT / BAKER!」）在 cardspecs.js:5 声明 level 0 = 一重粗线，但抽帧上是细双线边框，与 level 1（双线阶梯角）视觉区分很弱。",
+    "composition −1：帧 f03（虹膜镜）右半有一条贯穿整个片门高度的 1 px 亮线，读起来像数字直线，不符合 `STYLE.md:19` 要求的「断续竖划痕、每条只活几帧、沿长度断开」。",
+    "composition −1：帧 f21 里女孩的脸在片门内约占 1/6 画高时五官边缘生硬、偏人偶感（`STYLE.md:59` 已预警大特写会像人偶，中景仍是可读性上限）。",
+    "palette −1：`STYLE.md:25` 声明的「事情变糟更冷更狠、温柔更暖更干净」在抽帧上不可辨——对比 f07（追逐）与 f19（温柔）几乎看不出可辨的暖冷差，sepia 只在 0.10–0.36 之间调，幅度太窄。",
+    "typography −1：CARD2（帧 f13「STOP THAT / BAKER!」）在 `cardspecs.js:5` 声明 level 0 = 一重粗线，但抽帧上是细双线边框，与 level 1（双线阶梯角）视觉区分很弱。",
     "typography −1：END 卡（帧 f24）堆了 6 行 24–104 px 小字（片名/风格名/LEMO-OPUSCAR/LemoLab × Claude Opus 5.5/素材 CC0/字体 OFL），是现代署名块，不是 1920s 年代字幕卡形态。",
     "typography −1：lib/dub-styles.json#silent-film 派生的字幕字体是 SimSun（宋体）、字号 5.185%、顶部居中，与真实卡的 Playfair Display SC / Old Standard TT Italic + 满卡居中完全不符（该派生条目 notes 亦自认应优先用代码抽取值替换）。",
     "rhythm −2：5 张卡中有 3 张（CARD1/CARD2/CARD3）挤在 11.7–37.5 s 的中间 26 秒内，开头 11 s 与结尾 16 s 各只有 1 张卡，卡点分布不均。",
@@ -29,7 +29,7 @@
   "limits": [
     "本风格没有 aspects 声明，只支持 16:9（1920×1080）。产品默认 9:16（1080×1920）会把 16:9 画面等比塞进左上角，右侧约 43.75% 丢失、两侧幕布全丢、下方整片黑——必须锁定 16:9 输出。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
     "2.5D 骨架的表达上限是「大全景里用身体演戏」：不适合近景情绪戏、不适合面部特写、不适合多人复杂交互。",
-    "不适合信息密度高的题材：一镜一个动作节拍、一卡 2–9 个词，硬塞多步骤内容会直接毁掉可读性（DEMO.md:75 记录首版八步市集链在缩略图里读不出来而整段砍掉）。",
+    "不适合信息密度高的题材：一镜一个动作节拍、一卡 2–9 个词，硬塞多步骤内容会直接毁掉可读性（`DEMO.md:75` 记录首版八步市集链在缩略图里读不出来而整段砍掉）。",
     "运动 16 fps（追逐 18 fps）+ 损伤 24 fps 的两套帧率是硬规则，任何「统一成 24 fps 更顺滑」的优化都会让风格立刻失效。",
     "本次最高可达分受素材与渲染限制约为 90：骨架屈膝投影、竖划痕连续性、卡边框层级三项属于引擎实现问题，不改源码无法消除；sepia 幅度是参数问题。"
   ],
@@ -88,7 +88,7 @@
       "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.56 dBTP，在 −1.2 dBTP 交付线内（余量 0.36 dB）、未削波。SKILL.md §6 已按此口径记录；本次把它同步进自检记录。astats 采样峰值 −1.564732 是下界。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
     },
     "warnings": [
-      "首跑 events.mjs 失败、重跑通过（瞬时故障）：2026-10-03 首次批量出片时第 3 步导出里 styles/silent-film/demo/tools/dump_timeline.mjs 报退出码 1（_distill/logs/silent-film.log:27），同一步的 events.mjs 本身成功输出 `events 47 dur 54.2159`（log:26）；同一命令手工重跑即通过，判定为瞬时故障，非代码缺陷。遇到该条直接重跑，不要改 dump_timeline.mjs。",
+      "首跑 events.mjs 失败、重跑通过（瞬时故障）：2026-10-03 首次批量出片时第 3 步导出里 styles/silent-film/demo/tools/dump_timeline.mjs 报退出码 1（`_distill/logs/silent-film.log:27`），同一步的 events.mjs 本身成功输出 `events 47 dur 54.2159`（log:26）；同一命令手工重跑即通过，判定为瞬时故障，非代码缺陷。遇到该条直接重跑，不要改 dump_timeline.mjs。",
       "本次音频链路（日志第 [4] 步）为空：该 demo 无 lines.json，跳过配音（log:39），没有使用任何预生成配音；配乐与混音由 demo 自己的 music/score.py + mix.py 现场生成（score.wav 54.22 s events 661 peak 0.843；mix.wav 54.22 s peak 0.751）。",
       "命令行带 --skip-sync --no-preflight（log:1），同步两份库被跳过（log:21）。",
       "成片渲染 1301 frames / 43 s / 6 workers → video_gpu.mp4 103.8 MB；混流走 nvenc，MUX_OK 65259378 src_frames=1301 out_frames=1301，最终 62.2 MB / 总耗时 89.5 s；除上述 dump_timeline 一条外无其他告警。"

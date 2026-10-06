@@ -13,16 +13,16 @@
   "defects": [
     "palette −1：mux 以脚本默认 grain 2（noise=c0s=2:allf=t）在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分（paper.py 生成 ±3.5% 噪声 + 约 2600 条纤维 + 细颗粒），再加颗粒属双重质感；同类纸纹风格（ink-wash）显式传 grain 0。本次音频修复只重做音频、未改混流参数，该缺陷仍在。",
     "composition −1：顶部 HUD 安全边距只有 76px（约 3.96% 画面宽，scene.js 区块卡从 x=76 起排），窄于常见的 5% 安全区，是本风格构图上最紧的一处，任何裁切或加边都会先吃掉区块卡。",
-    "typography −2：dub 通路（dub-styles.json#watercolor）把字幕映射到 SimHei（黑体）+ 白色描边（outlineFactor 0.00278），而 STYLE.md:36-38 要求 Cormorant Garamond 衬线斜体 + 纸色光晕、中文用 Noto Serif SC 衬线、ink 78% 无描边。该条目的 notes 自己承认这是派生值 + 字体修正（原等宽字体不含中文字形）。",
-    "rhythm −1：成片以 24 fps 导出（产品导出默认帧率），而 STYLE.md:48 声明「60 fps suits the slow, fluid brush」，demo 的 render.mjs:18 原生 FPS 默认 60；笔触推进与摆动（sway 的 sin(1.15t+φ)）被降采样。",
-    "audio −1：STYLE.md:71 把「把笔抬起来——音乐退场，只剩纸与房间」列为声音调色板的一条静默特质，但 mix.py 从不把音乐归零（mus *= (1 - .38·duck) 只做约 −4 dB 闪避），全片 113.6 s 音乐不停；70.3 s 的雾擦除段只叠了一层 airy 纸声，声明的静默没有出现。配乐 / 拟音 / 旁白 / 响度四项均已实测达标，故只扣这 1 分。",
+    "typography −2：dub 通路（dub-styles.json#watercolor）把字幕映射到 SimHei（黑体）+ 白色描边（outlineFactor 0.00278），而 `STYLE.md:36-38` 要求 Cormorant Garamond 衬线斜体 + 纸色光晕、中文用 Noto Serif SC 衬线、ink 78% 无描边。该条目的 notes 自己承认这是派生值 + 字体修正（原等宽字体不含中文字形）。",
+    "rhythm −1：成片以 24 fps 导出（产品导出默认帧率），而 `STYLE.md:48` 声明「60 fps suits the slow, fluid brush」，demo 的 `render.mjs:18` 原生 FPS 默认 60；笔触推进与摆动（sway 的 sin(1.15t+φ)）被降采样。",
+    "audio −1：`STYLE.md:71` 把「把笔抬起来——音乐退场，只剩纸与房间」列为声音调色板的一条静默特质，但 mix.py 从不把音乐归零（mus *= (1 - .38·duck) 只做约 −4 dB 闪避），全片 113.6 s 音乐不停；70.3 s 的雾擦除段只叠了一层 airy 纸声，声明的静默没有出现。配乐 / 拟音 / 旁白 / 响度四项均已实测达标，故只扣这 1 分。",
     "【palette −1】细纹理 `textureRaw: watercolor` 声明了但渲染未实现：`lib/dub-styles.json#watercolor.bgRecipe.textureRaw` 是 `watercolor`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `rice-paper` ⇒ 宣纸噪点（`noise=alls=6:allf=t+u`）），不读 `textureRaw` ⇒ `watercolor` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `watercolor` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
-    "配乐源不进版本库：music/*.mp3 与 *.wav 被根 .gitignore 忽略，新 clone 的 music/ 里没有曲源，必须先跑 sh music/prep.sh（脚本自己 curl 下载 Wildflowers.mp3 再解码）。这不是版权缺口——Scott Buckley《Wildflowers》是 CC BY 4.0，直链写在 music/prep.sh:8，可合法使用。",
+    "配乐源不进版本库：music/*.mp3 与 *.wav 被根 .gitignore 忽略，新 clone 的 music/ 里没有曲源，必须先跑 sh music/prep.sh（脚本自己 curl 下载 Wildflowers.mp3 再解码）。这不是版权缺口——Scott Buckley《Wildflowers》是 CC BY 4.0，直链写在 `music/prep.sh:8`，可合法使用。",
     "配音文件只在 WSL 侧：voices/v01–v13.wav 同样被 .gitignore 忽略，Windows 副本的 voices/ 里只有 dur.json；跨侧核对音频链必须到 WSL 路径下看。",
-    "无 styles/watercolor/demo/build.sh：AGENT-BRIEF 优先级 4 指定的这个文件在本风格不存在，构建链只以 DEMO.md:106-150「Build notes」的命令清单形式存在（tts/gen.py → asr.py → music/{prep,analyze,jump,edit}.py → mix.py → render.mjs → mux.sh）。",
-    "字体为自托管且需联网获取：demo/fonts/ + fetch_fonts.mjs 下载 Cormorant Garamond / Caveat / IBM Plex Mono / Noto Serif SC；Noto Serif SC 被 subset 到 scene.js + main.js 里出现的 CJK 字符，新增中文字幕字符会 fallback 到别的字体直到重新 subset（STYLE.md:95）。"
+    "无 styles/watercolor/demo/build.sh：AGENT-BRIEF 优先级 4 指定的这个文件在本风格不存在，构建链只以 `DEMO.md:106-150`「Build notes」的命令清单形式存在（tts/gen.py → asr.py → music/{prep,analyze,jump,edit}.py → mix.py → render.mjs → mux.sh）。",
+    "字体为自托管且需联网获取：demo/fonts/ + fetch_fonts.mjs 下载 Cormorant Garamond / Caveat / IBM Plex Mono / Noto Serif SC；Noto Serif SC 被 subset 到 scene.js + main.js 里出现的 CJK 字符，新增中文字幕字符会 fallback 到别的字体直到重新 subset（`STYLE.md:95`）。"
   ],
   "limits": [
     "只有 16:9：style.json 无 aspects 声明，产品默认 9:16 下画面会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑；本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
@@ -147,7 +147,7 @@
         "channels": 2,
         "durSec": 117.786396
       },
-      "beatGridCheck": "score_beats.json 的 cut=61.23102040816327 / lag=204.38204081632654 / beats[0]=11.865396825 与 scene.js:284 的 BEAT0=11.865、BEAT=0.5805 逐项吻合（60/0.5805 ≈ 103.36 BPM）"
+      "beatGridCheck": "score_beats.json 的 cut=61.23102040816327 / lag=204.38204081632654 / beats[0]=11.865396825 与 `scene.js:284` 的 BEAT0=11.865、BEAT=0.5805 逐项吻合（60/0.5805 ≈ 103.36 BPM）"
     },
     "mix": {
       "path": "styles/watercolor/demo/mix.wav",

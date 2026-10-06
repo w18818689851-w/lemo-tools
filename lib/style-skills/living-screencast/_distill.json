@@ -12,19 +12,19 @@
   },
   "defects": [
     "audio −3：ASR 校验未通过（本次唯一 mismatch）。日志 `DIFF v05 | Point at a file with the at sign, → Point at a file with the head sign.` 随后 `STEP_WARN asr_check 未通过（继续）`、`mismatches: 1`，即旁白里的 at sign 被 whisper 听成 head sign；成片未因此阻断。",
-    "typography −2：按键 HUD 会压到应用窗口下缘。帧 f09（Plan 模式段）左下角按键 HUD 胶囊与窗口底边重叠；STYLE.md:45 只规定「屏幕上不叠别的」，未规定 HUD 与窗口的间距，属规则空白带来的实际瑕疵。",
+    "typography −2：按键 HUD 会压到应用窗口下缘。帧 f09（Plan 模式段）左下角按键 HUD 胶囊与窗口底边重叠；`STYLE.md:45` 只规定「屏幕上不叠别的」，未规定 HUD 与窗口的间距，属规则空白带来的实际瑕疵。",
     "composition −1：dub 通路的底色与 demo 观感不一致。dub-styles.json#living-screencast 的 bg #0C1016 是兜底值（bgSameAsDefault:true），渲染成「暗底+白字+vignette 0.35」的通用暗色板，而 demo 是浅色主题的桌面录屏；走文案+风格通路时画面底与 demo 完全不是一回事。"
   ],
   "assetGaps": [
     "无外部图像/视频素材缺口：UI 由 demo/ui.js 把状态转成 HTML，吉祥物与道具由 demo/clawd.js 用像素网格画成 SVG，HUD/暗角/运动模糊/像素擦除在 demo/main.js，全部程序化。",
     "字体缺口：样片用 Inter / Newsreader / JetBrains Mono（均 OFL），dub 通路回退 SimHei。条目 notes 说明原因：原按等宽映射到 Consolas，但 consola.ttf 仅 448 KB 不含中文字形会 tofu，故改用含 CJK 的 SimHei；后续若接入含 CJK 的等宽字体应换回。",
-    "吉祥物缺口：样片用的是非官方同人片里的 Claude Code 像素吉祥物（DEMO.md:84 自述 Unofficial fan film）；用户片子必须换成本产品吉祥物或原创像素角色，不能沿用。"
+    "吉祥物缺口：样片用的是非官方同人片里的 Claude Code 像素吉祥物（`DEMO.md:84` 自述 Unofficial fan film）；用户片子必须换成本产品吉祥物或原创像素角色，不能沿用。"
   ],
   "limits": [
     "只有 16:9：style.json 无 aspects 声明。横向桌面 + 横向应用窗口是所有风格里对竖版最不友好的构图之一；产品默认 9:16 下会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑，底居中的字幕胶囊会落到画面中段偏左并与窗口内容挤在一起。本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
-    "通常 45-75s（STYLE.md:12，样片 59.4s）：太短章节铺不开，太长同一套镜头语法会重复。",
-    "强依赖真产品的界面知识：每个按钮、模式名、快捷键都要对文档，不在文档里的功能不能进片子（STYLE.md:99）。这是最大前置成本。",
-    "吉祥物落点依赖 main.js 的 A() 每帧量 getBoundingClientRect 反算世界坐标；任何手写坐标都会让吉祥物浮空或漂离元素（STYLE.md:100）。",
+    "通常 45-75s（`STYLE.md:12`，样片 59.4s）：太短章节铺不开，太长同一套镜头语法会重复。",
+    "强依赖真产品的界面知识：每个按钮、模式名、快捷键都要对文档，不在文档里的功能不能进片子（`STYLE.md:99`）。这是最大前置成本。",
+    "吉祥物落点依赖 main.js 的 A() 每帧量 getBoundingClientRect 反算世界坐标；任何手写坐标都会让吉祥物浮空或漂离元素（`STYLE.md:100`）。",
     "matchScore 上限说明：成片即本风格自身的 demo，客观上限 100；扣掉的 10 分全部来自可复现的具体缺陷（ASR mismatch、峰值超标、HUD 重叠、dub 底色兜底），无「不可达分」。"
   ],
   "evidenceFrames": [

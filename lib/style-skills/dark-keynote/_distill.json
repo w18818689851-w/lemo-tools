@@ -11,7 +11,7 @@
     "audio": 18
   },
   "defects": [
-    "字体回退：STYLE.md:32 点名 Inter / Inter Tight 600 / JetBrains Mono，本机无，通路由 dub-styles.json 回退 Microsoft YaHei，字重/字宽与设计意图不一致（typography −4）。",
+    "字体回退：`STYLE.md:32` 点名 Inter / Inter Tight 600 / JetBrains Mono，本机无，通路由 dub-styles.json 回退 Microsoft YaHei，字重/字宽与设计意图不一致（typography −4）。",
     "bg #0A0B0F / bg2 #151822 / fg #E8EAF0 非 STYLE.md 明文（§3:25 只说 cool neutral ladder），来自 demo 代码 PAL，跨实现复现时存在色值漂移风险（palette −1）。",
     "字幕底胶囊色 rgba(12,14,19,.72) 与 dub-styles 推导值 #CC101216 不完全同源，属推导而非原文值（palette 相关）。"
   ],

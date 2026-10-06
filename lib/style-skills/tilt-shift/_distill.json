@@ -13,7 +13,7 @@
   "defects": [
     "字体通路回退：demo 声明 Overpass 600 / Overpass Mono（OFL），本机 dub 通路回退 SimHei，字宽字重与设计意图不完全一致（dub-styles.json#tilt-shift.notes）",
     "通路字幕只承载白字 #FFFFFF，不画 demo 的绿路牌面板（#0f5e3c 圆角 + 内嵌白 keyline + 红绿灯图标），形态有损失（dub-styles.json#tilt-shift）",
-    "立面暖白/奶油/赤陶/砖/淡黄/薄荷/天蓝只有色名、无逐色 hex，配色只能对齐取向不能逐值核对（DEMO.md:45）",
+    "立面暖白/奶油/赤陶/砖/淡黄/薄荷/天蓝只有色名、无逐色 hex，配色只能对齐取向不能逐值核对（`DEMO.md:45`）",
     "【palette −1】细纹理 `textureRaw: tilt-shift-blur` 声明了但渲染未实现：`lib/dub-styles.json#tilt-shift.bgRecipe.textureRaw` 是 `tilt-shift-blur`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `tilt-shift-blur` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `tilt-shift-blur` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
@@ -21,7 +21,7 @@
     "新主题需要的程序化城镇资产（布局 / 立面 / 招牌 / 英雄演员）必须自建，不能沿用《Toy Town Rush Hour》"
   ],
   "limits": [
-    "骨架三条不可拆：虚化带 + 延时跳帧 + 高机位（STYLE.md:95-101），撑不起平视叙事与长镜头自由节拍",
+    "骨架三条不可拆：虚化带 + 延时跳帧 + 高机位（`STYLE.md:95-101`），撑不起平视叙事与长镜头自由节拍",
     "速度变化必须落在 120 BPM 音乐网格上，不适合完全自由的速度曲线",
     "单句字幕硬上限 36 字符、机位永远在高处（除刻意亲密时刻）",
     "最高可达分受限：字体回退与通路字幕形态两处客观扣分，故 typography 封顶约 16/20"
@@ -80,7 +80,7 @@
       "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.56 dBTP，在 −1.2 dBTP 交付线内（余量 0.36 dB）、未削波。此前 §6 写的「-1.6 dBFS」是 ebur128 的 1 位小数读数（口径不对），本次改为 input_tp 口径；astats 采样峰值 −1.588653 是下界。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
     },
     "warnings": [
-      "whisper ASR 把 'bass' 听成 'base'（同音词），mismatches 0，按同音词规则判 OK（logs/tilt-shift.log:52）",
+      "whisper ASR 把 'bass' 听成 'base'（同音词），mismatches 0，按同音词规则判 OK（`logs/tilt-shift.log:52`）",
       "渲染行带页面参数 --q noev，仅跳过渲染期事件扫描，事件表 2182 条仍正常导出供配乐/字幕消费"
     ]
   },

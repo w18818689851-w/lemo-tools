@@ -1992,7 +1992,110 @@ export const PROCESS_CASES = [
   },
 ];
 
-// ── --full 才跑的完整回归（两条合计约 3 分钟）────────────────
+// ── ⑤+++/⑤++++/⑤+++++ 的公共夹具：一个「极小的假口播素材」───────────
+//
+// ★ 为什么必须**现造**而不是在仓里放一份：`*.mp4` 一律不入库（成片与素材都按「非 C 盘、
+//   不提交」处理），而且本项目的纪律是「测试自己造输入、跑完自己清掉」。
+// ★ 为什么必须**带音轨**：`--keep-original` 的混流命令用 `-map 0:a?` / `[0:a]`，
+//   无声素材会让「音轨逐字节相同」这条断言**无从谈起**（连音轨都没有）。
+// ★ 为什么在 WSL 里造：Windows 侧**没有 ffmpeg**（`which ffprobe` 无结果，实测），
+//   只能走 WSL 的 `lavfi` 虚拟源。这一步造的是**输入素材**，不是出片 —— 不占 GPU、不跑 TTS。
+// ★ 为什么尺寸是 270x480 / 1.6s：h264 要求宽高都是偶数；1.6s 让编码与混流都落在亚秒级。
+// ★★ 为什么音轨要推到满刻度（`volume=20.8dB`）：ffmpeg 的 `sine` 源默认只有 −20.8 dBFS，
+//   而交付线是 `HARD_PEAK_LIMIT = −1.2 dBTP`。素材自身**必须**超标，否则
+//   `--keep-original-limit` 那条断言「限幅把真峰值压进交付线」就是**空转**
+//   （素材本来就在线内，限不限都过）—— 所以夹具的峰值本身就是判据的一半，
+//   两个用例里都各有一条 `srcTruePeak > HARD_PEAK_LIMIT` 的守卫断言盯着它。
+const KO_W = 270, KO_H = 480, KO_DUR = 1.6;
+const KO_TEXT = '这是保留原声原画的测试。画面和声音都不改。';
+/** 夹具的 SRT（两条 cue，正好铺满素材时长）—— 给 `--srt` 用，绕开 ASR。
+ *  ★ 文本**故意与文案不同**：`--keep-original` 的契约是「`--srt` 只提供**时间轴**，
+ *    字幕文本一律用**文案**」（见 `lib/dub-core.mjs` 的「字幕文本一律用文案」那条）。
+ *    若两边文本写成一样，「字幕逐字等于文案」这条断言就**分不清**成片字幕到底取自哪一边
+ *    —— 那是一条假绿。故意写不一样，才让「文本来自文案」成为**可证伪**的。
+ *    （文本认不出不影响取时间：`alignCuesToSentences` 对认不出的句子按字数比例分配 cue 区间。） */
+const KO_SRT = '1\n00:00:00,000 --> 00:00:00,800\n占位文本甲（SRT 只提供时间轴）\n\n'
+  + '2\n00:00:00,800 --> 00:00:01,600\n占位文本乙\n';
+
+/** `D:\a\b` → `/mnt/d/a/b`（WSL 侧路径）。 */
+function toWsl(p) {
+  const s = String(p);
+  return `/mnt/${s[0].toLowerCase()}${s.slice(2).replace(/\\/g, '/')}`;
+}
+
+/** 造一个「有画面 + 有音轨」的极小假口播素材到 hostPath（Windows 路径）。 */
+function makeDubMaterial(hostPath) {
+  return wsl([
+    'ffmpeg -hide_banner -nostdin -y',
+    `  -f lavfi -i "color=c=0x203040:s=${KO_W}x${KO_H}:r=30:d=${KO_DUR}"`,
+    `  -f lavfi -i "sine=f=440:r=48000:d=${KO_DUR}"`,
+    '  -af "volume=20.8dB"',
+    '  -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p',
+    '  -c:a aac -b:a 96k -ar 48000 -ac 2',
+    '  -shortest -movflags +faststart',
+    `  "${toWsl(hostPath)}"`,
+  ].join(' \\\n'), { timeoutMs: 180000 });
+}
+
+/** ffprobe 一个媒体文件 → `{ v, a, dur }`（视频流 / 音轨 / 总时长；读不到给 null）。 */
+async function probeMedia(hostPath) {
+  const r = await wsl('ffprobe -v error -show_entries stream=codec_type,width,height,codec_name '
+    + `-show_entries format=duration -of json "${toWsl(hostPath)}"`, { timeoutMs: 120000 });
+  let j = null;
+  try { j = JSON.parse(String(r.out)); } catch { return null; }
+  const streams = Array.isArray(j.streams) ? j.streams : [];
+  return {
+    v: streams.find((s) => s.codec_type === 'video') || null,
+    a: streams.find((s) => s.codec_type === 'audio') || null,
+    dur: Number(j.format && j.format.duration),
+  };
+}
+
+/**
+ * **独立**量一个文件的真峰值 / 集成响度（WSL 的 `loudnorm`，4× 过采样，口径与 `dub.mjs` 一致）。
+ * ★ 刻意不用工具自己打印的那个数 —— 那条是「自述」，判据要落在**成片实物**上。
+ */
+async function measureLoud(hostPath) {
+  const r = await wsl('ffmpeg -hide_banner -nostdin -i '
+    + `"${toWsl(hostPath)}" -af loudnorm=print_format=json -f null - 2>&1`, { timeoutMs: 180000 });
+  const t = `${r.out}${r.err}`;
+  const tp = /"input_tp"\s*:\s*"(-?[\d.]+)"/.exec(t);
+  const i = /"input_i"\s*:\s*"(-?[\d.]+)"/.exec(t);
+  return { tp: tp ? Number(tp[1]) : null, lufs: i ? Number(i[1]) : null };
+}
+
+/**
+ * 把两个文件的音轨各自解成 PCM（48k / 立体声 / s16）再算 md5，返回 `[md5A, md5B]`。
+ * ★ 这是「音轨有没有被偷偷重编码 / 替换」的**硬证据**：`-c:a copy` 下解码结果必然逐字节
+ *   相同，重编码（`--keep-original-limit`）则必然不同。判据与 `dub.mjs` 自检那一段同口径
+ *   （它也是「解成 PCM 再比 md5」），但这里是**测试自己独立算**，不采信工具自述。
+ */
+async function audioPcmMd5Pair(hostA, hostB) {
+  const t = `/tmp/ko-pcm-${process.pid}-${Date.now().toString(36)}`;
+  const r = await wsl([
+    `ffmpeg -v error -y -i "${toWsl(hostA)}" -vn -c:a pcm_s16le -ar 48000 -ac 2 -f wav ${t}a.wav`,
+    `ffmpeg -v error -y -i "${toWsl(hostB)}" -vn -c:a pcm_s16le -ar 48000 -ac 2 -f wav ${t}b.wav`,
+    `md5sum ${t}a.wav ${t}b.wav`,
+    `rm -f ${t}a.wav ${t}b.wav`,
+  ].join('\n'), { timeoutMs: 180000 });
+  return String(r.out).trim().split('\n')
+    .map((l) => l.trim().split(/\s+/)[0]).filter((h) => /^[0-9a-f]{32}$/.test(h));
+}
+
+/**
+ * 读 `film.srt`，把每条字幕的**正文**拼起来（去空白）—— 「字幕逐字等于文案」的判据。
+ * ★ 与 `⑤++` 用例里内联的那段**同口径**（那边是 `srtBlocks` / `srtJoined` / `stripWs2`）：
+ *   比「拼接后」而不是「逐条」，因为怎么切句是编排的自由，但**内容一个字都不能变**。
+ */
+function srtJoinedText(srtPath) {
+  const blocks = fs.readFileSync(srtPath, 'utf8').split(/\n\s*\n/)
+    .map((b) => b.split('\n').slice(2).join(' ').trim()).filter(Boolean);
+  return { blocks, joined: blocks.map((s) => s.replace(/\s+/g, '')).join('') };
+}
+
+// ── --full 才跑的完整回归 ────────────────────────────────────
+// ⑤+ / ⑤++ 走真渲染 + **现场 GPU TTS**（分钟级）；⑤+++ / ⑤++++ / ⑤+++++ 走
+// `--keep-original`（明令不跑 TTS）⇒ 不占 GPU、几秒级。
 export const FULL_CASES = [
   {
     // ★★ 2026-10-03 修复一处**破坏性副作用**：本用例原来跑 `lemo-make.mjs ascii-crt --skip-sync`
@@ -2237,6 +2340,275 @@ export const FULL_CASES = [
       ctx.note(`⑤++ 现场 TTS 实测：成片 ${fin.lufs} LUFS / 峰值 ${fin.peak} dBFS`
         + `（DNA 目标 ${wantLufs} LUFS，限值 ${TARGET_PEAK_PCM} dBFS，本次由${hitPeak ? '峰值' : '响度'}限住）`
         + `；锁已观察到且已释放`);
+    },
+  },
+  {
+    // ★ 为什么必须有这条（2026-10-07 补的缺口）：
+    //   本文件里**唯一**真跑 `dub.mjs` 出片的用例是 `⑤++`（现场 TTS），而它**没传 `--video`**
+    //   ⇒ 跑的是**形态 A**（生成的渐变背景）。于是「**形态 B**：口播素材铺画面」这条通路
+    //   **从来没有过 CLI 级出片覆盖**（`grep -n -- "--video\|--keep-original\|--fit" test/cases.mjs`
+    //   曾经 0 命中）。
+    // ★ 为什么这条**不跑 TTS、不吃 GPU、几秒就能跑完**：`--keep-original` 明令「不跑 TTS、
+    //   不动素材的时长/画面/声音」，只在素材上叠字幕与叠加层（`dub.mjs` 的 `runKeepOriginal`
+    //   在「出片前显存预检」**之前**就 return 了）⇒ 这条覆盖完全不依赖 Index-TTS。
+    // ★ 为什么必须给 `--srt`：不给会依次退 ASR → VAD → 均匀分配。ASR 要 faster-whisper +
+    //   模型加载（多一个依赖、多几秒、结果还不确定）；`--srt` 是**最快最确定**的那一路。
+    //   断言 `"align":"srt"` 就是钉「走的确实是 SRT 那一路、没有偷偷退到 ASR」。
+    //   ★ 夹具 SRT 的**文本故意与文案不同**（见 `KO_SRT`）⇒「字幕逐字等于文案」这条才是在验
+    //     「字幕文本取自**文案**」；两边写成一样的话，它只是在验一句恒真的废话。
+    name: '⑤+++ 形态 B（--keep-original）真出片：尺寸沿用素材 / 音轨逐字节相同 / 字幕逐字等于文案',
+    run: async (ctx) => {
+      const { HARD_PEAK_LIMIT } = await import('../lib/dub-core.mjs');
+
+      // ── 夹具：现造一个极小的假口播素材（跑完随 outDir 一起删）──
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const outDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}ko-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      ARTIFACTS.dirs.add(outDir);   // ★ 中途断言失败也要摘干净 —— 收尾由 smoke.mjs 的 finally 统一做
+      //   ★ `dub.mjs` 的抽帧会写进共享缓存目录 `dub/_verify/<输出目录名>/`，名字是确定的，提前登记
+      ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(outDir)));
+
+      const srcFile = path.join(outDir, '_src.mp4');
+      const m = await makeDubMaterial(srcFile);
+      assert.ok(m.ok && fs.existsSync(srcFile),
+        `造夹具素材失败（WSL ffmpeg lavfi）：code=${m.code}\n${String(m.err).slice(-800)}`);
+
+      const scriptFile = path.join(outDir, '_script.txt');
+      fs.writeFileSync(scriptFile, `${KO_TEXT}\n`, 'utf8');
+      const srtFile = path.join(outDir, '_sub.srt');
+      fs.writeFileSync(srtFile, KO_SRT, 'utf8');
+
+      // ── 跑：真出片（不跑 TTS）──
+      //   ★ 刻意给 `--size 1080x1920 --ratio 16:9`（与素材 270x480 **不同**）：
+      //     `--keep-original` 明令「改尺寸/比例就是改画面」⇒ 这两个参数**不生效**。
+      //     成片尺寸因此是**可证伪的**：它必须等于素材，而不是我们点名的那个。
+      const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
+        '--keep-original', '--srt', srtFile, '--size', '1080x1920', '--ratio', '16:9',
+        '--out', outDir], { cwd: ctx.root, timeoutMs: 300000 });
+      assert.strictEqual(r.code, 0,
+        `--keep-original 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
+
+      // ── 断言 1：工具自己那行机器可读的结果 JSON ──
+      const lastJson = (r.stdout.match(/^\{.*"keepOriginal".*\}$/m) || [])[0];
+      assert.ok(lastJson, `stdout 末尾没有机器可读的结果 JSON 行\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const fin = JSON.parse(lastJson);
+      assert.strictEqual(fin.keepOriginal, true, '结果 JSON 里 keepOriginal 不是 true');
+      assert.strictEqual(fin.align, 'srt',
+        `对齐方式不是 srt（读到 ${JSON.stringify(fin.align)}）—— --srt 没被采用？`);
+      assert.strictEqual(fin.audioIdentical, true,
+        `工具自检报「音轨与素材不逐字节相同」（audioIdentical=${JSON.stringify(fin.audioIdentical)}）`);
+
+      // ── 断言 2：--size / --ratio 被忽略，且用户**被明确告知** ──
+      assert.match(r.stdout, /在 --keep-original 下不生效/,
+        'stdout 里没有「在 --keep-original 下不生效」的提示 —— 用户给了 --size/--ratio 却没人告诉他被忽略了\n'
+        + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+
+      // ── 断言 3：成片几何 == 素材几何（ffprobe 独立复验，不采信工具自述）──
+      const srcP = await probeMedia(srcFile);
+      const filmPath = path.join(outDir, 'film.mp4');
+      assert.ok(fs.existsSync(filmPath), `没有 ${filmPath}`);
+      const filmP = await probeMedia(filmPath);
+      assert.ok(srcP && srcP.v, `ffprobe 读不出素材的视频流：${JSON.stringify(srcP)}`);
+      assert.ok(filmP && filmP.v, `ffprobe 读不出成片的视频流：${JSON.stringify(filmP)}`);
+      assert.strictEqual(`${srcP.v.width}x${srcP.v.height}`, `${KO_W}x${KO_H}`,
+        `夹具素材尺寸不是 ${KO_W}x${KO_H}（读到 ${srcP.v.width}x${srcP.v.height}）—— 夹具本身不对，断言失去意义`);
+      assert.strictEqual(`${filmP.v.width}x${filmP.v.height}`, `${KO_W}x${KO_H}`,
+        `成片尺寸 ${filmP.v.width}x${filmP.v.height} ≠ 素材 ${KO_W}x${KO_H}`
+        + '（--keep-original 明令沿用素材尺寸；若成片是 1080x1920，说明 --size/--ratio 被错误地生效了）');
+      assert.ok(filmP.a, '成片里没有音轨 —— --keep-original 的素材原声没进成片');
+
+      // ── 断言 4：音轨**逐字节相同**（两条音轨都解成 PCM 再比 md5）──
+      const md5s = await audioPcmMd5Pair(srcFile, filmPath);
+      assert.strictEqual(md5s.length, 2,
+        `PCM md5 只读到 ${md5s.length} 条（期望 2 条：素材 / 成片）—— WSL 侧解码失败？`);
+      assert.strictEqual(md5s[0], md5s[1],
+        '成片音轨与素材**不再逐字节相同**（默认应当是 -c:a copy）：\n'
+        + `  素材 ${md5s[0]}\n  成片 ${md5s[1]}\n`
+        + '  ⇒ 音轨被重编码或替换了。--keep-original 的契约是「一个字节都不动」'
+        + '（要压峰得显式加 --keep-original-limit）。');
+
+      // ── 断言 5：★ 真峰值 == 素材真峰值（既没归一、也没限幅）──
+      //   ★ 为什么用「与素材相等」而不是「≤ 交付线」：`--keep-original` **明令不改声音**，
+      //     所以素材超交付线时成片也**必须**超（`dub.mjs` 对此只 warn、不 bad）。
+      //     断言「≤ 交付线」会**把实现行为写反**。
+      const srcL = await measureLoud(srcFile);
+      const filmL = await measureLoud(filmPath);
+      assert.ok(srcL.tp !== null && filmL.tp !== null,
+        `真峰值测不到（素材 ${JSON.stringify(srcL)} / 成片 ${JSON.stringify(filmL)}）`);
+      assert.ok(srcL.tp > HARD_PEAK_LIMIT,
+        `夹具素材自身真峰值 ${srcL.tp} dBTP 没有超过交付线 ${HARD_PEAK_LIMIT} dBTP`
+        + ' ⇒ 「素材超标时 keep-original 也不归一」这条断言成了空转。请把夹具的音轨推得更满。');
+      assert.ok(Math.abs(filmL.tp - srcL.tp) <= 0.05,
+        `成片真峰值 ${filmL.tp} dBTP 与素材 ${srcL.tp} dBTP 不一致`
+        + `（差 ${Math.abs(filmL.tp - srcL.tp).toFixed(3)} dB）—— 音轨被改过了（--keep-original 不做任何归一）`);
+
+      // ── 断言 6：字幕**逐字等于文案**（去空白后拼接比对）──
+      const srtPath = path.join(outDir, 'film.srt');
+      assert.ok(fs.existsSync(srtPath), `没有 ${srtPath}`);
+      const srt = srtJoinedText(srtPath);
+      const wantText = KO_TEXT.replace(/\s+/g, '');
+      assert.ok(srt.blocks.length > 0, 'film.srt 里一条字幕都没有');
+      assert.strictEqual(srt.joined, wantText,
+        '成片字幕内容与文案不一致（去空白后比对）：\n'
+        + `  文案 ${wantText.length} 字：${wantText}\n`
+        + `  字幕 ${srt.joined.length} 字：${srt.joined}\n`
+        + `  字幕分 ${srt.blocks.length} 条：${JSON.stringify(srt.blocks)}\n`
+        + '  ★ 输入的 SRT 文本与文案**故意不同** ⇒ 成片字幕若等于 SRT 的占位文本，'
+        + '说明字幕文本被错误地取自 --srt 而不是文案。');
+
+      // ── 断言 7：时长沿用素材（不 loop / 不 trim / 不 setpts）──
+      assert.ok(Number.isFinite(filmP.dur) && Math.abs(filmP.dur - KO_DUR) < 0.1,
+        `成片时长 ${filmP.dur}s 与素材 ${KO_DUR}s 差超过 0.1s`);
+
+      ctx.note(`⑤+++ --keep-original 实测：成片 ${filmP.v.width}x${filmP.v.height}（= 素材尺寸，`
+        + `点名的 1080x1920 被正确忽略）· 音轨 PCM md5 与素材相同（${md5s[0].slice(0, 8)}…）· `
+        + `真峰值 ${filmL.tp} dBTP（素材 ${srcL.tp}，**未被归一**，超交付线 ${HARD_PEAK_LIMIT}）· `
+        + `字幕 ${srt.blocks.length} 条 / ${srt.joined.length} 字逐字等于文案`);
+    },
+  },
+  {
+    // ★ 为什么必须有这条：`--keep-original-limit` 是「素材自身真峰值超交付线」时**唯一**的补救
+    //   —— 它把音轨**重编码 + `alimiter` 限幅**（只压峰，不动时长/画面/内容）。这条分支此前零覆盖。
+    // ★ 夹具的音轨刻意推到满刻度 ⇒ 素材真峰值 +0.02 dBTP > 交付线 −1.2 dBTP，
+    //   「限幅后 ≤ 交付线」才是**可证伪**的（素材本就在线内的话，限不限都过 ⇒ 空转）。
+    // ★ 与 ⑤+++ 成对读：一条断言「音轨逐字节相同（没动）」，一条断言「音轨必然不同（动了）」
+    //   —— 两者合起来才钉住「默认 copy / 显式限幅才重编码」这条口径。
+    name: '⑤++++ --keep-original-limit：音轨不再逐字节相同 且 真峰值被压进交付线',
+    run: async (ctx) => {
+      const { HARD_PEAK_LIMIT } = await import('../lib/dub-core.mjs');
+
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const outDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}kolim-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      ARTIFACTS.dirs.add(outDir);
+      ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(outDir)));
+
+      const srcFile = path.join(outDir, '_src.mp4');
+      const m = await makeDubMaterial(srcFile);
+      assert.ok(m.ok && fs.existsSync(srcFile),
+        `造夹具素材失败（WSL ffmpeg lavfi）：code=${m.code}\n${String(m.err).slice(-800)}`);
+      const scriptFile = path.join(outDir, '_script.txt');
+      fs.writeFileSync(scriptFile, `${KO_TEXT}\n`, 'utf8');
+      const srtFile = path.join(outDir, '_sub.srt');
+      fs.writeFileSync(srtFile, KO_SRT, 'utf8');
+
+      const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
+        '--keep-original', '--keep-original-limit', '--srt', srtFile, '--out', outDir],
+      { cwd: ctx.root, timeoutMs: 300000 });
+      assert.strictEqual(r.code, 0,
+        `--keep-original-limit 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
+
+      // ── 断言 1：工具自己的结果 JSON ──
+      const lastJson = (r.stdout.match(/^\{.*"keepOriginal".*\}$/m) || [])[0];
+      assert.ok(lastJson, `stdout 末尾没有机器可读的结果 JSON 行\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const fin = JSON.parse(lastJson);
+      assert.strictEqual(fin.keepOriginalLimit, true, '结果 JSON 里 keepOriginalLimit 不是 true');
+      assert.strictEqual(fin.audioIdentical, false,
+        `工具自检竟报「音轨与素材逐字节相同」（audioIdentical=${JSON.stringify(fin.audioIdentical)}）`
+        + ' —— 开了 --keep-original-limit 却好像没限幅？');
+
+      const filmPath = path.join(outDir, 'film.mp4');
+      assert.ok(fs.existsSync(filmPath), `没有 ${filmPath}`);
+
+      // ── 断言 2：音轨**不再**逐字节相同（PCM md5 必须不同）──
+      const md5s = await audioPcmMd5Pair(srcFile, filmPath);
+      assert.strictEqual(md5s.length, 2,
+        `PCM md5 只读到 ${md5s.length} 条（期望 2 条：素材 / 成片）—— WSL 侧解码失败？`);
+      assert.notStrictEqual(md5s[0], md5s[1],
+        '开了 --keep-original-limit，音轨却仍与素材**逐字节相同**：\n'
+        + `  素材 ${md5s[0]}\n  成片 ${md5s[1]}\n`
+        + '  ⇒ 限幅没有生效（它必须重编码：`alimiter` 是音频滤镜，绕不开解码→滤镜→编码）。');
+
+      // ── 断言 3：★ 真峰值被压进交付线（且素材确实超标 —— 否则本断言空转）──
+      const TOL = 0.25;   // 与 ⑤++ 同口径：AAC 有损编码会把真峰值挪 0.08~0.22 dB
+      const srcL = await measureLoud(srcFile);
+      const filmL = await measureLoud(filmPath);
+      assert.ok(srcL.tp !== null && filmL.tp !== null,
+        `真峰值测不到（素材 ${JSON.stringify(srcL)} / 成片 ${JSON.stringify(filmL)}）`);
+      assert.ok(srcL.tp > HARD_PEAK_LIMIT,
+        `夹具素材自身真峰值 ${srcL.tp} dBTP 没有超过交付线 ${HARD_PEAK_LIMIT} dBTP`
+        + ' ⇒ 「限幅把它压进交付线」这条断言成了空转（本来就在线内）。请把夹具的音轨推得更满。');
+      assert.ok(filmL.tp <= HARD_PEAK_LIMIT + TOL,
+        `成片真峰值 ${filmL.tp} dBTP 超过交付线 ${HARD_PEAK_LIMIT}（含 AAC 编码余量 ${TOL}）`
+        + ` —— 限幅没达标（素材 ${srcL.tp} dBTP）`);
+      assert.ok(filmL.tp < srcL.tp,
+        `成片真峰值 ${filmL.tp} 没有低于素材 ${srcL.tp} —— 限幅没压峰？`);
+
+      // ── 断言 4：限幅**只**压峰 —— 画面尺寸与字幕内容都不许变 ──
+      const srcP = await probeMedia(srcFile);
+      const filmP = await probeMedia(filmPath);
+      assert.ok(filmP && filmP.v, `ffprobe 读不出成片的视频流：${JSON.stringify(filmP)}`);
+      assert.strictEqual(`${filmP.v.width}x${filmP.v.height}`, `${srcP.v.width}x${srcP.v.height}`,
+        `限幅后成片尺寸变了：${filmP.v.width}x${filmP.v.height} ≠ 素材 ${srcP.v.width}x${srcP.v.height}`);
+      assert.ok(Number.isFinite(filmP.dur) && Math.abs(filmP.dur - KO_DUR) < 0.1,
+        `限幅后成片时长 ${filmP.dur}s ≠ 素材 ${KO_DUR}s（限幅不该动时长）`);
+      const srtPath = path.join(outDir, 'film.srt');
+      assert.ok(fs.existsSync(srtPath), `没有 ${srtPath}`);
+      const srt = srtJoinedText(srtPath);
+      assert.strictEqual(srt.joined, KO_TEXT.replace(/\s+/g, ''),
+        `限幅后字幕内容与文案不一致：${JSON.stringify(srt.blocks)}`);
+
+      ctx.note(`⑤++++ --keep-original-limit 实测：素材真峰值 ${srcL.tp} dBTP → 成片 ${filmL.tp} dBTP`
+        + `（≤ 交付线 ${HARD_PEAK_LIMIT}）· 音轨 PCM md5 与素材不同（${md5s[0].slice(0, 8)}… → ${md5s[1].slice(0, 8)}…，`
+        + `重编码是有意的）· 尺寸/时长/字幕一律未动`);
+    },
+  },
+  {
+    // ★ 为什么必须有这条：`--fit loop|trim|slow` 此前**零 CLI 覆盖**。它只在
+    //   **形态 B 的非 keep-original** 路径上生效（`dub.mjs` 的画面滤镜分支），
+    //   而那条路径**必须跑 TTS**（真出片 = 占 GPU + 30 秒以上）⇒ 本用例先用 `--dry-run`
+    //   做**近零成本**覆盖：参数解析 → 取值校验 → 计划行透传。
+    //   ★ 真出片的 `--fit trim` 覆盖**做不到**：`--keep-original` 不跑 TTS ⇒ 那条分支根本
+    //     不执行；而形态 B 的真出片绕不开 TTS。这一格留给 `⑤++` 那一类 GPU 用例，见 test/README.md。
+    // ★ 为什么连「非法值」也要测：`--fit` 的取值校验在 `main()` 里、**早于** keep-original 分支
+    //   ⇒ 就算这次出片根本用不到 fit（例如配了 `--keep-original`），非法值也**必须**当场拒。
+    //   把校验挪成「用得到时才校验」是很容易发生的退化，这条钉住它。
+    name: '⑤+++++ --fit 取值校验（loop|trim|slow）+ dry-run 计划透传（不跑 TTS / 不渲染）',
+    run: async (ctx) => {
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const outDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}kofit-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      ARTIFACTS.dirs.add(outDir);   // ★ dry-run 不走到抽帧 ⇒ 不会有 dub/_verify/<name>，只登记这一个
+      const srcFile = path.join(outDir, '_src.mp4');
+      const m = await makeDubMaterial(srcFile);
+      assert.ok(m.ok && fs.existsSync(srcFile),
+        `造夹具素材失败（WSL ffmpeg lavfi）：code=${m.code}\n${String(m.err).slice(-800)}`);
+      const scriptFile = path.join(outDir, '_script.txt');
+      fs.writeFileSync(scriptFile, '这是一次 --fit 的计划干跑。\n', 'utf8');
+
+      const dry = (extra) => runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
+        '--out', outDir, '--dry-run', ...extra], { cwd: ctx.root, timeoutMs: 300000 });
+
+      // ── 断言 1：三个合法值都透传到计划行；且 dry-run 真的**不跑 TTS、不渲染** ──
+      for (const fit of ['loop', 'trim', 'slow']) {
+        const r = await dry(['--fit', fit]);
+        assert.strictEqual(r.code, 0,
+          `--fit ${fit} --dry-run 退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+        assert.match(r.stdout, new RegExp(`fit=${fit}`),
+          `stdout 里没有 fit=${fit} —— 计划行没把 --fit 透传出去\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+        assert.match(r.stdout, /--dry-run 到此为止/,
+          `--fit ${fit} 的 dry-run 没走到「到此为止」那一行`);
+        assert.ok(!/TTS_DONE/.test(r.stdout),
+          '--dry-run 竟然跑了 TTS（stdout 里有 TTS_DONE）—— 这条用例「零 GPU」的前提被破坏了');
+        assert.ok(!fs.existsSync(path.join(outDir, 'film.mp4')),
+          '--dry-run 竟然出了成片（film.mp4 存在）');
+      }
+
+      // ── 断言 2：非法值当场拒（两种组合都要拒：普通形态 B / 配了 --keep-original）──
+      const badFit = await dry(['--fit', 'bogus']);
+      assert.notStrictEqual(badFit.code, 0, '--fit bogus 竟然 exit 0（期望非 0）');
+      assert.match(badFit.stdout, /--fit 只能是 loop\|trim\|slow/,
+        `非法 --fit 的报错文案不对\n--- stdout ---\n${badFit.stdout.slice(-1000)}`);
+      const badKeep = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
+        '--keep-original', '--fit', 'bogus', '--out', outDir, '--dry-run'],
+      { cwd: ctx.root, timeoutMs: 120000 });
+      assert.notStrictEqual(badKeep.code, 0,
+        '--keep-original 下 --fit 根本用不到，非法值却被放过了 —— 取值校验必须是**无条件**的');
+      assert.match(badKeep.stdout, /--fit 只能是 loop\|trim\|slow/,
+        `--keep-original 下非法 --fit 的报错文案不对\n--- stdout ---\n${badKeep.stdout.slice(-1000)}`);
+
+      ctx.note('⑤+++++ --fit 实测：loop/trim/slow 三值都透传到计划行 fit=<值>；'
+        + '非法值在「形态 B」与「配了 --keep-original」两种组合下都被当场拒（exit≠0）');
     },
   },
 ];

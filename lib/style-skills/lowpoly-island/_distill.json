@@ -14,7 +14,7 @@
     "本风格无 aspects 声明、按 1920x1080 绝对像素构图；产品默认 9:16 导出时画面被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑（composition 扣分）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
     "lib/dub-styles.json#lowpoly-island 是 derived:true 的派生条目，subtitle.fontFamily 写的是 DengXian，而风格原生字幕是 Quicksand 600 / 44px，走 dub.mjs 通路时字幕字形会偏离（typography 扣分）。",
     "dub-styles.json 条目的 subtitleOutline=0 与原生「无描边」一致，但原生字幕的藏蓝投影（blur 14）在通路里会被丢掉（typography 扣分）。",
-    "本次渲染有一条非致命告警：THREE.WebGLProgram warning X3595 gradient instruction used in a loop with varying iteration（logs/lowpoly-island.log:42），画面无可见异常。",
+    "本次渲染有一条非致命告警：THREE.WebGLProgram warning X3595 gradient instruction used in a loop with varying iteration（`logs/lowpoly-island.log:42`），画面无可见异常。",
     "第 2 圈房子/风车/树按 BEAM_NOTES 布点，导致部分建筑在画面中略偏右，f10 全景里右侧码头与灯塔的间距比左侧紧（composition 轻微扣分）。",
     "【palette −1】细纹理 `textureRaw: flat-shaded-3d` 声明了但渲染未实现：`lib/dub-styles.json#lowpoly-island.bgRecipe.textureRaw` 是 `flat-shaded-3d`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `flat-shaded-3d` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `flat-shaded-3d` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
@@ -26,8 +26,8 @@
   "limits": [
     "依赖 WebGL + GTAO + 2x SSAA，本次 6 workers 渲 1272 帧耗时 207s，对 GPU 要求不低。",
     "核心机制「建岛即作曲」要求页面能导出 EV（每条生长事件带 MIDI note）；走纯 dub.mjs 通路（无页面事件）时该机制失效，最高只能拿到环境床级配乐。",
-    "相机距离必须 >= 3x frustum 高度，否则画面下缘会露出海面以下（main.js:78），限制了极近景的可用性。",
-    "配乐明确禁用钢琴与弦乐（STYLE.md:67），素材库中若只有钢琴/弦乐将无法合规替换。",
+    "相机距离必须 >= 3x frustum 高度，否则画面下缘会露出海面以下（`main.js:78`），限制了极近景的可用性。",
+    "配乐明确禁用钢琴与弦乐（`STYLE.md:67`），素材库中若只有钢琴/弦乐将无法合规替换。",
     "本风格撑不起强冲突、快节奏、密集信息或真实人物内容；抽象概念当主语会立刻失焦。"
   ],
   "evidenceFrames": [

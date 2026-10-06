@@ -10,10 +10,10 @@
     "rhythm": 19,
     "audio": 19
   },
-  "audioScoreBasis": "audio 19/20（本轮由 17 收为 19）。原扣 −3 的依据是「成片 mux 步骤只输出 MUX_OK、未打印 I/LRA/Peak，无法核对 −14 LUFS 目标」（logs/cel-anime-80s.log:118）；2026-10-03 离线用 loudnorm 复测：成片 I=−14.08 LUFS（目标 −14，偏 0.08 LU）、真峰值 input_tp=−3.12 dBTP（4× 过采样，上限 −1.2）、LRA 4.10 LU——即响度目标实测可核对且达标、真峰值远低于交付线且未削波，故「无法核对」这条不再成立，扣分由 −3 收为 −1（仅留「mux 链不打印响度、成片响度无法在管线内自证 + 混音段 peak 0.97 接近满刻度偏热」的流程余量，logs:84）。本片真峰值 −3.12 dBTP ≤ −1.2，属达标，不适用 AGENT-BRIEF「真峰值超标」的 −2/−4 档。音频链本次真实跑过（TTS 8 行 + ASR 8/8 OK + score.py + mix.py，logs:36-106）；副歌比前奏响 4.0 dB（intro −15.5 / chorus −11.5，logs:98-105），落在声明的 4–6 dB 区间。",
+  "audioScoreBasis": "audio 19/20（本轮由 17 收为 19）。原扣 −3 的依据是「成片 mux 步骤只输出 MUX_OK、未打印 I/LRA/Peak，无法核对 −14 LUFS 目标」（`logs/cel-anime-80s.log:118`）；2026-10-03 离线用 loudnorm 复测：成片 I=−14.08 LUFS（目标 −14，偏 0.08 LU）、真峰值 input_tp=−3.12 dBTP（4× 过采样，上限 −1.2）、LRA 4.10 LU——即响度目标实测可核对且达标、真峰值远低于交付线且未削波，故「无法核对」这条不再成立，扣分由 −3 收为 −1（仅留「mux 链不打印响度、成片响度无法在管线内自证 + 混音段 peak 0.97 接近满刻度偏热」的流程余量，logs:84）。本片真峰值 −3.12 dBTP ≤ −1.2，属达标，不适用 AGENT-BRIEF「真峰值超标」的 −2/−4 档。音频链本次真实跑过（TTS 8 行 + ASR 8/8 OK + score.py + mix.py，logs:36-106）；副歌比前奏响 4.0 dB（intro −15.5 / chorus −11.5，logs:98-105），落在声明的 4–6 dB 区间。",
   "defects": [
     "【typography −3】字幕字体缺口：样片用 Barlow Semi Condensed 600（54px）+ Dela Gothic One（片假名）+ Kanit（tagline），均依赖 demo/fonts/；通路条目因本机无这些字体退回 DengXian，字形与样片不同。",
-    "【audio −1】响度目标实测达标（2026-10-03 离线复测，此前判断为『无法核对』，已更正）：成片 mux 步骤只输出 MUX_OK、不打印 I/LRA/Peak（logs/cel-anime-80s.log:118），出片时无法在管线内自证；离线用 loudnorm 复测得 I = -14.08 LUFS / LRA 4.10 LU / 真峰值 -3.12 dBTP（input_tp，4× 过采样）——相对 -14 LUFS 偏 0.08 LU、真峰值远低于 -1.2 dBTP、未削波，达标。混音实测 peak 0.97（接近满刻度）、rms -13.083 dB（logs:84），混音段峰值余量偏小但被 loudnorm 处理干净。保留 -1 仅为流程余量：mux 链不打印响度、成片响度无法在管线内自证。音频链本次真实跑过（TTS 8 行 + ASR 8/8 OK + score.py + mix.py，logs:36-106）；副歌比前奏响 4.0 dB（intro -15.5 / chorus -11.5，logs:98-105），落在声明的 4–6 dB 区间。",
+    "【audio −1】响度目标实测达标（2026-10-03 离线复测，此前判断为『无法核对』，已更正）：成片 mux 步骤只输出 MUX_OK、不打印 I/LRA/Peak（`logs/cel-anime-80s.log:118`），出片时无法在管线内自证；离线用 loudnorm 复测得 I = -14.08 LUFS / LRA 4.10 LU / 真峰值 -3.12 dBTP（input_tp，4× 过采样）——相对 -14 LUFS 偏 0.08 LU、真峰值远低于 -1.2 dBTP、未削波，达标。混音实测 peak 0.97（接近满刻度）、rms -13.083 dB（logs:84），混音段峰值余量偏小但被 loudnorm 处理干净。保留 -1 仅为流程余量：mux 链不打印响度、成片响度无法在管线内自证。音频链本次真实跑过（TTS 8 行 + ASR 8/8 OK + score.py + mix.py，logs:36-106）；副歌比前奏响 4.0 dB（intro -15.5 / chorus -11.5，logs:98-105），落在声明的 4–6 dB 区间。",
     "【rhythm −1】动画分层（cel 12fps / 表演 8fps / 镜头与光 24fps）依赖逐帧渲染时的量化函数 q12/q8/qc12，本次以预生成产物复用，分层步进未被重新验证。",
     "【palette −1】细纹理 `textureRaw: cel` 声明了但渲染未实现：`lib/dub-styles.json#cel-anime-80s.bgRecipe.textureRaw` 是 `cel`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `scanlines` ⇒ 4px 扫描线（`drawgrid=w=W:h=4:t=1:a=0.22`）），不读 `textureRaw` ⇒ `cel` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `cel` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
@@ -24,8 +24,8 @@
     "背景依赖 bg.js 的景片 + 配套发光版（每场景一对），没有现成景片素材库。"
   ],
   "limits": [
-    "只支持 16:9（无 aspects 声明，STYLE.md:26 允许 4:3 pillarbox）；9:16 需重画景片构图与字幕位置（未实渲复核，按既有 1:1 左上角塞入口径推导）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
-    "禁止纯黑描线：描线必须是填充色的深版本（皮肤 #5a2e2e 暖深棕、头发深紫），只有硬道具近黑（STYLE.md:18）。",
+    "只支持 16:9（无 aspects 声明，`STYLE.md:26` 允许 4:3 pillarbox）；9:16 需重画景片构图与字幕位置（未实渲复核，按既有 1:1 左上角塞入口径推导）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
+    "禁止纯黑描线：描线必须是填充色的深版本（皮肤 #5a2e2e 暖深棕、头发深紫），只有硬道具近黑（`STYLE.md:18`）。",
     "cel 形状内部禁止渐变，唯一例外是峰值处一张 harmony 手绘静止画。",
     "禁止真三维运动：只能用多层景片（multiplane）+ 光带扫过制造运动（style-dna:110）。",
     "禁止胶片瑕疵（片门抖动、灰尘、划痕、套色错位）——与「磁带不是胶片」的设定矛盾。",
@@ -67,7 +67,7 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "warnings": [
-      "步骤[3] 告警：该 demo 没有本编排器支持的字幕生成器——字幕源不重新生成，.srt 将沿用仓库旧文件（logs/cel-anime-80s.log:29-30）；但步骤[6] 混流实际找到 demo 自带的 tools/srt.py 并重新生成了 .srt（logs:112-115），该告警具有误导性",
+      "步骤[3] 告警：该 demo 没有本编排器支持的字幕生成器——字幕源不重新生成，.srt 将沿用仓库旧文件（`logs/cel-anime-80s.log:29-30`）；但步骤[6] 混流实际找到 demo 自带的 tools/srt.py 并重新生成了 .srt（logs:112-115），该告警具有误导性",
       "本次以 --skip-sync --no-preflight 运行：--skip-sync 只跳过「同步两份库」（logs:20-22）；音频链路（TTS 配音 → ASR 校对 → score.py 配乐 → mix.py 混音）在本次运行中真实跑过（logs:36-106）",
       "TTS 8 行配音全部产出并带时长：d1 2.749 / d2 2.191 / g1 1.522 / d3 2.124 / g2 1.28 / g3 1.004 / d4 2.166 / g4 1.368 s（logs:37-50）",
       "事件导出 events.mjs → 36 个事件 / dur 59（logs:26）",
@@ -89,7 +89,7 @@
   },
   "resolvedDefects": [
     "【palette −3】dub-styles.json#cel-anime-80s 是派生条目（derived:true，derivedFrom 含 contrast-rule(WCAG)），配色不是逐行手抽；其 palette.bg 为 #fff0c0 浅米黄，与样片的夜景主色（靛蓝/深紫/霓虹洋红/青/暖窗金）完全不是一回事，palette.fg 曾是缺失值由底色明暗反推。通路里跑出来的观感与成片抽帧差距明显。\n★ **2026-10-04 已修**：已按该风格的**源码真值**改 `lib/dub-styles.json#cel-anime-80s` —— bg #1f2446 / bg2 #34203f / stops [#1f2446, #2a1f4a, #34203f]（夜景楼体与天空色，`demo/bg.js:46`）、accent #ff4fa8（霓虹洋红，`demo/bg.js:4` NEON[0]）、subtitle #fff0a0 + outline #120a1e（奶黄字 + 9px 深描边，`demo/hud.js:25,27`）。同时把 §3 那一行的**色名补成了 hex**（此前只有「indigo/深紫/霓虹洋红/青/暖窗金」，导致下游无依据可改）。**已渲帧验证**：同一条 dub 背景管线，改前 4×4 像素是浅米黄 #d9cfa9 系（6 色）、改后是夜景靛蓝/深紫 #352a43 系（13 色），**共有色 0 种**。原值保留作历史。",
-    "composition −3（原缺陷）：【composition −3】只支持 16:9：styles/cel-anime-80s/ 全目录无 aspects 声明，STYLE.md:26 明说画幅是「完整 16:9 剧场比例」。产品默认 9:16 导出会裁掉右侧约 43.75%、下方整片黑，多层景片的横向视差与速度感基本消失，CRT 四角压暗按 16:9 计算、竖屏下位置全错（未实渲复核，按既有 1:1 左上角塞入口径推导）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→20，matchScore 92→95（分数于 2026-10-05 回补）。原记录保留作历史。",
+    "composition −3（原缺陷）：【composition −3】只支持 16:9：styles/cel-anime-80s/ 全目录无 aspects 声明，`STYLE.md:26` 明说画幅是「完整 16:9 剧场比例」。产品默认 9:16 导出会裁掉右侧约 43.75%、下方整片黑，多层景片的横向视差与速度感基本消失，CRT 四角压暗按 16:9 计算、竖屏下位置全错（未实渲复核，按既有 1:1 左上角塞入口径推导）。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→20，matchScore 92→95（分数于 2026-10-05 回补）。原记录保留作历史。",
     "【composition −3 补充】本编排器不认该 demo 的字幕生成器：步骤[3] 报「字幕源不重新生成，.srt 沿用仓库旧文件」（logs:29-30），但步骤[6] 混流实际调用了 demo 自带的 tools/srt.py 并重新生成（logs:112-115）——该告警会误导人以为字幕是旧的。 ★ 2026-10-06 已修：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——『告警误导 / 两处不一致』部分已消解"
   ]
 }

@@ -14,12 +14,12 @@
     "两段式 mux 的第二段（demo/tools/mux.sh）曾硬写 libx264 —— CPU 编码，违反「合成渲染走本地 GPU」硬规则。2026-10-03 只打了半条补丁（scripts/patch-style-mux.mjs 的 woodcut 特例 {crf:28, tune:true, onlyEnc:true}）：只换编码器、不补静音（帧数由第一段 core 版保证）。",
     "半条补丁遗留①：prelude() 是整块生成的，woodcut 副本里仍带着 dur()/VD/AD/PAD 的计算，但第二段 ffmpeg 用 -c:a copy 且从不引用 $PAD —— 这段是未被引用的死代码。",
     "半条补丁遗留②：走 h264_nvenc 分支时 TUNE=\" -tune grain\" 被静默丢弃（只在 libx264 分支使用），GPU 路径下没有 -tune grain，颗粒保持与文档写的 CRF 28 + tune grain 不等价。",
-    "logs/woodcut.log:134-144 只打印了 core 版母版的 loudnorm 统计与最终文件大小，没有单独打印第二段的编码器名 —— 无法从日志直接确认第二段走的是 nvenc 还是 libx264，只能从体积（31.2 MB / 约 4.5 Mbps，远低于 DEMO.md:93 记录的 libx264 CRF28 的 93 MB）反推。",
-    "mix.wav 峰值超过 0 dBFS：mix.py 打印 peak 1.8093362688225716（约 +5.2 dBFS）；文件 11232044 B = 2808000×2×2 + 44，是 16-bit PCM。日志未显示写盘前归一化步骤，是否已被硬削顶需复核（logs/woodcut.log:116-117）。",
-    "成片响度略高于目标：实测 -13.8 LUFS（目标 -14.0）、LRA 7.8 LU（logs/woodcut.log:139-141）。★ 真峰值口径更正（本次补记）：成片真峰值 = loudnorm 的 input_tp（4× 过采样）−1.42 dBTP，在 −1.2 dBTP 交付线内（余量 0.22 dB）、未削波；此前写的「Peak -1.4 dBFS」是 ebur128 的 1 位小数读数、astats 采样峰值 −1.424793 是下界。",
-    "cuecheck onset 表中三处弓弦事件的「孤立干声」偏差很大：C3_cello B worst +120.5ms、C8_cello_in B worst +124.1ms、H_strings_in B worst +112.1ms；同三处渲染 stem 检测值（A worst）仅 -29~+36ms，疑为弓弦软起音导致检测器定位偏移，需人工听审（logs/woodcut.log:89,98,107）。",
+    "`logs/woodcut.log:134-144` 只打印了 core 版母版的 loudnorm 统计与最终文件大小，没有单独打印第二段的编码器名 —— 无法从日志直接确认第二段走的是 nvenc 还是 libx264，只能从体积（31.2 MB / 约 4.5 Mbps，远低于 `DEMO.md:93` 记录的 libx264 CRF28 的 93 MB）反推。",
+    "mix.wav 峰值超过 0 dBFS：mix.py 打印 peak 1.8093362688225716（约 +5.2 dBFS）；文件 11232044 B = 2808000×2×2 + 44，是 16-bit PCM。日志未显示写盘前归一化步骤，是否已被硬削顶需复核（`logs/woodcut.log:116-117`）。",
+    "成片响度略高于目标：实测 -13.8 LUFS（目标 -14.0）、LRA 7.8 LU（`logs/woodcut.log:139-141`）。★ 真峰值口径更正（本次补记）：成片真峰值 = loudnorm 的 input_tp（4× 过采样）−1.42 dBTP，在 −1.2 dBTP 交付线内（余量 0.22 dB）、未削波；此前写的「Peak -1.4 dBFS」是 ebur128 的 1 位小数读数、astats 采样峰值 −1.424793 是下界。",
+    "cuecheck onset 表中三处弓弦事件的「孤立干声」偏差很大：C3_cello B worst +120.5ms、C8_cello_in B worst +124.1ms、H_strings_in B worst +112.1ms；同三处渲染 stem 检测值（A worst）仅 -29~+36ms，疑为弓弦软起音导致检测器定位偏移，需人工听审（`logs/woodcut.log:89,98,107`）。",
     "dub-styles.json#woodcut 为 derived:true 派生条目，accent #A24122 是比 demo 色版 #C8502A 更暗的代理色，bgRecipe.textureRaw 为 woodgrain 而 demo 用的是帘纹纸，字幕字体回退 SimSun（本机无 IM Fell English）。",
-    "本次出片走 --skip-sync（logs/woodcut.log:1），未做双份库同步校验。",
+    "本次出片走 --skip-sync（`logs/woodcut.log:1`），未做双份库同步校验。",
     "【palette −1】细纹理 `textureRaw: woodgrain` 声明了但渲染未实现：`lib/dub-styles.json#woodcut.bgRecipe.textureRaw` 是 `woodgrain`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `grain` ⇒ 粗粒度已声明颗粒层），不读 `textureRaw` ⇒ `woodgrain` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `woodgrain` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
@@ -29,7 +29,7 @@
     "无钟 / 铁砧 / 供品 / 风箱等道具的音频采样，全部靠 numpy 模态合成（mix.py / score.py），改题材要重写对应合成器。"
   ],
   "limits": [
-    "慢风格：DEMO.md:8 的 brief 是 40–60s、一叠独立版、一句一层；撑不起快节奏、强情绪外放、真人出镜、实拍或并列多观点的密集片。",
+    "慢风格：`DEMO.md:8` 的 brief 是 40–60s、一叠独立版、一句一层；撑不起快节奏、强情绪外放、真人出镜、实拍或并列多观点的密集片。",
     "四条硬约束把构图框得很死：纸边永远不动、图注只能在纸边、最多一块色版、绝不灰对灰。",
     "角色必须 on twos（12fps）、镜头/粒子/火/光 on ones（24fps）；火与液体每 2 帧重刻是刻意的 boil。",
     "钟之前全片不许出现任何钟的音色（村子「没有嗓子」），这是配乐的硬性前置约束。"
@@ -109,12 +109,12 @@
       "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.42 dBTP，在 −1.2 dBTP 交付线内（余量 0.22 dB）、未削波。此前 §6 写的「Peak -1.4 dBFS」是 ebur128 的 1 位小数读数（口径不对），本次改为 input_tp 口径；astats 采样峰值 −1.424793 是下界。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
     },
     "warnings": [
-      "混流走 demo/tools/mux.sh 两段式：第二段编码器跟随 LEMO_VENC，日志未打印该段编码器名，无法直接确认（logs/woodcut.log:134-144）",
-      "半条补丁遗留：woodcut 副本内 $PAD 为死代码；nvenc 分支丢失 -tune grain（demo/tools/mux.sh:12-24）",
-      "mix.wav peak 1.809（> 0 dBFS），16-bit PCM，是否硬削顶需复核（logs/woodcut.log:116-117）",
-      "成片响度 -13.8 LUFS / LRA 7.8 LU，略高于 -14.0 目标（logs/woodcut.log:139-141）",
-      "cuecheck onset：C3_cello / C8_cello_in / H_strings_in 三处弓弦孤立干声偏差 >100ms，需人工听审（logs/woodcut.log:89,98,107）",
-      "本次编排器调用带 --skip-sync --no-preflight，未做双份库同步（logs/woodcut.log:1）"
+      "混流走 demo/tools/mux.sh 两段式：第二段编码器跟随 LEMO_VENC，日志未打印该段编码器名，无法直接确认（`logs/woodcut.log:134-144`）",
+      "半条补丁遗留：woodcut 副本内 $PAD 为死代码；nvenc 分支丢失 -tune grain（`demo/tools/mux.sh:12-24`）",
+      "mix.wav peak 1.809（> 0 dBFS），16-bit PCM，是否硬削顶需复核（`logs/woodcut.log:116-117`）",
+      "成片响度 -13.8 LUFS / LRA 7.8 LU，略高于 -14.0 目标（`logs/woodcut.log:139-141`）",
+      "cuecheck onset：C3_cello / C8_cello_in / H_strings_in 三处弓弦孤立干声偏差 >100ms，需人工听审（`logs/woodcut.log:89,98,107`）",
+      "本次编排器调用带 --skip-sync --no-preflight，未做双份库同步（`logs/woodcut.log:1`）"
     ]
   },
   "resolvedDefects": [
