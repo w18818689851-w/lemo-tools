@@ -66,7 +66,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/lowpoly-island/lowpoly-island.mp4",
     "durSec": 53,
-    "bytes": 26884984,
+    "bytes": 26909213,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -77,7 +77,7 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
-      "integratedLufs": -14,
+      "integratedLufs": -14.1,
       "lra": 4.6,
       "truePeakDbtp": -1.48,
       "samplePeakDbfs": -1.52521,

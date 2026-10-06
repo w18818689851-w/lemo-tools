@@ -55,7 +55,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/game-show/game-show.mp4",
     "durSec": 148.79,
-    "bytes": 91211840,
+    "bytes": 91221830,
     "frames": 3571,
     "fps": 24,
     "width": 1920,
@@ -108,12 +108,12 @@
       "Zarvox 机器人音色为 am_onyx + 55Hz AM 近似，非原 macOS 声线"
     ],
     "loudness": {
-      "truePeakDbtp": -2,
-      "integratedLufs": -14.19,
+      "truePeakDbtp": -1.39,
+      "integratedLufs": -14.06,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "lra": 3.7,
+      "lra": 4.1,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "samplePeakDbfs": -2.001142
     }

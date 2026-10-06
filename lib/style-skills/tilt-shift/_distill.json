@@ -69,7 +69,7 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
-      "integratedLufs": -14.1,
+      "integratedLufs": -14.27,
       "lra": 7.8,
       "truePeakDbtp": -1.56,
       "samplePeakDbfs": -1.588653,

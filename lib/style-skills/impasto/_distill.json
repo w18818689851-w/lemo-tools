@@ -59,7 +59,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/impasto/impasto.mp4",
     "durSec": 39.67,
-    "bytes": 46064482,
+    "bytes": 45976356,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -80,8 +80,8 @@
       "音频与渲染并行完成，总耗时 66.3s（952 帧渲染 29s）"
     ],
     "loudness": {
-      "truePeakDbtp": -2.06,
-      "integratedLufs": -13.89,
+      "truePeakDbtp": -1.53,
+      "integratedLufs": -13.71,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",

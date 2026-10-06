@@ -98,7 +98,7 @@
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
       "peakNote": "★ 2026-10-04 已修：成片经 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 -0.21 → -1.63 dBTP（alimiter 上限 -2.5dB）。原值 -0.21 记录为修复前状态。",
-      "lra": 4.6,
+      "lra": 4.3,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "samplePeakDbfs": -1.643991
     }

@@ -44,21 +44,64 @@
  * ★ 失明守卫（2026-10-04 补）：`slugs` 为空（无 _distill.json / 路径变了）⇒ 一部成片都没查 ⇒ FAIL。
  *   ★ 2026-10-05 补：E4 的 `LEMO_LN_TP_TRIES` 默认值表达式若找不到（写法变了）⇒ 单独判 FAIL 并**明说「判据已失明」**。
  *   ★ 2026-10-05 再补：E6 的「起点 / 步长 / 档数」三个量任一抽不到 ⇒ 单独判 FAIL 并**明说「判据已失明」**。
+ *   ★ 2026-10-06 再补（F 段）：成片不存在/读不到（拿不到 mtime）、文档 mtime 读不到 ⇒ 单独判 FAIL 并**明说「失明」**。
+ *
+ * ★★ F 重渲窗口守卫（2026-10-06 补）—— 修「**批量出片期间必红**」这个设计缺陷
+ *   缺陷（已实证）：A/B/C/D 判的是「**文档声称值 vs 磁盘实测**」。而**每日批量出片会重渲成片**，
+ *   文档要等批次跑完才由 `refresh-style-skill.mjs` 回填 ⇒ 在「**成片已重写、文档还没回填**」的窗口里，
+ *   这些「不一致」**不是回归**。实证（2026-10-06，本闸门曾报 **exit 1 / 23 处 / 12 部**），两路独立证明不是回归：
+ *     ① 用**改前**的 `mux.sh` 复跑（`LEMO_MUX_SH` 指向旧脚本）⇒ 输出与改后**逐字节相同**（同样 23 处 A/C 类）；
+ *     ② 23 处**全是**「文档值 vs 磁盘实测」，且 12 部**全部**落在当日 09:04–09:33 的重渲名单里
+ *        （成片 mtime 新于文档 mtime，文档还停在 10-04/10-05）⇒ 是**日批正在重渲导致文档过期**。
+ *   ⇒ 结果：批量期间它不能当回归判据（谁看都以为是坏了）。
+ *   判据（机械、可解释）—— 必要条件 **成片比文档新**（文档**按定义**没描述当前成片，不能拿它判漂移）：
+ *     `defer = (film.mtime > _distill.json.mtime)` **且**下列**任一**成立：
+ *       · **成片很新**：`now − film.mtime ≤ DEFER_FRESH_MS`（15 min）—— 刚渲完，回填可能还在路上；
+ *       · **该 slug 的并发锁活着**：`<LOCK_DIR>/.<slug>.lock` 存在且按**编排器自己的判据**算活着 ——
+ *         逐字复用 `lemo-make.mjs:1449-1453`：「锁里记的 pid 仍存在（`process.kill(pid,0)` 成功或 EPERM）
+ *         且锁龄 < 6h」。这是**最准的 per-slug 信号**：批次每渲一个风格就建这个锁、渲完即删。
+ *       · **批次在跑**：`_distill/render-run-*.log` / `_distill/state.json` / `_distill/logs/*.log`
+ *         三者**最新 mtime 在 DEFER_ACTIVE_MS（10 min）内** —— 逐条对齐项目既有约定
+ *         （`_distill/AGENT-BRIEF.md:423-428`「有没有并发批量作业」的探测法）。
+ *   命中 ⇒ **不判 FAIL**，改报「疑似正在重渲，本次不判」，并把**本会报的每一条**列出来（可复核、不丢判据）。
+ *   真漂移（**没有**上述信号、文档与成片**稳定地**不符）⇒ **照旧 FAIL** —— 这是最容易改坏的一条，
+ *   已用**临时副本 + 覆盖点**造「稳定漂移」情形做过变异验证（见 `test/README.md` 本闸门那行）。
+ *   ★ 已知局限（照实写，别当它是全知）：
+ *     · 窗口是**时间**判据 ⇒ 窗口**内**无法区分，靠「下次再跑」收敛（真漂移是稳定条件，排空后必然重报）；
+ *     · **批次在跑时**，与本次批次无关的**旧文档过期**也会一并让位（批次排空 10 min 后恢复判定）；
+ *     · `ffmpeg` **进程**不作判据 —— 实测渲染跑在 **WSL 侧**，Windows 的 `tasklist` **看不见**它
+ *       （`D:/lemo-opuscar` 侧由 `wsl.exe` 驱动）⇒ 只用**文件 mtime + 锁**，这两个跨两侧都可靠；
+ *     · `.console-port` **不作判据** —— 它是控制台端口、**退出时不删**（`AGENT-BRIEF.md:429-430` 已记此坑），
+ *       存在 ≠ 有作业在跑（实测它比批次多活了 21 min）。
  *
  * 用法：node scripts/check-film-delivery.mjs [--json]
  * 环境变量：
- *   LEMO_MUX_SH  交付混流脚本路径（默认 <OPUSCAR>/core/render/mux.sh）—— 供变异验证。
- *   LEMO_OPUSCAR 项目根（默认 D:/lemo-opuscar）—— 供 E 段把 styles/ 拷到临时目录做**非破坏性**变异验证。
+ *   LEMO_MUX_SH        交付混流脚本路径（默认 <OPUSCAR>/core/render/mux.sh）—— 供变异验证。
+ *   LEMO_OPUSCAR       项目根（默认 D:/lemo-opuscar）—— 供 E 段把 styles/ 拷到临时目录做**非破坏性**变异验证。
+ *   LEMO_DISTILL_ROOT  风格技能树（默认 D:/lemo-tools/lib/style-skills）—— F 段变异验证指向**临时副本**
+ *                      （与 check-film-aspect.mjs / check-tp-prose.mjs 同名同义）。
+ *   LEMO_BATCH_DIR     批次证据目录（默认 D:/lemo-tools/_distill）—— F 段变异验证指向临时目录。
+ *   LEMO_LOCK_DIR      并发锁目录（默认 D:/lemo-films）—— 与 lemo-make.mjs:1439 同名同义。
  * 退出码：有 FAIL（或失明）→ 1；否则 0。
+ *   ★「疑似正在重渲、本次不判」**不算 FAIL**（exit 0），但会**大声打印**并列出本会报的每一条 —— 别当成「通过」。
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-const DIR = 'D:/lemo-tools/lib/style-skills';
+const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || 'D:/lemo-tools/lib/style-skills');
 const FF = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe';
 const FP = FF.replace(/ffmpeg\.exe$/, 'ffprobe.exe');
 const AS_JSON = process.argv.includes('--json');
+
+// ── ★★ F：重渲窗口守卫的常量与探测（2026-10-06 补；判据由来见头注释 F 段）──────────────
+const BATCH_DIR = path.resolve(process.env.LEMO_BATCH_DIR || 'D:/lemo-tools/_distill');
+const LOCK_DIR = path.resolve(process.env.LEMO_LOCK_DIR || 'D:/lemo-films');
+const DEFER_FRESH_MS = 15 * 60 * 1000;    // 「成片很新」窗口
+const DEFER_ACTIVE_MS = 10 * 60 * 1000;   // 「批次在跑」窗口（批次证据的最新 mtime）
+// ★ 锁的「活着」判据**逐字对齐** lemo-make.mjs:1449-1453：pid 仍在 **且** 锁龄 < 6h。别自创阈值。
+const LOCK_MAX_AGE_MS = 6 * 3600 * 1000;
+const NOW = Date.now();
 
 // 容差（实测口径的固有波动）
 const TOL_TP = 0.15;      // dB
@@ -89,104 +132,195 @@ const num = (t, k) => {
   return m ? Number(m[1]) : null;
 };
 
+// ── ★★ F：探测（只读 mtime / 只读锁文件；不跑 ffmpeg、不看进程表 —— 理由见头注释 F 段「已知局限」）──
+const mtimeOf = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return null; } };
+const fmtAge = (ms) => `${(ms / 60000).toFixed(1)} min`;
+
+/** 批次证据：**逐条对齐** `_distill/AGENT-BRIEF.md:423-428` 的「有没有并发批量作业」探测法（去掉 ffmpeg 那条）。 */
+function batchProbe() {
+  const newestIn = (dir, re) => {
+    let best = null, bn = null;
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (re && !re.test(f)) continue;
+        const m = mtimeOf(path.join(dir, f));
+        if (m !== null && (best === null || m > best)) { best = m; bn = f; }
+      }
+    } catch { /* 目录不存在 ⇒ 该项无证据（不是失明：没有批次本来就是正常态） */ }
+    return { best, bn };
+  };
+  const items = [
+    ['批量总日志 render-run-*.log', newestIn(BATCH_DIR, /^render-run-.*\.log$/)],
+    ['逐风格日志 logs/*.log', newestIn(path.join(BATCH_DIR, 'logs'), /\.log$/)],
+    ['批次状态 state.json', { best: mtimeOf(path.join(BATCH_DIR, 'state.json')), bn: 'state.json' }],
+  ];
+  const hits = [];
+  for (const [label, { best, bn }] of items)
+    if (best !== null && NOW - best <= DEFER_ACTIVE_MS) hits.push(`${label}（${bn}，${fmtAge(NOW - best)} 前）`);
+  return { hits, items };
+}
+
+/** 该 slug 的并发锁是否「活着」—— 判据逐字复用 lemo-make.mjs:1449-1453。无锁返回 null（正常态，非失明）。 */
+function lockProbe(slug) {
+  const p = path.join(LOCK_DIR, `.${slug}.lock`);
+  const m = mtimeOf(p);
+  if (m === null) return null;
+  const age = NOW - m;
+  let pid = NaN;
+  try { pid = Number(fs.readFileSync(p, 'utf8').split('\n')[0]); } catch { /* 读不到 ⇒ 按「不活」处理 */ }
+  let alive = false;
+  if (Number.isInteger(pid) && pid > 0) {
+    try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
+  }
+  return { p, pid, age, alive, live: alive && age < LOCK_MAX_AGE_MS };
+}
+
 const slugs = fs
   .readdirSync(DIR)
   .filter((s) => fs.existsSync(path.join(DIR, s, '_distill.json')))
   .sort();
 
 const fails = [];
-const bad = (slug, kind, msg) => fails.push({ slug, kind, msg });
+// ★★ F（2026-10-06）：`sink` 是可切换的收集器 —— 判一部成片时先收进**该片的本地桶**，
+//   判完再决定「进 fails」还是「进 deferred（疑似正在重渲，本次不判）」。E 段（静态文本判据）恒用 `fails`。
+let sink = fails;
+const bad = (slug, kind, msg) => sink.push({ slug, kind, msg });
 
 // ★ 失明守卫：一部成片都没被检查 ⇒ 闸门的「全部一致」结论是假的 ⇒ FAIL
 if (slugs.length === 0) bad('(全部)', '✘ 失明', '0 部成片被检查（style-skills 下无 _distill.json / 路径变了？）');
 
+const deferred = [];
+const batch = batchProbe();
+
 for (const slug of slugs) {
-  const doc = JSON.parse(fs.readFileSync(path.join(DIR, slug, '_distill.json'), 'utf8'));
-  const g = doc.generatedVideo || {};
-  const film = g.path;
-  if (!film || !fs.existsSync(film)) { bad(slug, '成片缺失', String(film)); continue; }
-
-  // ── A/B：音频口径 ──
-  const { e } = await run(FF, ['-hide_banner', '-nostats', '-i', film,
-    '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']);
-  const tp = num(e, 'input_tp'), lufs = num(e, 'input_i'), lraLn = num(e, 'input_lra');
-  // LRA 的另一来源：ebur128（项目口径），与 loudnorm 的 input_lra 不同
-  const { e: e2 } = await run(FF, ['-hide_banner', '-nostats', '-i', film, '-af', 'ebur128=peak=true', '-f', 'null', '-']);
-  const lraEb = (() => {
-    const m = [...e2.matchAll(/^\s*LRA:\s*(-?[\d.]+)/gm)];
-    return m.length ? Number(m[m.length - 1][1]) : null;
-  })();
-  const L = doc.selfCheck && doc.selfCheck.loudness;
-  if (!L) bad(slug, 'A 音频口径', 'json 缺 selfCheck.loudness');
-  else {
-    if (tp === null) bad(slug, 'A 音频口径', '实测真峰值读不到');
-    else if (Math.abs(L.truePeakDbtp - tp) > TOL_TP)
-      bad(slug, 'A 真峰值不符', `文档 ${L.truePeakDbtp} vs 实测 ${tp}`);
-    if (lufs !== null && L.integratedLufs !== undefined && Math.abs(L.integratedLufs - lufs) > TOL_LUFS)
-      bad(slug, 'A 响度不符', `文档 ${L.integratedLufs} vs 实测 ${lufs}`);
-    if (L.lra !== undefined && lraLn !== null) {
-      const okEb = lraEb !== null && Math.abs(L.lra - lraEb) <= TOL_LRA;
-      const okLn = Math.abs(L.lra - lraLn) <= TOL_LRA;
-      if (!okEb && !okLn)
-        bad(slug, 'A LRA 不符', `文档 ${L.lra} vs ebur128 ${lraEb} / loudnorm ${lraLn}`);
+  const docPath = path.join(DIR, slug, '_distill.json');
+  const docMs = mtimeOf(docPath);
+  let film = null, filmMs = null;
+  // ★★ F（2026-10-06）：这一片的 A/B/C/D 结果先收进**本地桶**，判完再决定「进 fails」还是「进 deferred」。
+  const local = [];
+  const prevSink = sink;
+  sink = local;
+  slugBody: {
+    const doc = JSON.parse(fs.readFileSync(docPath, 'utf8'));
+    const g = doc.generatedVideo || {};
+    film = g.path;
+    filmMs = film ? mtimeOf(film) : null;
+    if (!film || filmMs === null) {
+      // ★★ F 失明守卫（2026-10-06 补）：拿不到成片（不存在 / 读不到）⇒ **拿不到 mtime** ⇒
+      //   既不能判「正在重渲」也不能判「漂移」⇒ **明说失明并 FAIL**，绝不静默放过。
+      bad(slug, '✘ 失明·成片缺失',
+        `成片不存在或读不到 ⇒ 拿不到 mtime，既不能判「正在重渲」也不能判「漂移」：${film}`);
+      break slugBody;
     }
-    // ── B：peakTargetMet 自洽 ──
-    if (tp !== null && L.peakTargetMet !== (tp <= PEAK_LIMIT))
-      bad(slug, 'B peakTargetMet 反了', `文档 ${L.peakTargetMet}，实测 ${tp} dBTP`);
+    if (docMs === null) {
+      bad(slug, '✘ 失明·文档 mtime', `读不到文档 mtime ⇒ 无法判「文档是否已过期」：${docPath}`);
+      break slugBody;
+    }
 
-    // ── C：★ 实测真峰值**必须真的达标**（不只是「自洽」）──────────────
-    // ★★ 2026-10-04 补（补一个**真空转绿灯**）：上面的 A 只判「文档值 vs 实测值」、B 只判
-    //   「`peakTargetMet` 布尔与实测是否一致」—— **两条都不要求实测真的 ≤ 交付线**。
-    //   实测发生过：一部真峰值 **−0.21 dBTP（超 −1.2 线）** 的成片在 **22 个闸门全绿**下存在过
-    //   （`pictogram-motion` 重渲时 `--skip-audio` 复用旧 `mix.wav`，**冲掉了此前 fix-truepeak 的修复**）。
-    //   ⇒ 「43 部交付口径全部一致」**≠**「43 部都达标」。这一条把「真的达标」钉死。
-    if (tp !== null && tp > PEAK_LIMIT)
-      bad(slug, 'C 真峰值超标', `实测 ${tp} dBTP > 交付线 ${PEAK_LIMIT} —— 跑 fix-truepeak.mjs --apply --only ${slug}`);
+    // ── A/B：音频口径 ──
+    const { e } = await run(FF, ['-hide_banner', '-nostats', '-i', film,
+      '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']);
+    const tp = num(e, 'input_tp'), lufs = num(e, 'input_i'), lraLn = num(e, 'input_lra');
+    // LRA 的另一来源：ebur128（项目口径），与 loudnorm 的 input_lra 不同
+    const { e: e2 } = await run(FF, ['-hide_banner', '-nostats', '-i', film, '-af', 'ebur128=peak=true', '-f', 'null', '-']);
+    const lraEb = (() => {
+      const m = [...e2.matchAll(/^\s*LRA:\s*(-?[\d.]+)/gm)];
+      return m.length ? Number(m[m.length - 1][1]) : null;
+    })();
+    const L = doc.selfCheck && doc.selfCheck.loudness;
+    if (!L) bad(slug, 'A 音频口径', 'json 缺 selfCheck.loudness');
+    else {
+      if (tp === null) bad(slug, 'A 音频口径', '实测真峰值读不到');
+      else if (Math.abs(L.truePeakDbtp - tp) > TOL_TP)
+        bad(slug, 'A 真峰值不符', `文档 ${L.truePeakDbtp} vs 实测 ${tp}`);
+      if (lufs !== null && L.integratedLufs !== undefined && Math.abs(L.integratedLufs - lufs) > TOL_LUFS)
+        bad(slug, 'A 响度不符', `文档 ${L.integratedLufs} vs 实测 ${lufs}`);
+      if (L.lra !== undefined && lraLn !== null) {
+        const okEb = lraEb !== null && Math.abs(L.lra - lraEb) <= TOL_LRA;
+        const okLn = Math.abs(L.lra - lraLn) <= TOL_LRA;
+        if (!okEb && !okLn)
+          bad(slug, 'A LRA 不符', `文档 ${L.lra} vs ebur128 ${lraEb} / loudnorm ${lraLn}`);
+      }
+      // ── B：peakTargetMet 自洽 ──
+      if (tp !== null && L.peakTargetMet !== (tp <= PEAK_LIMIT))
+        bad(slug, 'B peakTargetMet 反了', `文档 ${L.peakTargetMet}，实测 ${tp} dBTP`);
 
-    // ── C：★ 实测响度**必须真的落在交付线 −14 LUFS 附近**（不只是「文档值 == 实测值」）──
-    // ★★ 2026-10-04 补：上面 A 的响度条只做「文档值 vs 实测值」自洽比对 ⇒ 一部实测 −18 LUFS
-    //   的成片，只要 json 如实记着 −18，A 也会绿 ⇒ **全库没有任何闸门真判响度达标**。
-    //   这一条把「响度真的达标」钉死（容差 1.0 LU，依据见上方 LUFS_TOL 注释）。
-    if (lufs !== null && Math.abs(lufs - LUFS_LINE) > LUFS_TOL)
-      bad(slug, 'C 响度偏离交付线', `实测 ${lufs} LUFS，偏离交付线 ${LUFS_LINE} 超过 ${LUFS_TOL} LU`);
+      // ── C：★ 实测真峰值**必须真的达标**（不只是「自洽」）──────────────
+      // ★★ 2026-10-04 补（补一个**真空转绿灯**）：上面的 A 只判「文档值 vs 实测值」、B 只判
+      //   「`peakTargetMet` 布尔与实测是否一致」—— **两条都不要求实测真的 ≤ 交付线**。
+      //   实测发生过：一部真峰值 **−0.21 dBTP（超 −1.2 线）** 的成片在 **22 个闸门全绿**下存在过
+      //   （`pictogram-motion` 重渲时 `--skip-audio` 复用旧 `mix.wav`，**冲掉了此前 fix-truepeak 的修复**）。
+      //   ⇒ 「43 部交付口径全部一致」**≠**「43 部都达标」。这一条把「真的达标」钉死。
+      if (tp !== null && tp > PEAK_LIMIT)
+        bad(slug, 'C 真峰值超标', `实测 ${tp} dBTP > 交付线 ${PEAK_LIMIT} —— 跑 fix-truepeak.mjs --apply --only ${slug}`);
+
+      // ── C：★ 实测响度**必须真的落在交付线 −14 LUFS 附近**（不只是「文档值 == 实测值」）──
+      // ★★ 2026-10-04 补：上面 A 的响度条只做「文档值 vs 实测值」自洽比对 ⇒ 一部实测 −18 LUFS
+      //   的成片，只要 json 如实记着 −18，A 也会绿 ⇒ **全库没有任何闸门真判响度达标**。
+      //   这一条把「响度真的达标」钉死（容差 1.0 LU，依据见上方 LUFS_TOL 注释）。
+      if (lufs !== null && Math.abs(lufs - LUFS_LINE) > LUFS_TOL)
+        bad(slug, 'C 响度偏离交付线', `实测 ${lufs} LUFS，偏离交付线 ${LUFS_LINE} 超过 ${LUFS_TOL} LU`);
+    }
+
+    // ── C/D：视频与容器 ──
+    const { o: probe } = await run(FP, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', film]);
+    let j = null;
+    try { j = JSON.parse(probe); } catch { bad(slug, 'D 容器', 'ffprobe 输出不可解析'); break slugBody; }
+    const v = (j.streams || []).find((s) => s.codec_type === 'video') || {};
+    const a = (j.streams || []).find((s) => s.codec_type === 'audio') || {};
+    const fmt = j.format || {};
+
+    const fps = v.r_frame_rate ? (() => { const [x, y] = v.r_frame_rate.split('/').map(Number); return y ? +(x / y).toFixed(3) : x; })() : null;
+
+    for (const [k, got] of [['width', v.width], ['height', v.height], ['fps', fps], ['frames', v.nb_frames ? Number(v.nb_frames) : null]]) {
+      if (g[k] === undefined) bad(slug, 'C 字段缺失', `generatedVideo.${k} 未记录`);
+      else if (got !== null && got !== undefined && Number(g[k]) !== Number(got))
+        bad(slug, `C ${k} 不符`, `文档 ${g[k]} vs 实测 ${got}`);
+    }
+    if (Math.abs(Number(fmt.duration) - Number(g.durSec)) > TOL_DUR)
+      bad(slug, 'C durSec 不符', `文档 ${g.durSec} vs 实测 ${Number(fmt.duration).toFixed(2)}`);
+    if (Number(g.bytes) !== fs.statSync(film).size)
+      bad(slug, 'C bytes 不符', `文档 ${g.bytes} vs 磁盘 ${fs.statSync(film).size}`);
+
+    if (v.pix_fmt !== 'yuv420p') bad(slug, 'D pix_fmt', `${v.pix_fmt}（播放器兼容性）`);
+    const vd = Number(v.duration || fmt.duration), ad = Number(a.duration || fmt.duration);
+    if (Number.isFinite(vd) && Number.isFinite(ad) && Math.abs(vd - ad) > 0.1)
+      bad(slug, 'D 音视频时长差', `视频 ${vd.toFixed(3)}s vs 音频 ${ad.toFixed(3)}s`);
+    const abr = Number(a.bit_rate || 0);
+    if (abr && (abr < TOL_ABR_LO || abr > TOL_ABR_HI)) bad(slug, 'D 音频码率', `${(abr / 1000).toFixed(1)} kbps`);
+    // moov 是否在 mdat 之前（faststart）
+    try {
+      const fd = fs.openSync(film, 'r');
+      const buf = Buffer.alloc(1024 * 1024);
+      const n = fs.readSync(fd, buf, 0, buf.length, 0);
+      fs.closeSync(fd);
+      const head = buf.subarray(0, n).toString('latin1');
+      const im = head.indexOf('moov'), id = head.indexOf('mdat');
+      if (im < 0 || (id >= 0 && im > id)) bad(slug, 'D 未 faststart', `moov@${im} mdat@${id}`);
+    } catch { /* 读不到就跳过 */ }
   }
+  sink = prevSink;
 
-  // ── C/D：视频与容器 ──
-  const { o: probe } = await run(FP, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', film]);
-  let j = null;
-  try { j = JSON.parse(probe); } catch { bad(slug, 'D 容器', 'ffprobe 输出不可解析'); continue; }
-  const v = (j.streams || []).find((s) => s.codec_type === 'video') || {};
-  const a = (j.streams || []).find((s) => s.codec_type === 'audio') || {};
-  const fmt = j.format || {};
-
-  const fps = v.r_frame_rate ? (() => { const [x, y] = v.r_frame_rate.split('/').map(Number); return y ? +(x / y).toFixed(3) : x; })() : null;
-
-  for (const [k, got] of [['width', v.width], ['height', v.height], ['fps', fps], ['frames', v.nb_frames ? Number(v.nb_frames) : null]]) {
-    if (g[k] === undefined) bad(slug, 'C 字段缺失', `generatedVideo.${k} 未记录`);
-    else if (got !== null && got !== undefined && Number(g[k]) !== Number(got))
-      bad(slug, `C ${k} 不符`, `文档 ${g[k]} vs 实测 ${got}`);
+  // ── ★★ F：重渲窗口判定（2026-10-06 补；判据由来与局限见头注释 F 段）──────────────
+  // 必要条件：**成片比文档新**（`film.mtime > _distill.json.mtime`）—— 文档**按定义**没描述当前成片，
+  //   不能拿它判漂移。文档比成片新 ⇒ 文档是在成片之后写的、本该描述它 ⇒ **任何不符都是真漂移**。
+  // 再叠**任一**「正在重渲」证据：成片很新 / 该 slug 的并发锁活着 / 批次日志很新。
+  // 三条都拿不到 ⇒ **照旧 FAIL**（真漂移不许被放走）。失明的片子（拿不到 mtime）不参与让位。
+  const blind = local.some((f) => f.kind.startsWith('✘ 失明'));
+  const lock = lockProbe(slug);
+  const filmAge = filmMs === null ? null : NOW - filmMs;
+  const newer = filmMs !== null && docMs !== null && filmMs > docMs;
+  const why = [];
+  if (newer) {
+    if (filmAge <= DEFER_FRESH_MS) why.push(`成片 ${fmtAge(filmAge)} 前被写（≤ ${DEFER_FRESH_MS / 60000} min）`);
+    if (lock && lock.live) why.push(`该 slug 的并发锁活着（${path.basename(lock.p)}，pid ${lock.pid}，锁龄 ${fmtAge(lock.age)}）`);
+    if (batch.hits.length) why.push(`批次在跑（${batch.hits.join('；')}）`);
   }
-  if (Math.abs(Number(fmt.duration) - Number(g.durSec)) > TOL_DUR)
-    bad(slug, 'C durSec 不符', `文档 ${g.durSec} vs 实测 ${Number(fmt.duration).toFixed(2)}`);
-  if (Number(g.bytes) !== fs.statSync(film).size)
-    bad(slug, 'C bytes 不符', `文档 ${g.bytes} vs 磁盘 ${fs.statSync(film).size}`);
-
-  if (v.pix_fmt !== 'yuv420p') bad(slug, 'D pix_fmt', `${v.pix_fmt}（播放器兼容性）`);
-  const vd = Number(v.duration || fmt.duration), ad = Number(a.duration || fmt.duration);
-  if (Number.isFinite(vd) && Number.isFinite(ad) && Math.abs(vd - ad) > 0.1)
-    bad(slug, 'D 音视频时长差', `视频 ${vd.toFixed(3)}s vs 音频 ${ad.toFixed(3)}s`);
-  const abr = Number(a.bit_rate || 0);
-  if (abr && (abr < TOL_ABR_LO || abr > TOL_ABR_HI)) bad(slug, 'D 音频码率', `${(abr / 1000).toFixed(1)} kbps`);
-  // moov 是否在 mdat 之前（faststart）
-  try {
-    const fd = fs.openSync(film, 'r');
-    const buf = Buffer.alloc(1024 * 1024);
-    const n = fs.readSync(fd, buf, 0, buf.length, 0);
-    fs.closeSync(fd);
-    const head = buf.subarray(0, n).toString('latin1');
-    const im = head.indexOf('moov'), id = head.indexOf('mdat');
-    if (im < 0 || (id >= 0 && im > id)) bad(slug, 'D 未 faststart', `moov@${im} mdat@${id}`);
-  } catch { /* 读不到就跳过 */ }
+  if (!blind && why.length) {
+    deferred.push({ slug, film, filmAge: fmtAge(filmAge), docAge: fmtAge(NOW - docMs), why, wouldFail: local });
+    continue;
+  }
+  fails.push(...local);
 }
 
 // ── E：★ 交付脚本「更早的闸门」（2026-10-05 补；同日扩展：风格自带 mux.sh 一并纳入）────────
@@ -358,19 +492,45 @@ function judgeDeliveryScript(label, text) {
   if (withLnTp.length === 0)
     bad('(styles)', 'E 失明', `风格自带 mux.sh 里一个带 \`LN_TP=\` 的都没扫到（${stylesRoot} 路径/写法变了？）`);
   for (const s of withLnTp) judgeDeliveryScript(s.rel, s.text);
-  console.log(`[E] 交付脚本：core/render/mux.sh + 风格自带 mux.sh 里带 LN_TP 的 ${withLnTp.length} 个（逐个要求闭环）`
-    + `${noLnTp.length ? `；不带 LN_TP 的 ${noLnTp.length} 个（不做音频归一，不要求）：${noLnTp.map((x) => x.slug).join(' ')}` : ''}`);
+  // ★ 2026-10-06：`--json` 时这行走 **stderr** —— 原先它打在 stdout，把 `--json` 的 JSON 前缀污染成
+  //   `[E] …\n{…}`（不可 `JSON.parse`，实测踩到）。E 段是**静态文本**判据，与重渲窗口无关，恒判。
+  const eLine = `[E] 交付脚本：core/render/mux.sh + 风格自带 mux.sh 里带 LN_TP 的 ${withLnTp.length} 个（逐个要求闭环）`
+    + `${noLnTp.length ? `；不带 LN_TP 的 ${noLnTp.length} 个（不做音频归一，不要求）：${noLnTp.map((x) => x.slug).join(' ')}` : ''}`;
+  if (AS_JSON) console.error(eLine); else console.log(eLine);
 }
 
 if (AS_JSON) {
-  console.log(JSON.stringify({ total: slugs.length, fails }, null, 2));
+  console.log(JSON.stringify({
+    total: slugs.length,
+    judged: slugs.length - deferred.length,
+    deferred,
+    batch: { active: batch.hits.length > 0, hits: batch.hits, newest: batch.items.map(([l, { best, bn }]) => `${l}: ${bn || '(无)'} ${best === null ? 'N/A' : fmtAge(NOW - best) + ' 前'}`) },
+    lockDir: LOCK_DIR,
+    fails,
+  }, null, 2));
 } else {
+  // ── ★★ F 段报告：**疑似正在重渲 ⇒ 本次不判**（不是「通过」，所以大声打印 + 列出本会报的每一条）──
+  if (deferred.length) {
+    console.log(`⚠ 疑似正在重渲，本次不判 ${deferred.length} 部（**这不等于「通过」**）：\n`);
+    for (const d of deferred) {
+      console.log(`  ${d.slug.padEnd(20)} 成片 ${d.filmAge} 前被写 / 文档 ${d.docAge} 前 → ${d.why.join('；')}`);
+      for (const f of d.wouldFail) console.log(`      （若不是疑似重渲，本会报）[${f.kind}] ${f.msg}`);
+    }
+    console.log('  ⇒ 判据：成片 mtime 新于文档 mtime **且**（成片 ≤15 min 内被写 / 该 slug 并发锁活着 / 批次日志 ≤10 min 内被写）。');
+    console.log('  ⇒ 批次排空 10 min 后重跑本闸门：若仍红，那是**真漂移**（或文档待回填，跑 refresh-style-skill.mjs）。');
+  }
+  console.log(`[F] 批次信号：${batch.hits.length ? `**有**（${batch.hits.join('；')}）` : '无'}`
+    + `　|　${batch.items.map(([l, { best, bn }]) => `${l} ${bn || '(无)'} ${best === null ? 'N/A' : fmtAge(NOW - best) + ' 前'}`).join('　|　')}`
+    + `　|　锁目录 ${LOCK_DIR}`);
+
   if (fails.length) {
-    console.log(`✘ 发现 ${fails.length} 处口径不一致：\n`);
+    console.log(`\n✘ 发现 ${fails.length} 处口径不一致：\n`);
     for (const f of fails) console.log(`  ${f.slug.padEnd(20)} [${f.kind}] ${f.msg}`);
   } else {
-    console.log(`✓ 43 部成片交付口径全部一致（文档声称值 == 实测值）`);
+    console.log(`\n✓ 被判的 ${slugs.length - deferred.length} 部成片交付口径全部一致（文档声称值 == 实测值）`
+      + `${deferred.length ? `（另有 ${deferred.length} 部**未判**，见上）` : ''}`);
   }
-  console.log(`\n[闸门] 成片 ${slugs.length} 部；不一致 ${fails.length} 处 ${fails.length ? '✘' : 'OK'}`);
+  console.log(`\n[闸门] 成片 ${slugs.length} 部；已判 ${slugs.length - deferred.length} 部；不一致 ${fails.length} 处`
+    + `；疑似正在重渲未判 ${deferred.length} 部 ${fails.length ? '✘' : 'OK'}`);
 }
 process.exitCode = fails.length ? 1 : 0;

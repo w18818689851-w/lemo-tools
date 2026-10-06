@@ -199,7 +199,7 @@ film: Patent Pending: The Cloud Catcher
 | 项 | 值 |
 |---|---|
 | 蒸馏日期 | 2026-10-03 |
-| 成片 | `D:/lemo-films/blueprint/blueprint.mp4`（46.67s / 43.9MB / 46,060,737 B） |
+| 成片 | `D:/lemo-films/blueprint/blueprint.mp4`（46.67s / 43.9MB / 46,064,767 B） |
 | 抽帧 | `D:/lemo-tools/_distill/frames/blueprint/`（24 帧 + 接触印样） |
 | 风格匹配度自评 | **93/100**（2026-10-05 校正：原 90，9:16 画幅缺陷已修并回补 composition +3）（2026-10-03 校正：原 89，音频真峰值缺陷已修，audio +1）（本轮由 90 下调 1：新补记成片真峰值 −1.03 dBTP 超 −1.2 dBTP 交付线 0.17 dB，取 −2 档、按 mux/编码根因减半为 −1） |
 | 详细资料 | 有：`styles/blueprint/STYLE.md`、`styles/blueprint/DEMO.md`、`styles/blueprint/demo/build.sh`、`styles/blueprint/style.json`、`lib/style-dna/blueprint.md`、`lib/dub-styles.json#blueprint`、`_distill/logs/blueprint.log`、抽帧 |

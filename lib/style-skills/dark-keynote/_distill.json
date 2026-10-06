@@ -62,7 +62,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/dark-keynote/dark-keynote.mp4",
     "durSec": 42,
-    "bytes": 20819212,
+    "bytes": 20812094,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -73,7 +73,7 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
-      "integratedLufs": -14.3,
+      "integratedLufs": -14.54,
       "lra": 6,
       "truePeakDbtp": -1.5,
       "samplePeakDbfs": -1.502179,

@@ -169,7 +169,21 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     lib/vram.mjs 的 ensureVramFree()（与 dub.mjs 的 TTS 前守卫同一接口、同一语义：预检 → 不足才自动
 //     卸载常驻模型 → 仍不足则硬拦失败），杜绝「常驻大模型占满显存 ⇒ Index-TTS 静默挂死」。
 //     这是**有意给编排器加功能**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = 'd5a1b91b0113d611e3211e31f31f1be0';
+//   2026-10-06 更新：**配乐与「配音 + ASR」并行**（音频链调度）。把「配乐」一节从「配音」之后
+//     提到之前并后台起跑，混音前用 `wait` 收尾；判据是「该 demo 的配乐脚本是否引用 voices/ 目录
+//     或配音阶段产物（dur.json / words.json / words_rel.json / lips.json）」——从代码推出，不写死
+//     风格名单（全库 43 风格只有 game-show 与 living-screencast 命中，保持串行；hologram-hud 的
+//     `voices=` 是 pad_chord() 的函数参数，不命中）。实测音频链 22.5s → 19.0s（省 3.5s / 15.3%），
+//     成片逐字节不变、失败仍 exit 1。这是**有意改编排器**（纯调度，不削弱校验），基线值随之更新
+//     （红线本身保留，见 test/README.md 那张表）。
+//   2026-10-06 更新：**库路径加环境变量覆盖点**（`LEMO_LIB_WIN` / `LEMO_LIB_WSL`）。原先
+//     CFG.winLib / CFG.wslLib 写死为 D:\lemo-opuscar 与 /home/lemo/lemo-opuscar，没有 --lib
+//     也没有环境变量 ⇒ 新 clone 上跑编排器**仍然指向真库**，「新克隆能不能跑」无法端到端验证
+//     （只能静态分析猜）。现两处均改为 `process.env.LEMO_LIB_* || 原写死值`，命名照既有
+//     LEMO_MANIFEST / LEMO_LOCK_DIR 习惯；默认值即原值 ⇒ 不设变量时行为逐字节不变。
+//     这是**有意改编排器**（只加覆盖点，不动任何逻辑），基线值随之更新
+//     （红线本身保留，见 test/README.md 那张表）。
+export const ORCH_MD5 = '65ddab4495bdf52a4aab78b4a51f8457';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

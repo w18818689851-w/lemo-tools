@@ -64,7 +64,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/dataviz/dataviz.mp4",
     "durSec": 50,
-    "bytes": 23534100,
+    "bytes": 23551057,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -75,9 +75,9 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
-      "integratedLufs": -14.39,
-      "lra": 6.2,
-      "truePeakDbtp": -2.23,
+      "integratedLufs": -14.35,
+      "lra": 6.1,
+      "truePeakDbtp": -1.77,
       "samplePeakDbfs": -2.401433,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,

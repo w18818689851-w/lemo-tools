@@ -41,8 +41,13 @@ import { ensureVramFree } from './lib/vram.mjs';
 const CFG = {
   wslDistro: 'Ubuntu-24.04',
   wslUser: 'lemo',
-  wslLib: '/home/lemo/lemo-opuscar',
-  winLib: 'D:\\lemo-opuscar',
+  // 库根（两侧各一处）：Windows 侧供渲染/混流取脚本与产物，WSL 侧供音频链（TTS/配乐/拟音/混音）读素材。
+  // ★ 两处都可用环境变量覆盖，用途就是「让**新 clone / 临时副本**能被端到端验证」——
+  //   否则编排器永远只跑 D:\lemo-opuscar 这棵真库，clone 到底能不能跑只能靠静态分析猜。
+  // ★ 默认值即原来的写死值 ⇒ **不设这两个变量时行为逐字节不变**。
+  // ★ 必须**成对**设置：只覆盖一侧会让 Windows 与 WSL 指向不同的库（两侧不一致），编排器会拒绝开工。
+  wslLib: process.env.LEMO_LIB_WSL || '/home/lemo/lemo-opuscar',
+  winLib: process.env.LEMO_LIB_WIN || 'D:\\lemo-opuscar',
   tmpDir: 'D:\\WSL',
   exportDir: 'D:\\lemo-films',
   // 起飞前检查（pre-flight）读的 demo 链路声明。**可缺失**：文件不在 / JSON 坏了，
@@ -2090,6 +2095,63 @@ if [ -n "$MUSIC" ] && [ "$MUSIC" = "$MIX" ]; then
   MUSIC_DEDUP=1
 fi
 
+# ── 配乐 ────────────────────────────────────────────────────────────────────
+# ★ 2026-10-06：把配乐与「配音 + ASR」**并行**（实测省 4.7~5.8s / 13~14%）。
+#   本段位置由「配音之后」提到「配音之前」，就是为了让它能后台起跑。
+#   ★ 为什么可以并行（判据**从代码推出**，不写死风格名单）：
+#     配音步只写 voices/，配乐步只写 music/，两者产物不重叠；
+#     唯一可能的依赖是「配乐脚本把配音产物当素材」。
+#     ⇒ 判据 = 该 demo 的配乐脚本是否引用 voices/ 目录或配音阶段产物
+#       （dur.json / words.json / words_rel.json / lips.json）。
+#     全库 43 风格实测命中 2 个，它们保持**串行**：
+#       · game-show/demo/music.py:24 —— wave.open(f'voices/{name}.wav')：把喊词采样混进音乐做闪避；
+#       · living-screencast/demo/sound.py:200 —— 读 voices/*.wav（它同时兼任混音，下面的
+#         MUSIC_DEDUP 会把 MUSIC 清空，配乐步本就不跑）。
+#   ★ 为什么不能按 slug 写死：hologram-hud/demo/music/score.py 里出现的 voices= 是 pad_chord()
+#     的**函数参数**（去谐声部数），与 voices/ 目录毫无关系 —— 按名字猜会把它误判成「必须串行」。
+#   ★ 相位边界（两个都保持原语义）：
+#     · 'voice'（LEMO_VOICE_ONLY=1）只跑到配音就 exit ⇒ 本段整块不跑（旧位置在 exit 之后，等价）；
+#     · 'rest'（LEMO_SKIP_VOICE=1）本相位内没有配音步可重叠 ⇒ 走前台，与改前逐字节等价。
+#   ★ 失败语义不变：后台分支的退出码留在 MUSIC_PID 上，由下面的「等配乐」wait 出来照旧 exit 1。
+MUSIC_PID=""
+if [ "$LEMO_VOICE_ONLY" != "1" ] && [ -n "$MUSIC" ]; then
+  echo "[配乐] $(basename "$MUSIC")"
+  mkdir -p "$D/music/stems"
+  # 缺源素材预检（**只警告，不 fail**）：music/src/ 被 .gitignore 排除（styles/*/demo/music/src/），
+  # 全新克隆里不存在。配乐脚本引用它时，不预检的话后面只会报一句底层 FileNotFoundError /
+  # LibsndfileError / ffprobe CalledProcessError，看不出「跑不了不是编排器的问题，是你缺这个文件」。
+  # 只在「脚本正文确实出现 src/」时才提示，避免对不依赖它的 demo 误报。
+  if grep -q 'src/' "$MUSIC" 2>/dev/null; then
+    if [ ! -d "$D/music/src" ] || [ -z "$(ls -A "$D/music/src" 2>/dev/null)" ]; then
+      echo "  ! 缺源素材：$(basename "$MUSIC") 引用 music/src/，但 $D/music/src/ 不存在或为空"
+      echo "    （该目录被 .gitignore 排除，需自行补齐后再跑；见本 demo 的 CREDITS / CUES.md）"
+    fi
+  fi
+  MUSIC_READS_VOICES=0
+  if grep -qE "voices[/'\\"]|dur\\.json|words(_rel)?\\.json|lips\\.json" "$MUSIC" 2>/dev/null; then
+    MUSIC_READS_VOICES=1
+  fi
+  if [ "$LEMO_SKIP_VOICE" != "1" ] && [ "$MUSIC_READS_VOICES" = "0" ]; then
+    echo "  → 与配音并行（该配乐脚本不引用 voices/ 与配音阶段产物）"
+    ( .venv/bin/python "$MUSIC" 2>&1 || { echo "STEP_FAIL $(basename "$MUSIC")"; exit 1; } ) &
+    MUSIC_PID=$!
+  else
+    .venv/bin/python "$MUSIC" 2>&1 || { echo "STEP_FAIL $(basename "$MUSIC")"; exit 1; }
+  fi
+elif [ "$LEMO_VOICE_ONLY" != "1" ] && [ -n "$MIX" ]; then
+  if [ "$MUSIC_DEDUP" = "1" ]; then
+    # living-screencast 的 sound.py 同时兼任配乐与混音（上面已说明只在混音步骤跑一次）
+    echo "[配乐] 已由混音脚本一并产出（同一个脚本，见上）"
+  else
+    # 全仓 43 个 demo 里只有 paper-lantern 走到这里：它的 music/ 里只有 MUSIC.md 与 analysis.json，
+    # **从来没有配乐生成器**，mix.py 直读两个不在仓库里的第三方 mp3（Kevin MacLeod 曲目）。
+    # 旧实现只说「由混音脚本一并产出」，会让使用者以为没问题 —— 如实说明编排器补不了这类缺口。
+    echo "[配乐] 无独立配乐生成器，跳过"
+    echo "  ! 该 demo 的 music/ 下没有任何配乐生成脚本 —— 若混音脚本直读 music/ 里的素材（如第三方 mp3），"
+    echo "    而素材又不在仓库里，本编排器无法补齐：见该 demo 的 MUSIC.md / CREDITS，自行下载后重跑。"
+  fi
+fi
+
 # ── 配音 ────────────────────────────────────────────────────────────────────
 # LEMO_SKIP_VOICE=1：配音已在「渲染前的前置阶段」跑过（换内容时必须先出 dur.json，
 # 否则 Windows 页面读到旧的 voices/dur.json，口播时间窗全错）。这里跳过，只跑配乐+混音。
@@ -2254,32 +2316,17 @@ if [ "$LEMO_VOICE_ONLY" = "1" ]; then
   exit 0
 fi
 
-# ── 配乐 ────────────────────────────────────────────────────────────────────
-if [ -n "$MUSIC" ]; then
-  echo "[配乐] $(basename "$MUSIC")"
-  mkdir -p "$D/music/stems"
-  # 缺源素材预检（**只警告，不 fail**）：music/src/ 被 .gitignore 排除（styles/*/demo/music/src/），
-  # 全新克隆里不存在。配乐脚本引用它时，不预检的话后面只会报一句底层 FileNotFoundError /
-  # LibsndfileError / ffprobe CalledProcessError，看不出「跑不了不是编排器的问题，是你缺这个文件」。
-  # 只在「脚本正文确实出现 src/」时才提示，避免对不依赖它的 demo 误报。
-  if grep -q 'src/' "$MUSIC" 2>/dev/null; then
-    if [ ! -d "$D/music/src" ] || [ -z "$(ls -A "$D/music/src" 2>/dev/null)" ]; then
-      echo "  ! 缺源素材：$(basename "$MUSIC") 引用 music/src/，但 $D/music/src/ 不存在或为空"
-      echo "    （该目录被 .gitignore 排除，需自行补齐后再跑；见本 demo 的 CREDITS / CUES.md）"
-    fi
-  fi
-  .venv/bin/python "$MUSIC" 2>&1 || { echo "STEP_FAIL $(basename "$MUSIC")"; exit 1; }
-elif [ -n "$MIX" ]; then
-  if [ "$MUSIC_DEDUP" = "1" ]; then
-    # living-screencast 的 sound.py 同时兼任配乐与混音（上面已说明只在混音步骤跑一次）
-    echo "[配乐] 已由混音脚本一并产出（同一个脚本，见上）"
+# ── 等配乐（并行分支）收尾 ──────────────────────────────────────────────────
+# 配乐已在上面「配乐」一节里**后台启动**（位置在「配音」一节之前）。混音脚本要读它的产物
+# （score.wav / music.wav 等），所以必须在这里等它落盘 —— 位置与原来的串行版一致
+# （配音 → 配乐 → 拟音 → 混音），只是「配音」与「配乐」两段现在重叠跑。
+# ★ 失败语义**逐字不变**：配乐自己已经打了 STEP_FAIL，这里 wait 拿到非 0 就照样 exit 1
+#   （不吞、不降级成警告，等价于原串行版那句「STEP_FAIL + exit 1」）。
+if [ -n "$MUSIC_PID" ]; then
+  if wait "$MUSIC_PID"; then
+    echo "[配乐] 并行分支已收尾（与配音并行完成）"
   else
-    # 全仓 43 个 demo 里只有 paper-lantern 走到这里：它的 music/ 里只有 MUSIC.md 与 analysis.json，
-    # **从来没有配乐生成器**，mix.py 直读两个不在仓库里的第三方 mp3（Kevin MacLeod 曲目）。
-    # 旧实现只说「由混音脚本一并产出」，会让使用者以为没问题 —— 如实说明编排器补不了这类缺口。
-    echo "[配乐] 无独立配乐生成器，跳过"
-    echo "  ! 该 demo 的 music/ 下没有任何配乐生成脚本 —— 若混音脚本直读 music/ 里的素材（如第三方 mp3），"
-    echo "    而素材又不在仓库里，本编排器无法补齐：见该 demo 的 MUSIC.md / CREDITS，自行下载后重跑。"
+    echo "STEP_FAIL 配乐（并行分支，见上方 STEP_FAIL）"; exit 1
   fi
 fi
 
@@ -2576,12 +2623,21 @@ echo "  混流脚本 $MUX"
 # 注意：ffprobe 的 -of csv=p=0 在本机输出会带一个尾逗号（实测输出形如 1435+逗号），
 # 直接做字符串比较会把两者判成不等而误报。所以一律只取数字。
 num() { tr -dc '0-9' | head -c 12; }
-SRC_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$VID" 2>/dev/null | num)
+# 帧数：**优先读容器元数据 nb_frames**（实测 0.04s；43 个成片 + 全部渲染源都带该元数据，
+# 且与 -count_frames 真扫帧逐帧相等）。读不到 / 为 0 / 非数字时**回落全片扫帧**
+# （-count_frames：122s 片源侧 10.2s、成片侧 7.1~7.8s —— 这两次扫描原先每片白花 ≈17~18s）。
+# 兜底不能省：回落也拿不到数字时返回空串，下面「帧数读不出来」那道闸照样 MUX_FAIL，绝不静默放过。
+frames() {
+  f=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of csv=p=0 "$1" 2>/dev/null | num)
+  [ -n "$f" ] && [ "$f" != "0" ] || f=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$1" 2>/dev/null | num)
+  printf '%s' "$f"
+}
+SRC_FRAMES=$(frames "$VID")
 sh "$MUX" "$VID" "$MIXWAV" "$S/${o.slug}.mp4" ${o.fps} $GRAIN
 RC=$?
 if [ $RC -ne 0 ] || [ ! -s "$S/${o.slug}.mp4" ]; then echo "MUX_FAIL exit=$RC"; exit 1; fi
 
-OUT_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$S/${o.slug}.mp4" 2>/dev/null | num)
+OUT_FRAMES=$(frames "$S/${o.slug}.mp4")
 if [ -n "$SRC_FRAMES" ] && [ -n "$OUT_FRAMES" ] && [ "$SRC_FRAMES" != "$OUT_FRAMES" ]; then
   echo "MUX_FAIL 帧数不符：渲染 $SRC_FRAMES 帧，成片 $OUT_FRAMES 帧"
   exit 1

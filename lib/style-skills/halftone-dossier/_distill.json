@@ -49,7 +49,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/halftone-dossier/halftone-dossier.mp4",
     "durSec": 30,
-    "bytes": 39613063,
+    "bytes": 39577451,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -65,7 +65,7 @@
       "lemo-make 步骤[4] 为 --skip-audio，但 demo/mix.wav（music.py 产出）仍被 mux 采用"
     ],
     "loudness": {
-      "truePeakDbtp": -3.26,
+      "truePeakDbtp": -2.79,
       "integratedLufs": -14.26,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,

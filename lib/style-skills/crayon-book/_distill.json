@@ -61,7 +61,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/crayon-book/crayon-book.mp4",
     "durSec": 52,
-    "bytes": 36904027,
+    "bytes": 36912439,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -85,8 +85,8 @@
       "混流 MUX_OK 36912520 src_frames=1248 out_frames=1248，CRF 26 / grain 0（logs:8/138）"
     ],
     "loudness": {
-      "truePeakDbtp": -2.08,
-      "integratedLufs": -14.3,
+      "truePeakDbtp": -1.57,
+      "integratedLufs": -14.21,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",

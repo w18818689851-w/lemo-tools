@@ -217,7 +217,7 @@ film: The Moon Can't Sleep
 | 项 | 值 |
 |---|---|
 | 蒸馏日期 | 2026-10-03 |
-| 成片 | `D:/lemo-films/crayon-book/crayon-book.mp4`（52.00s / 35.2MB / 36,904,027 B） |
+| 成片 | `D:/lemo-films/crayon-book/crayon-book.mp4`（52.00s / 35.2MB / 36,912,439 B） |
 | 抽帧 | `D:/lemo-tools/_distill/frames/crayon-book/`（24 帧 + 接触印样） |
 | 风格匹配度自评 | **91/100**（2026-10-05 校正：原 92，新增「textureRaw 细纹理未实现」缺陷，palette −1）（2026-10-05 校正：原 90，9:16 画幅缺陷已修并回补 composition +2）（2026-10-03 校正：原 89，音频真峰值缺陷已修，audio +1） |
 | 详细资料 | 有：`styles/crayon-book/STYLE.md`、`styles/crayon-book/DEMO.md`、`style.json`、`lib/style-dna/crayon-book.md`、`lib/dub-styles.json#crayon-book`、`_distill/logs/crayon-book.log`、成片 `.srt`、抽帧 |

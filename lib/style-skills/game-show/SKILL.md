@@ -193,7 +193,7 @@ film: Rhythm of AI, 1997 → 2026
 | 项 | 值 |
 |---|---|
 | 蒸馏日期 | 2026-10-03（音轨修复后回填） |
-| 成片 | `D:/lemo-films/game-show/game-show.mp4`（148.79s / 91,211,840 B / 1920×1080 / 24 fps / 3571 帧） |
+| 成片 | `D:/lemo-films/game-show/game-show.mp4`（148.79s / 91,221,830 B / 1920×1080 / 24 fps / 3571 帧） |
 | 音频实测 | `I = −14.0 LUFS` · `LRA 4.2 LU` · 真峰值 `input_tp = −2.00 dBTP`（在 −1.2 dBTP 目标内） |
 | 抽帧 | `D:/lemo-tools/_distill/frames/game-show/`（24 帧 + 接触印样） |
 | 风格匹配度自评 | **94/100**（2026-10-05 校正：原 92，9:16 画幅缺陷已修并回补 composition +2）（2026-10-03 校正：原 90，音频真峰值缺陷已修，audio +2）（音频分项 6 → 16，见 `_distill.json`） |

@@ -2,6 +2,13 @@
 .console-port
 打开控制台.url
 
+# 宿主工具（WorkBuddy）的工作区元数据：某次会话把本目录当工作区时自动生成
+# （memory/ 会话记忆与 automations/）。★ 不是项目代码；本仓**没有**任何脚本读它 ——
+# 代码读的是 `~/.workbuddy-ai`（用户主目录，见 lib/voices.mjs:62），不是仓内这份。
+# ★ 2026-10-06 加入：它每次被当工作区都会重新生成，不该长期挂在 `git status` 里，
+#   更不该被将来的 `git add -A` 顺手扫进去。
+.workbuddy-ai/
+
 # 日志
 *.log
 

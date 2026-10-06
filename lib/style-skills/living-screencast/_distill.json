@@ -58,7 +58,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/living-screencast/living-screencast.mp4",
     "durSec": 59.42,
-    "bytes": 15567737,
+    "bytes": 15588470,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -76,8 +76,8 @@
       "出片命令为 node lemo-make.mjs living-screencast --skip-sync --no-preflight --ratio 16:9（跳过两份库同步与预检）"
     ],
     "loudness": {
-      "truePeakDbtp": -2.14,
-      "integratedLufs": -14.45,
+      "truePeakDbtp": -1.59,
+      "integratedLufs": -14.33,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",

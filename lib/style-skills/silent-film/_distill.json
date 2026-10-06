@@ -65,7 +65,7 @@
   ],
   "generatedVideo": {
     "path": "D:/lemo-films/silent-film/silent-film.mp4",
-    "durSec": 54.2159,
+    "durSec": 54.21,
     "bytes": 65259378,
     "width": 1920,
     "height": 1080,
@@ -77,7 +77,7 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
-      "integratedLufs": -14.5,
+      "integratedLufs": -14.67,
       "lra": 6.5,
       "truePeakDbtp": -1.56,
       "samplePeakDbfs": -1.564732,

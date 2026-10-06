@@ -28,7 +28,9 @@
 **「自动纳入」怎么落地**：指纹判据复用 `scripts/style-scan.mjs` 的**内容哈希**（不是时间戳）；
 `style-distill.mjs plan` 把它与 `_distill/state.json` 里「上次蒸馏时记下的指纹」比对 ⇒ 新增目录与源码变更都自己冒出来。
 ★ 注意：**指纹读 WIN 副本（`D:/lemo-opuscar`）、渲染读 WSL 副本** ⇒ 跑 `plan` 之前先用
-`node D:/lemo-tools/scripts/check-dual-copy-sync.mjs` 确认两边一致，否则结论无效。
+`node D:/lemo-tools/scripts/check-dual-copy-sync.mjs` 确认两边一致，否则结论无效
+（★ 2026-10-06 起它还会**参考级**报出「两侧 git 历史是否分叉」—— 若报「已分叉」，说明**文件虽同步、提交却在单侧**
+（实测 WSL 侧看不到 WIN 的新提交）⇒ 别把 WSL 那份当权威，收敛方向由人定）。
 ★ 已知边界：`.py`（混音/TTS 源码）**不在**指纹范围内（见 `style-scan.mjs` 的排除说明）——
 改混音源码不会触发重新蒸馏，需要时手工 `render --only <slug>`。
 
@@ -321,7 +323,7 @@ node D:/lemo-tools/scripts/check-skill-scores.mjs                # 评分自洽�
 **再跑这些**（全库级，确认你没把别的风格弄坏）：
 
 ```bash
-node D:/lemo-tools/scripts/check-film-delivery.mjs     # 成片口径：文档声称值 vs 实测值 + 容器健康
+node D:/lemo-tools/scripts/check-film-delivery.mjs     # 成片口径：文档声称值 vs 实测值 + 容器健康。★ 2026-10-06 补 **F 段「重渲窗口守卫」**：A/B/C/D 判的是「文档 vs 实测」，而**日批重渲成片**后文档要等批次跑完才回填 ⇒ 在「成片已重写、文档还没回填」的窗口里这些「不一致」**不是回归**（实证：本闸门曾报 exit 1 / 23 处 / 12 部，用改前 `mux.sh` 复跑**逐字节相同**、且 12 部全在当日 09:04–09:33 重渲名单里 ⇒ 是文档过期不是回归）⇒ 判据：**成片 mtime 新于 `_distill.json` mtime**（必要条件）**且**（成片 ≤15 min 内被写 / 该 slug 的并发锁活着（`<LEMO_LOCK_DIR>/.<slug>.lock`，判据逐字复用 `lemo-make.mjs:1449-1453`）/ `_distill` 的 `render-run-*.log`、`state.json`、`logs/*.log` 最新 mtime ≤10 min）⇒ **不判 FAIL**、报「疑似正在重渲，本次不判」并列出本会报的每一条；**真漂移照旧 FAIL**、E 类恒判不让位；成片/文档 mtime 拿不到即判「失明」并 FAIL。★ **排空后若仍红 ⇒ 那是真漂移或文档待回填**（先看有没有 `C 真峰值超标`/`C 响度偏离交付线`/D 类：没有就只是文档过期 ⇒ 跑 `refresh-style-skill.mjs`）。覆盖点：`LEMO_MUX_SH` / `LEMO_OPUSCAR` / **`LEMO_DISTILL_ROOT`** / **`LEMO_BATCH_DIR`** / **`LEMO_LOCK_DIR`**（供非破坏变异；`--json` 时 `[E]` 那行走 stderr，输出可 `JSON.parse`）
 node D:/lemo-tools/scripts/check-tp-prose.mjs          # SKILL.md **正文**里的真峰值声称 vs 实测（★ 2026-10-05 修结构性失明：旧「值 > −1.2 才查」把「已修/重渲后**已达标**」的值**全排除** ⇒ 现「关于成片的**当前结论句无论是否达标**，与实测差 > 0.15 dB 即 FAIL」；旧 ① 换成「阈值/交付线提及」排除（数值 == `peakDbtpTarget`，或阈值词紧贴）；★ 2026-10-05 **修 60 字窗假阴**：判据 ③ 由「匹配点前后 **60 字**内出现『成片』」放宽为「**整行**含『成片』」（实测旧窗假阴 8/8 = 100%；`hd-2d:120` 的『成片』离数值 **69** 字）；配合新增 **⑥ 非本片产物排除**（数值所在句出现 `mix.wav`/`score.wav`/`母带`/`中间产物`/`上游`/`样片`/`素材` ⇒ 那是上游读数、不是成片声称）把误报压到 **0**（不加 ⑥ 时误报 2/10 = 20%）；★ 实验行「多目标→多实测」排除；全部读不到真峰值即判失明；LEMO_DISTILL_ROOT / LEMO_TP_MEASURED_JSON 可覆盖，供非破坏变异；★★ **2026-10-05 泛化**：本闸门已从「只查 dBTP」变成「**成片读数这一类声明**」的通用闸门（同一套抽取/排除/对账流水线，量纲以 `DIMS` 登记项加入）—— 覆盖 **dBTP / LUFS / LRA / 字节数 / 分辨率 / 帧数（FAIL）+ 体积 MB / 时长（参考）**，真值复用 `check-film-delivery` 的实测结论；覆盖点新增 **`LEMO_READINGS_MEASURED_JSON`**（多量纲真值覆盖 `{slug:{dBTP,LUFS,LRA,bytes,durSec,width,height,frames,dBFS:{samplePeak,truePeak,ebur128Peak}}}`，指向 `{}` 即逐量纲失明）；★★ **2026-10-05 下半场再纳入 `dBFS`（第 9 类量纲）**：全库 149 个 `<数> dBFS` 此前无人对账，难点是**口径歧义**（混用 `ebur128 Peak` 1 位小数 / `astats` 采样峰值 6 位 / `loudnorm input_tp` 真峰值三个口径）⇒ 必须「**口径感知 + 多真值**」：真值取 `samplePeak`（json `samplePeakDbfs` / `audioEvidence.astatsPeak6dp`，43/43 都有）、`truePeak`（`truePeakDbtp`）、`ebur128Peak`（= `round(truePeak,1)`，实测 43/43 相等）；口径词按「所在句内离 token 最近」选（`astats|采样峰值` ⇒ 采样峰值容差 0.01；`ebur128|Peak` ⇒ 容差 0.001；`input_tp|真峰值|dBTP|TPK` ⇒ 0.15；`RMS` ⇒ 参考；**无口径词 ⇒ 参考、不判**）。**误报率逐级实测**：放宽 20 命中/误报 20（100%）→ 朴素单真值 4/100% → 口径「首个命中」8/100% → 最终 **0/0**。**另立第 ⑩ 类「物理约束」FAIL**（真峰值 ≥ 采样峰值 恒成立 ⇒ 「采样峰值 > 真峰值」物理不可能，不需口径判断）：数据级（json 自相矛盾）+ 声称级（同句），容差 0.1。**实测 dBFS 真陈旧 0、物理不可能 0 ⇒ 未改任何文档**）
 node D:/lemo-tools/scripts/check-skill-film-fields.mjs # SKILL.md **正文**里的成片帧数/分辨率/时长 vs generatedVideo（★ 帧数=FAIL、分辨率=FAIL、时长=参考；全部读不到 generatedVideo 即判失明）
 node D:/lemo-tools/scripts/check-lra-caliber.mjs       # 43 份的 lra 是否统一 ebur128 口径
@@ -342,7 +344,7 @@ node D:/lemo-tools/scripts/check-api-docs.mjs          # server.mjs 路由 ↔ R
 node D:/lemo-tools/scripts/check-render-venc.mjs       # ★ 渲染一律 GPU 优先（未设 LEMO_VENC ⇒ h264_nvenc；非法值 ⇒ 报错；双副本不一致 ⇒ FAIL）
 node D:/lemo-tools/scripts/patch-render-venc.mjs       # 按上述判据幂等回灌 26 个编码器决策点（双副本一起写）
 node D:/lemo-tools/scripts/check-venc-args.mjs         # ★ 每个编码参数组合**真编 1 帧**证明 ffmpeg/nvenc 接受（32 组合，~4s；抽到 0 个即判失明）
-node D:/lemo-tools/scripts/check-dual-copy-sync.mjs   # ★ 全仓两份副本同步（源文件漂移/单侧缺失 ⇒ FAIL；生成物与资产只列 backlog；WSL 不可达即判失明）
+node D:/lemo-tools/scripts/check-dual-copy-sync.mjs   # ★ 全仓两份副本同步（源文件漂移/单侧缺失 ⇒ FAIL；生成物与资产只列 backlog；WSL 不可达即判失明；★ 2026-10-06 补「git 历史一致性」**参考级**判据：报两侧 HEAD/分支/未提交条数/领先落后/「一侧看不到另一侧 HEAD」+ 后果，**一律不判 FAIL**（实测历史已分叉 —— WIN `b0de9e7` 领先 WSL `f3c590d` 1 个提交且 WSL 看不到该对象，而文件是同步的 ⇒ 旧版全绿；判 FAIL 会立刻打破全绿，且收敛要动仓库、本闸门只读）；失明（无 .git / 无 git / root 不存在）只明说、不 FAIL；★★ 2026-10-06 再补第 ②b 条「**无扩展名的控制文件**」判据：`.gitignore`/`.gitattributes`/`.editorconfig`/`.gitmodules`/`LICENSE-*` 按**同一份 glob 列表**喂给 WIN 匹配器与 WSL `find -name`（两侧由构造一致），漂移即 FAIL —— 旧版 `isText('.gitignore')=false` ⇒ 两侧 `.gitignore` 内容不同也**全绿**（实测 `a25c8d…` vs `96112b…`））
 node D:/lemo-tools/scripts/check-film-aspect.mjs      # ★ 成片画幅：A 声明支持（未声明=只支持16:9）+ B 43 部画幅应一致（少数派即违规）+ ★C 用 ffprobe 读**实际成片文件**要求恰为 1920×1080（样板片一律 16:9；文件缺失只单列、0 部成片/文件根不存在/无 ffprobe 即判失明；`LEMO_FILMS_ROOT` 可覆盖，供非破坏变异）
 node D:/lemo-tools/scripts/check-audio-chain.mjs      # ★ 音频链可跑性：哪些风格的混音步编排器跑不了（A 无路径/B 基线/Bnew 新增 ⇒ FAIL），把「只有真渲才发现」的缺口静态化
 node D:/lemo-tools/scripts/check-aspect-declaration.mjs # ★ 影片入口画幅声明：没有 film*.js 的风格，其真实入口（index.html 引的本地 .js / 内联脚本）若读了视口 ⇒ FAIL（否则控制台会误报「只支持 16:9」）；风格目录不存在 / 0 风格即判失明
@@ -412,13 +414,81 @@ node D:/lemo-tools/scripts/refresh-style-skill.mjs --only <slug>   # 或 --all
 
 ---
 
+## ★★ 动「两侧副本共享的文件」（尤其 `core/`）之前：先查有没有并发批量作业（2026-10-06 真实事故）
+
+★ **事故**：09:02 起**每日 09:00 的自动化批量出片**（`style-distill.mjs render --force`，38 个风格）正在跑，我**没查**就派子智能体去改 `core/render/mux.sh` 的 **WIN 侧** ⇒ 09:37:48 两侧 `core/` 分叉（WIN `e20a1230` 26506B / WSL `b8d9e683` 25632B）⇒ 编排器的「两侧 `core/` 一致」闸门**拒绝开工** ⇒ **该批 21 个风格全废**（19 个 A 类硬拒 + 2 个音频链被并发会话 SIGTERM）。根因：**派活前没看环境**。
+
+**① 怎么查（改共享文件之前先跑）**
+```bash
+ls -lat D:/lemo-tools/_distill/render-run-*.log | head -2   # 批量总日志（日批写这里）
+ls -lat D:/lemo-tools/_distill/logs/*.log | head -5         # 逐风格日志的最新 mtime
+ls -la  D:/lemo-films/.*.lock                              # 编排器并发锁（锁名 = .<slug>.lock）
+tasklist //FI "IMAGENAME eq ffmpeg.exe"                    # 有没有 ffmpeg 在跑
+```
+★ **判据**：**日志 mtime 在几分钟内** / **有 `.lock`** / **有 `ffmpeg.exe`** ⇒ 一律**判定「有并发作业」，不许动共享文件**。
+（★ 坑：控制台端口文件在 `D:/lemo-tools/.console-port`，**不是** `D:/lemo-films/`；且它**退出时不删** ⇒ 存在 ≠ 在跑，
+要确认真在跑用 `netstat -ano | grep <文件里的端口号>`。）
+
+**② 判定「有并发作业」之后**
+- **优先：等它排空** —— `_distill` 的批量**可断点续跑**（`render` 只重试未完成项），等它跑完零代价；★ 今天就是「不等」才废 21 个。
+- **若必须现在动**：**改完立刻同步两侧**（改一侧 = 分叉 = 阻塞出片，**留窗口期就是直接废片**）：
+```bash
+cp /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/render/mux.sh
+md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/render/mux.sh   # 两侧必须一致
+```
+  ⇒ ★★ 理由：编排器**要求两侧 `core/` 逐字节一致**（`lemo-make.mjs:1514` 核 `core/render`+`core/tts`+`core/lang`），不一致即打印 `两侧 core/ 不一致（N 处），已拒绝开工`。
+
+**③ 已经分叉了怎么恢复**：★ **别自创修法** —— 编排器**自己会打印处方**（`lemo-make.mjs:1570-1573`）：
+`find . -type f \( -name \*.py -o -name \*.mjs -o … \) | while read f; do tr -d "\r" < "$f" > /home/lemo/lemo-opuscar/core/"$f"; done` —— **照它打印的处方逐字做**，重跑即可。
+
+★ **教训**：**「派活前先看环境」和「改完立刻验证」是同一件事的两半**。
+
+---
+
+## ★★ 派活前：任务书里的「环境事实」必须附核法（2026-10-06 立，治「凭印象写环境事实」）
+
+★ **病根**：派活的人在任务书里写「环境事实」时凭印象，而不是先跑一条命令核实 —— 最近三轮错 **3 次**（都被子智能体纠正、没造成损失）；更早一轮的同类错误（**没查并发作业**就派人改 `core/`）**直接废掉 21 个风格**（事故形态见 `:417-444`）。
+
+★ **判据**：任务书里凡出现 **文件路径 / 行号 / 函数名 / 进程 / 端口 / 存在与否 / 谁读谁** 这类断言 ⇒ 一律算「环境事实」，**必须写明「用哪条命令核出来的」**；★ **反例**（不算环境事实、不必核）：**设计意图**、**要求**、**判断标准**、**已知的通用知识**。
+
+**照抄这一格（写进任务书）**
+```markdown
+【事实核实记录】每条环境事实 = 断言 + 核法 + 实测
+  断言：`measure_film` 在 `core/render/mux.sh:226`
+  核法：grep -n measure_film core/render/mux.sh
+  实测：226:measure_film() {          ← 贴真实输出，不是「应该在哪」
+```
+★ 若环境事实含「**有没有并发作业**」⇒ 核法见 `:417-444`（4 条命令 + 判据），**不在此重抄**。
+（`:417-444` 自身可核：`grep -n '两侧副本共享的文件' _distill/AGENT-BRIEF.md` ⇒ `417:`）
+
+**反例 → 正例（今天真实错的这三条，核法都跑过）**
+
+| 错的写法（凭印象） | 核过之后的写法（断言 + 核法 + 实测） |
+|---|---|
+| 读 `voices` 的是 `hologram-hud` | 读取者不止一个，**别点名**：`grep -rl "voices" --include=*.py D:/lemo-opuscar/styles/*/demo/` ⇒ **84** 个 .py（同一条 `-rn` 出行号：`game-show/demo/music.py:24`、`living-screencast/demo/sound.py:200`） |
+| 控制台端口文件在 `D:/lemo-films/.console-port` | 在 `D:/lemo-tools/.console-port`：`grep -n console-port server.mjs` ⇒ `60:const PORT_FILE = path.join(__dirname, '.console-port');` |
+| 该文件存在 ⇒ 控制台在跑 | **存在 ≠ 在跑**：`grep -n 不删 server.mjs` ⇒ `2070` 明写「这两个文件退出时**不删**」（另 `:52` 注释同旨）⇒ 判在跑只能看监听：`cat D:/lemo-tools/.console-port` ⇒ `3764`、`netstat -ano \| grep ":3764 "` 命中 **0** |
+
+★ **教训**：任务书里的每个 `file:line` 都会被下游当**事实**用 —— **没核法的断言 = 让子智能体把时间花在纠错上**（今天这三条全是这么被纠回来的）。
+
+---
+
 ## 纪律（红线）
 
 1. **不许编造**：任何参数、色值、耗时、帧号都要来自你读过的文件或帧图。写不出来就写「未知」。
 2. **不许逐帧复刻的承诺**：目标是**对齐特质、复用制作思路 / 视觉元素 / 编排手法**，不是还原样本画面。
 3. **不改** `lemo-make.mjs`（红线：编排器不能被改）、不改 `D:/lemo-opuscar` 下的源码
    （除非你在第 11 节里明确记录了「为补齐短板做了什么」并且改动极小、可回滚）。
-4. **不并发**：不要自己起渲染或 TTS（GPU / Index-TTS 都是独占资源）。
+   ★ **若你确实动了 `D:/lemo-opuscar` 下任何文件 ⇒ 改完立刻同步两侧**（改一侧 = 分叉 = 阻塞出片，
+   **留窗口期就是直接废片**）：
+   ```bash
+   cp /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/render/mux.sh
+   md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/render/mux.sh   # 两侧必须一致
+   ```
+   ⇒ ★★ 理由：编排器**要求两侧 `core/` 逐字节一致**，不一致即拒绝开工、直接阻塞出片
+   （事故形态与排查/恢复法见 `:417-444`）。
+4. **不并发**：不要自己起渲染或 TTS（GPU / Index-TTS 都是独占资源）；★ **改共享文件之前也要先查有没有别人在跑**
+   （见 `:417-444` 的「动两侧副本共享的文件之前」—— 今天就是没查，废了 21 个风格）。
 5. 只写 `<slug>` 自己的目录，不碰别人的。
 6. ★ **不要再写「硬编码 slug 表」的一次性补丁脚本** —— 历史上 `sync-tp-docs.mjs`（写死 18 个 slug）与
    `patch-tp-prose.mjs`（写死 7 个锚点）就是这样，**换个风格就得手改**。

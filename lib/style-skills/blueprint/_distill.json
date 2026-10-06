@@ -55,7 +55,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/blueprint/blueprint.mp4",
     "durSec": 46.67,
-    "bytes": 46060737,
+    "bytes": 46064767,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -66,9 +66,9 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
-      "integratedLufs": -14.02,
-      "lra": 3.4,
-      "truePeakDbtp": -2.4,
+      "integratedLufs": -14,
+      "lra": 4.4,
+      "truePeakDbtp": -1.42,
       "samplePeakDbfs": -2.754564,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,

@@ -71,7 +71,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/microgame/microgame.mp4",
     "durSec": 59.83,
-    "bytes": 51788868,
+    "bytes": 51829697,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -82,9 +82,9 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
-      "integratedLufs": -14.42,
-      "lra": 3.6,
-      "truePeakDbtp": -2.18,
+      "integratedLufs": -14.28,
+      "lra": 3.5,
+      "truePeakDbtp": -1.32,
       "samplePeakDbfs": -2.291309,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,

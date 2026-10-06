@@ -90,7 +90,7 @@
     "ttsRan": true,
     "asrMismatches": 0,
     "loudness": {
-      "integratedLufs": -14.2,
+      "integratedLufs": -14.48,
       "lra": 7,
       "truePeakDbtp": -1.62,
       "samplePeakDbfs": -1.62059,

@@ -62,7 +62,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/iso-infographic/iso-infographic.mp4",
     "durSec": 58.79,
-    "bytes": 33204354,
+    "bytes": 33215930,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -79,12 +79,12 @@
       "出片命令为 node lemo-make.mjs iso-infographic --skip-sync --no-preflight --ratio 16:9（跳过两份库同步与预检）"
     ],
     "loudness": {
-      "truePeakDbtp": -1.69,
-      "integratedLufs": -14.46,
+      "truePeakDbtp": -1.39,
+      "integratedLufs": -14.62,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "lra": 6.3,
+      "lra": 5.3,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "samplePeakDbfs": -2.083625
     }

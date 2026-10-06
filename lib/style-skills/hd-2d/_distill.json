@@ -91,7 +91,7 @@
   "generatedVideo": {
     "path": "D:/lemo-films/hd-2d/hd-2d.mp4",
     "durSec": 76.5,
-    "bytes": 48121093,
+    "bytes": 48162655,
     "width": 1920,
     "height": 1080,
     "fps": 24,
@@ -119,12 +119,12 @@
       "本次未改动任何源码：lemo-make.mjs 未动、D:/lemo-opuscar 下源码未动（含 core/render/mux.sh 的 LN_TP），只写 lib/style-skills/hd-2d/ 自己的两份交付物。旧帧先备份到 _distill/frames/hd-2d.bak-24fps/ 再重抽，未直接覆盖。"
     ],
     "loudness": {
-      "truePeakDbtp": -3.21,
-      "integratedLufs": -14.11,
+      "truePeakDbtp": -1.54,
+      "integratedLufs": -14.02,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "lra": 8.8,
+      "lra": 9.1,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "samplePeakDbfs": -3.25262
     }
