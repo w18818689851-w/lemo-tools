@@ -576,6 +576,48 @@
  *     阴性 A：反引号 + 裸各一条 ⇒ exit 0；阴性 B：只有裸引用 ⇒ 仍 exit 0；
  *     ★自证：把守卫条件改成恒假 ⇒ **同一个正向夹具**不再报失明 ⇒ 证明断言真的在测那条守卫）。
  *
+ * ── ★★ 2026-10-07（本轮）：「点开头控制文件」盲区 —— 正则 + 按仓解析 ────────────────
+ *   **盲区**：`REF` / `BARE_REF` 的路径首字符都要求 `[A-Za-z0-9_]` ⇒ `.gitignore:63-64` 这类
+ *   「**点开头的控制文件 + 行号**」的引用**一条都认不出来**（不是判错，是**根本不计入引用**）⇒ 完全静默。
+ *   **修法①（正则）**：首字符类改成「**点开头 + 点后必须是字母**」或原形态的**非捕获**二选一
+ *     （用 `(?:…)` ⇒ 分组序号不变，`m[1]` 仍是路径，调用方**一个字都不用改**）。
+ *     ★「点后必须是字母」是**硬约束**：去掉它会把 `.5:1` / `.0:1` 这类**比值**吃成引用。
+ *   ★ **误报率实测（真实语料，改前/改后同一台机同一时刻）**：
+ *     `引用 4657 → 4662`（+5）、`裸引用 296 → 309`（+13）、`(a)(b)(c)(d)` = `0 → 15`。
+ *     新增 18 处**逐条人读**：**15 处是真失效**（全 (b)，同一根因，见修法②）、另 3 处是
+ *     `MAINTAINING.md` 的 `.gitignore:66-67` / `:13` / `:125-141`（逐条核过被引行，**全部正确**，
+ *     且本来就解析到**库仓**那份 —— `dirname(MAINTAINING.md)` 就是库根，排在最前）⇒ **零误报**。
+ *   **修法②（按仓解析）**：bare 的**点开头控制文件**（形态 `/^\.[A-Za-z][A-Za-z0-9_-]*$/`）
+ *     改成**按「引用所在文件的仓」解析**（`dotCtrlPath`：从引用所在文件所在目录**逐级向上**找，
+ *     止于它所属的仓根）—— 原来 `rootsFor()` 是**固定顺序**、`ROOT` 排在 `OPUSCAR` 之前 ⇒
+ *     库仓 `styles/**` 里写的 bare `.gitignore:NN` 一律被解析到**工具仓**那份（35 行）⇒ **假红**；
+ *     反向也有**假绿**（`.gitignore:13` 在两个仓里都 ≤ 行数 ⇒ 解析到错仓照样「行号在范围内」）。
+ *     ★ 实测：这一条把 `裸引用已核 149 → 161`（+12）、`(b) 15 → 3`（12 处库仓引用归位），
+ *       **其余计数一个没动**（`引用 4662` / `解析到文件 4317` / `(a)(c)(d)` 全 0）⇒ **零副作用**。
+ *     ★ 也自然支持**嵌套**控制文件（实测库仓有 `styles/engraving/demo/music/.gitignore`：
+ *       该目录下的文件会先命中它，而不是仓根那份）。
+ *   **修法③（跨仓完整路径）**：新增 `lemo-opuscar/…` / `lemo-tools/…`（**仓名当第一段目录**）
+ *     形态（`crossRepoPath`）—— 工具仓文档要引**库仓**那份同名控制文件时，bare 写法必然命中本仓那份、
+ *     **消歧不了**；`rootsFor()` 里也**没有任何根**能把它解到库仓（连 `styles/../.gitignore` 都被
+ *     `ROOT` 先接住：`path.resolve(ROOT, 'styles/../.gitignore') === ROOT/.gitignore`）。
+ *     ★ **不是**盘符绝对路径（后者含 `:`，锚定的 `REF` 根本不认，见 `AGENT-BRIEF.md` 第 12 条）。
+ *     ★ 实测：真实语料里**零命中**（语料里 `lemo-<repo>/…` 形态**全部**写在盘符路径里 ⇒ 不被识别）
+ *       ⇒ **零行为改变**。
+ *   ★ **写作侧同步（15 处，本轮已改）**：
+ *     · 库仓 12 处 `styles/{art-deco,ascii-crt,blueprint,hd-2d,living-screencast,microgame,
+ *       paper-popup,pixel-rpg,risograph,spy-titles,swiss-motion,whiteboard}/demo/*.js`：
+ *       `.gitignore:124` → `.gitignore:138`（**行号本身也漂了**：124 是讲 score.json 的**注释行**，
+ *       真目标是那条 `voices/` 下 `*.json` 的规则；git 追得到根因 —— 提交 0626641 那版该规则
+ *       **正好在 124 行**，之后 9827d72 / eb4e889 各加注释行 ⇒ 漂到 138）。
+ *     · 工具仓 3 处（`lib/style-skills/hd-2d/SKILL.md:133`、`:202`、`hd-2d/_distill.json:21`）：
+ *       `.gitignore:58-59` → `lemo-opuscar/.gitignore:75-76`（库仓第 75 行 = 那条 `*.wav` 规则、
+ *       第 76 行 = 那条 `*.mp3` 规则，两条都是 `styles/<slug>/demo/` 下的通配；
+ *       **58-59 是 `stems` 与 `music_stems` 两条目录规则，不是 mp3/wav**）。
+ *   ★ **反向验证**：把两条正则**临时还原** ⇒ `引用` 回到 `4657`、`裸引用` 回到 `296`、(b) 回到 `0`
+ *     ⇒ **那 15 处重新消失**（证明是正则的功劳）；装回后复现 15 处。
+ *   ★ **扰动测试**：把库仓某处改成 `.gitignore:200` ⇒ 闸门报 (b)，且文案点名
+ *     **`lemo-opuscar/.gitignore 只有 181 行`** ⇒ 同时证明**解析到了库仓**（不是工具仓那份）；已还原。
+ *
  * 用法：node scripts/check-ref-lines.mjs [--list-backlog]
  * 退出码：有 FAIL（或失明）→ 1；否则 0。
  */
@@ -676,7 +718,7 @@ const SCAN = [...DOCS, ...SRCS];
 // ── 引用形态 ────────────────────────────────────────────────────────────────
 //   反引号包裹、路径带扩展名、`:行号`（可 `N` / `N-M` / `N/M/…` / 逗号分隔组 `N-M,K`）
 //   ★ 锚 `^…$`：整串必须刚好是「路径:行号组」，`a.js:1,b.js:2` / `x.js:1, 'a'` 都不会被误吃。
-const REF = /^([A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z0-9_]+):(\d+)((?:[-/,]\d+)*)$/;
+const REF = /^((?:\.[A-Za-z][A-Za-z0-9_\-]*)|(?:[A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z0-9_]+)):(\d+)((?:[-/,]\d+)*)$/;
 /**
  * 反引号片段的**配对** —— 本闸门**唯一**的「掩码口径」，主判据与裸引用 backlog **共用同一套**。
  * ★ 2026-10-07（本轮）：由「**顺序配对**」（旧 `TICKS` 正则 `` `([^`\n]*)` `` —— 找「反引号…反引号」）
@@ -741,7 +783,7 @@ const codeSpans = (line) => {
  *     ② **扩展名必须以字母开头** —— 后者一条规则同时挡掉 `地址:端口`（`127.0.0.1:12345`）与
  *     `数值比`（对比度 `2.5:1`）两类假阳。实测：宽松版 305 处 → 收窄后 295 处，挡掉的 10 处**全是**这两类、**零误伤**。
  */
-const BARE_REF = /([A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z][A-Za-z0-9_]*):(\d+)((?:[-/,]\d+)*)/g;
+const BARE_REF = /((?:\.[A-Za-z][A-Za-z0-9_\-]*)|(?:[A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z][A-Za-z0-9_]*)):(\d+)((?:[-/,]\d+)*)/g;
 /**
  * ★ 2026-10-07（本轮）：**裸引用扫描用的「挖洞」不再有自己的正则** —— 它与主判据**共用**
  *   上面那个 `codeSpans(line)`（CommonMark 等长配对）。历史与理由：
@@ -875,6 +917,62 @@ function rootsFor(file, lineNo = 0) {
 }
 
 /**
+ * ★★ 2026-10-07 新增：**跨仓完整路径** —— 第一段目录就是**仓名**（`lemo-opuscar/…` / `lemo-tools/…`）。
+ *   由来（实测 15 处真失效，同一根因）：bare 的**点开头控制文件**在两个仓里**同名且都存在**
+ *   （工具仓 `lemo-tools/.gitignore` 35 行、库仓 `lemo-opuscar/.gitignore` 180 行），
+ *   而 `rootsFor()` 里 **`ROOT` 排在 `OPUSCAR` 之前** ⇒ 工具仓文档要引**库仓**那份时，
+ *   **任何「相对本仓」的写法都消歧不了**（`rootsFor` 里没有任何根能把 `.gitignore` 解到库仓那份）——
+ *   连 `styles/../.gitignore` 也会被 `ROOT` 先接住（`path.resolve(ROOT, 'styles/../.gitignore') === ROOT/.gitignore`）。
+ *   ⇒ 给一个**显式**的跨仓形态：把**仓名当第一段目录**写进引用（写作纪律第 12 条「带目录的完整路径」
+ *   的跨仓形态；**不是**盘符绝对路径 —— 后者含 `:`，锚定的 `REF` 根本不认，见 `AGENT-BRIEF.md` 第 12 条）。
+ *   ★ 只在**其余解析途径全部落空之前**试一次（放在 `siblingPaths` 之后、`rootsFor` 之前）：
+ *     `lemo-<repo>/…` 是**显式限定**，命中即返回，语义上优先于任何「按 basename 猜」的兜底。
+ *   ★ 实测（真实语料）：本条**只**影响**第一段恰好是仓名**的引用 —— 语料里这类引用**全部**写在
+ *     **盘符绝对路径**里（如 `` `D:/lemo-opuscar/core/render/mux.sh:94` ``）⇒ 锚定的 `REF` 压根不认它们
+ *     ⇒ 本条在真实语料上**零命中、零行为改变**（见头注释「实测」段的同批对照）。
+ */
+const CROSS_REPO = { 'lemo-opuscar': OPUSCAR, 'lemo-tools': ROOT };
+function crossRepoPath(refPath) {
+  const m = refPath.match(/^(lemo-opuscar|lemo-tools)[/\\](.+)$/);
+  if (!m) return null;
+  const p = path.resolve(CROSS_REPO[m[1]], m[2]);
+  try { return fs.statSync(p).isFile() ? p : null; } catch { return null; }
+}
+
+/**
+ * ★★ 2026-10-07 新增：**bare 的「点开头控制文件」按「引用所在文件的仓」解析**。
+ *   形态：`/^\.[A-Za-z][A-Za-z0-9_-]*$/`（`.gitignore` / `.gitattributes` / `.editorconfig` / `.npmrc` …）
+ *   —— **点开头、点后是字母、没有目录**。★ 「点后必须是字母」这一条是硬约束：
+ *     去掉它会把 `.5:1` / `.0:1` 这类**比值**吃成引用（见头注释「误报率实测」段）。
+ *   ★ 为什么必须单独一条规则：这类文件**在多个仓里同名**，而 `rootsFor()` 是**固定顺序**的候选表
+ *     （`ROOT` 在 `OPUSCAR` 之前）⇒ 库仓 `styles/**` 里写的 bare `.gitignore:NN` 一律被解析到
+ *     **工具仓**那份（35 行）⇒ 报 (b)「行号超范围」，而真目标是**本仓**那份。
+ *     **这是「解析到了错的仓」的假红**，且反向也有假绿（`.gitignore:13` 在两个仓里都 ≤ 行数 ⇒
+ *     解析到错仓也照样「行号在范围内」⇒ 静默指错）。★ 实测：本闸门改正则后暴露 **15 处**同根因失效。
+ *   ★ 规则（最小改动）：从**引用所在文件所在目录**起**逐级向上**找该文件，**止于它所属的仓根**
+ *     （`ROOT` / `OPUSCAR`，由**引用所在文件**的路径决定）—— 谁先找到就是它。
+ *     ⇒ 库仓 `styles/<slug>/demo/x.js` 里的 `.gitignore` ⇒ 库仓 `.gitignore`；
+ *       工具仓 `lib/**` 里的 ⇒ 工具仓 `.gitignore`。★ 也自然支持**嵌套**控制文件
+ *       （实测库仓有 `styles/engraving/demo/music/.gitignore`：该目录下的文件会先命中它）。
+ *   ★ 找不到 ⇒ 返回 null，**落回原来的 `rootsFor()` 顺序**（不改既有行为）。
+ */
+function dotCtrlPath(file, refPath) {
+  const abs = path.resolve(file);
+  const own = [ROOT, OPUSCAR].find((r) => abs === r || abs.startsWith(r + path.sep));
+  if (!own) return null;
+  let d = path.dirname(abs);
+  for (;;) {
+    const p = path.join(d, refPath);
+    try { if (fs.statSync(p).isFile()) return p; } catch {}
+    if (d === own) break;
+    const up = path.dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return null;
+}
+
+/**
  * 解析结果：{p} 命中 ｜ {ambiguous:[…]} 多义 ｜ {how:'underspec'} 欠指明 ｜ null 解析不到
  * @param siblingPaths 同小句里出现的**带目录的路径**片段（如 `` `core/render/mux.sh` ``）——
  *   若某个的 basename 与本引用相同，则本引用就是它（★ 路径感知：实测 `hd-2d` 的
@@ -894,6 +992,15 @@ function resolveRef(file, refPath, siblingPaths = [], lineNo = 0) {
         try { if (fs.statSync(p).isFile()) return { p, how: 'sibling-path' }; } catch {}
       }
     }
+  }
+  // ★★ 2026-10-07：**跨仓完整路径**（`lemo-opuscar/…` / `lemo-tools/…`）—— 见 `crossRepoPath` 说明。
+  //   放在 `rootsFor` **之前**：它是**显式限定**，语义上优先于「按固定顺序猜」。
+  { const p = crossRepoPath(refPath); if (p) return { p, how: 'cross-repo' }; }
+  // ★★ 2026-10-07：**bare 的点开头控制文件**按「引用所在文件的仓」解析 —— 见 `dotCtrlPath` 说明。
+  //   ★ 「点后必须是字母」同时挡掉 `.5:1` 这类比值（形态与 `REF` 的 dot 分支一致）。
+  if (/^\.[A-Za-z][A-Za-z0-9_-]*$/.test(refPath)) {
+    const p = dotCtrlPath(file, refPath);
+    if (p) return { p, how: 'dotfile-repo' };
   }
   for (const r of rootsFor(file, lineNo)) {
     const p = path.resolve(r, refPath);

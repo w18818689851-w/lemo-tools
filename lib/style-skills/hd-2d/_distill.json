@@ -18,7 +18,7 @@
     "【palette −1】细纹理 `textureRaw: pixel-post` 声明了但渲染未实现：`lib/dub-styles.json#hd-2d.bgRecipe.textureRaw` 是 `pixel-post`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `pixel-post` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `pixel-post` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
-    "music/src/sb_precipice.mp3 只落本地、不进 git（.gitignore:58-59 排除 styles/*/demo/**/*.mp3|wav）——这是仓库既有设计，不是遗漏；但新机器上要按 `DEMO.md:107` 的直链重新 curl 才能重跑 edit.py。同样被排除的还有 voices/*.wav、score.wav、mix.wav。",
+    "music/src/sb_precipice.mp3 只落本地、不进 git（lemo-opuscar/.gitignore:75-76 排除 styles/*/demo/**/*.mp3|wav）——这是仓库既有设计，不是遗漏；但新机器上要按 `DEMO.md:107` 的直链重新 curl 才能重跑 edit.py。同样被排除的还有 voices/*.wav、score.wav、mix.wav。",
     "无 demo/build.sh：本风格没有一键复现脚本，构建链只存在于 DEMO.md 的 Build notes（`DEMO.md:103-131`），需手工按 7 步执行（TTS → ASR 检查 → 配乐剪辑 → 混音 → 字幕 → 渲染移轴版 → 封装）。",
     "每套布景都要为新主题重画：harbor.js（含海面 shader 调用）/ forest.js + forest_art.js / cliff.js 是人力最重的一块；chars.js 的姿势表也要为新角色重写。",
     "字体只有 demo 那一套 woff2 latin 子集（Cinzel 500/700、Cormorant Garamond italic 500/500/600），无第二套字面。"

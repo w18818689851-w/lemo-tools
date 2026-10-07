@@ -130,7 +130,7 @@ film: The Lampbearer
 - **不需要什么素材**：不需要照片、实拍、3D 资产包、AI 生成图（`CREDITS:6`）；不需要胶片颗粒插件（**必须 grain 0**）；不需要划像 / 3D 转场插件；**绝不需要、也不许使用**参照作品的角色、地点、标志、UI 饰件或音乐（`STYLE.md:4`）。
 - **取景 / 质感 / 比例偏好**：**24 px/m** 恒定纹理密度（`worldUV` 按法线做平面投影，`kit.js:7-16`）；`NearestFilter`、无 mip 模糊；立绘 34×50 px + 1 px **selout** 镂空描边（朝墨色压暗 `#1a1016`，`px.js:39-48`）；建筑只用盒子 + 圆柱，植被 / 远船 / 山脊用公告板；窗户是自发光像素窗格（emissiveIntensity 2.2），火是 **6 帧像素图集按 ~10 fps** 步进的公告板，海面是自写 shader（量化波纹 + 浪脊带 + 倒影条 + 碎光）。
 - **可替代方案**（缺素材时怎么降级而不破风格）：没有授权曲就写**原创室内幻想乐**（竖琴 / 钢片琴 / 弦乐 / 圆号），或先跑**静音占位**把画面链验证完；没有原创角色就**减少姿势数、复用同一套骨骼**，但**绝不能**把立绘换成平滑插画或加抗锯齿；没有 24 px/m 贴图就**降低布景复杂度**（少道具、多公告板），但**绝不能**放弃 `NearestFilter` 或用线性插值——那会立刻变成「低模卡通」而不是 HD-2D。
-- **配乐源不进 git 是既有设计**：`.gitignore:58-59` 排除 `styles/*/demo/**/*.mp3` 与 `*.wav`，所以 `music/src/sb_precipice.mp3`、`voices/*.wav`、`score.wav`、`mix.wav` 只落本地。新机器上要按 `DEMO.md:107` 的直链重新 `curl` 才能重跑 `edit.py`。**这不是版权缺口**（CC BY 4.0，署名即可），别当成缺素材处理。
+- **配乐源不进 git 是既有设计**：`lemo-opuscar/.gitignore:75-76` 排除 `styles/*/demo/**/*.mp3` 与 `*.wav`，所以 `music/src/sb_precipice.mp3`、`voices/*.wav`、`score.wav`、`mix.wav` 只落本地。新机器上要按 `DEMO.md:107` 的直链重新 `curl` 才能重跑 `edit.py`。**这不是版权缺口**（CC BY 4.0，署名即可），别当成缺素材处理。
 
 ---
 
@@ -199,7 +199,7 @@ film: The Lampbearer
 
 ### 素材缺口
 
-- **`music/src/sb_precipice.mp3` 只落本地、不进 git**（`.gitignore:58-59` 排除 `styles/*/demo/**/*.mp3|wav`）——这是**仓库既有设计，不是遗漏**；但新机器上要按 `DEMO.md:107` 的直链重新 `curl` 才能重跑 `edit.py`。同样被排除的还有 `voices/*.wav`、`score.wav`、`mix.wav`。
+- **`music/src/sb_precipice.mp3` 只落本地、不进 git**（`lemo-opuscar/.gitignore:75-76` 排除 `styles/*/demo/**/*.mp3|wav`）——这是**仓库既有设计，不是遗漏**；但新机器上要按 `DEMO.md:107` 的直链重新 `curl` 才能重跑 `edit.py`。同样被排除的还有 `voices/*.wav`、`score.wav`、`mix.wav`。
 - **没有 `demo/build.sh`**：本风格的构建步骤只存在于 `DEMO.md` 的「Build notes」（`DEMO.md:103-131`），没有可一键复现的脚本（对比 `pixel-rpg`/`scifi-toon` 都有 `build.sh`）。下游复现时需手工按 7 步执行。
 - **每套布景都要为新主题重画**：`harbor.js`（含海面 shader 调用）/ `forest.js` + `forest_art.js` / `cliff.js` 是人力最重的一块；`chars.js` 的姿势表也要为新角色重写。
 - **字体只有 demo 那一套 woff2 子集**：Cinzel（500/700）与 Cormorant Garamond（italic 500 / 500 / 600），`fonts/` 下为 Google Fonts latin 子集 + OFL 文本；没有第二套字面。
