@@ -14,8 +14,9 @@
 //   4. PROCESS_CASES 起两个任务（一个 sleep 120 的 wsl 步骤 + 一个 20050 行的 exe 步骤），
 //      它们会写进 .console 的 index.json / logs；跑完从索引摘掉、日志文件删掉
 //   5. WSL 侧的 /tmp 标记文件、D:\WSL 的临时脚本
-//   6. FULL_CASES 的现场 TTS 用例 —— 会在 D:\lemo-films 下建一个 `_smoke-tts-*` 输出目录，
-//      并让 dub.mjs 在共享缓存目录 `dub/_verify/` 里写一份同名抽帧目录；两者都登记进 ARTIFACTS.dirs
+//   6. FULL_CASES 的现场 TTS 用例（⑤++ / ⑤++++++ / ⑤+++++++）—— 会在 D:\lemo-films 下建
+//      `_smoke-tts-*` / `_smoke-fitb-*` / `_smoke-fitd-*` 输出目录，并让 dub.mjs 在共享缓存目录
+//      `dub/_verify/` 里写一份同名抽帧目录；两者都登记进 ARTIFACTS.dirs（⑤+++++++ 跑三次 ⇒ 三个抽帧目录）
 //   测试服务覆写 .console-port / 打开控制台.url 的副作用由 smoke.mjs 负责备份还原。
 
 import fs from 'node:fs';
@@ -2037,9 +2038,14 @@ function makeDubMaterial(hostPath) {
   ].join(' \\\n'), { timeoutMs: 180000 });
 }
 
-/** ffprobe 一个媒体文件 → `{ v, a, dur }`（视频流 / 音轨 / 总时长；读不到给 null）。 */
+/**
+ * ffprobe 一个媒体文件 → `{ v, a, dur }`（视频流 / 音轨 / 总时长；读不到给 null）。
+ * ★ `stream` 里**连 duration 一起取**：`⑤++++++` 要断言「成片音轨的时长 ≈ 配音总时长」
+ *   （素材原声只有 2.0s，成片音轨 ~8.4s ⇒ 光凭时长就能排除「音轨是素材原声」这一种退化）。
+ *   多取一个字段对既有调用方（只读 `.width/.height/.codec_type`）无影响。
+ */
 async function probeMedia(hostPath) {
-  const r = await wsl('ffprobe -v error -show_entries stream=codec_type,width,height,codec_name '
+  const r = await wsl('ffprobe -v error -show_entries stream=codec_type,width,height,codec_name,duration '
     + `-show_entries format=duration -of json "${toWsl(hostPath)}"`, { timeoutMs: 120000 });
   let j = null;
   try { j = JSON.parse(String(r.out)); } catch { return null; }
@@ -2052,16 +2058,31 @@ async function probeMedia(hostPath) {
 }
 
 /**
- * **独立**量一个文件的真峰值 / 集成响度（WSL 的 `loudnorm`，4× 过采样，口径与 `dub.mjs` 一致）。
+ * **独立**量一个文件的真峰值 / 集成响度（WSL 的 `loudnorm` + `ebur128`，口径与 `dub.mjs` 一致）。
  * ★ 刻意不用工具自己打印的那个数 —— 那条是「自述」，判据要落在**成片实物**上。
+ * ★★ 两个响度口径都要给，**判据必须落在 `ebur128` 上**：
+ *   · `ebur128` = `ebur128=peak=true` 的集成响度 `I:` —— 这是**项目权威口径**
+ *     （`dub.mjs` 的 `measure()` 用它算 `lufs`，`check-film-delivery` / `check-lra-caliber` 也用它）。
+ *   · `lufs` = `loudnorm` 的 `input_i` —— **另一个口径**。长片（40–60s 样板片）上两者实测差 ≤0.06 LU，
+ *     但**短片 + 含静音**时可以拉开（本轮实测同一部 8.4s 成片：ebur128 −14.0 / loudnorm −14.09；
+ *     而另一次运行 loudnorm 读到 −15.1，ebur128 仍在 −14.x）⇒ 拿 `input_i` 去对「风格目标」是
+ *     **口径错配**，会把「读数差异」误判成「归一没做对」。
  */
 async function measureLoud(hostPath) {
   const r = await wsl('ffmpeg -hide_banner -nostdin -i '
-    + `"${toWsl(hostPath)}" -af loudnorm=print_format=json -f null - 2>&1`, { timeoutMs: 180000 });
+    + `"${toWsl(hostPath)}" -af loudnorm=print_format=json -f null - 2>&1\n`
+    + 'ffmpeg -hide_banner -nostdin -i '
+    + `"${toWsl(hostPath)}" -af ebur128=peak=true -f null - 2>&1 | grep -E 'I: ' | tail -1`,
+  { timeoutMs: 180000 });
   const t = `${r.out}${r.err}`;
   const tp = /"input_tp"\s*:\s*"(-?[\d.]+)"/.exec(t);
   const i = /"input_i"\s*:\s*"(-?[\d.]+)"/.exec(t);
-  return { tp: tp ? Number(tp[1]) : null, lufs: i ? Number(i[1]) : null };
+  const eb = /I:\s*(-?[\d.]+)\s*LUFS/.exec(t);
+  return {
+    tp: tp ? Number(tp[1]) : null,
+    lufs: i ? Number(i[1]) : null,          // loudnorm 口径（参考）
+    ebur128: eb ? Number(eb[1]) : null,     // ★ 项目权威口径（判据用这个）
+  };
 }
 
 /**
@@ -2091,6 +2112,128 @@ function srtJoinedText(srtPath) {
   const blocks = fs.readFileSync(srtPath, 'utf8').split(/\n\s*\n/)
     .map((b) => b.split('\n').slice(2).join(' ').trim()).filter(Boolean);
   return { blocks, joined: blocks.map((s) => s.replace(/\s+/g, '')).join('') };
+}
+
+// ── ⑤++++++ / ⑤+++++++ 的公共夹具：一个「亮度随时间爬升」的假口播素材 ──────────
+//
+// ★★ 为什么画面必须是「随时间变化的亮度」——这是本轮最关键的一处设计：
+//   `--fit loop|trim|slow` 三者的**成片时长完全相同**（`dub.mjs` 的混流一律 `-t total`，
+//   见 `dub.mjs` 第 [6] 步的 mux；loop 靠 `-stream_loop -1`、trim 靠 `tpad` 补到 total、
+//   slow 靠 `setpts` 拉长到 total）⇒ **时长与帧数都不是判据**，写「三者时长不同」就是恒真断言。
+//   三者的真实差别**全在画面内容**：
+//     · loop → 素材被**循环**（成片第 t 秒取素材第 t mod D 秒）
+//     · trim → 素材放完后**冻结末帧**（成片第 t≥D 秒都取素材最后一帧）
+//     · slow → 素材被**整体放慢**（成片第 t 秒取素材第 t·D/T 秒）
+//   要让这个差别**可观测**，素材必须「每一时刻的画面都不同」⇒ 用一条 0→255 的**亮度斜坡**，
+//   于是「成片某一帧的亮度」就是「素材被取到了哪一时刻」的一把刻度尺（实测该斜坡单调递增，
+//   见下面 `FIT_RAMP_NOTE`）。判据因此可以写成「成片逐帧亮度剖面 == 某一种 fit 的语义模型」。
+//
+// ★ 为什么音轨是 **15 kHz 纯音**：用来证明成片音轨**来自 TTS、不是素材原声**。
+//   TTS 语音在 15 kHz 处几乎没有能量（实测成片该带 mean −56.8 dB），而素材原声在这里是
+//   **−3.7 dB**（推到满刻度）⇒ 「成片 15 kHz 带内电平很低」是一条**可证伪**的判据：
+//   若实现退化成把素材原声混进成片（例如误开 `--keep-original-audio`），它会当场 FAIL。
+//
+// ★ 为什么素材是 270x480 / 2.0s 而输出点名 `--ratio 16:9`（=1920x1080）：
+//   两者尺寸**故意不同** ⇒ 「成片尺寸按 `--ratio` 而不是素材尺寸」成为**可证伪**的断言
+//   （若成片是 270x480，说明 `--size`/`--ratio` 没生效）。
+//   素材只有 2.0s 而配音 ~8.4s ⇒ 三条 fit 分支（都要求 srcDur < total）**必然**被走到。
+const FIT_W = 270, FIT_H = 480, FIT_DUR = 2.0, FIT_TONE_HZ = 15000;
+const FIT_OUT_W = 1920, FIT_OUT_H = 1080;      // `--ratio 16:9` 的默认像素（唯一来源：core/render/size.mjs）
+const FIT_RATIO = '16:9';
+// ★ 文案约 51 字 ⇒ TTS 实测 total ≈ 8.2–8.4s（素材的 4 倍多）⇒ 斜坡上「三种 fit 取到不同时刻」
+//   的差异足够大（实测三种模型的逐帧剖面两两平均差 ≈ 94–102 灰度）。
+const FIT_TEXT = '这是一次形态B与配音时长适配的真实出片测试。画面用口播素材铺满，声音来自本地合成，字幕逐字等于文案。';
+// ★ 必须挑一个 style-dna 的 `targetLufs ≠ 通用默认`（−16）的风格，否则「响度 −14±1」这条
+//   判据与走默认无法区分（与 `⑤++` 同口径）。engraving 的 mix_rules 写「整体 −14 LUFS」。
+const FIT_STYLE = 'engraving';
+
+/** 造「亮度爬升 + 15 kHz 纯音」的极小假口播素材到 hostPath（Windows 路径）。 */
+function makeFitMaterial(hostPath) {
+  return wsl([
+    'ffmpeg -hide_banner -loglevel error -nostdin -y',
+    `  -f lavfi -i "color=c=black:s=${FIT_W}x${FIT_H}:r=30:d=${FIT_DUR}"`,
+    `  -f lavfi -i "sine=f=${FIT_TONE_HZ}:r=48000:d=${FIT_DUR}"`,
+    `  -vf "geq=lum='255*T/${FIT_DUR}':cb=128:cr=128,format=yuv420p"`,
+    '  -af "volume=20.8dB"',
+    '  -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p',
+    '  -c:a aac -b:a 96k -ar 48000 -ac 2',
+    '  -shortest -movflags +faststart',
+    `  "${toWsl(hostPath)}"`,
+  ].join(' \\\n'), { timeoutMs: 180000 });
+}
+
+/**
+ * 把整片解成「**每帧 1 个像素的灰度**」→ 返回长度 = 帧数的数组（第 i 项 = 第 i 帧的均值灰度）。
+ * ★ 为什么整片一次抽完、按帧对齐，而不是逐点 `-ss` 取帧：`-ss` 的定位有亚帧误差，
+ *   而三种 fit 的差异要靠**逐帧剖面**比对（斜坡斜率实测 ~174 灰度/秒 ⇒ 0.1s 误差 = 17 灰度）。
+ *   一次抽完既没有 seek 误差、也只需一次 ffmpeg 调用。
+ * ★ 为什么走**文件**而不是 stdout：二进制过 WSL stdout 会被损坏（`lib/env.mjs` 的同类注释）。
+ *   临时文件写在 `scratchDir`（用例的 `_smoke-` 输出目录）里 ⇒ 随该目录一起被 `cleanupArtifacts` 收掉。
+ */
+async function frameProfile(hostPath, scratchDir) {
+  const rawHost = path.join(scratchDir, `_prof-${Math.random().toString(36).slice(2)}.raw`);
+  const r = await wsl('ffmpeg -v error -nostdin -y -i '
+    + `"${toWsl(hostPath)}" -vf "scale=1:1,format=gray" -f rawvideo -pix_fmt gray "${toWsl(rawHost)}"`,
+  { timeoutMs: 180000 });
+  if (!r.ok) return null;
+  try { return Array.from(fs.readFileSync(rawHost)); } catch { return null; }
+}
+
+/** 某窄带内的平均电平（dB）——「素材原声是 15 kHz 纯音、成片里没有它」的判据。 */
+async function bandMeanDb(hostPath, f, widthHz = 2000) {
+  const r = await wsl(`ffmpeg -hide_banner -nostdin -i "${toWsl(hostPath)}" `
+    + `-af "bandpass=f=${f}:width_type=h:w=${widthHz},volumedetect" -f null - 2>&1 | grep mean_volume`,
+  { timeoutMs: 180000 });
+  const m = /mean_volume:\s*(-?[\d.]+|-inf)\s*dB/.exec(`${r.out}${r.err}`);
+  if (!m) return null;
+  return m[1] === '-inf' ? -Infinity : Number(m[1]);
+}
+
+// ── `--fit` 三值的**语义模型** + 剖面统计量（纯 JS，不占 GPU）──────────────────
+//
+// 给定素材的逐帧剖面 M（长度 Nm）与成片的帧数 No，三种 fit 各自的「成片第 i 帧应当等于素材第几帧」：
+//   loop: 素材被循环          → 素材帧号 = i mod Nm
+//   trim: 素材放完后冻结末帧  → 素材帧号 = min(i, Nm-1)
+//   slow: 素材被放慢 No/Nm 倍 → 素材帧号 = floor(i · Nm / No)
+// ★ 这三条**不是**从被测实现反推出来的，而是从「循环 / 冻结末帧 / 整体放慢」三个词的定义直接写出，
+//   与被测实现相互独立 ⇒ 「实测剖面与哪一条最贴合」可以反过来检验实现走的是哪条分支。
+const FIT_MODELS = {
+  loop: (M, i) => M[i % M.length],
+  trim: (M, i) => M[Math.min(i, M.length - 1)],
+  slow: (M, i, No) => M[Math.min(M.length - 1, Math.floor((i * M.length) / No))],
+};
+const fitMae = (O, M, kind) => {
+  let s = 0;
+  for (let i = 0; i < O.length; i++) s += Math.abs(O[i] - FIT_MODELS[kind](M, i, O.length));
+  return s / O.length;
+};
+/** 下降沿计数：相邻两帧亮度骤降 > 150 ⇒ 「画面又从头开始了」——loop 独有的结构特征。 */
+const fitDownEdges = (O) => {
+  let n = 0;
+  for (let i = 1; i < O.length; i++) if (O[i] - O[i - 1] < -150) n++;
+  return n;
+};
+/** 最大回落：相邻两帧亮度最多回落多少（单调不减的剖面 → 很小）。 */
+const fitMaxFallback = (O) => {
+  let m = 0;
+  for (let i = 1; i < O.length; i++) m = Math.max(m, O[i - 1] - O[i]);
+  return m;
+};
+/** 末 frac 段的最小亮度（trim 冻结在素材最高亮度 ⇒ 很大；slow 还没爬到顶 ⇒ 明显更小）。 */
+const fitTailMin = (O, frac) => Math.min(...O.slice(Math.floor(O.length * (1 - frac))));
+/** 第 frac 比例处的亮度。 */
+const fitAt = (O, frac) => O[Math.min(O.length - 1, Math.floor(O.length * frac))];
+
+/**
+ * 三种模型**彼此**在**实测素材剖面**上的平均差（区分力守卫）。
+ * ★ 必须喂**实测的 M**：若喂一条内部合成的「名义斜坡」，无论真实夹具长什么样它都恒为大值
+ *   ⇒ 夹具退化成纯色时守卫**不会响**，本用例就悄悄变成「三者都一样」的恒真断言
+ *   （实测过：喂合成斜坡时，纯色夹具下 `sep` 仍是 94–102）。所以这里只收实测剖面。
+ */
+function fitModelSeparation(M, No) {
+  const mk = (kind) => Array.from({ length: No }, (_, i) => FIT_MODELS[kind](M, i, No));
+  const d = (a, b) => a.reduce((s, x, i) => s + Math.abs(x - b[i]), 0) / a.length;
+  return { 'loop|trim': d(mk('loop'), mk('trim')), 'loop|slow': d(mk('loop'), mk('slow')), 'trim|slow': d(mk('trim'), mk('slow')) };
 }
 
 // ── --full 才跑的完整回归 ────────────────────────────────────
@@ -2609,6 +2752,330 @@ export const FULL_CASES = [
 
       ctx.note('⑤+++++ --fit 实测：loop/trim/slow 三值都透传到计划行 fit=<值>；'
         + '非法值在「形态 B」与「配了 --keep-original」两种组合下都被当场拒（exit≠0）');
+    },
+  },
+  {
+    // ★ 为什么必须有这条（2026-10-07 补的缺口）：
+    //   「**形态 B**（`--video` 口播素材铺满画面）+ **现场 TTS**」这条**真实产品路径**
+    //   此前**没有 CLI 级出片覆盖**：`⑤++` 是形态 A（没传 `--video`），
+    //   `⑤+++`/`⑤++++`/`⑤+++++` 全是 `--keep-original`（明令不跑 TTS）⇒
+    //   「素材铺满 + TTS 配音」这个**组合**从没被真跑过（`⑤+++++` 只覆盖了 `--fit` 的**参数面**）。
+    // ★ 本用例同时是 `--fit` **行为面**的第一个覆盖点：不传 `--fit` ⇒ 走默认 `loop`
+    //   ⇒ 「素材比配音短 ⇒ `-stream_loop -1` 循环播放」这条分支第一次被真出片验证。
+    name: '⑤++++++ 形态 B + 现场 TTS 真出片（默认 --fit loop）：尺寸按 --ratio / 音轨来自 TTS 不是素材原声 / 字幕逐字等于文案 / 响度 −14±1 / 素材被循环',
+    run: async (ctx) => {
+      const { HARD_PEAK_LIMIT, TARGET_LUFS } = await import('../lib/dub-core.mjs');
+      const { readStyleDna, summarizeStyleDna } = await import('../lib/style-dna-reader.mjs');
+
+      // ── 前置 1：本机真的具备 Index-TTS 执行体 ──
+      const ttsPy = path.join(CFG.winLib, 'core', 'tts', 'tts_indextts.py');
+      assert.ok(fs.existsSync(ttsPy),
+        `Index-TTS 执行体不存在：${ttsPy}\n  这条用例要求本机具备 Index-TTS（现场 GPU 合成）；缺了就无法覆盖`
+        + '「形态 B + 现场 TTS」这条路径 —— 这是**用例无法成立**，不是被测代码坏了。');
+
+      // ── 前置 2：期望响度**现读** DNA，不写死数字（与 `⑤++` 同口径）──
+      const dnaSum = summarizeStyleDna(readStyleDna(FIT_STYLE));
+      assert.ok(dnaSum, `读不到 lib/style-dna/${FIT_STYLE}.json —— 这条用例依赖它的 targetLufs`);
+      const wantLufs = dnaSum.targetLufs;
+      assert.ok(Number.isFinite(wantLufs),
+        `lib/style-dna/${FIT_STYLE}.json 没有可用的 targetLufs（读到 ${JSON.stringify(wantLufs)}），用例失去判据`);
+      assert.notStrictEqual(wantLufs, TARGET_LUFS,
+        `lib/style-dna/${FIT_STYLE}.json 的 targetLufs 恰好等于通用默认 ${TARGET_LUFS} —— 那样`
+        + '「响度按风格目标归一」与「走默认」的输出完全相同，这条断言就失去了区分力。');
+
+      // ── 前置 3：真锁没被别的任务占着（TTS 的串行锁是**全局**独占的）──
+      const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
+      const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
+      if (fs.existsSync(lockPath)) {
+        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
+        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
+          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS，\n'
+          + '  等它结束后再跑 --full —— 这是**环境占用**，不是被测代码坏了。');
+      }
+
+      // ── 夹具 + 输出目录（前缀 `_smoke-` ⇒ cleanupArtifacts 的两道守卫才认它）──
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const outDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fitb-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      ARTIFACTS.dirs.add(outDir);
+      //   `dub.mjs` 的 [7] 自检会把抽帧写到共享缓存 `dub/_verify/<输出目录名>/`，名字是确定的，提前登记
+      ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(outDir)));
+
+      const srcFile = path.join(outDir, '_src.mp4');
+      const m = await makeFitMaterial(srcFile);
+      assert.ok(m.ok && fs.existsSync(srcFile),
+        `造夹具素材失败（WSL ffmpeg lavfi）：code=${m.code}\n${String(m.err).slice(-800)}`);
+      const scriptFile = path.join(outDir, '_script.txt');
+      fs.writeFileSync(scriptFile, `${FIT_TEXT}\n`, 'utf8');
+
+      // ── 夹具自检：尺寸 / 时长 / 音轨都对，否则后面的断言全都失去意义 ──
+      const srcP = await probeMedia(srcFile);
+      assert.ok(srcP && srcP.v, `ffprobe 读不出素材的视频流：${JSON.stringify(srcP)}`);
+      assert.strictEqual(`${srcP.v.width}x${srcP.v.height}`, `${FIT_W}x${FIT_H}`,
+        `夹具素材尺寸不是 ${FIT_W}x${FIT_H}（读到 ${srcP.v.width}x${srcP.v.height}）`);
+      assert.ok(srcP.a, '夹具素材没有音轨 —— 15 kHz 纯音这条判据失去载体');
+
+      // ── 跑：真 TTS + 真出片（形态 B；不传 --keep-original、不传 --fit ⇒ 默认 loop）──
+      const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
+        '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', outDir],
+      { cwd: ctx.root, timeoutMs: 900000 });
+      assert.strictEqual(r.code, 0,
+        `形态 B + 现场 TTS 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
+
+      // ── 断言 1：走的确实是「形态 B + 现场 TTS + 默认 fit=loop」这条路 ──
+      assert.match(r.stdout, /TTS_DONE/,
+        `stdout 里没有 TTS_DONE —— 现场 TTS 没跑完\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      assert.match(r.stdout, /形态 B/, 'stdout 里没有「形态 B」—— 没走口播素材铺画面那条路');
+      assert.match(r.stdout, /· fit loop/,
+        `stdout 的计划行里没有「· fit loop」—— 默认值没落到 loop\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      assert.match(r.stdout, /-stream_loop -1 循环播放/,
+        `stdout 里没有「-stream_loop -1 循环播放」—— 素材比配音短，loop 分支本该被选中\n`
+        + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+
+      // ── 断言 2：工具自己的机器可读结果 JSON ──
+      const lastJson = (r.stdout.match(/^\{.*"truePeak".*\}$/m) || [])[0];
+      assert.ok(lastJson, `stdout 末尾没有机器可读的结果 JSON 行\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const fin = JSON.parse(lastJson);
+      const total = Number(fin.total);
+      assert.ok(Number.isFinite(total) && total > 3,
+        `成片总时长不合理：${JSON.stringify(fin.total)}（本用例需要 total 明显大于素材 ${FIT_DUR}s）`);
+
+      // ── 断言 3：★ 成片尺寸按 --ratio（不是素材尺寸）—— ffprobe 独立复验 ──
+      const filmPath = path.join(outDir, 'film.mp4');
+      assert.ok(fs.existsSync(filmPath), `没有 ${filmPath}`);
+      const filmP = await probeMedia(filmPath);
+      assert.ok(filmP && filmP.v, `ffprobe 读不出成片的视频流：${JSON.stringify(filmP)}`);
+      assert.strictEqual(`${filmP.v.width}x${filmP.v.height}`, `${FIT_OUT_W}x${FIT_OUT_H}`,
+        `成片尺寸 ${filmP.v.width}x${filmP.v.height} ≠ --ratio ${FIT_RATIO} 的 ${FIT_OUT_W}x${FIT_OUT_H}`
+        + `（素材是 ${FIT_W}x${FIT_H}）—— 成片若等于素材尺寸，说明 --ratio 没生效；`
+        + '若等于别的值，说明尺寸换算错了。');
+
+      // ── 断言 4：★ 音轨**来自 TTS、不是素材原声**（两条互相独立的判据）──
+      assert.ok(filmP.a, '成片里没有音轨 —— 现场合成的配音没进成片');
+      const aDur = Number(filmP.a.duration);
+      assert.ok(Number.isFinite(aDur), `ffprobe 没给出成片音轨的时长：${JSON.stringify(filmP.a.duration)}`);
+      assert.ok(Math.abs(aDur - total) < 0.2,
+        `成片音轨时长 ${aDur}s 与配音总时长 ${total}s 差超过 0.2s —— 音轨不是这条配音？`);
+      assert.ok(aDur > FIT_DUR * 3,
+        `成片音轨时长 ${aDur}s 不到素材时长 ${FIT_DUR}s 的 3 倍 —— 音轨可能是素材原声（素材只有 ${FIT_DUR}s）`);
+      //   (b) 频谱：素材原声是一个 15 kHz 纯音；TTS 语音在这个频带几乎没有能量。
+      //   ★ 守卫：素材自己**必须**在该带内很响，否则「成片里没有它」是空转（本来就没有）。
+      const srcBand = await bandMeanDb(srcFile, FIT_TONE_HZ);
+      const filmBand = await bandMeanDb(filmPath, FIT_TONE_HZ);
+      assert.ok(srcBand !== null && filmBand !== null,
+        `15 kHz 带内电平测不到（素材 ${JSON.stringify(srcBand)} / 成片 ${JSON.stringify(filmBand)}）`);
+      assert.ok(srcBand > -20,
+        `夹具素材在 ${FIT_TONE_HZ} Hz 带内只有 ${srcBand} dB —— 夹具的原声没被推到满刻度`
+        + ' ⇒ 「成片里没有这个音」这条断言成了空转。请把夹具音轨推得更满。');
+      assert.ok(filmBand < -40,
+        `成片在 ${FIT_TONE_HZ} Hz 带内有 ${filmBand} dB（素材原声是 ${srcBand} dB）—— `
+        + '这是素材原声那条 15 kHz 纯音！成片音轨本该 100% 来自 TTS（TTS 在该带内实测 ≈ −57 dB）。');
+
+      // ── 断言 5：★ 字幕逐字等于文案（比「拼接后」，与 `⑤++`/`⑤+++` 同口径）──
+      const srtPath = path.join(outDir, 'film.srt');
+      assert.ok(fs.existsSync(srtPath), `没有 ${srtPath}`);
+      const srt = srtJoinedText(srtPath);
+      assert.ok(srt.blocks.length > 0, 'film.srt 里一条字幕都没有');
+      assert.strictEqual(srt.joined, FIT_TEXT.replace(/\s+/g, ''),
+        '成片字幕内容与文案不一致（去空白后比对）：\n'
+        + `  文案 ${FIT_TEXT.replace(/\s+/g, '').length} 字\n  字幕 ${srt.joined.length} 字：${srt.joined}\n`
+        + `  字幕分 ${srt.blocks.length} 条：${JSON.stringify(srt.blocks)}`);
+
+      // ── 断言 6：★ 真峰值 ≤ 交付线 · 响度落在风格目标 ±1 LU（需求口径）──
+      //   容差 0.25 dB 与 `⑤++` 同口径：成片是 AAC 有损编码，实测会把真峰值挪 0.08~0.22 dB。
+      const TOL = 0.25;
+      const finTP = typeof fin.truePeak === 'number' ? fin.truePeak : fin.peak;
+      assert.ok(finTP <= HARD_PEAK_LIMIT + TOL,
+        `成片真峰值 ${finTP} dBTP 超过交付线 ${HARD_PEAK_LIMIT}（含 AAC 编码余量 ${TOL}）`);
+      assert.ok(Math.abs(Number(fin.lufs) - wantLufs) <= 1.0,
+        `成片集成响度 ${fin.lufs} LUFS 没有落在风格目标 ${wantLufs} ± 1 LU 内`
+        + `（差 ${Math.abs(Number(fin.lufs) - wantLufs).toFixed(2)} LU）`);
+      //   再独立量一次（不采信工具自述）：口径与 `dub.mjs` 一致（`loudnorm` 真峰值 + `ebur128` 响度）
+      const filmL = await measureLoud(filmPath);
+      assert.ok(filmL.tp !== null && filmL.ebur128 !== null && filmL.lufs !== null,
+        `独立量成片响度失败：${JSON.stringify(filmL)}`);
+      assert.ok(filmL.tp <= HARD_PEAK_LIMIT + TOL,
+        `独立实测成片真峰值 ${filmL.tp} dBTP 超过交付线 ${HARD_PEAK_LIMIT}（容差 ${TOL}）`);
+      //   ★ 响度判据落在 **ebur128**（项目权威口径）上，不落在 `loudnorm input_i` 上 ——
+      //     后者是另一个口径，短片 + 含静音时实测能差 1 LU 以上（见 `measureLoud` 的注释）。
+      assert.ok(Math.abs(filmL.ebur128 - wantLufs) <= 1.0,
+        `独立实测（ebur128 口径）成片响度 ${filmL.ebur128} LUFS 不在 ${wantLufs} ± 1 LU 内`
+        + `（同一次运行：loudnorm 口径 ${filmL.lufs}、工具自述 ${fin.lufs}）`);
+      //   ★ 口径一致性：工具自述的 `lufs` 与测试独立实测的 `ebur128` 都是 ebur128 口径，不该差太多
+      assert.ok(Math.abs(filmL.ebur128 - Number(fin.lufs)) <= 0.3,
+        `成片响度「工具自述 ${fin.lufs}」与「测试独立实测 ${filmL.ebur128}」差 `
+        + `${Math.abs(filmL.ebur128 - Number(fin.lufs)).toFixed(2)} LU（都应是 ebur128 口径）`);
+
+      // ── 断言 7：★ 素材**真的被循环了**（逐帧亮度剖面 vs 三种 fit 的语义模型）──
+      //   素材是一条 0→255 的亮度斜坡 ⇒ 「成片第 i 帧的亮度」= 素材被取到了哪一时刻。
+      const M = await frameProfile(srcFile, outDir);
+      const O = await frameProfile(filmPath, outDir);
+      assert.ok(M && M.length >= 30, `素材逐帧剖面读不到或太短：${M && M.length}`);
+      assert.ok(O && O.length >= 30, `成片逐帧剖面读不到或太短：${O && O.length}`);
+      assert.ok(Math.abs(O.length - total * 30) <= 2,
+        `成片帧数 ${O.length} 与 total×30 = ${(total * 30).toFixed(0)} 差超过 2 帧`);
+      const maes = { loop: fitMae(O, M, 'loop'), trim: fitMae(O, M, 'trim'), slow: fitMae(O, M, 'slow') };
+      assert.ok(maes.loop <= 12,
+        `成片剖面与 loop 模型（素材循环）的平均差 ${maes.loop.toFixed(2)} 灰度 —— 太大，素材没被循环？\n`
+        + `  三种模型的平均差：loop ${maes.loop.toFixed(2)} / trim ${maes.trim.toFixed(2)} / slow ${maes.slow.toFixed(2)}`);
+      assert.ok(maes.loop * 4 <= maes.trim && maes.loop * 4 <= maes.slow,
+        `成片剖面并没有**明显**更贴合 loop 模型：loop ${maes.loop.toFixed(2)} / trim ${maes.trim.toFixed(2)} / slow ${maes.slow.toFixed(2)}`
+        + ' —— 默认 fit=loop 下，成片应当最像「素材循环」，且与另两种模型差 4 倍以上。');
+      const dEdges = fitDownEdges(O);
+      assert.ok(dEdges >= 3,
+        `成片剖面只有 ${dEdges} 个「亮度骤降 >150」的下降沿 —— 素材（2.0s）被铺进 ${total.toFixed(2)}s，`
+        + `循环播放应当产生 ≥3 次「画面回到开头」的骤降。没有骤降 ⇒ 没在循环。`);
+
+      ctx.note(`⑤++++++ 形态 B + 现场 TTS 实测：成片 ${filmP.v.width}x${filmP.v.height}（--ratio ${FIT_RATIO}；`
+        + `素材 ${FIT_W}x${FIT_H}）· total ${total}s · 音轨 ${aDur}s（≈ total，素材只有 ${FIT_DUR}s）· `
+        + `${FIT_TONE_HZ} Hz 带内 素材 ${srcBand} dB → 成片 ${filmBand} dB（素材原声没进成片）· `
+        + `真峰值 ${finTP} dBTP ≤ ${HARD_PEAK_LIMIT} · 响度 ${fin.lufs} LUFS（DNA 目标 ${wantLufs}）· `
+        + `逐帧剖面 loop/trim/slow 平均差 ${maes.loop.toFixed(2)}/${maes.trim.toFixed(2)}/${maes.slow.toFixed(2)}，下降沿 ${dEdges}`);
+    },
+  },
+  {
+    // ★ 为什么必须有这条：`--fit` 的**真出片行为**（`loop` 的 `-stream_loop -1` / `trim` 的
+    //   `tpad` 冻结末帧 / `slow` 的 `setpts` 放慢）此前**零覆盖** —— `⑤+++++` 只到 `--dry-run`
+    //   的参数面，而 `--fit` 只在**形态 B 的非 `--keep-original`** 路径生效（那条路必须跑 TTS）。
+    // ★★ 本用例的核心（也是最容易做错的一处）：**三者时长完全相同，时长/帧数不是判据**。
+    //   三者的 mux 都是 `-t total`（`dub.mjs` 第 [6] 步）⇒ loop 循环到 total、trim 用 `tpad`
+    //   补到 total、slow 用 `setpts` 拉到 total。写「三者时长不同」就是一条**恒真**的假绿断言。
+    //   真实差别在**画面内容** ⇒ 判据落在「逐帧亮度剖面」上（夹具是一条 0→255 亮度斜坡，
+    //   「成片某帧的亮度」=「素材被取到了哪一时刻」）。
+    // ★ 三者各自还各有一条**结构性**判据，彼此独立、且互相排斥：
+    //     loop ⇒ 剖面有 ≥3 个「亮度骤降」下降沿（画面又从头开始）；trim/slow ⇒ 0 个；
+    //     trim ⇒ 末 30% 的亮度**冻结在素材最高亮度**（≥240）；slow ⇒ 末 30% 还没到顶（≤230）。
+    name: '⑤+++++++ --fit 真出片差异（loop/trim/slow 各跑一次）：帧数都 = total×30（时长不是判据），逐帧亮度剖面各自符合「循环 / 冻结末帧 / 放慢」的语义',
+    run: async (ctx) => {
+      const ttsPy = path.join(CFG.winLib, 'core', 'tts', 'tts_indextts.py');
+      assert.ok(fs.existsSync(ttsPy),
+        `Index-TTS 执行体不存在：${ttsPy}\n  这条用例要跑三次现场 TTS（每次一个 --fit 值）；缺了就无法覆盖`
+        + '`--fit` 的真出片行为 —— 这是**用例无法成立**，不是被测代码坏了。');
+      const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
+      const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
+      if (fs.existsSync(lockPath)) {
+        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
+        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
+          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS。');
+      }
+
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const baseDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fitd-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(baseDir, { recursive: true });
+      ARTIFACTS.dirs.add(baseDir);   // 三次运行的子目录都在它下面，递归删一次即可
+
+      const srcFile = path.join(baseDir, '_src.mp4');
+      const m = await makeFitMaterial(srcFile);
+      assert.ok(m.ok && fs.existsSync(srcFile),
+        `造夹具素材失败（WSL ffmpeg lavfi）：code=${m.code}\n${String(m.err).slice(-800)}`);
+      const scriptFile = path.join(baseDir, '_script.txt');
+      fs.writeFileSync(scriptFile, `${FIT_TEXT}\n`, 'utf8');
+
+      // ── 夹具自检：素材必须「比配音短」，否则三条 fit 分支一条都不会被走到 ──
+      const srcP = await probeMedia(srcFile);
+      assert.ok(srcP && srcP.v, `ffprobe 读不出素材的视频流：${JSON.stringify(srcP)}`);
+      assert.ok(Math.abs(Number(srcP.dur) - FIT_DUR) < 0.05,
+        `夹具素材时长 ${srcP.dur}s ≠ ${FIT_DUR}s`);
+      const M = await frameProfile(srcFile, baseDir);
+      assert.ok(M && M.length >= 30, `素材逐帧剖面读不到或太短：${M && M.length}`);
+      //   ★ 夹具的**区分力守卫**：素材若退化成纯色（或亮度不随时间变），三种模型的剖面会塌成同一条，
+      //     那本用例就变成「三者都一样」的恒真断言。这里先算三种模型两两的平均差，必须足够大。
+      const sep = fitModelSeparation(M, Math.round(8.4 * 30));
+      for (const [k, v] of Object.entries(sep)) {
+        assert.ok(v > 40,
+          `夹具区分力不足：模型 ${k} 的逐帧平均差只有 ${v.toFixed(1)} 灰度（要求 > 40）——`
+          + ' 素材的亮度没有随时间明显变化（或变化与 fit 语义无关），本用例会退化成恒真断言。');
+      }
+
+      // ── 三次真出片：loop / trim / slow ──
+      const runs = {};
+      for (const fit of ['loop', 'trim', 'slow']) {
+        const runDir = path.join(baseDir, `${TEST_DIR_PREFIX}${fit}`);
+        fs.mkdirSync(runDir, { recursive: true });
+        ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(runDir)));
+        const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
+          '--fit', fit, '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', runDir],
+        { cwd: ctx.root, timeoutMs: 900000 });
+        assert.strictEqual(r.code, 0,
+          `--fit ${fit} 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
+
+        const lastJson = (r.stdout.match(/^\{.*"truePeak".*\}$/m) || [])[0];
+        assert.ok(lastJson, `--fit ${fit}：stdout 末尾没有结果 JSON\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+        const fin = JSON.parse(lastJson);
+        const total = Number(fin.total);
+        assert.ok(Number.isFinite(total) && total > FIT_DUR * 2,
+          `--fit ${fit}：total ${JSON.stringify(fin.total)} 不大于素材时长 ${FIT_DUR}s 的两倍 —— fit 分支不会被走到`);
+
+        const filmPath = path.join(runDir, 'film.mp4');
+        assert.ok(fs.existsSync(filmPath), `--fit ${fit}：没有 ${filmPath}`);
+        const filmP = await probeMedia(filmPath);
+        assert.ok(filmP && filmP.v, `--fit ${fit}：ffprobe 读不出成片视频流`);
+        assert.strictEqual(`${filmP.v.width}x${filmP.v.height}`, `${FIT_OUT_W}x${FIT_OUT_H}`,
+          `--fit ${fit}：成片尺寸 ${filmP.v.width}x${filmP.v.height} ≠ ${FIT_OUT_W}x${FIT_OUT_H}（--fit 不该改几何）`);
+
+        const O = await frameProfile(filmPath, runDir);
+        assert.ok(O && O.length >= 30, `--fit ${fit}：成片逐帧剖面读不到或太短：${O && O.length}`);
+        //   ★ 帧数 = total×30（三种 fit **都一样**）—— 如实钉住「时长不是判据」这条事实。
+        assert.ok(Math.abs(O.length - total * 30) <= 2,
+          `--fit ${fit}：成片帧数 ${O.length} ≠ total×30 = ${(total * 30).toFixed(0)}（±2）—— `
+          + '三者的 mux 都是 `-t total`，帧数只由 total 决定、与 --fit 无关。');
+
+        const maes = { loop: fitMae(O, M, 'loop'), trim: fitMae(O, M, 'trim'), slow: fitMae(O, M, 'slow') };
+        const own = maes[fit];
+        const others = Object.entries(maes).filter(([k]) => k !== fit);
+        assert.ok(own <= 12,
+          `--fit ${fit}：成片剖面与该值自己的语义模型的平均差 ${own.toFixed(2)} 灰度 —— 太大。\n`
+          + `  三种模型的平均差：loop ${maes.loop.toFixed(2)} / trim ${maes.trim.toFixed(2)} / slow ${maes.slow.toFixed(2)}\n`
+          + `  （loop=素材循环 / trim=冻结末帧 / slow=整体放慢）`);
+        for (const [k, v] of others) {
+          assert.ok(own * 4 <= v,
+            `--fit ${fit}：成片剖面并没有**明显**更贴合自己的模型 —— ${fit} ${own.toFixed(2)} vs ${k} ${v.toFixed(2)}`
+            + '（要求自己的平均差至少小 4 倍）⇒ 实现走的分支与 --fit 给的值不符。');
+        }
+        //   ★ 计划行透传（放在**实质判据之后**：这一条只证明「参数传到了、计划行照实打印」，
+        //     而上面那条才是「行为真的按这个值做了」——变异验证时应当由**上面那条**先响）。
+        assert.match(r.stdout, new RegExp(`· fit ${fit}`),
+          `--fit ${fit} 的计划行里没有「· fit ${fit}」\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+
+        //   ★ 结构性判据（与模型拟合相互独立，且三种 fit 互相排斥）
+        const dEdges = fitDownEdges(O);
+        const tailMin = fitTailMin(O, 0.30);
+        if (fit === 'loop') {
+          assert.ok(dEdges >= 3,
+            `--fit loop：剖面只有 ${dEdges} 个「亮度骤降 >150」的下降沿（期望 ≥3）——`
+            + ' 素材只有 2.0s 而成片约 8.4s，循环播放必须产生多次「画面回到开头」的骤降。');
+        } else {
+          assert.ok(dEdges === 0,
+            `--fit ${fit}：剖面有 ${dEdges} 个「亮度骤降 >150」的下降沿 —— 这是**循环**的特征，`
+            + ` 而 --fit ${fit} 不该循环（trim 冻结末帧 / slow 只放慢）。`);
+        }
+        if (fit === 'trim') {
+          assert.ok(tailMin >= 240,
+            `--fit trim：末 30% 的最小亮度只有 ${tailMin}（素材最高亮度是 ${M[M.length - 1]}）——`
+            + ' trim 应当把素材放完后**冻结在末帧**，末段亮度应贴住素材最高值。');
+        }
+        if (fit === 'slow') {
+          assert.ok(fitMaxFallback(O) <= 12,
+            `--fit slow：剖面最大回落 ${fitMaxFallback(O)} 灰度 —— 放慢播放应当单调不减。`);
+          const want70 = M[Math.min(M.length - 1, Math.floor(0.70 * M.length))];
+          const got70 = fitAt(O, 0.70);
+          assert.ok(Math.abs(got70 - want70) <= 25,
+            `--fit slow：成片 70% 处的亮度 ${got70}，而「素材放慢到 total」的模型给出 ${want70}（差 ${Math.abs(got70 - want70)}）——`
+            + ' slow 应当把素材整体拉长，70% 处仍远未到素材最高亮度。');
+        }
+        runs[fit] = { total, frames: O.length, maes, dEdges, tailMin };
+      }
+
+      // ── 三者**彼此不同**（结构性判据两两互相排斥）──
+      assert.ok(runs.loop.dEdges >= 3 && runs.trim.dEdges === 0 && runs.slow.dEdges === 0,
+        `三者的下降沿数没有形成「loop 独有」的分离：loop ${runs.loop.dEdges} / trim ${runs.trim.dEdges} / slow ${runs.slow.dEdges}`);
+      assert.ok(runs.trim.tailMin >= 240 && runs.slow.tailMin <= 230,
+        `trim 与 slow 没被末段亮度分开：trim 末 30% 最小 ${runs.trim.tailMin} / slow ${runs.slow.tailMin}`
+        + '（trim 应冻结在素材最高亮度，slow 应还没爬到顶）');
+
+      const fmt = (k) => `${k}: total ${runs[k].total.toFixed(3)}s / 帧数 ${runs[k].frames} / 剖面平均差 loop ${runs[k].maes.loop.toFixed(1)} trim ${runs[k].maes.trim.toFixed(1)} slow ${runs[k].maes.slow.toFixed(1)} / 下降沿 ${runs[k].dEdges} / 末30%最小 ${runs[k].tailMin}`;
+      ctx.note('⑤+++++++ --fit 三值实测（★ 帧数都 = total×30，时长/帧数**不是**判据；差别在画面）：\n    '
+        + ['loop', 'trim', 'slow'].map(fmt).join('\n    '));
     },
   },
 ];
