@@ -23,10 +23,10 @@
  *    其中 woodcut / pictogram-motion 没有自己的 loudnorm（前者调 core 后 `-c:a copy`、
  *    后者直接 `-c:a aac` 不归一），本项自动跳过。
  *
- * ★ 本脚本是**幂等**的：先 `normalize()` 把文件还原成「未打补丁」的规范形态，再打补丁。
- *   所以它可以用来修复被写坏的文件（2026-10-03 第一版就踩过：`String.replace` 的替换串里
- *   写 `'$1' + prelude(...)`，而 prelude 里 `ffprobe … "$1"` 的 `$1` 被 JS 当成**捕获组回填**，
- *   把 dur() 写成了 `… "$<VF 行内容>" …` ⇒ 补丁形同虚设、帧数照旧被切）。
+ * ★ 本脚本是**幂等**的：已带补丁哨兵的文件**直接跳过、不重打**（2026-10-07 起，见 `MARK_RE` 那段）；
+ *   要重打 / 修被写坏的文件，先 `--revert` —— 它走 `normalize()` 把文件还原成「未打补丁」的规范形态。
+ *   2026-10-03 第一版就踩过：`String.replace` 的替换串里写 `'$1' + prelude(...)`，而 prelude 里
+ *   `ffprobe … "$1"` 的 `$1` 被 JS 当成**捕获组回填**，把 dur() 写成了 `… "$<VF 行内容>" …` ⇒ 补丁形同虚设、帧数照旧被切）。
  *
  * ★ 第二处坑（同轮）：**`#` 注释不能插进 `\` 续行的中间** —— 续行把两条物理行并成一条逻辑行，
  *   插进去的 `#` 会把逻辑行后半段（含真正的 ffmpeg 参数）整段注释掉。所以注释一律插到
@@ -87,6 +87,17 @@ const TARGETS = [
 ];
 
 const MARK = '── 本地补丁（2026-10-03 回灌 core/render/mux.sh）──';
+// ★★ 2026-10-07：判「文件是否已打过补丁」**不能**拿 `MARK` 做 `includes`。实测 9 个目标里 8 个
+//   （backrooms / cel-anime-80s / crayon-book / microgame / risograph / shadow-puppet /
+//    spy-titles / stained-glass）的标记都被人手工在括号里插了「保留，」
+//   （`# ── 本地补丁（保留，2026-10-03 回灌 core/render/mux.sh）──`，示意「已回灌 core，勿删」）。
+//   逐字比对在那 8 个文件上全部失效 ⇒ 后果不只是「认不出已打过补丁」：`normalize()` 找不到标记
+//   ⇒ 不删旧块，而它第 ② 步又把 `$VARG` 还原成 libx264 字面量 ⇒ `applyPatch()` 误以为「未打补丁」
+//   而**再插一块**，把手工升级过的补丁块（更严的 `case`）冲掉 ⇒ 重跑一次会写坏文件。
+//   ⇒ 改认**骨架**（括号内允许插字），与 `check-mux-parity.mjs` 的 `appliedMark` **同构**（两边口径一致）。
+const MARK_RE = /^\s*#.*本地补丁（[^）]*回灌 core\/render\/mux\.sh）──\s*$/m;
+/** 该文件里是否已有「本地补丁」哨兵（容忍手工在括号内插字）。 */
+const hasMark = (text) => MARK_RE.test(text);
 
 // ── 补丁 B（AAC 编码余量）的注释标记与正文 ──
 // 正文刻意写成**不含** `:TP=` 前缀的形式，免得被 TP 正则误伤；标记用 TP_MARK 单独认。
@@ -102,9 +113,9 @@ const tpRe = () => /:TP=-(?:1\.2|1)(?=:)/g;
 function normalize(text, t) {
   let out = text;
   // ① 去掉「编码器 + 补静音」补丁块：从 MARK 行到其后第一条独立的 `esac`
-  if (out.includes(MARK)) {
+  if (hasMark(out)) {
     const lines = out.split('\n');
-    const i = lines.findIndex((l) => l.includes(MARK));
+    const i = lines.findIndex((l) => MARK_RE.test(l));
     if (i >= 0) {
       let j = i;
       while (j < lines.length && !/^esac\s*$/.test(lines[j])) j++;
@@ -146,7 +157,7 @@ esac
 
 /** 补丁 A：打「编码器 + 补静音」。用**函数式 replace**（不是替换串）—— 见文件头那条踩坑说明。 */
 function applyPatch(text, t) {
-  if (text.includes(MARK)) return { text, changed: false, why: '已打过补丁' };
+  if (hasMark(text)) return { text, changed: false, why: '已打过补丁' };
   const tune = t.tune ? ' -tune grain' : '';
   const encRe = /-c:v libx264 -preset slow -crf ["']?(?:\$\{CRF:-)?\d+\}?["']?(?: -tune grain)?/;
   if (!encRe.test(text)) return { text, changed: false, why: '找不到 libx264 片段' };
@@ -264,13 +275,26 @@ for (const t of list) {
   const winPath = path.join(WIN, rel);
   if (!fs.existsSync(winPath)) { console.log(`  ✘ ${t.slug}：找不到 ${winPath}`); nFail++; continue; }
   const src = fs.readFileSync(winPath, 'utf8');
+  // ★★ 2026-10-07 新增早退守卫（幂等）：文件已带「本地补丁」哨兵 ⇒ 认为已回灌过，**跳过**。
+  //   ① 必须在 normalize() **之前**判：normalize() 第 ① 步会把补丁块整块删掉，之后再看标记就晚了。
+  //      旧写法把「已打过补丁」的判定放在 applyPatch() 里，而主流程传给 applyPatch() 的**永远是
+  //      normalize() 之后的文本**（块已被删）⇒ 那条分支在主流程里根本**不可达**，幂等实际只靠
+  //      「往返逐字节相等」兜底。一旦补丁块被手工升级过（实测 9 个目标全是），往返就不再相等
+  //      ⇒ 重跑会把手工升级**冲掉**（实测真库 `--dry`：8 个被 LEMO_LN_TP 守卫挡住，`woodcut` 会被改写）。
+  //   ② 哨兵判定用容忍骨架（见 `hasMark`），否则认不出那 8 个插了「保留，」的文件。
+  //   ★ 要改 / 要修已打过补丁的文件，先 `--revert`（normalize 走同一个容忍骨架），再跑本脚本。
+  if (!REVERT && hasMark(src)) {
+    console.log(`  · ${t.slug}：跳过（已打过补丁，幂等${src.includes('LEMO_LN_TP') ? '；且已是新形态：LEMO_LN_TP 可覆盖 + 默认 −3.5' : ''}）`);
+    nSkip++; continue;
+  }
   // ★★ 2026-10-03 新增早退守卫：该文件已升级为「TP 可覆盖 + 默认 −3.5 + 真峰值复核块」的新形态。
   //   此时既不该打旧补丁（会插回写着 LN_TP=-1.7 的过期注释），
   //   也不该走 normalize()（它第 ⑤ 步会把**测量命令**里的 :TP=-1.7: 改回 :TP=-1.2:，
   //   虽然对 input_tp 读数无影响，但会让文件与其余副本不一致）。
+  //   ★ 没有补丁块、只升级了 TP 形态的副本（paper-popup / watercolor / game-show）仍由这条挡住。
   if (src.includes('LEMO_LN_TP')) { console.log(`  · ${t.slug}：跳过（已是新形态：LEMO_LN_TP 可覆盖 + 默认 −3.5）`); nSkip++; continue; }
   const norm = normalize(src, t);
-  const wasPatched = src.includes(MARK) || src.includes(TP_MARK);
+  const wasPatched = hasMark(src) || src.includes(TP_MARK);
 
   let finalText = norm;
   let why = '';
