@@ -3300,11 +3300,11 @@
       "cn": "16-bit 像素 RPG",
       "hasVisual": true,
       "sourceFiles": [
-        "styles/pixel-rpg/demo/pixel.js",
+        "styles/pixel-rpg/demo/px.js",
         "styles/pixel-rpg/demo/sheet.js",
         "styles/pixel-rpg/demo/font.js"
       ],
-      "evidence": "pixel.js:4-11 `export const PAL = { rust:'#be4a2f', clay:'#d77643', sand:'#ead4aa', tan:'#e4a672', brown:'#b86f50', dbrown:'#733e39', crimson:'#a22633', red:'#e43b44', ink:'#181425', silver:'#c0cbdc', steel:'#8b9bb4', slate:'#5a6988', night:'#262b44', ... }`（32 hex，16-bit 调色板）；sheet.js:21 背景 `o.fillStyle = '#3a4466'`；font.js 是自绘 7px 位图字体（'#'/'.' 点阵）",
+      "evidence": "px.js:6-13 `const HEX = [ '#be4a2f', '#d77643', '#ead4aa', '#e4a672', … ]`（索引色表：ENDESGA-32 的 32 色 + 7 个保护色，共 39 项）；px.js:14-19 `export const C = { rust: 0, clay: 1, … }`（名→索引表，渲染时按索引查 HEX）；sheet.js:21 背景 `o.fillStyle = '#3a4466'`；font.js 是自绘 7px 位图字体（'#'/'.' 点阵）",
       "palette": {
         "bg": "#3a4466",
         "bg2": "#262b44",

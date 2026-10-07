@@ -603,8 +603,8 @@
    }
   },
   "pixel-rpg": {
-   "hash": "38b128a0d1c205e6efa63842f8fb32a3b017ff1d56b726abfa6cd43ef8402b3d",
-   "fileCount": 17,
+   "hash": "4891e2e74669d7992736d205cb907fb3c0f152e756ac9042e5db1a6a22bf4d73",
+   "fileCount": 16,
    "files": {
     "DEMO.md": "606429d47141c48406a913fcb626e6cb86481c642621fbd7dd57a3e9e197daca",
     "STYLE.md": "a935373e444a9d28954220e3bd725d40e9048dd1ca36eb3971faede78d23b4ea",
@@ -613,7 +613,6 @@
     "demo/main.js": "84a7336be43cc1cfa6866ad20b4a248389674608f96e686b97020aacd7c7e8cf",
     "demo/memscenes.js": "e048f35489315b00c393dcfa165b67ed7701049da5f48ab48fbd090195d6a8e4",
     "demo/memsprites.js": "f066da57de8d03c1583acfdf4777ee645b12da8c87703af9915ad2b834b3daa2",
-    "demo/pixel.js": "c771652750779c9aa1a2996f3b7d7e0932b8266308a8ddb2e16a27bc52f51fb4",
     "demo/portraits.js": "aa1136af322ea3c813eaf44bb759e50d8b655d6de61815190aaf0a4a8bca7d84",
     "demo/props.js": "844943f3071ff13593d857ab300ad3ca121f9bedf698e6be89c8758265948afd",
     "demo/px.js": "11d3816a6f2d97818f754fe5c8871ec44985911ae261735c8e6485f011e71443",
