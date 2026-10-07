@@ -254,7 +254,7 @@ lemo-make.bat --help
 | `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变）。2026-10-07 已量化（见下） |
 | `tools/still.mjs` | 只影响交付图 | rubber-hose | 同上 |
 | `tools/cuecheck.py` | 纯自检 | 12 个：art-deco / dark-keynote / dataviz / engraving / hologram-hud / iso-infographic / microgame / midcentury-toon / silent-film / silkscreen-poster / whiteboard / woodcut | 配乐卡点 ↔ 画面时间网格自检 |
-| `tools/final_asr.py` | 纯自检 | 6 个：dark-keynote / hologram-hud / iso-infographic / microgame / rubber-hose / woodcut | 成片终检（ASR 比对） |
+| `tools/final_asr.py` | 纯自检 | **8 个**：dark-keynote / **dataviz** / hologram-hud / iso-infographic / microgame / rubber-hose / **stained-glass** / woodcut | 成片终检（ASR 比对） |
 | `check_mix.py`（`demo/` 或 `demo/tools/`） | 纯自检 | 2 个：blueprint / glass-product | 混音自检 |
 
 **这些差异是机器可检的**（2026-10-06 起）：`lemo-make.mjs` 的 `ORCH_SKIP_STEPS` 登记表 + `reportOrchSkipSteps()`，
