@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 71 条用例 / 覆盖全部 31 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 73 条用例 / 覆盖全部 32 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -57,6 +57,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 // ── 常量 ────────────────────────────────────────────────────────────────────
@@ -2494,6 +2495,76 @@ test('check-ref-lines：`dub-visual.json` 覆盖守卫（#7，第二个数据文
     const rm1 = await run(NODE, [mut], { env: envFor(pos) });
     assert.ok(!rm1.out.includes('lib/dub-visual.json'),
       `★自证：摘掉覆盖守卫②后，同一夹具**不该**再报 dub-visual 失明 ⇒ 断言确实在测该守卫\n${rm1.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 37. check-redline-md5.mjs（红线 md5 的「多处登记是否同步」；2026-10-07 新建）────
+test('check-redline-md5：登记处漂移 ⇒ exit 1 点名；提取不到 ⇒ 失明', async () => {
+  const dir = path.join(TMP, 'redline');
+  const md5 = (p) => createHash('md5').update(fs.readFileSync(p)).digest('hex');
+  const CUR = md5(path.join(TOOLS, 'lemo-make.mjs'));      // ★ 从真实红线文件算，不写死数字（红线变了夹具仍成立）
+  const WRONG = 'deadbeefdeadbeefdeadbeefdeadbeef';
+  const NEEDLE = '登记的 md5 与实际';                      // 该闸门特有的「不一致」文案片段
+  const BLIND = '本闸门已失明';
+  /** 造一棵「红线 + 四处登记」的极小树；`wrong` 指定把哪一处登记改成错值。 */
+  const tree = (name, wrong) => {
+    const root = path.join(dir, name);
+    mk(path.join(root, 'test'));
+    mk(path.join(root, '_distill'));
+    fs.copyFileSync(path.join(TOOLS, 'lemo-make.mjs'), path.join(root, 'lemo-make.mjs'));
+    const v = (site) => (site === wrong ? WRONG : CUR);
+    wf(path.join(root, 'test', 'cases.mjs'), "export const ORCH_MD5 = '" + v('cases') + "';\n");
+    wf(path.join(root, 'test', 'README.md'),
+      '| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `' + v('treadme') + '` |\n');
+    wf(path.join(root, 'README.md'),
+      '- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `' + v('readme') + '`（控制台只是包装层）\n');
+    wf(path.join(root, '_distill', 'AGENT-BRIEF.md'), 'md5 `315887dd…` → **`' + v('brief') + '`**。\n');
+    return root;
+  };
+  try {
+    // 阴性对照：四处登记全对 ⇒ exit 0，且不含失明 / 「不一致」文案。
+    const neg = tree('neg');
+    const r0 = await runGate('check-redline-md5.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, BLIND, 'check-redline-md5 阴性对照');
+    assert.ok(!r0.out.includes(NEEDLE), `阴性对照不该报「${NEEDLE}」\n${r0.out.slice(0, 900)}`);
+
+    // 正向 A：README.md 那份改成错值（**正是 2026-10-07 真实漂过的那一处**）⇒ exit 1 并点名 README.md。
+    const fa = tree('fx-a', 'readme');
+    const r1 = await runGate('check-redline-md5.mjs', { LEMO_TOOLS_ROOT: fa });
+    expectBlind(r1, NEEDLE, 'check-redline-md5 正向 A（README.md 漂移）');
+    assert.ok(r1.out.includes('README.md'), `正向 A 应点名 README.md\n${r1.out.slice(0, 900)}`);
+
+    // 正向 B：test/README.md 那张验收判据表改成错值 ⇒ exit 1 并点名 test/README.md。
+    const fb = tree('fx-b', 'treadme');
+    const r2 = await runGate('check-redline-md5.mjs', { LEMO_TOOLS_ROOT: fb });
+    expectBlind(r2, NEEDLE, 'check-redline-md5 正向 B（表行漂移）');
+    assert.ok(r2.out.includes('test/README.md'), `正向 B 应点名 test/README.md\n${r2.out.slice(0, 900)}`);
+
+    // 正向 C：三处**判据处**都提取不到（空文件）⇒ exit 1 + 「本闸门已失明」（绝不静默通过）。
+    const fc = tree('fx-c');
+    for (const f of ['README.md', path.join('test', 'cases.mjs'), path.join('test', 'README.md')]) {
+      wf(path.join(fc, f), '');
+    }
+    const r3 = await runGate('check-redline-md5.mjs', { LEMO_TOOLS_ROOT: fc });
+    expectBlind(r3, BLIND, 'check-redline-md5 正向 C（三处都提取不到）');
+
+    // ★ 反向对照：只改**历史 md5 链**（不是登记处）⇒ 仍 exit 0
+    //   （证明它的抽取**锚定到具体形态**、没在「扫全文第一个 32 位 hex」）。
+    const ff = tree('fx-f');
+    wf(path.join(ff, 'test', 'README.md'),
+      '| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `' + CUR + '` |\n'
+      + '故基线 md5 由 `314d7fc8a341b6d77189e368552291f3` → `d5a1b91b0113d611e3211e31f31f1be0`。\n');
+    const r4 = await runGate('check-redline-md5.mjs', { LEMO_TOOLS_ROOT: ff });
+    expectClean(r4, BLIND, 'check-redline-md5 反向对照（历史链被改）');
+
+    // ★自证：把「不一致」判据短路成恒假 ⇒ **同一套正向断言必须变红**（证明断言真的在测那条判据）。
+    const gdir = path.join(dir, 'mut');
+    mk(path.join(gdir, 'scripts'));
+    const mut = patchGate('check-redline-md5.mjs', path.join(gdir, 'scripts'),
+      [['f.value != null && actual != null && f.value !== actual', 'false']]);
+    const rm1 = await run(NODE, [mut], { env: { LEMO_TOOLS_ROOT: fa } });
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'),
+      undefined, '短路「不一致」判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
 });
 

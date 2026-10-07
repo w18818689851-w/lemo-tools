@@ -487,8 +487,8 @@ python core/tts/tts_indextts.py --list-voices          :: 看有哪些可选（�
 ## 测试
 
 ```bash
-node test/smoke.mjs          # 冒烟测试（36 条，约 15–40 秒，不渲染；WSL 冷启动会到 1–2 分钟）
-node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒起，共 37 条）
+node test/smoke.mjs          # 冒烟测试（41 条，约 15–40 秒，不渲染；WSL 冷启动会到 1–2 分钟）
+node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒起，共 50 条）
 node test/setup.test.mjs     # 首次运行安装的纯逻辑测试（12 条，约 5 秒，不起服务、不用 WSL）
 node test/setup-api.test.mjs # 「首次运行向导」两个接口的 HTTP 契约测试（9 条，约 20 秒，★ 绝不真安装）
 node test/ui.test.mjs        # Web UI 层测试（无头 Edge 渲染 DOM + CDP 真点击，59 条）
@@ -497,13 +497,13 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `314d7fc8a341b6d77189e368552291f3`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `6283aadb98433b16ea2a35c2a754cd30`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
-- **23 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
+- **27 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`
 - **CLI 未受影响** —— `node lemo-make.mjs ascii-crt --skip-sync --dry-run` 仍 exit 0
 
-`test/setup.test.mjs` 单独一个入口（不并进 smoke），因为「36 条」是冻结的验收基线，数量本身就是约定。
+`test/setup.test.mjs` 单独一个入口（不并进 smoke），因为「41 条」是冻结的验收基线，数量本身就是约定。
 它专测**本地走不到的那条路**：「检测到缺失 → 生成正确的安装动作」做成纯函数
 （`planActions(envResult)`），再喂合成的「干净机器」检测结果 —— 于是每个安装分支都能被断言覆盖。
 含一条**漂移哨兵**：从 `lib/env.mjs` 源码里抽出所有 item id，逐个断言 `lib/setup.mjs` 有专门的
