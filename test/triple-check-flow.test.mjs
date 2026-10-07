@@ -136,7 +136,10 @@ const dc = await import('../lib/dub-core.mjs');
 const { runWsl, winToWsl, shq, parseSrt } = dc;
 
 // ── 测试夹具（非 C 盘）───────────────────────────────────────────
-const TMP_ROOT = path.join(ROOT, '.tmp-triple-flow');
+// ★ 根目录**按进程唯一**（带 `process.pid`）：`prepareFixture()` 开头 `rmSync(TMP_ROOT)` 重建、
+//   末尾 `rmSync(TMP_ROOT)` 清理 ⇒ 写死共享路径时两个进程同时跑会互删对方成片/字幕
+//   （实测并发：一进程 10/1 failed，单独跑 11 passed）。
+const TMP_ROOT = path.join(ROOT, `.tmp-triple-flow-${process.pid}`);
 const FILM = path.join(TMP_ROOT, 'film.mp4');
 const SRT = path.join(TMP_ROOT, 'film.srt');
 const OUT = path.join(TMP_ROOT, 'out');

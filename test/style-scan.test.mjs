@@ -29,7 +29,9 @@
  *   G checkStyleChanges 状态机：baseline / no-baseline / no-change / changed / error
  *
  * ★ 全部在**临时合成目录**里跑，绝不碰真实的 `D:/lemo-opuscar/styles/**` 或 `lib/style-fingerprints.json`。
- *   临时目录：`<repo>/.tmp-scan-test/`（非 C 盘），跑完按**确切路径**递归删除。
+ *   临时目录：`<repo>/.tmp-scan-test-<pid>/`（非 C 盘），跑完按**确切路径**递归删除。
+ *   ★ 目录名**按进程唯一**（带 `process.pid`）：本套件开头 `mkdirSync(TMP)`、末尾 `rmSync(TMP)`，
+ *     若用写死的共享路径，两个进程同时跑就会互删对方夹具（实测并发 12/6 failed，单独 15 passed）。
  *
  * 用法：node test/style-scan.test.mjs
  * 退出码：全绿 0，有失败 1，自身异常 2。
@@ -61,7 +63,8 @@ const test = (name, fn) => cases.push({ name, fn });
 // ── 临时目录（非 C 盘；跑完按确切路径删除）────────────────────
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url)); // <repo>/test
 const REPO = path.dirname(TEST_DIR);                            // <repo>
-const TMP = path.join(REPO, '.tmp-scan-test');
+// ★ 按进程唯一（带 `process.pid`）⇒ 并发跑两个实例不互删夹具（同 `gate-blindness.test.mjs` 的修法）。
+const TMP = path.join(REPO, `.tmp-scan-test-${process.pid}`);
 const STYLES = path.join(TMP, 'styles');
 const ALPHA = path.join(STYLES, 'alpha');
 const BETA = path.join(STYLES, 'beta');

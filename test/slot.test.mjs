@@ -8,6 +8,8 @@
  *                     再用 SLOT_MJS 指向副本，确认对应断言真的会变红。
  *   SLOT_ONLY=<子串>  只跑名字里含该子串的用例（跑破坏验证时省时间）。
  *   SLOT_TMP=<dir>    临时根目录（默认 D:/lemo-tmp）——必须是**非 C 盘**。
+ *                     ★ 沙箱目录名**按进程唯一**：设了 SLOT_TMP ⇒ 用它（与旧行为一致）；
+ *                       未设 ⇒ 退回 `D:/lemo-tmp/slot-test-<pid>` ⇒ 并发跑两个实例不互删。
  *
  * ★ 为什么单独一个入口：
  *   slot.mjs 是**整机渲染限流器**：它被 core/render/video.mjs:39 调用、被
@@ -22,7 +24,7 @@
  *
  * ★ 为什么每个用例一个独立锁目录：
  *   默认锁目录是 os.tmpdir()/…（Windows 上是 C 盘）。用户硬规则禁止写 C 盘，
- *   所以每个用例显式把 RENDER_SLOT_DIR 指到 D:/lemo-tmp/slot-test/<case>/。
+ *   所以每个用例显式把 RENDER_SLOT_DIR 指到 `<沙箱>/<case>/`（沙箱见下，未设 SLOT_TMP 时带 pid）。
  *
  * 退出码：全绿 0，有失败 1，自身异常 2。
  */
@@ -37,7 +39,12 @@ const NODE = process.execPath;
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));          // D:/lemo-tools
 const SLOT = path.resolve(process.env.SLOT_MJS || path.resolve(ROOT, '..', 'lemo-opuscar', 'core', 'render', 'slot.mjs'));
 const TMP = path.resolve(process.env.SLOT_TMP || 'D:/lemo-tmp');
-const SANDBOX = path.join(TMP, 'slot-test');
+// ★ 优先走覆盖点 `SLOT_TMP`（语义与旧行为逐字一致）；未设时退回**按进程唯一**的沙箱目录，
+//   因为 `main()` 开头 `rmrf(SANDBOX)` 重建、末尾 `rmrf(SANDBOX)` 清理 ⇒ 写死共享路径时
+//   两个进程同时跑会互删对方锁目录（实测并发：两次各 1 failed，单独跑 21 passed）。
+const SANDBOX = process.env.SLOT_TMP
+  ? path.join(TMP, 'slot-test')
+  : path.join(TMP, `slot-test-${process.pid}`);
 
 // 用户硬规则：禁止写 C 盘。宁可直接炸掉，也不要静默往 C 盘拉屎。
 if (/^[a-zA-Z]:$/.test(path.parse(TMP).root) && /^[cC]:/.test(path.parse(TMP).root)) {
