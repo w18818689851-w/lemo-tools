@@ -75,9 +75,9 @@
  *       ③ **已有覆盖**：那边在**出片路径**上的编码决策点（`LEMO_VENC` 的读者）已由
  *          `scripts/check-render-venc.mjs` 的 A 类逐文件守着，不靠本闸门。
  *     ⇒ 这是一处**已知盲区**，输出里**显式打出**它（免得那句 ✓ 被读成「全仓 env 都登记了」）。
- *     ★★ **2026-10-07 后续：这条盲区已被 ⑦ 部分补掉** —— 库仓 `core/**` 的「**表 ↔ 代码**」
- *     一致性已由判据 ⑤⑥ 守着（`tools/**` 仍只列不判，见 ⑦）；本条的「不纳入**本闸门的双向登记表**」
- *     依然成立（那 10 个不是「重定向夹具」的覆盖点）。
+ *     ★★ **2026-10-07 后续：这条盲区已被 ⑤⑦ 补掉** —— 库仓 `core/**` + `tools/**` 的「**表 ↔ 代码**」
+ *     一致性已由判据 ⑤⑥ 守着（`tools/**` **2026-10-07 起并入判据⑤ 同判 FAIL**，见 ⑦）；本条的
+ *     「不纳入**本闸门的双向登记表**」依然成立（那 10 个不是「重定向夹具」的覆盖点）。
  *
  * ★ ⑤ 本闸门**不扫自己**（`SELF`）：否则它的**登记表文本**会自己满足判据 ①（「匹配判据可被无关
  *   代码满足」）。也**不扫** `node_modules` / `.git` / `_tmp_*` / `_superseded*` 等目录。
@@ -90,23 +90,34 @@
  *   代价是**库仓的环境变量没有任何登记 / 守卫**，而 `core/README.md` 那张**环境变量表**
  *   （`:75-116`）与**代码真在读的变量**之间**没有任何东西守着一致**（早前独立审计实测漏了 15 个、
  *   手工补齐后**照样没有闸门** —— 下次再加一个变量还会漏）。本扩展把那一维也变成**机器可核**：
- *     · **判据 ⑤（表 ↔ 代码，判 FAIL）**：库仓 `core/**` 里**代码真在读**的环境变量（`.mjs` 的
- *       `process.env.<NAME>` + shell 的 `${NAME:-…}` 形态 + python 的 `os.environ.get('NAME')`），
- *       凡**不在** `core/README.md` 环境变量表里 ⇒ **FAIL**（点名变量 + 文件:行）。
- *       这正是本项目铁律「**文档声称值 vs 实测值**」在环境变量这一维的落点。
- *     · **判据 ⑥（反向，只列不判）**：表里列了但**代码不读** ⇒ 只列 ℹ —— 有些是**外部约定**
- *       （实测 4 个：`HF_ENDPOINT` 由 `huggingface_hub` 库自己读；`LEMO_OPUSCAR_HOME` 的读者在
+ *     · **判据 ⑤（表 ↔ 代码，判 FAIL）**：库仓 `core/**` **和** `tools/**` 里**代码真在读**的环境变量
+ *       （`.mjs` 的 `process.env.<NAME>` + shell 的 `${NAME:-…}` 形态 + python 的
+ *       `os.environ.get('NAME')`），凡**不在** `core/README.md` 环境变量表里 ⇒ **FAIL**（点名变量
+ *       + 作用域 + 文件:行）。这正是本项目铁律「**文档声称值 vs 实测值**」在环境变量这一维的落点。
+ *       ★ 2026-10-07：作用域**从 core/** 扩到 core/** + tools/****（原先 tools/** 只列不判 ⇒ 挡不住
+ *         下一次再漏；见 ⑦）。
+ *     · **判据 ⑥（反向，只列不判）**：表里列了但 `core/**` 与 `tools/**` 的代码**都不读** ⇒ 只列 ℹ
+ *       —— 有些是**外部约定**（实测 4 个：`HF_ENDPOINT` 由 `huggingface_hub` 库自己读；
+ *       `LEMO_OPUSCAR_HOME` 的读者在
  *       `plugin/skills/lemo-opuscar/scripts/setup.sh`（**core/tools 作用域之外**）；
  *       `RENDER_MIN_FREE` 与 `INDEXTTS_MIN_FREE_MIB` 是**动态取值**（见下 ⑧）。
- *     · **判据 ⑦（`tools/**` 侧，只列不判）**：`core/README.md` 的表**是 core 作用域**的
- *       （实测 40 条里**没有一条**只被 `tools/**` 读）⇒ `tools/**` 读的变量**只列 ℹ 并点名**
- *       （实测 9 个不在表里：`LEMO_LIB` / `FONT_CACHE` / `FONT_SUB_TMP` / `FONT_STAGE` / `FONT_PY` /
- *       `FONT_REPORT` / `FONT_FAILED` / `FONT_OKLOG` / `FONT_STAGE_EXTRA`）。
- *       ★ **不把它们判 FAIL**：那会让**当前真实语料**变红，而**改库仓的表要先问用户**（那是另一个仓）。
- *       ★ **也不把它们塞进白名单**（那是「为了让闸门变绿而放宽判据」）—— 而是**逐条打印**出来，
- *         让缺口**可见**且**归因明确**（缺的是 `tools/` 的文档，不是 core 的表）。
+ *     · **判据 ⑦（`tools/**` 侧 ⇒ 2026-10-07 起并入判据⑤、同判 FAIL）**：
+ *       原先 `tools/**` 读的变量**只列 ℹ 不判**（实测 10 个不在表里：`LEMO_LIB` / `FONT_CACHE` /
+ *       `FONT_SUB_TMP` / `FONT_STAGE` / `FONT_STAGE_EXTRA` / `FONT_PY` / `FONT_REPORT` /
+ *       `FONT_FAILED` / `FONT_OKLOG` / `ONLY_SLUGS`），理由是「`core/README.md` 是 **core 作用域**
+ *       的表、改库仓要先问用户」。
+ *       ★ 但「只列不判」**挡不住下一次再漏**（判据⑤ 才是可核的那半边）⇒ 用户定案后**已把
+ *         `tools/**` 并入判据⑤**：`core/README.md` 新增 `### tools/ environment variables` 小节，
+ *         把这 10 个逐条写清（名字 / 默认值 / 作用 / 读者 文件:行）；此后 `core/**` 与 `tools/**`
+ *         里真在读的变量**同判 FAIL**（判据⑦ 的「只列」档随之取消，`lib.toolsOnly` 字段移除）。
+ *       ★ **不把它们塞进白名单**（那是「为了让闸门变绿而放宽判据」）—— 是**补文档**让判据⑤ 真的能核。
  *     · **判据 ⑧（库仓失明守卫）**：库仓**可达**却一个 env 读取点都扫不到 / 表解析出 0 行 /
- *       找不到 `## Environment variables` 小节 ⇒ **FAIL 并明说「本闸门已失明（库仓侧）」**。
+ *       找不到 `## Environment variables` 小节 / `tools/**` 下扫到 **0 个待扫文件** ⇒
+ *       **FAIL 并明说「本闸门已失明（库仓侧）」**。
+ *       ★ `tools/**` 只判「**扫到 0 个文件**」（那必然是路径/过滤坏了）；**不判**「文件在、但
+ *         0 个 env 变量」—— 后者可能是 `tools/` 脚本**真的**不再读环境变量（合法内容变更），
+ *         判它会变成误报。★ 代价（如实写）：若有人把 `tools/` 的读取点全删了，判据⑤ 在 tools
+ *         这一半会**空转**（vacuous true）—— 但 `tools/**` 仍是「有文件」⇒ 不触发失明。
  *   ★ **库仓不可达**（`LEMO_OPUSCAR` 指空 / 目录不存在）⇒ **只打一行 ℹ 说不检查**、**不判 FAIL**
  *     （同 `check-ref-lines.mjs` 对缺失数据文件的做法，见其 `:1357` / `:1365`）。
  *   ★ **库仓根用覆盖点 `LEMO_OPUSCAR`**（与 `check-ref-lines` / `check-render-venc` 同名同义），
@@ -652,11 +663,10 @@ const libReachable = fs.existsSync(LIB_CORE);
 const lib = {
   reachable: libReachable, root: LIBROOT,
   coreFiles: [], coreHits: [], coreVars: new Map(),       // name -> Set(rel)
-  toolsVars: new Map(), toolsHits: [],
+  toolsFiles: [], toolsVars: new Map(), toolsHits: [],
   table: { vars: new Map(), section: false, exists: false, file: LIB_README },
-  missing: [],        // ★ 判 FAIL：core 代码在读、但表里没有
-  tableOnly: [],      // ℹ 表里有、core 代码不读
-  toolsOnly: [],      // ℹ tools/ 在读、表里没有（core/README.md 是 core 作用域）
+  missing: [],        // ★ 判 FAIL：core/** 或 tools/** 的代码在读、但表里没有（scope 标出来源）
+  tableOnly: [],      // ℹ 表里有、core/** 与 tools/** 的代码都不读
   internal: [],       // ℹ `_` 前缀：进程内自设
   blind: [],
 };
@@ -671,26 +681,34 @@ if (libReachable) {
   }
   for (const f of collectLib(LIB_TOOLS)) {
     const rel = path.relative(LIBROOT, f).replace(/\\/g, '/');
+    lib.toolsFiles.push(rel);
     let txt; try { txt = fs.readFileSync(f, 'utf8'); } catch { continue; }
     for (const h of extractLib(rel, txt)) { lib.toolsHits.push({ rel, ...h }); add(lib.toolsVars, h.name, rel); }
   }
   lib.table = readLibTable();
+  // ★ 2026-10-07：判据⑤ 的作用域**从 core/** 扩到 core/** + tools/****（原 ⑦ 只列不判 ⇒ 挡不住
+  //   下一次再漏）。core 与 tools 里真在读的变量，都必须在 `core/README.md`（含 `### tools/ ...`
+  //   小节）里能找到。`scope` 字段只为把「是谁在读」标出来，不参与判定。
   for (const [n, rels] of lib.coreVars) {
     if (LIB_INTERNAL(n)) { lib.internal.push({ name: n, rels: [...rels] }); continue; }
-    if (!lib.table.vars.has(n)) lib.missing.push({ name: n, rels: [...rels] });
+    if (!lib.table.vars.has(n)) lib.missing.push({ name: n, rels: [...rels], scope: 'core' });
   }
-  for (const [n, line] of lib.table.vars) if (!lib.coreVars.has(n)) lib.tableOnly.push({ name: n, line });
   for (const [n, rels] of lib.toolsVars) {
     if (LIB_INTERNAL(n)) { lib.internal.push({ name: n, rels: [...rels] }); continue; }
-    if (!lib.table.vars.has(n)) lib.toolsOnly.push({ name: n, rels: [...rels] });
+    if (!lib.table.vars.has(n)) lib.missing.push({ name: n, rels: [...rels], scope: 'tools' });
   }
+  // ★ 判据⑥ 的反向：表里列了、但 **core/** 与 **tools/** 的代码都不读 ⇒ 只列 ℹ。
+  for (const [n, line] of lib.table.vars) if (!lib.coreVars.has(n) && !lib.toolsVars.has(n)) lib.tableOnly.push({ name: n, line });
   lib.missing.sort((a, b) => (a.name < b.name ? -1 : 1));
-  lib.toolsOnly.sort((a, b) => (a.name < b.name ? -1 : 1));
   lib.internal.sort((a, b) => (a.name < b.name ? -1 : 1));
 
   // ── 判据 ⑧：库仓失明守卫（可达却扫不到东西 ⇒ 明说失明）────────────────────
   if (coreFiles.length === 0) lib.blind.push('库仓 `core/**` 下扫到 0 个 `.mjs` / `.sh` / `.py`（路径变了？）⇒ 一个文件都没检查过');
   if (lib.coreHits.length === 0) lib.blind.push('库仓 `core/**` 里一个 env 读取点都没抽到（抽取器写法变了？）⇒ **本闸门已失明（库仓侧）**');
+  // ★ 2026-10-07：`tools/**` 并入判据⑤ ⇒ 它**扫到 0 个文件**时判据⑤ 的 tools 那一半会**空转**
+  //   （vacuous true，「0 个未登记」是假的）⇒ 也算失明。**只判「0 个文件」**、不判「文件在但 0 个
+  //   变量」（后者可能是 `tools/` 脚本真的不再读 env —— 合法内容变更，判它会误报；见头注释 ⑧）。
+  if (lib.toolsFiles.length === 0) lib.blind.push('库仓 `tools/**` 下扫到 **0 个待扫文件**（`.mjs` / `.sh` / `.bash` / `.py`；路径 / 过滤变了？）⇒ 判据⑤ 在 `tools/**` 这一半**空转** ⇒ **本闸门已失明（库仓侧）**');
   if (!lib.table.exists) lib.blind.push(`库仓 \`core/README.md\` **不存在**（\`${LIB_README}\`）⇒ 判据⑤⑥ 一条都没跑`);
   else if (!lib.table.section) lib.blind.push('库仓 `core/README.md` 里找不到 `## Environment variables` 小节 ⇒ 判据⑤⑥ 一条都没跑');
   else if (lib.table.vars.size === 0) lib.blind.push('库仓 `core/README.md` 的环境变量表**解析出 0 行** ⇒ **本闸门已失明（库仓侧）**');
@@ -719,11 +737,11 @@ if (JSON_OUT) {
     blind,
     library: lib.reachable ? {
       root: lib.root,
-      scope: { coreFiles: lib.coreFiles.length, coreHits: lib.coreHits.length, coreVars: lib.coreVars.size, toolsVars: lib.toolsVars.size },
+      scope: { coreFiles: lib.coreFiles.length, coreHits: lib.coreHits.length, coreVars: lib.coreVars.size,
+        toolsFiles: lib.toolsFiles.length, toolsHits: lib.toolsHits.length, toolsVars: lib.toolsVars.size },
       table: { file: lib.table.file, exists: lib.table.exists, section: lib.table.section, vars: lib.table.vars.size },
       missingFromTable: lib.missing,
       tableOnly: lib.tableOnly,
-      toolsOnly: lib.toolsOnly,
       internal: lib.internal,
       blind: lib.blind,
     } : { reachable: false, note: `库仓不可达（${lib.root}）⇒ 只打 ℹ、不判 FAIL` },
@@ -739,7 +757,8 @@ console.log(`范围 : lib/** + scripts/**（递归）+ 仓根 *.mjs（非递归�
 console.log(`       实测 ${files.length} 个文件 / ${hits.length} 处 process.env.* / ${realVars} 个不同变量`);
 console.log(`       ★ 已知盲区：**不纳入**库仓 D:/lemo-opuscar 的 core/** 与 tools/** 的**双向登记表**`
   + '（那些是渲染/编排的运行时旋钮，不是「重定向夹具」的覆盖点）—— 见头注释 ④；'
-  + '\n         ★ 但它们的「**表 ↔ 代码**」一致性已由下方「库仓」一节的判据⑤⑥⑦⑧ 覆盖（2026-10-07 补，见头注释 ⑦）');
+  + '\n         ★ 但它们的「**表 ↔ 代码**」一致性已由下方「库仓」一节的判据⑤⑥⑧ 覆盖'
+  + '（2026-10-07 补；其中 **core/** 与 **tools/** 同判 FAIL**，见头注释 ⑦）');
 console.log(`       ★ 已知盲区：**动态取值看不见** —— \`process.env[k]\` / \`process.env['X' + y]\` 不判`
   + '（实测本仓 2 处：`dub.mjs:933-934` 透传调用方给的变量名，见头注释 ⑧）');
 console.log(`       ★ 库仓侧（另一个仓）：\`core/**\` + \`tools/**\` 的 env 读取点见下方「库仓」一节`
@@ -797,19 +816,19 @@ if (fresh.length) {
 console.log(`\nℹ 档 B·外部约定 / 非覆盖点（只登记、只列，**不判 FAIL**）${Object.keys(EXTERNAL).length} 个：`);
 for (const [n, e] of Object.entries(EXTERNAL)) console.log(`   · ${n}（读者：${e.readers.join(', ')}）—— ${e.why}`);
 
-// ── ★★ 库仓侧输出（判据 ⑤⑥⑦⑧，详见头注释 ⑦⑧）────────────────────────────
+// ── ★★ 库仓侧输出（判据 ⑤⑥⑧，详见头注释 ⑦⑧）──────────────────────────────
 console.log(`\n══ 库仓（另一个仓）：${lib.root} ══`);
 if (!lib.reachable) {
   console.log(`ℹ **不检查**：库仓不可达（\`${LIB_CORE}\` 不存在，或 \`LEMO_OPUSCAR\` 指空）⇒ `
-    + '判据⑤⑥⑦⑧ 本次**一条都没跑**（**不判 FAIL** —— 同 `check-ref-lines` 对缺失数据文件的做法）。');
+    + '判据⑤⑥⑧ 本次**一条都没跑**（**不判 FAIL** —— 同 `check-ref-lines` 对缺失数据文件的做法）。');
   console.log('   ↳ 想让库仓也受检：设 `LEMO_OPUSCAR=<库仓根>`（夹具树靠它重定向）。');
 } else {
-  console.log(`范围 : core/**（判据⑤⑥，**判 FAIL**）+ tools/**（判据⑦，只列不判）；`
+  console.log(`范围 : core/** **和** tools/**（判据⑤⑥，**判 FAIL** —— 2026-10-07 起 tools 并入判据⑤）；`
     + `实测 core ${lib.coreFiles.length} 个文件 / ${lib.coreHits.length} 处 / ${lib.coreVars.size} 个变量；`
-    + `tools ${lib.toolsHits.length} 处 / ${lib.toolsVars.size} 个变量`);
+    + `tools ${lib.toolsFiles.length} 个文件 / ${lib.toolsHits.length} 处 / ${lib.toolsVars.size} 个变量`);
   console.log(`表   : ${lib.table.exists ? lib.table.file : '（不存在）'}`
     + `${lib.table.section ? ' 的 `## Environment variables`' : '（找不到 `## Environment variables` 小节）'}`
-    + ` ⇒ 解析出 ${lib.table.vars.size} 行`);
+    + ` ⇒ 解析出 ${lib.table.vars.size} 行（含 \`### tools/ environment variables\` 小节）`);
 
   // ★ 失明消息放在最前（同本仓侧的做法）。
   if (lib.blind.length) {
@@ -819,46 +838,41 @@ if (!lib.reachable) {
   }
 
   if (lib.missing.length) {
-    console.log(`\n✘ 判据⑤·库仓 core/** 有 ${lib.missing.length} 个变量**代码真在读、但 \`core/README.md\` 的表里没有**`
+    console.log(`\n✘ 判据⑤·库仓 core/** 与 tools/** 里有 ${lib.missing.length} 个变量**代码真在读、但 \`core/README.md\` 的表里没有**`
       + '（★ 这正是「文档声称值 vs 实测值」在环境变量这一维的落点）：');
-    for (const m of lib.missing) console.log(`   ✘ ${m.name}  ←  读它的文件：${m.rels.join(', ')}`);
-    console.log('   ↳ 修法：把这几行补进库仓 `core/README.md` 的 `## Environment variables` 表'
-      + '（★ **那是另一个仓的文件**，本闸门只读不写；改之前请先确认）。');
+    for (const m of lib.missing) console.log(`   ✘ [${m.scope}] ${m.name}  ←  读它的文件：${m.rels.join(', ')}`);
+    console.log('   ↳ 修法：把这几行补进库仓 `core/README.md` 的表'
+      + '（`core/**` 读的进 `## Environment variables`；`tools/**` 读的进 `### tools/ environment variables`。'
+      + '★ **那是另一个仓的文件**，本闸门只读不写；改之前请先确认）。');
   } else if (!lib.blind.length) {
-    console.log(`\n✓ 判据⑤·库仓 core/** 里代码真在读的 ${lib.coreVars.size - lib.internal.length} 个变量`
+    console.log(`\n✓ 判据⑤·库仓 core/** 与 tools/** 里代码真在读的 `
+      + `${lib.coreVars.size + lib.toolsVars.size - lib.internal.length} 个变量`
       + ' **全部**出现在 `core/README.md` 的表里');
   }
 
   if (lib.tableOnly.length) {
-    console.log(`\nℹ 判据⑥·表里列了、但 core/** 的代码**本闸门扫不到读者**的 ${lib.tableOnly.length} 个（**只列不判**）：`);
+    console.log(`\nℹ 判据⑥·表里列了、但 core/** 与 tools/** 的代码**本闸门扫不到读者**的 ${lib.tableOnly.length} 个（**只列不判**）：`);
     for (const t of lib.tableOnly) console.log(`   · ${t.name}  (core/README.md:${t.line})`);
     console.log('   ↳ 分三种：① **外部约定**（如 `HF_ENDPOINT` 由 huggingface_hub 自己读）；'
       + '② 读者在**别的目录**（如 `LEMO_OPUSCAR_HOME` 的读者在 `plugin/skills/lemo-opuscar/scripts/setup.sh`）；'
       + '③ **动态取值**本闸门看不见（见头注释 ⑧：`RENDER_MIN_FREE` / `INDEXTTS_MIN_FREE_MIB`）。'
       + '⇒ **③ 不是「表里多写了」**。');
   } else {
-    console.log('\n✓ 判据⑥·表里每一行都能在 core/** 的代码里找到读者');
+    console.log('\n✓ 判据⑥·表里每一行都能在 core/** 或 tools/** 的代码里找到读者');
   }
 
-  if (lib.toolsOnly.length) {
-    console.log(`\nℹ 判据⑦·\`tools/**\` 在读、但**表里没有**的 ${lib.toolsOnly.length} 个（**只列不判**）：`);
-    for (const t of lib.toolsOnly) console.log(`   · ${t.name}  ←  ${t.rels.join(', ')}`);
-    console.log('   ↳ ★ 为什么**不判 FAIL**：`core/README.md` 的表是 **core 作用域**的'
-      + `（实测 ${lib.table.vars.size} 行里**没有一行**只被 \`tools/**\` 读）⇒ 缺的是 **\`tools/\` 的文档**、不是 core 的表；`
-      + '而**改库仓要先问用户**（另一个仓）。★ 也不进白名单（那是「为了让闸门变绿而放宽判据」）—— 而是**逐条打印**让缺口可见。');
-  }
   if (lib.internal.length) {
     console.log(`\nℹ \`_\` 前缀（**进程内自设、不是外部输入** ⇒ 不判、只列）${lib.internal.length} 个：`);
     for (const t of lib.internal) console.log(`   · ${t.name}  ←  ${t.rels.join(', ')}`);
   }
-  console.log(`\n[库仓] 表↔代码：core 在读 ${lib.coreVars.size} 个（判 FAIL）· 未登记进表 ${lib.missing.length} 个 · `
-    + `表里多列 ${lib.tableOnly.length} 个（只列）· tools 侧未登记 ${lib.toolsOnly.length} 个（只列）`
+  console.log(`\n[库仓] 表↔代码：core 在读 ${lib.coreVars.size} 个 + tools 在读 ${lib.toolsVars.size} 个（**同判 FAIL**）· `
+    + `未登记进表 ${lib.missing.length} 个 · 表里多列 ${lib.tableOnly.length} 个（只列）`
     + `· 内部 \`_\` 前缀 ${lib.internal.length} 个（只列）${lib.blind.length ? '· **已失明（库仓侧）**' : ''} ${libFail ? '✘' : 'OK'}`);
 }
 
 console.log(`\n[闸门] 覆盖点登记：未登记 ${unregistered.length} 处、登记点消失 ${gone.length} 个、`
   + `新读者未登记 ${fresh.length} 个（只列）、档B ${Object.keys(EXTERNAL).length} 个（只列）`
   + `${blind.length ? '、**已失明**' : ''}`
-  + `；库仓表↔代码：${lib.reachable ? `未登记进表 ${lib.missing.length} 个、表里多列 ${lib.tableOnly.length} 个（只列）、tools 侧 ${lib.toolsOnly.length} 个（只列）` : '**不可达 ⇒ 不检查**'}`
+  + `；库仓表↔代码（core+tools）：${lib.reachable ? `未登记进表 ${lib.missing.length} 个、表里多列 ${lib.tableOnly.length} 个（只列）` : '**不可达 ⇒ 不检查**'}`
   + ` ${ok ? 'OK' : '✘'}`);
 process.exitCode = ok ? 0 : 1;

@@ -37,12 +37,17 @@
  *          它守的是「夹具会**静默跑在真实仓上**」这件事 —— 覆盖点一丢，**没有任何断言会响**（见闸门头注释 ① 的三处实证）。
  *          ★ 夹具**整棵拷真实语料**（判据② 要求登记表里 100 个「(覆盖点, 读者文件)」对逐个仍在 ⇒ 手写最小树等于抄第二遍登记表）。
  *        · `check-env-overrides` **库仓侧扩展**（2026-10-07，补掉它自己登记的那条盲区；**闸门数不变**）：
- *          **判据⑤ 表↔代码一致性** —— 库仓 `core/**` 里**代码真在读**的环境变量必须出现在
- *          `core/README.md` 的 `## Environment variables` 表里（本项目铁律「文档声称值 vs 实测值」在 env 这一维）；
+ *          **判据⑤ 表↔代码一致性** —— 库仓 `core/**` **与 `tools/**`** 里**代码真在读**的环境变量必须出现在
+ *          `core/README.md` 的 `## Environment variables`（含 `### tools/ ...` 小节）表里
+ *          （本项目铁律「文档声称值 vs 实测值」在 env 这一维）；
  *          用例：**变异A**（合成库仓的 `core/README.md` 删掉 `LEMO_BBB` 行）⇒ FAIL 并点名；
  *          **变异B**（`core/a.mjs` 加 `process.env.LEMO_ZZZ_PROBE`）⇒ FAIL 并点名；
- *          **阴性对照**（表与代码一致）⇒ exit 0 且判据⑤ 打 ✓、判据⑥⑦ 逐条列出「表里多列」/「tools 侧」；
- *          **判据⑧ 失明守卫**（库仓可达但 `core/**` 0 个 env 读取点）⇒ FAIL +「本闸门已失明（库仓侧）」；
+ *          ★ **2026-10-07 二次扩展**：`tools/**` **并入判据⑤**（原先只列不判 ⇒ 挡不住下一次再漏）。
+ *          用例：**变异A′**（删掉新 `### tools/ ...` 小节里的 `LEMO_TOOLONLY` 行）⇒ FAIL 并点名 `[tools]`；
+ *          **变异B′**（`tools/x.sh` 加 `${LEMO_TOOL_PROBE:-y}`）⇒ FAIL 并点名 `[tools]`；
+ *          **反向**（把 `tools/**` 从判据⑤ 摘掉）⇒ A′/B′ **重新变绿**；
+ *          **阴性对照**（表与代码一致）⇒ exit 0 且判据⑤ 打 ✓、判据⑥ 逐条列出「表里多列」；
+ *          **判据⑧ 失明守卫**（库仓可达但 `core/**` 0 个 env 读取点 / `tools/**` 0 个待扫文件）⇒ FAIL +「本闸门已失明（库仓侧）」；
  *          **不可达**（`LEMO_OPUSCAR` 指空目录）⇒ **只 ℹ、exit 0**（与失明成对，证明守卫不是「永远 exit 1」）。
  *          ★ 夹具用**手写的合成库仓**（库仓是**另一个仓**，不能假设它在别人机器上存在）；
  *          它**不碰** 12b 那张 100 对登记表 ⇒ 不会退化成「抄第二遍」。
@@ -2834,17 +2839,20 @@ test('★自证 check-env-overrides：短路判据① / 判据② 后，各自�
 //   而库仓侧的四条判据（⑤⑥⑦⑧）只依赖「一棵有 `core/**` + `tools/**` + `core/README.md` 表的树」，
 //   手写最小树**不碰** 12b 那张 100 对的登记表 ⇒ 不会退化成「把登记表抄第二遍」。
 const LIB_OK = '✓ 判据⑤·';
-const LIB_MISS = '判据⑤·库仓 core/** 有';
+const LIB_MISS = '判据⑤·库仓 core/** 与 tools/** 里有';
 const LIB_BLIND = '本闸门已失明（库仓侧）';
 /**
  * 合成最小库仓：`core/**` 用**三种抽取器各读一个**（`.mjs` / shell / python），
- * `tools/**` 读一个（判据⑦ 只列不判），表里另有一个「列了但代码不读」的（判据⑥ 只列不判）。
+ * `tools/**` 读一个（**2026-10-07 起并入判据⑤ ⇒ 也必须登记进表**，写在 `### tools/ ...` 小节里），
+ * 表里另有一个「列了但代码不读」的（判据⑥ 只列不判）。
  */
 const miniLib = (root) => {
   wf(path.join(root, 'core', 'README.md'),
     '# 合成库仓\n\n## Environment variables\n\n| Variable | Meaning |\n|---|---|\n'
     + '| `LEMO_AAA` | a |\n| `LEMO_BBB` | b |\n| `LEMO_CCC` | c |\n'
-    + '| `LEMO_UNREAD` | 表里列了但代码不读（⇒ 判据⑥ 只列 ℹ） |\n');
+    + '| `LEMO_UNREAD` | 表里列了但代码不读（⇒ 判据⑥ 只列 ℹ） |\n'
+    + '\n### `tools/` environment variables\n\n| Variable | Meaning |\n|---|---|\n'
+    + '| `LEMO_TOOLONLY` | tools 侧读的（⇒ 2026-10-07 起判据⑤ 同判 FAIL，必须登记） |\n');
   wf(path.join(root, 'core', 'a.mjs'), 'export const a = process.env.LEMO_AAA;\n');
   wf(path.join(root, 'core', 'render', 'mux.sh'), 'B="${LEMO_BBB:-x}"\n');
   wf(path.join(root, 'core', 'tts', 't.py'), "import os\nC = os.environ.get('LEMO_CCC')\n");
@@ -2862,15 +2870,16 @@ const dropLibTableRow = (libRoot, name) => {
 test('check-env-overrides·库仓侧：表↔代码一致 ⇒ 绿；删表行 / 加新变量 / 失明 ⇒ 红；不可达 ⇒ 只 ℹ', async () => {
   const dir = path.join(TMP, 'envreg-lib');
   try {
-    // ① 阴性对照：合成库仓的**表与代码一致** ⇒ exit 0，判据⑤ 打 ✓，
-    //    且判据⑥⑦ 把「表里多列」与「tools 侧」**逐条列出**（否则这两条 ℹ 是空转的）。
+    // ① 阴性对照：合成库仓的**表与代码一致**（core 三种抽取器 + `tools/**` 侧**都已登记**）⇒ exit 0，
+    //    判据⑤ 打 ✓ 且**作用域含 tools/**；判据⑥ 把「表里多列」**逐条列出**（否则那条 ℹ 是空转的）。
     const neg = path.join(dir, 'neg');
     const gateNeg = copyEnvregCorpus(neg);
     const r0 = await run(NODE, [gateNeg], { env: { LEMO_OPUSCAR: miniLib(path.join(dir, 'lib-neg')) } });
     expectClean(r0, LIB_MISS, '库仓侧 阴性对照');
-    assert.ok(r0.out.includes(LIB_OK), `阴性对照应真的跑过判据⑤\n${r0.out.slice(-1600)}`);
-    assert.ok(r0.out.includes('LEMO_UNREAD') && r0.out.includes('LEMO_TOOLONLY'),
-      `判据⑥⑦ 应逐条列出「表里多列」与「tools 侧」\n${r0.out.slice(-1600)}`);
+    assert.ok(r0.out.includes(LIB_OK) && r0.out.includes('与 tools/** 里代码真在读的'),
+      `阴性对照应真的跑过判据⑤、且作用域含 tools/**\n${r0.out.slice(-1600)}`);
+    assert.ok(r0.out.includes('LEMO_UNREAD'),
+      `判据⑥ 应逐条列出「表里多列」\n${r0.out.slice(-1600)}`);
 
     // ② 变异 A（表里删一个**真在用**的变量行）⇒ 判据⑤ 必须报出、并点名那个变量 + 读它的文件。
     const a = path.join(dir, 'a');
@@ -2893,12 +2902,15 @@ test('check-env-overrides·库仓侧：表↔代码一致 ⇒ 绿；删表行 / 
 
     // ④ 失明守卫：库仓**可达**、表也在，但 `core/**` 一个 env 读取点都没有 ⇒
     //    **必须 FAIL 并明说「本闸门已失明（库仓侧）」**（否则「0 个未登记进表」会被读成「表全对」）。
+    //    ★ 给一棵**有 `tools/**` 待扫文件、但它不读 env** 的树 ⇒ 只有 **core 侧**失明这条能触发
+    //      （否则 `tools/**` 0 文件那条新守卫会替它触发 ⇒ 这条断言就不再真的在测 core 失明）。
     const bl = path.join(dir, 'blind');
     const gateBl = copyEnvregCorpus(bl);
     const libBl = path.join(dir, 'lib-blind');
     wf(path.join(libBl, 'core', 'README.md'),
       '# 合成库仓\n\n## Environment variables\n\n| Variable | Meaning |\n|---|---|\n| `LEMO_X` | x |\n');
     wf(path.join(libBl, 'core', 'a.mjs'), 'export const x = 1;\n');
+    wf(path.join(libBl, 'tools', 'x.sh'), 'echo hi\n');
     const r3 = await run(NODE, [gateBl], { env: { LEMO_OPUSCAR: libBl } });
     expectBlind(r3, LIB_BLIND, '库仓侧 失明守卫');
     assert.ok(r3.out.includes('已失明（库仓侧）** ✘'),
@@ -2912,6 +2924,69 @@ test('check-env-overrides·库仓侧：表↔代码一致 ⇒ 绿；删表行 / 
     expectClean(r4, LIB_BLIND, '库仓侧 不可达');
     assert.ok(r4.out.includes('**不检查**：库仓不可达'),
       `不可达应打一行 ℹ 说明不检查\n${r4.out.slice(-1600)}`);
+  } finally { rm(dir); }
+});
+
+// ── 12b-3. check-env-overrides.mjs · **`tools/**` 并入判据⑤**（2026-10-07 二次扩展）──
+// ★ 由来：`tools/**` 原先是「判据⑦ 只列不判」⇒ 缺口（缺的是 `tools/` 的**文档**）**可见但挡不住**。
+//   定案：补文档（`core/README.md` 的 `### tools/ environment variables` 小节）**并**把 `tools/**`
+//   并入判据⑤（同判 FAIL）。本用例测的正是「并入之后**真的能核**」，而不是「打印一行就算数」。
+test('check-env-overrides·库仓侧 tools/**：已登记 ⇒ 绿；删工具行 / 加工具变量 ⇒ 红；摘掉 tools 作用域 ⇒ 重新变绿', async () => {
+  const dir = path.join(TMP, 'envreg-tools');
+  // ★ 反向验证用：只摘掉「toolsVars ⇒ lib.missing」这一行（`scope: 'tools'` 全仓唯一）。
+  const TOOLS_LINE = "    if (!lib.table.vars.has(n)) lib.missing.push({ name: n, rels: [...rels], scope: 'tools' });";
+  const TOOLS_OFF = '    // ★ 反向验证用：摘掉 tools 作用域（不判 FAIL）';
+  try {
+    // ① 阴性对照：`tools/x.sh` 读的 `LEMO_TOOLONLY` 写在 `### tools/ ...` 小节里 ⇒ exit 0。
+    const neg = path.join(dir, 'neg');
+    const gNeg = copyEnvregCorpus(neg);
+    const r0 = await run(NODE, [gNeg], { env: { LEMO_OPUSCAR: miniLib(path.join(dir, 'lib-neg')) } });
+    expectClean(r0, LIB_MISS, 'tools 侧 阴性对照');
+
+    // ② 变异 A′：删掉新小节里的 `LEMO_TOOLONLY` 行 ⇒ 判据⑤ 必须报出、点名 `[tools]` + 读它的文件。
+    const a = path.join(dir, 'a');
+    const gA = copyEnvregCorpus(a);
+    const libA = miniLib(path.join(dir, 'lib-a'));
+    dropLibTableRow(libA, 'LEMO_TOOLONLY');
+    const r1 = await run(NODE, [gA], { env: { LEMO_OPUSCAR: libA } });
+    expectBlind(r1, LIB_MISS, 'tools 侧 变异A′（删工具行）');
+    assert.ok(r1.out.includes('[tools] LEMO_TOOLONLY') && r1.out.includes('tools/x.sh'),
+      `判据⑤ 应点名 [tools] + 变量 + 读它的文件\n${r1.out.slice(-1600)}`);
+
+    // ③ 变异 B′：`tools/x.sh` 里加一个**新**变量 ⇒ 判据⑤ 必须报出（原先「只列不判」时这里会**漏**）。
+    const b = path.join(dir, 'b');
+    const gB = copyEnvregCorpus(b);
+    const libB = miniLib(path.join(dir, 'lib-b'));
+    fs.appendFileSync(path.join(libB, 'tools', 'x.sh'), 'U="${LEMO_TOOL_PROBE:-z}"\n');
+    const r2 = await run(NODE, [gB], { env: { LEMO_OPUSCAR: libB } });
+    expectBlind(r2, LIB_MISS, 'tools 侧 变异B′（加工具变量）');
+    assert.ok(r2.out.includes('[tools] LEMO_TOOL_PROBE'),
+      `判据⑤ 应点名 [tools] LEMO_TOOL_PROBE\n${r2.out.slice(-1600)}`);
+
+    // ④ 反向验证：把 `tools/**` 从判据⑤ **摘掉** ⇒ 上述两个变异**重新变绿**
+    //    （否则「报红」可能只是别的东西在报，而不是 tools 作用域本身）。
+    const revA = path.join(dir, 'rev-a');
+    copyEnvregCorpus(revA);
+    const gRevA = patchGate('check-env-overrides.mjs', path.join(revA, 'scripts'), [[TOOLS_LINE, TOOLS_OFF]]);
+    const ra = await run(NODE, [gRevA], { env: { LEMO_OPUSCAR: libA } });
+    expectClean(ra, LIB_MISS, 'tools 侧 反向（摘掉 tools 作用域）· 变异A′');
+
+    const revB = path.join(dir, 'rev-b');
+    copyEnvregCorpus(revB);
+    const gRevB = patchGate('check-env-overrides.mjs', path.join(revB, 'scripts'), [[TOOLS_LINE, TOOLS_OFF]]);
+    const rb = await run(NODE, [gRevB], { env: { LEMO_OPUSCAR: libB } });
+    expectClean(rb, LIB_MISS, 'tools 侧 反向（摘掉 tools 作用域）· 变异B′');
+
+    // ⑤ 失明守卫：`tools/` 目录在、但 **0 个待扫文件** ⇒ FAIL + 「本闸门已失明（库仓侧）」。
+    //    ★ 只判「0 个文件」、不判「文件在但 0 个 env 变量」（后者可能是脚本真的不再读 env ⇒ 会误报）。
+    const bl = path.join(dir, 'blind');
+    const gBl = copyEnvregCorpus(bl);
+    const libBl = miniLib(path.join(dir, 'lib-blind'));
+    rm(path.join(libBl, 'tools', 'x.sh'));
+    const r3 = await run(NODE, [gBl], { env: { LEMO_OPUSCAR: libBl } });
+    expectBlind(r3, LIB_BLIND, 'tools 侧 失明守卫');
+    assert.ok(r3.out.includes('`tools/**` 下扫到 **0 个待扫文件**'),
+      `失明时要点名 tools 0 个待扫文件\n${r3.out.slice(-1600)}`);
   } finally { rm(dir); }
 });
 
