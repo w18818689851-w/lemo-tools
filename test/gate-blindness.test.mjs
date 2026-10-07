@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 77 条用例 / 覆盖全部 33 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 79 条用例 / 覆盖全部 34 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -31,6 +31,11 @@
  *        · `check-mux-parity`（b84-c 建 / b84-a 并入）：**自带 `demo/mux.sh` 的 `LN_TP` 漂移** ⇒ 点名 slug 与那个值；
  *          **编码器守卫被拆**（未设支改成 CPU）⇒ 报 `VENC_GUARD`（用户头号硬规则「渲染一律 GPU」的落地口）；
  *          另有**本闸门独有**的一条守卫：`styles/` 有风格但**一个自带 `demo/mux.sh` 都没有** ⇒ 报「一个都枚举不到」。
+ *        · `check-env-overrides`（2026-10-07 建，补一个**已由多批实测确认的缺口**）：**环境变量覆盖点的双向守卫** ——
+ *          ① **未登记的新覆盖点**（`lib/aspects.mjs` 里塞一行 `process.env.LEMO_ZZZ_PROBE`）⇒ FAIL 并点名 `文件:行 + 变量名`；
+ *          ② **已登记的覆盖点被删**（把 `lib/voices.mjs` 的 `LEMO_VOICE_TEST_TMP` 删成裸标识符）⇒ FAIL 并报「被删了 / 改名了」。
+ *          它守的是「夹具会**静默跑在真实仓上**」这件事 —— 覆盖点一丢，**没有任何断言会响**（见闸门头注释 ① 的三处实证）。
+ *          ★ 夹具**整棵拷真实语料**（判据② 要求登记表里 100 个「(覆盖点, 读者文件)」对逐个仍在 ⇒ 手写最小树等于抄第二遍登记表）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -2715,6 +2720,101 @@ test('check-redline-md5：登记处漂移 ⇒ exit 1 点名；提取不到 ⇒ �
     const rm1 = await run(NODE, [mut], { env: { LEMO_TOOLS_ROOT: fa } });
     assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'),
       undefined, '短路「不一致」判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
+  } finally { rm(dir); }
+});
+
+// ── 12b. check-env-overrides.mjs（覆盖点登记表**双向**守卫，2026-10-07 建）────
+// ★ 为什么夹具是「**整棵拷真实语料**」而不是手写最小树：判据② 要求**登记表里 100 个
+//   「(覆盖点, 读者文件)」对逐个仍在** ⇒ 手写最小树等于把整张登记表**抄第二遍**（两套口径必然漂移）；
+//   拷真实语料则**自洽**（闸门与语料同一快照）—— 这也正是本闸门要守的那件事的反面。
+// ★ 该闸门**没有** `LEMO_*` 覆盖点（扫描根按脚本自身位置推导）⇒ 只能「整棵拷 + `copyGate`」。
+const copyEnvregCorpus = (root) => {
+  mk(path.join(root, 'lib')); mk(path.join(root, 'scripts'));
+  for (const f of fs.readdirSync(path.join(TOOLS, 'lib'))) if (f.endsWith('.mjs')) fs.copyFileSync(path.join(TOOLS, 'lib', f), path.join(root, 'lib', f));
+  for (const f of fs.readdirSync(path.join(TOOLS, 'scripts'))) if (f.endsWith('.mjs')) fs.copyFileSync(path.join(TOOLS, 'scripts', f), path.join(root, 'scripts', f));
+  for (const f of fs.readdirSync(TOOLS)) if (f.endsWith('.mjs')) fs.copyFileSync(path.join(TOOLS, f), path.join(root, f));
+  return copyGate('check-env-overrides.mjs', root);
+};
+
+test('check-env-overrides：未登记的新覆盖点 ⇒ FAIL；已登记的覆盖点被删 ⇒ FAIL（含阴性 + 失明）', async () => {
+  const dir = path.join(TMP, 'envreg');
+  // 判据① 的特有文案（逐字抄自闸门源码）与判据② 的特有文案
+  const N_UNREG = '处**未登记**的 process.env';
+  const N_GONE = '个**已登记的覆盖点消失**';
+  const N_BLIND = '本闸门已**失明**';
+  try {
+    // ① 阳性（判据①）：真实语料副本 + 给 lib/aspects.mjs 塞一行 `process.env.LEMO_ZZZ_PROBE`
+    const pos = path.join(dir, 'pos');
+    const gatePos = copyEnvregCorpus(pos);
+    fs.appendFileSync(path.join(pos, 'lib', 'aspects.mjs'), '\nconst PROBE = process.env.LEMO_ZZZ_PROBE;\n');
+    const r1 = await run(NODE, [gatePos]);
+    expectBlind(r1, N_UNREG, 'check-env-overrides 判据① 正向');
+    assert.ok(r1.out.includes('LEMO_ZZZ_PROBE') && r1.out.includes('lib/aspects.mjs'),
+      `判据① 应点名 文件:行 + 变量名\n${r1.out.slice(0, 900)}`);
+
+    // ② 阳性（判据②）：把**已登记**的覆盖点从它登记的文件里删掉（改成裸标识符 ⇒ 不产生新变量名，
+    //    故**只有**判据② 能解释这个 exit≠0）。
+    const pos2 = path.join(dir, 'pos2');
+    const gatePos2 = copyEnvregCorpus(pos2);
+    const vf = path.join(pos2, 'lib', 'voices.mjs');
+    fs.writeFileSync(vf, fs.readFileSync(vf, 'utf8').replace(/process\.env\.LEMO_VOICE_TEST_TMP/g, 'VOICE_TEST_TMP_FALLBACK'));
+    const r2 = await run(NODE, [gatePos2]);
+    expectBlind(r2, N_GONE, 'check-env-overrides 判据② 正向');
+    assert.ok(r2.out.includes('LEMO_VOICE_TEST_TMP') && r2.out.includes('lib/voices.mjs'),
+      `判据② 应点名 覆盖点 + 登记文件\n${r2.out.slice(0, 900)}`);
+    assert.ok(!r2.out.includes(N_UNREG),
+      `判据② 那条不该触发判据①（删成裸标识符不产生新变量名）\n${r2.out.slice(0, 900)}`);
+
+    // ③ 阴性对照：同一份真实语料、**不改动** ⇒ exit 0 且两条 ✓ 都在（否则「永远 exit 1」也能骗过）
+    const neg = path.join(dir, 'neg');
+    const gateNeg = copyEnvregCorpus(neg);
+    const r3 = await run(NODE, [gateNeg]);
+    expectClean(r3, N_UNREG, 'check-env-overrides 阴性对照');
+    assert.ok(r3.out.includes('✓ 判据①·扫描范围内所有 process.env.<NAME> 都已登记')
+      && r3.out.includes('✓ 判据②·'),
+      `阴性对照应真的跑过判据①②\n${r3.out.slice(0, 900)}`);
+    assert.ok(/登记 47 条/.test(r3.out) && /\*\*差额 0\*\*/.test(r3.out),
+      `阴性对照应打印「本闸门期望值」且差额 0\n${r3.out.slice(0, 900)}`);
+
+    // ④ 失明守卫：一棵**没有任何 `process.env.*`** 的树 ⇒ exit 1 且明说「本闸门已失明」
+    //    （否则「0 处未登记」会被读成「都登记了」—— 本项目反复治过的「0 对象却全绿」）
+    const bl = path.join(dir, 'blind');
+    mk(path.join(bl, 'lib')); mk(path.join(bl, 'scripts'));
+    wf(path.join(bl, 'lib', 'a.mjs'), 'export const x = 1;\n');
+    wf(path.join(bl, 'scripts', 'b.mjs'), 'export const y = 2;\n');
+    const gateBl = copyGate('check-env-overrides.mjs', bl);
+    const r4 = await run(NODE, [gateBl]);
+    expectBlind(r4, N_BLIND, 'check-env-overrides 失明守卫');
+    assert.ok(!r4.out.includes('未登记 0 处'),
+      `失明时不该打印像「未登记 0 处」的绿灯口径\n${r4.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+test('★自证 check-env-overrides：短路判据① / 判据② 后，各自的正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-envreg');
+  const N_UNREG = '处**未登记**的 process.env';
+  const N_GONE = '个**已登记的覆盖点消失**';
+  try {
+    // 判据① 自证：把「未登记」集合短路成空数组（`const unregistered = …` ⇒ `[]`）
+    const a = path.join(dir, 'a');
+    const ga = copyEnvregCorpus(a);
+    fs.appendFileSync(path.join(a, 'lib', 'aspects.mjs'), '\nconst PROBE = process.env.LEMO_ZZZ_PROBE;\n');
+    mutateFile(path.join(SCRIPTS, 'check-env-overrides.mjs'), ga,
+      'const unregistered = hits.filter((h) => !known.has(h.name));', 'const unregistered = [];');
+    const ra = await run(NODE, [ga]);
+    assert.throws(() => expectBlind(ra, N_UNREG, 'mut'),
+      undefined, '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测那条判据');
+
+    // 判据② 自证：把「登记点消失」的判据短路成恒假
+    const b = path.join(dir, 'b');
+    const gb = copyEnvregCorpus(b);
+    const vf = path.join(b, 'lib', 'voices.mjs');
+    fs.writeFileSync(vf, fs.readFileSync(vf, 'utf8').replace(/process\.env\.LEMO_VOICE_TEST_TMP/g, 'VOICE_TEST_TMP_FALLBACK'));
+    mutateFile(path.join(SCRIPTS, 'check-env-overrides.mjs'), gb,
+      'if (!extract(codeOnly(txt)).some((h) => h.name === name)) {', 'if (false) {');
+    const rb = await run(NODE, [gb]);
+    assert.throws(() => expectBlind(rb, N_GONE, 'mut'),
+      undefined, '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测那条判据');
   } finally { rm(dir); }
 });
 

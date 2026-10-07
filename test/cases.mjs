@@ -863,6 +863,15 @@ export const STATIC_CASES = [
       //    非破坏性变异验证（不设覆盖点时必须逐字节等价于旧字面量默认值，见 ② 与 b83-c2 报告）。
       //    ★ 注意：`scripts/check-shell-structure.mjs` 是**闸门**，按纪律**允许保留**字面量默认值
       //      （不 import 被检代码 ⇒ 避免环 + 自证），故这里只钉「覆盖点存在」，不钉「无字面量」。
+      //    ★★ 2026-10-07：**全仓口径**已由 `scripts/check-env-overrides.mjs`（覆盖点登记表 + **双向**守卫）
+      //      接管 —— 它扫 `lib/**` + `scripts/**` + 仓根 `*.mjs`，登记 47 条（覆盖点 36 + 非覆盖点 11）/
+      //      100 个「(覆盖点, 读者文件)」对，**未登记 ⇒ FAIL**、**登记点被删/改名 ⇒ FAIL**。
+      //      下面这张表**刻意保留**：它是**这一批具体文件**的窄口径回归（在本套件里跑，不依赖另一个闸门
+      //      是否被执行），与那张全仓登记表**同源不矛盾** —— 实测这 9 个「(文件, 变量)」对
+      //      **逐对都在** `check-env-overrides.mjs` 的 `OVERRIDES` 里（改任一侧都要同步看另一侧）。
+      //      ★ 没有把这张表**收敛进**那个闸门：那要求闸门把登记表 `export` 出来、并给主流程加
+      //      「被 import 时不执行」的守卫（本项目所有闸门都是**独立脚本**、不是模块）⇒ 新耦合 + 风险，
+      //      收益只是少一份 4 行的表；故选择「保留 + 交叉注释」。
       const OVERRIDES = {
         'scripts/check-shell-structure.mjs': ['LEMO_OPUSCAR', 'LEMO_TOOLS_ROOT', 'LEMO_WSL_ROOT', 'LEMO_WSL_DISTRO'],
         'scripts/patch-style-mux.mjs': ['LEMO_OPUSCAR', 'LEMO_WSL_ROOT', 'LEMO_WSL_DISTRO'],
