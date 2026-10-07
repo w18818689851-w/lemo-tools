@@ -1,25 +1,36 @@
 #!/usr/bin/env node
 /**
- * test/gate-blindness.test.mjs —— 「闸门失明 / 守卫被改回去」的**回归套件**（零依赖）
+ * test/gate-blindness.test.mjs —— 「闸门**守卫** + 闸门**核心判据**」的**回归套件**（零依赖）
  *
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 为什么必须有这个套件（本项目的核心痛点）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 53 条用例 / 覆盖全部 30 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
- *   本项目反复出现同一类缺陷：「闸门的循环把对象全 `continue` 掉，`fails`/`blind` 双空 ⇒
- *   打印 `✓` + exit 0，其实一个东西都没检查」。近几批至少出现 6 次以上，**每次都是人工发现**。
- *   这些守卫的**证据只写在闸门的头注释里**（那是档案，不是测试）—— 没有任何**自动化**手段
- *   防止它们被改回去。本文件把「守卫还在不在」变成**可执行的测试**。
+ *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
+ *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
+ *      **每次都是人工发现**。这些守卫的**证据只写在闸门的头注释里**（那是档案，不是测试）
+ *      —— 没有任何**自动化**手段防止它们被改回去。
+ *   ② **核心判据**（5 条，2026-10-07 补）：**不是**空转，而是「闸门真的判了、但判错/判漏」的
+ *      那几条主判据 —— 它们同样是「读起来像已完成」的缺陷，只有夹具级回归能钉住：
+ *        · `check-lra-caliber`：文档里的 LRA 看起来是 **loudnorm** 口径 ⇒ 判**不符**；
+ *        · `check-loudness-targets`：响度目标**偏离 −14 交付线** ⇒ FAIL；
+ *        · `check-plate-pixel`：**品红标记测试失败**（底衬色写错字段）⇒ 判**真缺陷**；
+ *        · `check-shell-structure`：**② 判定块结尾缺 `exit 0`** ⇒ FAIL；
+ *        · `check-cli-docs`：**notImpl**（文档写了但没实现）/ **notDoc**（实现了但没写文档）⇒ FAIL。
+ *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
+ *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
+ *     不只是失明。
  *
  * ★★ 最重要的纪律：断言必须匹配「**为什么失败**」，不能只看退出码。
  *   本项目反复治过一类病叫「匹配判据可被无关代码满足」—— 若只断言 `exit !== 0`，
  *   那么**任何**让闸门崩溃的原因（路径拼错、文件不存在、JSON 坏、参数写错）都会让测试"通过"，
  *   而真正的守卫被删掉了它也照样绿。**本套件自己绝不能犯这个病**，所以：
- *     · 每个正向用例都断言输出里出现**该闸门特有的失明文案片段**（逐字抄自该闸门源码）；
- *     · 每个用例都配一条**阴性对照**（最小合法夹具 ⇒ exit 0 且**不含**那句失明文案）
+ *     · 每个正向用例都断言输出里出现**该闸门特有的文案片段**（失明文案 / 判据文案，
+ *       一律逐字抄自该闸门源码）；
+ *     · 每个用例都配一条**阴性对照**（最小合法夹具 ⇒ exit 0 且**不含**那句文案）
  *       —— 否则一个「永远 exit 1」的坏断言也能让测试全绿；
- *     · 另有两个「**故意破坏**」自证用例：把被测闸门拷到临时目录、**删掉它的守卫**，
+ *     · 另有若干「**故意破坏**」自证用例：把被测闸门拷到临时目录、**删掉它的守卫/判据**，
  *       再跑同一套断言，**必须变红** —— 这证明断言真的在测那个守卫，而不是在测「闸门有没有崩」。
  *
  * ★ 技术纪律（本项目踩过的坑）：
@@ -87,6 +98,29 @@ const copyGate = (name, root) => {
   return out;
 };
 
+/**
+ * 把闸门源码拷到临时目录，并做**若干处精确字符串替换**（用于「扫描根写死在源码里、
+ * 没有覆盖点环境变量」的闸门：把那个常量重定向到夹具根）。
+ * ★ 两道防空转守卫与 `mutate()` 同源：**先断言待替换片段确实存在**、**再断言替换真的生效** ——
+ *   否则闸门改了写法时，夹具会静默地继续跑在**真实仓**上，用例就变成了假绿。
+ */
+const patchGate = (gateName, outDir, subs) => {
+  let src = fs.readFileSync(path.join(SCRIPTS, gateName), 'utf8');
+  for (const [from, to] of subs) {
+    assert.ok(src.includes(from),
+      `夹具自身失效：${gateName} 里找不到待重定向的片段（源码已变？）\n---\n${from}\n---`);
+    const next = src.replace(from, to);
+    assert.notEqual(next, src, `夹具自身失效：${gateName} 的替换没有生效\n---\n${from}\n---`);
+    src = next;
+  }
+  const out = path.join(outDir, gateName);
+  wf(out, src);
+  return out;
+};
+
+/** Windows 绝对路径 → 正斜杠形式（要塞进闸门源码的字符串字面量里时用，避免 `\` 被当转义）。 */
+const fwd = (p) => p.replace(/\\/g, '/');
+
 /** 异步跑 git（`spawnSync` 在本机 EBUSY ⇒ 只能异步）。 */
 const git = (args) => run('git', args, { cwd: TOOLS });
 
@@ -95,6 +129,8 @@ const wsl = (script) => run('wsl.exe', ['-d', 'Ubuntu-24.04', '-e', 'bash', '-lc
 
 /** 本机 ffmpeg（Windows 侧，CPU 编码 —— 不碰 GPU）。 */
 const FFMPEG = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe';
+/** 同目录的 ffprobe（闸门自己也是这么推出来的）。 */
+const FFPROBE = FFMPEG.replace(/ffmpeg\.exe$/, 'ffprobe.exe');
 
 // ── 夹具小工具 ───────────────────────────────────────────────────────────────
 const mk = (p) => fs.mkdirSync(p, { recursive: true });
@@ -117,6 +153,35 @@ const tpDistill = (over = {}) => ({
   } },
   ...over,
 });
+
+/**
+ * 造一段**「两个 LRA 口径本来就不同」**的测试音频，并**分别量出两个口径的真值**。
+ *   · 信号 = 前 6 s 满幅正弦 + 后 6 s 压低 30 dB 的正弦（8 kHz / 12 s / 约 192 KB，纯 CPU，无 GPU）；
+ *   · 实测本机：`ebur128` LRA 7.6 / `loudnorm.input_lra` 4.7 —— 差 2.9 ≫ 容差 0.6，
+ *     正是 `check-lra-caliber.mjs` 存在的理由（项目口径 = ebur128，loudnorm 系统性偏大）。
+ *   ★ 两道**夹具前提**断言（都从「量出来的真值」判，不写死数字）：
+ *     两个口径都能量出来、且**差异 > 容差** —— 否则这段音频无法用来区分口径，用例会变成假绿。
+ */
+const lraTone = async (wav) => {
+  assert.ok(fs.existsSync(FFMPEG), `夹具依赖本机 ffmpeg 存在：${FFMPEG}`);
+  const gen = await run(FFMPEG, ['-y', '-v', 'error', '-f', 'lavfi', '-i',
+    'sine=frequency=440:sample_rate=8000:duration=12',
+    '-af', "volume='if(lt(t,6),1,0.03)':eval=frame", '-c:a', 'pcm_s16le', wav]);
+  assert.equal(gen.code, 0, `夹具：ffmpeg 造测试音频失败\n${gen.out.slice(0, 400)}`);
+  const eb = await run(FFMPEG, ['-hide_banner', '-nostats', '-i', wav,
+    '-af', 'ebur128=peak=true', '-f', 'null', '-']);
+  const m1 = [...eb.out.matchAll(/^\s*LRA:\s*(-?[\d.]+)/gm)];
+  const lraEb = m1.length ? Number(m1[m1.length - 1][1]) : null;
+  const ln = await run(FFMPEG, ['-hide_banner', '-nostats', '-i', wav,
+    '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']);
+  const m2 = ln.out.match(/"input_lra"\s*:\s*"?(-?[\d.]+)"?/);
+  const lraLn = m2 ? Number(m2[1]) : null;
+  assert.ok(Number.isFinite(lraEb) && Number.isFinite(lraLn),
+    `夹具：本机 ffmpeg 量不出两个口径的 LRA（ebur128 ${lraEb} / loudnorm ${lraLn}）\n${ln.out.slice(0, 400)}`);
+  assert.ok(Math.abs(lraEb - lraLn) > 0.6,
+    `夹具前提不成立：本机两个 LRA 口径只差 ${Math.abs(lraEb - lraLn)}（≤ 容差 0.6）⇒ 这段音频无法区分口径`);
+  return { lraEb, lraLn };
+};
 
 // ── 用例 ────────────────────────────────────────────────────────────────────
 const cases = [];
@@ -851,21 +916,561 @@ test('check-ref-lines：失明守卫②（找到引用但一处都解析不到�
   } finally { rm(dir); }
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// 第 26–31 条（2026-10-07 扩批）：补上最后 6 个未覆盖闸门 ⇒ 覆盖面 24 → **30（全部）**。
+//   夹具手法按「闸门怎么取根」分三种（都**只读真实仓**，绝不改任何真实数据）：
+//     · 有**覆盖点环境变量**的（check-film-delivery：LEMO_DISTILL_ROOT / LEMO_MUX_SH / LEMO_OPUSCAR /
+//       LEMO_BATCH_DIR / LEMO_LOCK_DIR）⇒ 全走 env，不碰真实仓、也不碰 `D:/lemo-films/` 的成片；
+//     · 落点按**脚本自身位置**推导的（check-plate-pixel：`ROOT = HERE/..`）⇒ 整棵拷到临时目录
+//       （`copyGate`），并把它自己的 `os.tmpdir()` 用 TEMP/TMP 重定向到**非 C 盘**；
+//     · 扫描根**写死在源码里**的（check-cli-docs / check-shell-structure / check-loudness-targets /
+//       check-lra-caliber）⇒ 只能把闸门拷到临时目录再重定向那个常量（`patchGate`，与既有
+//       copyGate / mutate 同一套非破坏手法，且两处防空转断言：待替换片段必须在、替换必须生效）。
+//   · 每条照既有纪律：正向（命中该失明条件 ⇒ exit≠0 + 逐字抄自源码的失明文案）
+//     ＋ 阴性对照（最小合法夹具 ⇒ exit 0 且不含那句文案 + 真的判过东西的正向证据）。
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── 26. check-cli-docs.mjs（用法块 ↔ 实现的防空转绿灯守卫）──────────────────
+test('check-cli-docs：失明守卫（任一侧解析出 0 个 flag ⇒ 明说「失明（解析风格变了？）」）', async () => {
+  const dir = path.join(TMP, 'cli');
+  // 该闸门的 `ROOT` 写死 `D:/lemo-tools`（**无**覆盖点环境变量）⇒ 重定向到夹具根。
+  // 夹具的两个入口各用一种解析风格：`case '--flag':`（dub.mjs 的 switch）与 `a === '--flag'`（lemo-make.mjs 的 if 链）。
+  const USAGE = '#!/usr/bin/env node\nconst USAGE_TEXT = `\n用法:\n  --alpha   做某事\n`;\n';
+  const entry = (root, rel, implLine) => wf(path.join(root, rel), USAGE + implLine);
+  const setup = (root) => ({
+    gate: patchGate('check-cli-docs.mjs', path.join(root, 'scripts'),
+      [["const ROOT = 'D:/lemo-tools';", `const ROOT = '${fwd(root)}';`]]),
+    root,
+  });
+  try {
+    // 正向：两个入口都**只有用法块、没有任何处理分支** ⇒ impl.size === 0 ⇒ 失明
+    //   （★ 这不是「文件不存在」那条路：文件在、用法块也解析出来了，只有**实现**侧是 0）。
+    const pos = setup(path.join(dir, 'pos'));
+    entry(pos.root, 'dub.mjs', '');
+    entry(pos.root, 'lemo-make.mjs', '');
+    const r1 = await run(NODE, [pos.gate]);
+    expectBlind(r1, '解析到 0 个**已实现** flag ⇒ 失明（解析风格变了？）', 'check-cli-docs 正向');
+
+    // 阴性对照：两个入口各有一个已实现且已写进用法块的 flag ⇒ 双向无差异 ⇒ exit 0。
+    const neg = setup(path.join(dir, 'neg'));
+    entry(neg.root, 'dub.mjs', "case '--alpha': break;\n");
+    entry(neg.root, 'lemo-make.mjs', "if (a === '--alpha') { }\n");
+    const r2 = await run(NODE, [neg.gate]);
+    expectClean(r2, '失明（解析风格变了？）', 'check-cli-docs 阴性对照');
+    assert.ok(r2.out.includes('✓ 用法块与实现完全对应。'),
+      `阴性对照应真的双向比过两个入口\n${r2.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+// ── 27. check-shell-structure.mjs（WIN 侧失明守卫 + ① 续行被注释吃掉）────────
+test('check-shell-structure：WIN 侧失明守卫 + ①「续行被注释吃掉」', async () => {
+  const dir = path.join(TMP, 'sh');
+  // `WIN_ROOTS` 写死 `['D:/lemo-opuscar', 'D:/lemo-tools']`（**无**覆盖点环境变量）⇒ 重定向到夹具根。
+  const WIN_ROOTS_SRC = "const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];";
+  const setup = (root) => ({
+    gate: patchGate('check-shell-structure.mjs', path.join(root, 'scripts'),
+      [[WIN_ROOTS_SRC, `const WIN_ROOTS = ['${fwd(root)}'];`]]),
+    root,
+  });
+  try {
+    // 正向①：扫描根存在但**一个 shell 脚本都没有** ⇒ files.length===0 ⇒ WIN 侧失明
+    //   （★ 该闸门 WSL 侧早有「扫描为空 ⇒ FAIL」守卫，这条钉的是**WIN 侧**那条，靠 `--wsl` 区分）。
+    const pos = setup(path.join(dir, 'pos'));
+    mk(pos.root);
+    const r1 = await run(NODE, [pos.gate]);
+    expectBlind(r1, '✘ WIN 扫描为空', 'check-shell-structure 正向');
+
+    // 正向②：① 号结构缺陷（`\` 续行后紧跟 `#` 注释 ⇒ 注释吃掉续行、命令被截断）必须被抓。
+    //   ★ 这类缺陷 `sh -n` **报 OK**（不是语法错，是语义被注释改变）—— 正是本闸门存在的理由。
+    const pos2 = setup(path.join(dir, 'pos2'));
+    wf(path.join(pos2.root, 'bad.sh'),
+      '#!/bin/sh\nffmpeg -i in.mp4 \\\n# ★ 注释吃掉续行\n  -c:v libx264 out.mp4\n');
+    const r2 = await run(NODE, [pos2.gate]);
+    expectBlind(r2, '① 续行被注释吃掉', 'check-shell-structure 正向②');
+
+    // 阴性对照（同时覆盖上面两条）：一个干净的脚本 ⇒ 0 处结构问题 + WIN 侧没失明 ⇒ exit 0。
+    const neg = setup(path.join(dir, 'neg'));
+    wf(path.join(neg.root, 'ok.sh'), '#!/bin/sh\nffmpeg -i in.mp4 -c:v libx264 out.mp4\nexit 0\n');
+    const r3 = await run(NODE, [neg.gate]);
+    expectClean(r3, '✘ WIN 扫描为空', 'check-shell-structure 阴性对照');
+    assert.ok(!r3.out.includes('① 续行被注释吃掉'), `阴性对照不应报结构问题\n${r3.out.slice(0, 700)}`);
+    assert.ok(r3.out.includes('扫描 shell 脚本：1 个（Windows 侧）'),
+      `阴性对照应真的扫到 1 个脚本\n${r3.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+// ── 28. check-loudness-targets.mjs（响度目标解析的计数式失明守卫）────────────
+test('check-loudness-targets：失明守卫（style-dna 档案 0 份 ⇒ 明说「本闸门什么都没检查」）', async () => {
+  const dir = path.join(TMP, 'lufs');
+  // `DNA_DIR` / `SKILL_DIR` 都写死在源码里（**无**覆盖点环境变量）⇒ 重定向到夹具根。
+  // ★ 另需把 `lib/style-dna-reader.mjs` 按**同一相对位置**拷过去：闸门 import 的是 `../lib/…`，
+  //   而 reader 的 DNA 目录是「本文件同级的 style-dna/」⇒ 只要两处指向同一个 `<root>/lib/style-dna` 即可。
+  const setup = (root) => {
+    mk(path.join(root, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'style-dna-reader.mjs'),
+      path.join(root, 'lib', 'style-dna-reader.mjs'));
+    const gate = patchGate('check-loudness-targets.mjs', path.join(root, 'scripts'), [
+      ["const DNA_DIR = 'D:/lemo-tools/lib/style-dna';", `const DNA_DIR = '${fwd(path.join(root, 'lib', 'style-dna'))}';`],
+      ["const SKILL_DIR = 'D:/lemo-tools/lib/style-skills';", `const SKILL_DIR = '${fwd(path.join(root, 'lib', 'style-skills'))}';`],
+    ]);
+    mk(path.join(root, 'lib', 'style-dna'));
+    mk(path.join(root, 'lib', 'style-skills'));
+    return gate;
+  };
+  try {
+    // 正向：style-dna 目录**读空** ⇒ slugs.length===0 ⇒ 一份档案都没解析过 ⇒ 失明。
+    const gatePos = setup(path.join(dir, 'pos'));
+    const r1 = await run(NODE, [gatePos]);
+    expectBlind(r1, 'style-dna 档案 0 份（目录读空 / 路径变了？）⇒ 本闸门什么都没检查', 'check-loudness-targets 正向');
+
+    // 阴性对照：**一份** `mix_rules` 里写得出 −14 LUFS 的档案 ⇒ 解析 1/1、分布 {−14:1} ⇒ 0 FAIL ⇒ exit 0。
+    //   ★ 这里**刻意不造**同名的 Skill 文档：闸门会把「只有 dna 没有 Skill 文档」打成 `⚠`
+    //     （2026-10-07 起 **⚠ = 只列不判、不进退出码** —— 它判的是「文档集合对齐」，
+    //      不是本闸门的主题「响度目标能否解析」）。⇒ 一份档案就是**最小合法夹具**；
+    //      本用例顺带把「⚠ 不进退出码」这个口径钉住（若有人再把它塞回 exitCode，这里立刻变红）。
+    const root = path.join(dir, 'neg');
+    const gateNeg = setup(root);
+    rj(path.join(root, 'lib', 'style-dna', 'gb-lt.json'),
+      { slug: 'gb-lt', sound_palette: { mix_rules: '整体 -14 LUFS（源：styles/gb-lt/STYLE.md:20）' } });
+    const r2 = await run(NODE, [gateNeg]);
+    expectClean(r2, '本闸门什么都没检查', 'check-loudness-targets 阴性对照');
+    assert.ok(r2.out.includes('可解析出响度目标：1/1'),
+      `阴性对照应真的解析出 1 份的响度目标\n${r2.out.slice(0, 700)}`);
+    assert.ok(r2.out.includes('⚠ 只有 dna 没有 Skill 文档'),
+      `阴性对照应如实打出那条 ⚠（只列不判）\n${r2.out.slice(0, 700)}`);
+    assert.ok(r2.out.trimEnd().endsWith('[闸门] 响度目标解析 1/1 OK'),
+      `阴性对照末行应是 OK（与 exit 0 口径一致）\n${r2.out.slice(-300)}`);
+  } finally { rm(dir); }
+});
+
+// ── 29. check-lra-caliber.mjs（计数式失明守卫：0 部成片被检查）───────────────
+test('check-lra-caliber：失明守卫（0 部成片被检查 ⇒ 明说「本闸门什么都没检查」）', async () => {
+  const dir = path.join(TMP, 'lra');
+  // `DIR` 写死在源码里（**无**覆盖点环境变量）⇒ 重定向到夹具根。
+  const setup = (root) => {
+    const gate = patchGate('check-lra-caliber.mjs', path.join(root, 'scripts'),
+      [["const DIR = 'D:/lemo-tools/lib/style-skills';", `const DIR = '${fwd(path.join(root, 'distill'))}';`]]);
+    mk(path.join(root, 'distill'));
+    return gate;
+  };
+  try {
+    // 正向：**有** `_distill.json`、但 `generatedVideo.path` 指向一个不存在的文件 ⇒
+    //   主循环每个风格都 `continue` ⇒ okEb+looksLn+neither === 0 ⇒ 失明。
+    //   ★ 比「目录为空」强：它证明的是**循环里的 continue 这条守卫**，不是「枚举不到」。
+    const gatePos = setup(path.join(dir, 'pos'));
+    rj(path.join(dir, 'pos', 'distill', 'gb-lra', '_distill.json'),
+      { generatedVideo: { path: 'D:/lemo-tmp/gb-blind/lra/pos/不存在的成片.mp4' }, selfCheck: { loudness: { lra: 5 } } });
+    const r1 = await run(NODE, [gatePos]);
+    expectBlind(r1, '失明：0 部成片被检查', 'check-lra-caliber 正向');
+
+    // 阴性对照：现造一段**真的音频**（6 s 纯音，几 KB，纯 CPU），再用闸门**同一条 ffmpeg 命令**
+    //   量出它的 ebur128 LRA 逐字回填文档 ⇒ 与 ebur128 口径相符 ⇒ 0 不符 ⇒ exit 0。
+    const root = path.join(dir, 'neg');
+    const gateNeg = setup(root);
+    const wav = path.join(root, 'tone.wav');
+    assert.ok(fs.existsSync(FFMPEG), `阴性对照依赖本机 ffmpeg 存在：${FFMPEG}`);
+    const gen = await run(FFMPEG, ['-y', '-v', 'error', '-f', 'lavfi',
+      '-i', 'sine=frequency=440:sample_rate=48000:duration=6', '-c:a', 'pcm_s16le', wav]);
+    assert.equal(gen.code, 0, `夹具：ffmpeg 造测试音频失败\n${gen.out.slice(0, 400)}`);
+    const eb = await run(FFMPEG, ['-hide_banner', '-nostats', '-i', wav,
+      '-af', 'ebur128=peak=true', '-f', 'null', '-']);
+    const mLra = [...eb.out.matchAll(/^\s*LRA:\s*(-?[\d.]+)/gm)];
+    const lraEb = mLra.length ? Number(mLra[mLra.length - 1][1]) : null;
+    assert.ok(Number.isFinite(lraEb),
+      `夹具：本机 ffmpeg 没量出 ebur128 LRA（不能拿它做阴性对照）\n${eb.out.slice(0, 400)}`);
+    rj(path.join(root, 'distill', 'gb-lra', '_distill.json'),
+      { generatedVideo: { path: wav }, selfCheck: { loudness: { lra: lraEb } } });
+    const r2 = await run(NODE, [gateNeg]);
+    expectClean(r2, '本闸门什么都没检查', 'check-lra-caliber 阴性对照');
+    assert.ok(r2.out.includes('像 ebur128 1 份'),
+      `阴性对照应真的判过这部成片的口径\n${r2.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+// ── 30. check-film-delivery.mjs（总失明 + F 段计数式「全部让位」）────────────
+test('check-film-delivery：失明守卫（0 部成片被检查）+ F 段「全部让位 ⇒ 一部成片都没判」', async () => {
+  const dir = path.join(TMP, 'fd');
+  // ★ 该闸门**有**覆盖点环境变量 ⇒ 夹具全走 env，既不碰真实仓、也不碰 `D:/lemo-films/` 下的成片。
+  //   E 段要一份带「编码后复核闭环」的交付脚本（默认值区间由 E2/E4/E5/E6 一起钳住，见闸门注释）。
+  const MUX_OK = '#!/bin/sh\n'
+    + 'LN_TP="${LEMO_LN_TP:--1.7}"\n'
+    + 'LN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\n'
+    + 'LN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n'
+    + 'ffmpeg -i "$1" -af "loudnorm=TP=$LN_TP" -f null - 2>&1 | grep input_tp\n'
+    + 'if [ "$(echo "$TP > -1.2" | bc)" = "1" ]; then :; fi\n';
+  const envFor = (root) => ({
+    LEMO_MUX_SH: path.join(root, 'mux.sh'),
+    LEMO_OPUSCAR: path.join(root, 'opuscar'),
+    LEMO_BATCH_DIR: path.join(root, 'batch'),
+    LEMO_LOCK_DIR: path.join(root, 'locks'),
+    LEMO_DISTILL_ROOT: path.join(root, 'distill'),
+  });
+  const prep = (root) => {
+    wf(path.join(root, 'mux.sh'), MUX_OK);
+    wf(path.join(root, 'opuscar', 'styles', 'gb-fd', 'demo', 'tools', 'mux.sh'), MUX_OK);
+    mk(path.join(root, 'batch'));
+    mk(path.join(root, 'locks'));
+    mk(path.join(root, 'distill'));
+    return root;
+  };
+  try {
+    // 正向：成片树**空的** ⇒ slugs.length===0 ⇒ 总失明守卫命中
+    //   （★ E 段的夹具本身是合法的 ⇒ 这一句是唯一能解释 exit≠0 的原因）。
+    const pos = prep(path.join(dir, 'pos'));
+    const r1 = await runGate('check-film-delivery.mjs', envFor(pos));
+    expectBlind(r1, '0 部成片被检查（style-skills 下无 _distill.json / 路径变了？）', 'check-film-delivery 正向');
+
+    // 阴性对照：现造一部**真成片**（320×180 / 6 s / libx264 纯 CPU，不碰 GPU），
+    //   再用与闸门**同一条 ffmpeg 命令**量出 A/B/C 三处真值、逐字回填文档，
+    //   并把文档 mtime 设成**晚于成片** ⇒ F 段「成片比文档新」不成立 ⇒ 不让位 ⇒ 真判 ⇒ 0 FAIL。
+    const root = prep(path.join(dir, 'neg'));
+    const film = path.join(root, 'films', 'gb-fd', 'gb-fd.mp4');
+    mk(path.dirname(film));
+    assert.ok(fs.existsSync(FFMPEG), `阴性对照依赖本机 ffmpeg 存在：${FFMPEG}`);
+    const enc = await run(FFMPEG, ['-y', '-v', 'error',
+      '-f', 'lavfi', '-i', 'color=c=black:s=320x180:r=25:d=6',
+      '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=6',
+      '-af', 'loudnorm=I=-14:TP=-2.5:LRA=11',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '256k', '-ar', '48000', '-ac', '2',
+      '-movflags', '+faststart', '-shortest', film]);
+    assert.equal(enc.code, 0, `夹具：ffmpeg 造测试成片失败\n${enc.out.slice(0, 500)}`);
+
+    const pr = await run(FFPROBE, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', film]);
+    const j = JSON.parse(pr.out);
+    const vs = (j.streams || []).find((s) => s.codec_type === 'video') || {};
+    const as = (j.streams || []).find((s) => s.codec_type === 'audio') || {};
+    const fmt = j.format || {};
+    const fps = vs.r_frame_rate
+      ? (() => { const [x, y] = vs.r_frame_rate.split('/').map(Number); return y ? +(x / y).toFixed(3) : x; })() : null;
+    const num = (t, k) => {
+      const m = t.match(new RegExp(`"${k}"\\s*:\\s*"?(-?[0-9.]+)"?`));
+      return m ? Number(m[1]) : null;
+    };
+    const l1 = await run(FFMPEG, ['-hide_banner', '-nostats', '-i', film,
+      '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']);
+    const tp = num(l1.out, 'input_tp'), lufs = num(l1.out, 'input_i');
+    const l2 = await run(FFMPEG, ['-hide_banner', '-nostats', '-i', film,
+      '-af', 'ebur128=peak=true', '-f', 'null', '-']);
+    const mm = [...l2.out.matchAll(/^\s*LRA:\s*(-?[\d.]+)/gm)];
+    const lraEb = mm.length ? Number(mm[mm.length - 1][1]) : num(l1.out, 'input_lra');
+    assert.ok(Number.isFinite(tp) && Number.isFinite(lufs),
+      `夹具：量不出真值（真峰值 ${tp} / 响度 ${lufs}）\n${l1.out.slice(0, 400)}`);
+    const docPath = path.join(root, 'distill', 'gb-fd', '_distill.json');
+    rj(docPath, {
+      generatedVideo: {
+        path: film, width: vs.width, height: vs.height, fps,
+        frames: vs.nb_frames ? Number(vs.nb_frames) : 0,
+        durSec: Math.round(Number(fmt.duration)), bytes: fs.statSync(film).size,
+      },
+      selfCheck: { loudness: {
+        truePeakDbtp: tp, integratedLufs: lufs, lra: lraEb, peakTargetMet: tp <= -1.2,
+      } },
+    });
+    // ★ 文档 mtime 必须**晚于**成片（闸门 F 段的必要条件是「成片比文档新」）——
+    //   显式 utimes，不靠「写完就比它新」这种时序巧合。
+    const t = new Date(fs.statSync(film).mtimeMs + 120000);
+    fs.utimesSync(docPath, t, t);
+    const r2 = await runGate('check-film-delivery.mjs', envFor(root));
+    expectClean(r2, '0 部成片被检查', 'check-film-delivery 阴性对照');
+    assert.ok(r2.out.includes('✓ 被判的 1 部成片交付口径全部一致'),
+      `阴性对照应真的判过这部成片\n${r2.out.slice(0, 900)}`);
+
+    // ── 正向②（F 段**计数式**「全部让位」守卫）：把**同一个夹具**的文档 mtime 翻到**早于成片**。
+    //   F 段让位的**必要条件**是「成片比文档新」⇒ 现在成立；而成片是**本次测试刚写盘的**
+    //   ⇒ 必然落在 `DEFER_FRESH_MS`（15 min）窗口内 ⇒ 该片必然让位 ⇒ `deferred === slugs`（1/1）
+    //   ⇒ `judged === 0` ⇒ 明说「一部成片都没判」并 FAIL（旧版会打印「✓ 被判的 0 部…全部一致」+ exit 0）。
+    //   ★ 为什么这是**确定性**的、不是「靠时间窗」：夹具在测试运行的当下写盘，而**整套件只跑 ~24 s**
+    //     （≪ 15 min）⇒ 「成片很新」这条信号是**构造上必然成立**的；唯一的时间关系
+    //     （文档 mtime < 成片 mtime）由 `utimesSync` **显式设定**，不依赖任何调度顺序。
+    //     另外两条让位信号（该 slug 的并发锁 / 批次日志）在夹具里都是**空目录** ⇒ 不参与。
+    //   ★ 阴性对照就是上面那条：**同一棵树**、只把 mtime 关系翻回去（文档晚于成片）⇒ 不让位 ⇒ 真判 ⇒ exit 0。
+    const t2 = new Date(fs.statSync(film).mtimeMs - 120000);
+    fs.utimesSync(docPath, t2, t2);
+    const r3 = await runGate('check-film-delivery.mjs', envFor(root));
+    expectBlind(r3, '都被判「疑似正在重渲」而让位 ⇒ 本次**一部成片都没判**', 'check-film-delivery 正向②');
+    assert.ok(r3.out.includes('⚠ 疑似正在重渲，本次不判 1 部'),
+      `正向② 应真的走了 F 段让位通路\n${r3.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 31. check-plate-pixel.mjs（计数式失明守卫：全部差分 0 像素）─────────────
+test('check-plate-pixel：计数式失明守卫（全部风格底衬差分 0 像素 ⇒ 明说「一个底衬色都没真正判过」）', async () => {
+  const dir = path.join(TMP, 'pp');
+  // ★ 该闸门无覆盖点环境变量，但它的落点按**脚本自身位置**推导（`ROOT = HERE/..`）⇒ 整棵拷过去即可。
+  //   ★ 它自己用 `os.tmpdir()` 建中间目录 ⇒ 把 TEMP/TMP 指到**非 C 盘**（本项目纪律）。
+  const OS_TMP = path.join(dir, 'os-tmp');
+  mk(OS_TMP);
+  const envPP = { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) };
+  const setup = (root, styles) => {
+    mk(path.join(root, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'dub-core.mjs'), path.join(root, 'lib', 'dub-core.mjs'));
+    rj(path.join(root, 'lib', 'dub-styles.json'), { styles });
+    return copyGate('check-plate-pixel.mjs', root);
+  };
+  // 一个「底盒画不出来」的风格：plate='box' 但既无 plateColor 也无 palette.subtitleBack
+  //   ⇒ 底盒退化成「palette.bg 加 CC α」= 与背景**完全同色** ⇒ 差分 0 像素。
+  //   ★ `subtitleOutline` 置成全透明（ASS α=FF）是为了让「去掉 plate」那一帧的**字形描边**也不可见 ——
+  //     否则描边本身会产生差分，掩盖掉我们要验的「底盒差分 0」。
+  const boxInvisible = {
+    slug: 'gb-pp',
+    palette: { bg: '000000', subtitle: 'FFFFFF', subtitleOutline: 'FF101010' },
+    subtitle: { plate: 'box' },
+  };
+  try {
+    // 正向：唯一的风格底衬差分 0 像素 ⇒ 单风格那条判成真缺陷（进 fails ⇒ exit 1），
+    //   且计数式守卫明说「一个底衬色都没真正判过」（旧版这一行没有 ok 字段 ⇒ 会被漏掉 ⇒ 假绿）。
+    const gatePos = setup(path.join(dir, 'pos'), [boxInvisible]);
+    const r1 = await run(NODE, [gatePos], { env: envPP });
+    expectBlind(r1, '一个底衬色都没真正判过', 'check-plate-pixel 正向');
+
+    // 阴性对照：同一个风格，底衬给一个**与背景不同**的不透明色 ⇒ 真渲两帧、差分非 0、
+    //   品红标记测试通过、对比度达标 ⇒ exit 0。
+    const gateNeg = setup(path.join(dir, 'neg'), [{
+      slug: 'gb-pp',
+      palette: { bg: '000000', subtitle: 'FFFFFF' },
+      subtitle: { plate: 'box', plateColor: '404040' },
+    }]);
+    const r2 = await run(NODE, [gateNeg], { env: envPP });
+    expectClean(r2, '一个底衬色都没真正判过', 'check-plate-pixel 阴性对照');
+    assert.ok(r2.out.includes('✓ 全部通过：底衬色确实取自 plateColor'),
+      `阴性对照应真的渲出底盒并判过它\n${r2.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// 第 32–36 条（2026-10-07 扩批之二）：**核心判据**（非空转）—— 上面那些用例钉的是
+//   「守卫还在不在（会不会空转）」，这 5 条钉的是「**闸门真的判了，且判得对**」：
+//     · 文档里的 LRA 看起来是 **loudnorm** 口径 ⇒ 判**不符**；
+//     · 响度目标**偏离 −14 交付线** ⇒ FAIL；
+//     · **品红标记测试失败**（底衬色写错字段）⇒ 判**真缺陷**；
+//     · **② 判定块结尾缺 `exit 0`** ⇒ FAIL；
+//     · **notImpl / notDoc**（文档先于实现 / 实现了没写文档）⇒ FAIL。
+//   ★ 这 5 条的「失败」**不是失明**，但断言纪律与上面**完全一致**：`expectBlind` 只要求
+//     「exit≠0 **且**输出里出现逐字抄自源码的那句话」⇒ 直接沿用，**不另造 helper**、
+//     也**不退化**成「只看退出码」（否则闸门崩在路径/JSON 上也能骗过它）。
+//   ★ 夹具手法沿用既有三种（env 覆盖点 / 整棵拷贝 / `patchGate` 重定向硬编码常量），
+//     全程**只读真实仓**，绝不改任何真实数据。
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── 32. check-lra-caliber.mjs：口径判据（像 loudnorm ⇒ 判不符）──────────────
+test('check-lra-caliber：口径判据（文档 lra 与 loudnorm 相符、与 ebur128 差 >0.6 ⇒ 判不符）', async () => {
+  const dir = path.join(TMP, 'lra2');
+  // `DIR` 写死在源码里（无覆盖点）⇒ patchGate 重定向到夹具根（与既有用例 29 同一手法）。
+  const setup = (root) => {
+    const gate = patchGate('check-lra-caliber.mjs', path.join(root, 'scripts'),
+      [["const DIR = 'D:/lemo-tools/lib/style-skills';", `const DIR = '${fwd(path.join(root, 'distill'))}';`]]);
+    mk(path.join(root, 'distill', 'gb-lra'));
+    return gate;
+  };
+  const writeDoc = (root, lra) => rj(path.join(root, 'distill', 'gb-lra', '_distill.json'),
+    { generatedVideo: { path: fwd(path.join(dir, 'tone.wav')) }, selfCheck: { loudness: { lra } } });
+  try {
+    // 夹具：造一段**两个口径本来就不同**的音频，并量出两个口径的真值（见 lraTone 的两道前提断言）。
+    mk(dir);
+    const { lraEb, lraLn } = await lraTone(path.join(dir, 'tone.wav'));
+
+    // 正向：文档写的 lra 正好等于 **loudnorm** 口径 ⇒ 与 ebur128 差 2.9 > 容差 0.6 ⇒ 判不符
+    //   （`okEb` 不成立、`looksLn` 成立 ⇒ 走「口径疑似 loudnorm」那一支 ⇒ exit 1）。
+    const gatePos = setup(path.join(dir, 'pos'));
+    writeDoc(path.join(dir, 'pos'), lraLn);
+    const r1 = await run(NODE, [gatePos]);
+    expectBlind(r1, '口径疑似 loudnorm（项目口径应为 ebur128）', 'check-lra-caliber 口径判据正向');
+    assert.ok(r1.out.includes('像 loudnorm 1 份'),
+      `正向应真的把它判成「像 loudnorm 1 份」\n${r1.out.slice(0, 900)}`);
+
+    // 阴性对照：**同一段音频**，文档写 ebur128 口径的实测值 ⇒ 相符 ⇒ exit 0。
+    const gateNeg = setup(path.join(dir, 'neg'));
+    writeDoc(path.join(dir, 'neg'), lraEb);
+    const r2 = await run(NODE, [gateNeg]);
+    expectClean(r2, '口径疑似 loudnorm', 'check-lra-caliber 阴性对照');
+    assert.ok(r2.out.includes('像 ebur128 1 份'),
+      `阴性对照应真的判成「像 ebur128 1 份」\n${r2.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 33. check-loudness-targets.mjs：交付线判据（偏离 −14 ⇒ FAIL）────────────
+test('check-loudness-targets：交付线判据（mix_rules 写成 −16 ⇒ 偏离 −14 ⇒ FAIL）', async () => {
+  const dir = path.join(TMP, 'lufs2');
+  // `DNA_DIR` / `SKILL_DIR` 都写死在源码里（无覆盖点）⇒ patchGate 重定向；
+  //   ★ 还需把 `lib/style-dna-reader.mjs` 按同一相对位置拷过去（闸门 import 的是 `../lib/…`）。
+  const setup = (root) => {
+    mk(path.join(root, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'style-dna-reader.mjs'),
+      path.join(root, 'lib', 'style-dna-reader.mjs'));
+    const gate = patchGate('check-loudness-targets.mjs', path.join(root, 'scripts'), [
+      ["const DNA_DIR = 'D:/lemo-tools/lib/style-dna';", `const DNA_DIR = '${fwd(path.join(root, 'lib', 'style-dna'))}';`],
+      ["const SKILL_DIR = 'D:/lemo-tools/lib/style-skills';", `const SKILL_DIR = '${fwd(path.join(root, 'lib', 'style-skills'))}';`],
+    ]);
+    mk(path.join(root, 'lib', 'style-dna'));
+    mk(path.join(root, 'lib', 'style-skills'));
+    return gate;
+  };
+  /** 一份能解析出响度目标的档案（值由 `mix_rules` 里的「NN LUFS」决定）。 */
+  const dna = (root, line) => rj(path.join(root, 'lib', 'style-dna', 'gb-lt.json'),
+    { slug: 'gb-lt', sound_palette: { mix_rules: `整体 ${line} LUFS（源：styles/gb-lt/STYLE.md:20）` } });
+  try {
+    // 正向：唯一一份档案解析出 **−16**（本项目交付线是 −14）⇒ 分布 {−16:1} 偏离交付线 ⇒ FAIL。
+    //   ★ 这条判据 2026-10-04 才补上：原判据只判 `Number.isFinite(v)` ⇒ 写成 −16 也照样绿。
+    const gatePos = setup(path.join(dir, 'pos'));
+    dna(path.join(dir, 'pos'), '-16');
+    const r1 = await run(NODE, [gatePos]);
+    expectBlind(r1, '响度目标**偏离交付线 -14 LUFS** 的值：-16', 'check-loudness-targets 交付线判据正向');
+
+    // 阴性对照：**同一份档案**写成交付线 −14 ⇒ 分布 {−14:1} 不偏离 ⇒ exit 0。
+    const gateNeg = setup(path.join(dir, 'neg'));
+    dna(path.join(dir, 'neg'), '-14');
+    const r2 = await run(NODE, [gateNeg]);
+    expectClean(r2, '响度目标**偏离交付线', 'check-loudness-targets 阴性对照');
+    assert.ok(r2.out.includes('分布 {"-14":1}'),
+      `阴性对照应真的算出 {−14:1} 的分布\n${r2.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+// ── 34. check-plate-pixel.mjs：品红标记判据（底衬色写错字段 ⇒ 判真缺陷）──────
+test('check-plate-pixel：品红标记判据（底衬色写错字段 ⇒ 标记测试失败 ⇒ 判真缺陷）', async () => {
+  const dir = path.join(TMP, 'ppmark');
+  const OS_TMP = path.join(dir, 'os-tmp');    // 非 C 盘（闸门自己用 os.tmpdir() 建中间目录）
+  mk(OS_TMP);
+  const envPP = { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) };
+  const CORE = path.join(TOOLS, 'lib', 'dub-core.mjs');
+  // ★★ 这个风格在「字段映射正确」时是**完全合法**的：底衬色与 `palette.subtitleOutline` 同值，
+  //   于是绝对色差 Δ=1（≤20 粗筛）、对比度 16.5（≥4.5）**全部达标** ⇒ 唯一能解释 FAIL 的
+  //   只有**品红标记测试**（「底衬色确实取自 plateColor 字段」）。⇒ 断言不会被别的判据顶替。
+  const style = {
+    slug: 'gb-ppm',
+    palette: { bg: '000000', subtitle: 'FFFFFF', subtitleOutline: '202020' },
+    subtitle: { plate: 'box', plateColor: '202020' },
+  };
+  // ★ 破坏点（**模拟历史缺陷**「底衬色写错字段」，见闸门头注释 2026-10-03 那条）：
+  //   把底衬色改道成**别的字段** —— `BorderStyle=3` 的盒填充字段是 OutlineColour，
+  //   改道后盒色变成 `palette.subtitleOutline`，品红标记测试当场抓住。
+  //   只改**拷贝到夹具根的 dub-core**，真实 `lib/dub-core.mjs` 一个字节都不动。
+  const setup = (root, breakCore) => {
+    mk(path.join(root, 'lib'));
+    rj(path.join(root, 'lib', 'dub-styles.json'), { styles: [style] });
+    const coreOut = path.join(root, 'lib', 'dub-core.mjs');
+    if (breakCore) {
+      mutateFile(CORE, coreOut,
+        'const subOutlineCol = plateOn ? cPlate : cOut;',
+        'const subOutlineCol = plateOn ? cOut : cOut;');
+    } else fs.copyFileSync(CORE, coreOut);
+    return copyGate('check-plate-pixel.mjs', root);
+  };
+  try {
+    // 正向：字段映射被改坏 ⇒ 标记测试报「盒色 … 不是品红 ⇒ 底衬色未取自 plateColor」
+    //   ⇒ 该风格判**真缺陷**（`ok:false` ⇒ 进 fails ⇒ exit 1），且**不是**失明那条路。
+    const gatePos = setup(path.join(dir, 'pos'), true);
+    const r1 = await run(NODE, [gatePos], { env: envPP });
+    expectBlind(r1, '不是品红 ⇒ 底衬色未取自 plateColor', 'check-plate-pixel 标记判据正向');
+    assert.ok(r1.out.includes('✗ 不通过 1 个：'),
+      `应走「真缺陷」通路（逐风格报出来），而不是失明/空转\n${r1.out.slice(0, 900)}`);
+
+    // 阴性对照：**同一份风格配置**、字段映射正常 ⇒ 标记测试通过 + 对比度达标 ⇒ exit 0。
+    const gateNeg = setup(path.join(dir, 'neg'), false);
+    const r2 = await run(NODE, [gateNeg], { env: envPP });
+    expectClean(r2, '不是品红', 'check-plate-pixel 阴性对照');
+    assert.ok(r2.out.includes('✓ 全部通过：底衬色确实取自 plateColor'),
+      `阴性对照应真的渲出底盒并通过标记测试\n${r2.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 35. check-shell-structure.mjs：② 判据（判定块结尾缺 exit 0）─────────────
+test('check-shell-structure：② 判据（判定块以 fi 结尾、后面没有 exit 0 ⇒ FAIL）', async () => {
+  const dir = path.join(TMP, 'sh2');
+  // `WIN_ROOTS` 写死（无覆盖点）⇒ patchGate 重定向到夹具根。
+  const setup = (root) => patchGate('check-shell-structure.mjs', path.join(root, 'scripts'),
+    [["const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];", `const WIN_ROOTS = ['${fwd(root)}'];`]]);
+  // 一个**真的**判定块：抽 input_tp → 判超线 → 报「missed the target」，但**以 fi 结尾**。
+  //   ★ 这类缺陷 `sh -n` 报 OK（不是语法错）—— 退出码与判定结果**正好相反**，正是本闸门存在的理由。
+  const BLOCK = '#!/bin/sh\n'
+    + 'TP=$(ffmpeg -i "$1" -af ebur128 -f null - 2>&1 | grep -o "input_tp[^,]*")\n'
+    + 'if [ "$(echo "$TP > -1.2" | bc)" = "1" ]; then\n'
+    + '  echo "loudness missed the target"\n'
+    + 'fi\n';
+  try {
+    // 正向：最后一条非注释语句是 `fi`，且前 25 行内有判定块标记（`input_tp` / `missed the target`）⇒ 命中。
+    const gatePos = setup(path.join(dir, 'pos'));
+    wf(path.join(dir, 'pos', 'gb.sh'), BLOCK);
+    const r1 = await run(NODE, [gatePos]);
+    expectBlind(r1, '② 判定块后缺 exit 0', 'check-shell-structure ② 判据正向');
+    assert.ok(r1.out.includes('以 fi 结尾 ⇒ 退出码与判定结果相反'),
+      `正向应报出这条判据的理由\n${r1.out.slice(0, 900)}`);
+
+    // 阴性对照：**同一条判定块**后面补一行 `exit 0` ⇒ 最后一条非注释语句不再是 fi ⇒ 0 处 ⇒ exit 0。
+    const gateNeg = setup(path.join(dir, 'neg'));
+    wf(path.join(dir, 'neg', 'gb.sh'), `${BLOCK}exit 0\n`);
+    const r2 = await run(NODE, [gateNeg]);
+    expectClean(r2, '② 判定块后缺 exit 0', 'check-shell-structure ② 判据阴性对照');
+    assert.ok(r2.out.includes('✓ 未发现「续行被注释吃掉」或「判定块缺 exit 0」的结构问题。'),
+      `阴性对照应真的判过这个脚本\n${r2.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+// ── 36. check-cli-docs.mjs：notImpl / notDoc 两条判据 ───────────────────────
+test('check-cli-docs：notImpl / notDoc（文档先于实现 / 实现了没写文档 ⇒ FAIL）', async () => {
+  const dir = path.join(TMP, 'cli2');
+  // `ROOT` 写死（无覆盖点）⇒ patchGate 重定向；两个入口文件都必须存在（否则先报「文件不存在」）。
+  const setup = (root) => patchGate('check-cli-docs.mjs', path.join(root, 'scripts'),
+    [["const ROOT = 'D:/lemo-tools';", `const ROOT = '${fwd(root)}';`]]);
+  /** 用法块（锚点法认定的那段模板字符串）+ 实现行；另一入口固定为「两侧一致」。 */
+  const usage = (flags) => '#!/usr/bin/env node\nconst USAGE_TEXT = `\n用法:\n'
+    + `${flags.map((f) => `  ${f}   做某事`).join('\n')}\n\`;\n`;
+  const CLEAN_OTHER = usage(['--delta']) + "if (a === '--delta') { }\n";
+  const build = (tag, dubSrc) => {
+    const root = path.join(dir, tag);
+    const gate = setup(root);
+    wf(path.join(root, 'dub.mjs'), dubSrc);
+    wf(path.join(root, 'lemo-make.mjs'), CLEAN_OTHER);
+    return gate;
+  };
+  try {
+    // 正向① notImpl：用法块列了 `--alpha`，代码里**没有**任何处理分支
+    //   （`--gamma` 两侧都有 ⇒ 只有这一处不一致；两侧 flag 数都非 0 ⇒ **不是**失明那条路）。
+    const r1 = await run(NODE, [build('p1', usage(['--alpha', '--gamma']) + "case '--gamma': break;\n")]);
+    expectBlind(r1, '但代码里**没有任何处理分支**（文档先于实现）', 'check-cli-docs notImpl 正向');
+    assert.ok(r1.out.includes('用法块列了 `--alpha`'),
+      `正向① 应指名道姓报出 \`--alpha\`\n${r1.out.slice(0, 900)}`);
+
+    // 正向② notDoc：`--beta` 代码里处理了、用法块**没列**（用户看不到）。
+    const r2 = await run(NODE, [build('p2',
+      usage(['--gamma']) + "case '--gamma': break;\nif (a === '--beta') { }\n")]);
+    expectBlind(r2, '但用法块没列（用户看不到）', 'check-cli-docs notDoc 正向');
+    assert.ok(r2.out.includes('代码处理了 `--beta`'),
+      `正向② 应指名道姓报出 \`--beta\`\n${r2.out.slice(0, 900)}`);
+
+    // 阴性对照：两个入口各自「用法块 ↔ 实现」一一对应 ⇒ 两条判据都不命中 ⇒ exit 0。
+    const r3 = await run(NODE, [build('neg', usage(['--alpha']) + "case '--alpha': break;\n")]);
+    expectClean(r3, '但代码里**没有任何处理分支**', 'check-cli-docs 阴性对照');
+    assert.ok(!r3.out.includes('但用法块没列（用户看不到）'),
+      `阴性对照不应报 notDoc\n${r3.out.slice(0, 700)}`);
+    assert.ok(r3.out.includes('✓ 用法块与实现完全对应。'),
+      `阴性对照应真的双向比过两个入口\n${r3.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
 // ── ★★ 「故意破坏」自证：删掉守卫 ⇒ 同一套断言必须变红 ────────────────────────
 //   证明这些断言真的在测「那个守卫」，而不是在测「闸门有没有崩」。
 //   做法：把闸门源码拷到临时目录，做一处**精确字符串替换**删掉守卫，再跑同一套正向断言。
 
-/** 读源码 → 断言待替换片段确实存在 → 替换 → 写副本。返回副本路径。 */
-const mutate = (gateName, outDir, from, to) => {
-  const src = fs.readFileSync(path.join(SCRIPTS, gateName), 'utf8');
+/**
+ * 读任意源文件 → 断言待替换片段确实存在 → 替换 → 写副本。返回副本路径。
+ * ★ 两道防空转断言（与 `patchGate()` 同源）：片段必须在、替换必须生效 ——
+ *   否则源码改了写法时，自证会**静默地**跑在一份没被破坏的副本上，用例就变成了假绿。
+ */
+const mutateFile = (srcPath, dstPath, from, to) => {
+  const src = fs.readFileSync(srcPath, 'utf8');
   assert.ok(src.includes(from),
-    `破坏用例自身失效：${gateName} 里找不到待删的守卫片段（源码已变？）\n---\n${from}\n---`);
+    `破坏用例自身失效：${srcPath} 里找不到待删的守卫片段（源码已变？）\n---\n${from}\n---`);
   const mutated = src.replace(from, to);
-  assert.notEqual(mutated, src, `破坏用例自身失效：${gateName} 的替换没有生效`);
-  const out = path.join(outDir, gateName);
-  wf(out, mutated);
-  return out;
+  assert.notEqual(mutated, src, `破坏用例自身失效：${srcPath} 的替换没有生效`);
+  wf(dstPath, mutated);
+  return dstPath;
 };
+
+/** 读**闸门**源码 → 断言待替换片段确实存在 → 替换 → 写副本。返回副本路径。 */
+const mutate = (gateName, outDir, from, to) =>
+  mutateFile(path.join(SCRIPTS, gateName), path.join(outDir, gateName), from, to);
 
 test('★自证 check-config-notes：删掉「全无 notes」守卫后，正向断言必须变红', async () => {
   const dir = path.join(TMP, 'mut-cfg');
@@ -942,11 +1547,327 @@ test('★自证 check-derivation-caliber：删掉失明块后，正向断言必�
   } finally { rm(dir); }
 });
 
+test('★自证 check-cli-docs：把「失明也计入 fails」短路掉后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-cli');
+  try {
+    // 守卫（`:123`）的落点是 `fails.push(...blind)` —— 短路掉它，`blind` 里那几句就**再也打不出来**。
+    //   ★ 此刻 exit 仍≠0（`notImpl` 会因为 impl 侧 0 个而报「文档先于实现」）⇒
+    //     只断言「exit≠0」的坏用例会照样绿，本套件的第二条断言必须**抛**。
+    const gate = mutate('check-cli-docs.mjs', dir,
+      'fails.push(...blind);', '/* 自证：失明不再计入 fails */;');
+    const root = path.join(dir, 'root');
+    const g2 = path.join(root, 'scripts', 'check-cli-docs.mjs');
+    const USAGE = '#!/usr/bin/env node\nconst USAGE_TEXT = `\n用法:\n  --alpha   做某事\n`;\n';
+    wf(path.join(root, 'dub.mjs'), USAGE);
+    wf(path.join(root, 'lemo-make.mjs'), USAGE);
+    // 破坏点 + 重定向点同时生效（重定向同样要断言「替换真的发生了」，否则会跑在真实仓上）。
+    const src = fs.readFileSync(gate, 'utf8');
+    const broken = src.replace("const ROOT = 'D:/lemo-tools';", `const ROOT = '${fwd(root)}';`);
+    assert.notEqual(broken, src, '自证夹具失效：ROOT 重定向没生效');
+    wf(g2, broken);
+    const res = await run(NODE, [g2]);
+    assert.throws(() => expectBlind(res, '解析到 0 个**已实现** flag ⇒ 失明（解析风格变了？）', 'mut'),
+      undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-shell-structure：删掉 WIN 侧失明守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-sh');
+  try {
+    const gate = mutate('check-shell-structure.mjs', dir, 'if (files.length === 0) {', 'if (false) {');
+    const root = path.join(dir, 'root');
+    mk(root);
+    const src = fs.readFileSync(gate, 'utf8');
+    const broken = src.replace("const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];", `const WIN_ROOTS = ['${fwd(root)}'];`);
+    assert.notEqual(broken, src, '自证夹具失效：WIN_ROOTS 重定向没生效');
+    wf(gate, broken);
+    const res = await run(NODE, [gate]);
+    // 守卫被删后：空扫描根 ⇒ fails 为空 ⇒ exit 0、无「✘ WIN 扫描为空」⇒ 正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '✘ WIN 扫描为空', 'mut'),
+      undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-loudness-targets：删掉「档案 0 份」失明守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-lufs');
+  try {
+    const gate = mutate('check-loudness-targets.mjs', dir, 'if (slugs.length === 0) blind.push(', 'if (false) blind.push(');
+    // ★ 该闸门 import 的是 `../lib/style-dna-reader.mjs` ⇒ 破坏副本必须落在 `<root>/scripts/` 下
+    //   （放错位置会去解析 `<dir>/../lib/…`，报错原因就变成「模块找不到」而不是守卫被删）。
+    const root = path.join(dir, 'root');
+    mk(path.join(root, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'style-dna-reader.mjs'), path.join(root, 'lib', 'style-dna-reader.mjs'));
+    mk(path.join(root, 'lib', 'style-dna'));
+    mk(path.join(root, 'lib', 'style-skills'));
+    const broken = fs.readFileSync(gate, 'utf8')
+      .replace("const DNA_DIR = 'D:/lemo-tools/lib/style-dna';", `const DNA_DIR = '${fwd(path.join(root, 'lib', 'style-dna'))}';`)
+      .replace("const SKILL_DIR = 'D:/lemo-tools/lib/style-skills';", `const SKILL_DIR = '${fwd(path.join(root, 'lib', 'style-skills'))}';`);
+    assert.ok(broken.includes(fwd(path.join(root, 'lib', 'style-dna'))) && broken.includes(fwd(path.join(root, 'lib', 'style-skills'))),
+      '自证夹具失效：DNA_DIR / SKILL_DIR 重定向没生效');
+    const g2 = path.join(root, 'scripts', 'check-loudness-targets.mjs');
+    wf(g2, broken);
+    const res = await run(NODE, [g2]);
+    // 守卫被删后：0 份档案 ⇒ miss/offLine/dnaOnly/skillOnly 全空 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, 'style-dna 档案 0 份（目录读空 / 路径变了？）⇒ 本闸门什么都没检查', 'mut'),
+      undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-lra-caliber：删掉「0 部成片被检查」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-lra');
+  try {
+    const gate = mutate('check-lra-caliber.mjs', dir,
+      'if (okEb + looksLn + neither === 0) blind = 1;', 'if (false) blind = 1;');
+    const root = path.join(dir, 'root');
+    mk(path.join(root, 'distill'));
+    const broken = fs.readFileSync(gate, 'utf8')
+      .replace("const DIR = 'D:/lemo-tools/lib/style-skills';", `const DIR = '${fwd(path.join(root, 'distill'))}';`);
+    assert.ok(broken.includes(fwd(path.join(root, 'distill'))), '自证夹具失效：DIR 重定向没生效');
+    wf(gate, broken);
+    rj(path.join(root, 'distill', 'gb-lra', '_distill.json'),
+      { generatedVideo: { path: path.join(root, '没有这部成片.mp4') } });
+    const res = await run(NODE, [gate]);
+    // 守卫被删后：全 continue ⇒ 三个计数器全 0 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '失明：0 部成片被检查', 'mut'),
+      undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-film-delivery：删掉「0 部成片被检查」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-fd');
+  try {
+    // 守卫（`:193`）的落点是 `if (slugs.length === 0) bad('(全部)', '✘ 失明', …)`。
+    const gate = mutate('check-film-delivery.mjs', dir,
+      "if (slugs.length === 0) bad('(全部)', '✘ 失明',", "if (false) bad('(全部)', '✘ 失明',");
+    // 同一套正向夹具：空的成片树 + 合法的 E 段夹具（否则 E 段自己会报错，掩盖结论）。
+    const MUX_OK = '#!/bin/sh\n'
+      + 'LN_TP="${LEMO_LN_TP:--1.7}"\n'
+      + 'LN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\n'
+      + 'LN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n'
+      + 'ffmpeg -i "$1" -af "loudnorm=TP=$LN_TP" -f null - 2>&1 | grep input_tp\n'
+      + 'if [ "$(echo "$TP > -1.2" | bc)" = "1" ]; then :; fi\n';
+    wf(path.join(dir, 'mux.sh'), MUX_OK);
+    wf(path.join(dir, 'opuscar', 'styles', 'gb-fd', 'demo', 'tools', 'mux.sh'), MUX_OK);
+    mk(path.join(dir, 'batch'));
+    mk(path.join(dir, 'locks'));
+    mk(path.join(dir, 'distill'));
+    const res = await run(NODE, [gate], { env: {
+      LEMO_MUX_SH: path.join(dir, 'mux.sh'),
+      LEMO_OPUSCAR: path.join(dir, 'opuscar'),
+      LEMO_BATCH_DIR: path.join(dir, 'batch'),
+      LEMO_LOCK_DIR: path.join(dir, 'locks'),
+      LEMO_DISTILL_ROOT: path.join(dir, 'distill'),
+    } });
+    // 守卫被删后：0 部成片 + E 段合法 ⇒ fails 为空 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '0 部成片被检查（style-skills 下无 _distill.json / 路径变了？）', 'mut'),
+      undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-film-delivery：删掉 F 段「全部让位」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-fd2');
+  try {
+    // 守卫（`:340`）的落点是 `if (slugs.length > 0 && deferred.length === slugs.length)`。
+    const gate = mutate('check-film-delivery.mjs', dir,
+      'if (slugs.length > 0 && deferred.length === slugs.length)', 'if (false)');
+    // 同一套夹具：合法的 E 段 + 一部**存在但刚写盘**的成片 + 文档 mtime 显式设早 ⇒ 必然让位。
+    //   ★ 成片只需**存在**（本守卫只读 mtime，不看媒体内容）⇒ 用 1 字节文件即可 ——
+    //     这顺带证明「让位判据与媒体分析无关」，也让这条自证零 ffmpeg 依赖。
+    const MUX_OK = '#!/bin/sh\n'
+      + 'LN_TP="${LEMO_LN_TP:--1.7}"\n'
+      + 'LN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\n'
+      + 'LN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n'
+      + 'ffmpeg -i "$1" -af "loudnorm=TP=$LN_TP" -f null - 2>&1 | grep input_tp\n'
+      + 'if [ "$(echo "$TP > -1.2" | bc)" = "1" ]; then :; fi\n';
+    wf(path.join(dir, 'mux.sh'), MUX_OK);
+    wf(path.join(dir, 'opuscar', 'styles', 'gb-fd', 'demo', 'tools', 'mux.sh'), MUX_OK);
+    mk(path.join(dir, 'batch'));
+    mk(path.join(dir, 'locks'));
+    mk(path.join(dir, 'distill'));
+    const film = path.join(dir, 'films', 'gb-fd', 'gb-fd.mp4');
+    wf(film, 'x');
+    const docPath = path.join(dir, 'distill', 'gb-fd', '_distill.json');
+    rj(docPath, { generatedVideo: { path: film } });
+    const t = new Date(fs.statSync(film).mtimeMs - 120000);
+    fs.utimesSync(docPath, t, t);
+    const res = await run(NODE, [gate], { env: {
+      LEMO_MUX_SH: path.join(dir, 'mux.sh'),
+      LEMO_OPUSCAR: path.join(dir, 'opuscar'),
+      LEMO_BATCH_DIR: path.join(dir, 'batch'),
+      LEMO_LOCK_DIR: path.join(dir, 'locks'),
+      LEMO_DISTILL_ROOT: path.join(dir, 'distill'),
+    } });
+    // 守卫被删后：全部让位 ⇒ `local` 全被丢掉 ⇒ fails 为空 ⇒ 打印「✓ 被判的 0 部成片交付口径
+    //   全部一致」+ exit 0（**一部都没判**却报通过）⇒ 正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '都被判「疑似正在重渲」而让位 ⇒ 本次**一部成片都没判**', 'mut'),
+      undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-plate-pixel：删掉「全部差分 0」计数式守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-pp');
+  try {
+    // 守卫（`:227`）的落点是 `if (allZero) console.log(...)`。
+    const gate = mutate('check-plate-pixel.mjs', dir, 'if (allZero) console.log(', 'if (false) console.log(');
+    const root = path.join(dir, 'root');
+    mk(path.join(root, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'dub-core.mjs'), path.join(root, 'lib', 'dub-core.mjs'));
+    rj(path.join(root, 'lib', 'dub-styles.json'), { styles: [{
+      slug: 'gb-pp',
+      palette: { bg: '000000', subtitle: 'FFFFFF', subtitleOutline: 'FF101010' },
+      subtitle: { plate: 'box' },
+    }] });
+    const broken = fs.readFileSync(gate, 'utf8');   // 破坏点在源码里，拷过去即可（ROOT 按自身位置推导）
+    const g2 = path.join(root, 'scripts', 'check-plate-pixel.mjs');
+    wf(g2, broken);
+    const OS_TMP = path.join(dir, 'os-tmp');   // 非 C 盘（闸门自己用 os.tmpdir() 建中间目录）
+    mk(OS_TMP);
+    const res = await run(NODE, [g2], { env: { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) } });
+    // 守卫被删后：exit 仍≠0（单风格那条差分 0 已判成真缺陷），但**不再打印**那句计数式失明文案
+    //   ⇒ 只断言「exit≠0」的坏用例会照样绿，本套件的第二条断言必须**抛**。
+    assert.throws(() => expectBlind(res, '一个底衬色都没真正判过', 'mut'),
+      undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+// ── ★★ 第二批「故意破坏」自证（2026-10-07 扩批之二）：上面那 5 条**核心判据**同样要自证 ──
+//   每条都把**那一条判据**改坏，再跑同一套正向夹具，断言**必须变红** ——
+//   证明那些文案真的来自那条判据，而不是来自「闸门崩了」或别的分支。
+
+test('★自证 check-lra-caliber：短路「像 loudnorm」分支后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-lra2');
+  try {
+    // 把「与 loudnorm 相符 ⇒ 判口径疑似 loudnorm」这一支的条件短路 ⇒ 该 doc 会掉进
+    // `neither` 分支（**exit 仍≠0**，但文案换成「与两个口径都不符」）⇒ 只断言「exit≠0」的
+    //   坏用例会照样绿，本套件的第二条断言必须**抛**。
+    const gate = mutate('check-lra-caliber.mjs', dir,
+      'else if (b !== null && Math.abs(doc - b) <= TOL) {', 'else if (false) {');
+    const root = path.join(dir, 'root');
+    mk(path.join(root, 'distill', 'gb-lra'));
+    const broken = fs.readFileSync(gate, 'utf8')
+      .replace("const DIR = 'D:/lemo-tools/lib/style-skills';", `const DIR = '${fwd(path.join(root, 'distill'))}';`);
+    assert.ok(broken.includes(fwd(path.join(root, 'distill'))), '自证夹具失效：DIR 重定向没生效');
+    wf(gate, broken);
+    // 同一套正向夹具：文档 lra 写 loudnorm 口径的实测值。
+    const { lraLn } = await lraTone(path.join(dir, 'tone.wav'));
+    rj(path.join(root, 'distill', 'gb-lra', '_distill.json'),
+      { generatedVideo: { path: fwd(path.join(dir, 'tone.wav')) }, selfCheck: { loudness: { lra: lraLn } } });
+    const res = await run(NODE, [gate]);
+    assert.throws(() => expectBlind(res, '口径疑似 loudnorm（项目口径应为 ebur128）', 'mut'),
+      undefined, '短路那条分支后正向断言竟然还通过 ⇒ 断言没在测该判据');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-loudness-targets：短路「偏离交付线」判据后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-lufs2');
+  try {
+    // 把 `offLine` 恒置空（= 退回「只判能不能解析」的旧口径）⇒ −16 也照样绿。
+    const gate = mutate('check-loudness-targets.mjs', dir,
+      'const offLine = Object.keys(dist).map(Number).filter((v) => Math.abs(v - LUFS_LINE) > LUFS_EPS);',
+      'const offLine = [];');
+    const root = path.join(dir, 'root');
+    mk(path.join(root, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'style-dna-reader.mjs'), path.join(root, 'lib', 'style-dna-reader.mjs'));
+    mk(path.join(root, 'lib', 'style-dna'));
+    mk(path.join(root, 'lib', 'style-skills'));
+    const broken = fs.readFileSync(gate, 'utf8')
+      .replace("const DNA_DIR = 'D:/lemo-tools/lib/style-dna';", `const DNA_DIR = '${fwd(path.join(root, 'lib', 'style-dna'))}';`)
+      .replace("const SKILL_DIR = 'D:/lemo-tools/lib/style-skills';", `const SKILL_DIR = '${fwd(path.join(root, 'lib', 'style-skills'))}';`);
+    assert.ok(broken.includes(fwd(path.join(root, 'lib', 'style-dna'))) && broken.includes(fwd(path.join(root, 'lib', 'style-skills'))),
+      '自证夹具失效：DNA_DIR / SKILL_DIR 重定向没生效');
+    const g2 = path.join(root, 'scripts', 'check-loudness-targets.mjs');
+    wf(g2, broken);
+    rj(path.join(root, 'lib', 'style-dna', 'gb-lt.json'),
+      { slug: 'gb-lt', sound_palette: { mix_rules: '整体 -16 LUFS（源：styles/gb-lt/STYLE.md:20）' } });
+    const res = await run(NODE, [g2]);
+    // 判据被架空后：1 份档案都解析得出目标值 ⇒ miss/blind 都空 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '响度目标**偏离交付线 -14 LUFS** 的值：-16', 'mut'),
+      undefined, '短路那条判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-plate-pixel：把品红标记测试改成恒通过后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-ppmark');
+  try {
+    // 把「盒内众数色必须是品红系」这个**决定性判据**改成恒真（= 退回「只看绝对色差」的旧口径）。
+    const gate = mutate('check-plate-pixel.mjs', dir,
+      'const isMagenta = rgb[0] > 110 && rgb[2] > 110 && rgb[1] < 110 && Math.abs(rgb[0] - rgb[2]) < 90;',
+      'const isMagenta = true;');
+    const root = path.join(dir, 'root');
+    const OS_TMP = path.join(dir, 'os-tmp');
+    mk(OS_TMP);
+    mk(path.join(root, 'lib'));
+    // 同一套正向夹具：底衬色被改道到别的字段（盒色 = palette.subtitleOutline），
+    //   但绝对色差 Δ=1、对比度 16.5 都达标 ⇒ 标记测试一被架空，这一条就会变成 exit 0。
+    mutateFile(path.join(TOOLS, 'lib', 'dub-core.mjs'), path.join(root, 'lib', 'dub-core.mjs'),
+      'const subOutlineCol = plateOn ? cPlate : cOut;',
+      'const subOutlineCol = plateOn ? cOut : cOut;');
+    rj(path.join(root, 'lib', 'dub-styles.json'), { styles: [{
+      slug: 'gb-ppm',
+      palette: { bg: '000000', subtitle: 'FFFFFF', subtitleOutline: '202020' },
+      subtitle: { plate: 'box', plateColor: '202020' },
+    }] });
+    const g2 = path.join(root, 'scripts', 'check-plate-pixel.mjs');
+    wf(g2, fs.readFileSync(gate, 'utf8'));
+    const res = await run(NODE, [g2], { env: { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) } });
+    assert.throws(() => expectBlind(res, '不是品红 ⇒ 底衬色未取自 plateColor', 'mut'),
+      undefined, '架空标记测试后正向断言竟然还通过 ⇒ 断言没在测该判据');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-shell-structure：短路 ② 判据后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-sh2');
+  try {
+    // 把「以 fi 结尾且前 25 行（非注释）里有判定块标记 ⇒ 判缺 exit 0」这一支短路。
+    const gate = mutate('check-shell-structure.mjs', dir,
+      'if (/missed the target|input_tp|Peak level dB/.test(near)) {', 'if (false) {');
+    const root = path.join(dir, 'root');
+    mk(root);
+    const broken = fs.readFileSync(gate, 'utf8')
+      .replace("const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];", `const WIN_ROOTS = ['${fwd(root)}'];`);
+    assert.ok(broken.includes(`['${fwd(root)}']`), '自证夹具失效：WIN_ROOTS 重定向没生效');
+    wf(gate, broken);
+    wf(path.join(root, 'gb.sh'),
+      '#!/bin/sh\n'
+      + 'TP=$(ffmpeg -i "$1" -af ebur128 -f null - 2>&1 | grep -o "input_tp[^,]*")\n'
+      + 'if [ "$(echo "$TP > -1.2" | bc)" = "1" ]; then\n'
+      + '  echo "loudness missed the target"\n'
+      + 'fi\n');
+    const res = await run(NODE, [gate]);
+    // 判据被短路后：该脚本 0 处问题、WIN 侧非空（未失明）⇒ exit 0 ⇒ 正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '② 判定块后缺 exit 0', 'mut'),
+      undefined, '短路那条判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-cli-docs：短路 notImpl 判据后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-cli2');
+  try {
+    // 把「用法块列了、代码没有」这一侧收空 ⇒ 只剩 notDoc 那一侧（本夹具里它为空）⇒ 静默 OK。
+    const gate = mutate('check-cli-docs.mjs', dir,
+      'const notImpl = [...doc].filter((f) => !impl.has(f));', 'const notImpl = [];');
+    const root = path.join(dir, 'root');
+    const srcGate = fs.readFileSync(gate, 'utf8');
+    const broken = srcGate.replace("const ROOT = 'D:/lemo-tools';", `const ROOT = '${fwd(root)}';`);
+    assert.notEqual(broken, srcGate, '自证夹具失效：ROOT 重定向没生效');
+    const g2 = path.join(root, 'scripts', 'check-cli-docs.mjs');
+    wf(g2, broken);
+    // 同一套正向夹具：用法块列了 `--alpha`、代码里没有；`--gamma` 两侧都有。
+    const usage = (flags) => '#!/usr/bin/env node\nconst USAGE_TEXT = `\n用法:\n'
+      + `${flags.map((f) => `  ${f}   做某事`).join('\n')}\n\`;\n`;
+    wf(path.join(root, 'dub.mjs'), usage(['--alpha', '--gamma']) + "case '--gamma': break;\n");
+    wf(path.join(root, 'lemo-make.mjs'), usage(['--delta']) + "if (a === '--delta') { }\n");
+    const res = await run(NODE, [g2]);
+    assert.throws(() => expectBlind(res, '但代码里**没有任何处理分支**（文档先于实现）', 'mut'),
+      undefined, '短路 notImpl 判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
+  } finally { rm(dir); }
+});
+
 // ── 跑 ──────────────────────────────────────────────────────────────────────
 async function main() {
   rm(TMP);
   mk(TMP);
-  log(C.b(`\ntest/gate-blindness.test.mjs —— 闸门失明回归套件（${cases.length} 条）\n`));
+  log(C.b(`\ntest/gate-blindness.test.mjs —— 闸门「守卫 + 核心判据」回归套件（${cases.length} 条）\n`));
   const t0 = Date.now();
   const results = [];
   try {

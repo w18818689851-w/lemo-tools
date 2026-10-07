@@ -49,7 +49,19 @@ const CONSOLE_INDEX = path.join(CONSOLE_ROOT, 'index.json');
 //   只要此刻有别的进程在渲染**同一个风格**，⑥ 就抢不到锁、编排器退出 1 ⇒ 那条用例**假红**。
 //   实测：跑出片的同时跑套件，⑥ 必然失败，整套耗时从 9s 涨到 88s。
 //   这不是「并发污染」而是**测试隔离缺陷** —— 测试必须能独立于真实渲染运行。
-const TEST_LOCK_DIR = path.join(CFG.exportDir, '.locks-test');
+//   ★★ 2026-10-07 再收紧一层：原先它是**全机共享**的固定路径 `D:\lemo-films\.locks-test`
+//     ⇒ 并发的**两个 briefs.test.mjs**（或「测试 + 用户实例」）会**互撞**：一个实例占了 `.<slug>.lock`，
+//     另一个实例的 ⑥ 就会因「锁存在且 PID 存活、年龄 <6h」被编排器**直接 fail(exit 1)** 而假红。
+//     实测：造一张占位锁（`pid=4`，System，必活）⇒ ⑥ **确定性**变红（不是随机崩）。
+//     现叠一层 `<pid>` 子目录 ⇒ **每个实例各用各的锁目录**，互不影响；断言一个字没改。
+//   ★★ 但**仍未完全隔离**（2026-10-07 实测，如实记）：本套件还共享 `D:\lemo-films\.briefs`（工单目录）
+//     与 `.console`，而 `⑪ 容量上限` 会真触发一次容量裁剪 ⇒ **并发的两个实例仍会互撞**
+//     （实测并行跑两个：一个 `15/1 · ⑪`、另一个 `13/3 · ①/⑨`）。根因：`BRIEFS_DIR` 取自
+//     `lib/env.mjs` 的 `CFG.exportDir`（**硬编码 `D:\lemo-films`，无覆盖点**），而 `lib/store.mjs`
+//     的 `.console` 却认 `LEMO_FILM_DIR` —— 同一个「成片根」有两套口径。
+//     ⇒ **本套件请单独跑，不要与另一个实例并发**。要彻底隔离，得让 `CFG.exportDir` 也认
+//     `LEMO_FILM_DIR`（属配置层改动、影响面大，留给单独一批）。
+const TEST_LOCK_DIR = path.join(CFG.exportDir, '.locks-test', String(process.pid));
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
 
 const EDGE_CANDIDATES = [
@@ -337,6 +349,20 @@ async function main() {
   }
   // 跑前的工单目录快照：跑完必须与它**逐字一致**（这是「不留垃圾」的硬判据）
   const briefsBefore = fs.existsSync(BRIEFS_DIR) ? fs.readdirSync(BRIEFS_DIR).sort() : [];
+  // ★ 既有工单（**不是**本套件造的）的原始字节备份 —— 见收尾处的还原。
+  //   为什么必须有：⑪「容量上限」会真触发一次容量裁剪，而裁剪按 createdAt 从**最旧**的开始删，
+  //   **不区分**「这张是不是本套件造的」。只要 .briefs 里有一张比填充窗口（⑪ 里铺的
+  //   `now - (CAP+5-i)*1000` ⇒ 最旧 = now-210s）更旧的既有工单 —— 比如上一次被中途杀掉的套件
+  //   留下的、或用户自己攒的 —— 它就会被当成「最旧」删掉，紧接着 ⑭「无残留」报「丢失：<它>」⇒ **假红**。
+  //   实测：把一张 1~2 小时前的既有工单放进 .briefs 再跑本套件，稳定 15 passed / 1 failed（⑭），
+  //   而**下一轮**又变绿（那张工单已经被上一轮删掉了）—— 这正是「偶发、且无法复现」的来源。
+  //   ⇒ 跑前留字节，收尾时把**被删/被改**的既有工单原样写回；⑭ 的「逐字一致」判据一字未动，
+  //     于是它只可能抓到「本套件自己漏删的工单」（那才是它要抓的东西）。
+  const briefsPreexisting = new Map();
+  for (const name of briefsBefore) {
+    try { briefsPreexisting.set(name, fs.readFileSync(path.join(BRIEFS_DIR, name))); }
+    catch { /* 目录 / 读不了就算了（listBriefs 也只认文件） */ }
+  }
 
   let server = null;
   try {
@@ -946,6 +972,29 @@ async function main() {
     log(C.dim(`  测试工单已清理（${pending.length} 张）；工单目录剩余 ${left.length} 个文件`
       + `${left.length ? `：${left.slice(0, 8).join(', ')}${left.length > 8 ? ' …' : ''}` : ''}`));
     if (leaked.length) log(C.bad(`  ⚠️ 疑似残留：${leaked.join(', ')}`));
+
+    // ★ 把「既有工单」原样写回（见 briefsPreexisting 的说明）。
+    //   只补**本套件不该动**的那些：跑前就存在、且现在要么没了、要么字节被改过（⑪ 的容量裁剪会删、
+    //   启动收敛会把 running 改成 failed）。本套件自己造的工单不在此列 —— 它们由 cleanupBriefs() 删。
+    {
+      const touched = [];
+      for (const [name, buf] of briefsPreexisting) {
+        const dst = path.join(BRIEFS_DIR, name);
+        try {
+          let cur = null;
+          try { cur = fs.readFileSync(dst); } catch { /* 被裁掉了 */ }
+          if (cur && cur.equals(buf)) continue;      // 原封不动，别碰
+          fs.writeFileSync(dst, buf);
+          touched.push(name);
+        } catch (e) {
+          log(C.bad(`  ⚠️ 既有工单 ${name} 还原失败：${e.message}`));
+        }
+      }
+      if (touched.length) {
+        log(C.dim(`  既有工单已还原 ${touched.length} 个（跑中被容量裁剪/启动收敛动过）：${touched.join(', ')}`));
+        notes.push(`⑭ 备注：跑中被容量裁剪/启动收敛动过的既有工单 ${touched.length} 个已原样写回：${touched.join(', ')}`);
+      }
+    }
 
     const tmpErr = cleanupTmpDirs();
     if (tmpErr.length) log(C.bad(`  ⚠️ 临时目录清理失败：${tmpErr.join('；')}`));

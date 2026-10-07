@@ -212,7 +212,7 @@ film: Pip's Paper Adventure
 | 项 | 值 |
 |---|---|
 | 蒸馏日期 | 2026-10-03 |
-| 成片 | `D:/lemo-films/paper-popup/paper-popup.mp4`（133.000s / 93,293,467 B ≈89.0MB / 3192 帧 / 1920×1080 @24fps / 音频 `I=−14.34 LUFS`、真峰值 `−2.33 dBTP`、LRA 7.6 LU） |
+| 成片 | `D:/lemo-films/paper-popup/paper-popup.mp4`（133.000s / 92,788,702 B ≈88.5MB / 3192 帧 / 1920×1080 @24fps / 音频 `I=−14.04 LUFS`、真峰值 `−1.65 dBTP`、LRA 8.2 LU） |
 | 抽帧 | `D:/lemo-tools/_distill/frames/paper-popup/`（24 帧 + `_contact.jpg` 接触印样，等间隔 ≈5.54s） |
 | 风格匹配度自评 | **88/100**（音频修复后回填：`audio` 3 → 17；`palette 20` / `composition 18` / `typography 17` / `rhythm 16` 四项未动） |
 | 详细资料 | 有：`styles/paper-popup/STYLE.md`、`DEMO.md`、`style.json`、`demo/mux.sh`、`lib/style-dna/paper-popup.md`、`lib/style-dna/paper-popup.json`、`lib/dub-styles.json#paper-popup`、`_distill/logs/paper-popup.log`、demo 源码（`story.js`/`hud.js`/`paper.js`/`cutmesh.js`/`book.js`/`lib.js`） |

@@ -188,7 +188,7 @@ film: Midnight at the Starlight Hotel
 | 项 | 值 |
 |---|---|
 | 蒸馏日期 | 2026-10-03 |
-| 成片 | `D:/lemo-films/art-deco/art-deco.mp4`（58.4s / 41.8MB / 43,828,408 B） |
+| 成片 | `D:/lemo-films/art-deco/art-deco.mp4`（58.4s / 41.8MB / 43,833,113 B） |
 | 抽帧 | `D:/lemo-tools/_distill/frames/art-deco/`（24 帧 + 接触印样） |
 | 风格匹配度自评 | **96/100**（2026-10-05 校正：原 93，9:16 画幅缺陷已修并回补 composition +2、typography +1） |
 | 详细资料 | 有（`STYLE.md` · `DEMO.md` · `style.json` · `demo/build.sh` · `style-dna/art-deco.md`+`.json` · `dub-styles.json#art-deco` · `_distill/logs/art-deco.log`） |

@@ -21,6 +21,12 @@
  *
  * 用法：node scripts/check-loudness-targets.mjs
  * 退出码：有解析失败 / 偏离交付线 / 失明 → 1；否则 0。
+ *   ★ 2026-10-07 收口：`dnaOnly` / `skillOnly`（下方那两行 `⚠`）**不进退出码** —— 它们判的是
+ *     「**文档集合对齐**」（多一份 / 少一份 Skill 文档），**不是本闸门的主题**（本闸门只判
+ *     「每个风格能不能解析出响度目标、且等于交付线 −14」）。⚠ 按本项目惯例 = **只列不判**。
+ *     此前 `:97` 把它们算进了 `exitCode`，而 `:96` 的 ✘/OK **不算** ⇒ 实测出现过
+ *     「末行打印 `[闸门] 响度目标解析 1/1 OK`、退出码却是 1」—— 读文案与读退出码的人得出
+ *     **相反结论**。现把两处收成**同一个变量 `fail`**，结构上不可能再各说各话。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,6 +71,14 @@ const offLine = Object.keys(dist).map(Number).filter((v) => Math.abs(v - LUFS_LI
 const blind = [];
 if (slugs.length === 0) blind.push('style-dna 档案 0 份（目录读空 / 路径变了？）⇒ 本闸门什么都没检查');
 
+// ★★ 本闸门的**唯一判据**（2026-10-07 收口）：末行的 ✘/OK 与 `process.exitCode` **都读它**。
+//   口径 = 头注释写的那三条：**解析失败 / 偏离交付线 / 失明**。
+//   ★ 为什么**不含** `dnaOnly` / `skillOnly`：它们判的是「文档集合对齐」，不是本闸门的主题
+//     （本闸门只判「响度目标能不能解析、且等于交付线」），且它们只打印 `⚠` 级（本项目惯例 = 只列不判）。
+//     收成一个变量后，两处口径**结构上不可能再不一致**（此前 `exitCode` 多算了这两项 ⇒
+//     出现「末行 OK 但退出码 1」的相反结论）。
+const fail = miss.length > 0 || offLine.length > 0 || blind.length > 0;
+
 console.log(`style-dna 档案：${slugs.length} 份；风格 Skill 文档：${skillSlugs.length} 份`);
 console.log(`可解析出响度目标：${slugs.length - miss.length}/${slugs.length}，分布 ${JSON.stringify(dist)}`);
 if (offLine.length) {
@@ -93,5 +107,6 @@ if (miss.length) {
   console.log(`      \`lib/style-dna/<slug>.json#sound_palette.mix_rules\`，**并注明来源行号**（不要凭空造值）。`);
 }
 
-console.log(`\n[闸门] 响度目标解析 ${slugs.length - miss.length}/${slugs.length} ${miss.length || offLine.length || blind.length ? '✘' : 'OK'}`);
-process.exitCode = miss.length || dnaOnly.length || skillOnly.length || offLine.length || blind.length ? 1 : 0;
+console.log(`\n[闸门] 响度目标解析 ${slugs.length - miss.length}/${slugs.length} ${fail ? '✘' : 'OK'}`);
+// ★ 与上面那行**同一个 `fail`** ⇒ 文案与退出码不可能各说各话（见 `fail` 处的注释）。
+process.exitCode = fail ? 1 : 0;

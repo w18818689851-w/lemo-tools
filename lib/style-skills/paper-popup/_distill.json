@@ -132,14 +132,14 @@
       "`mix.py:196,202` 的 np.convolve 直卷 6384000x14400 实测 30+ 分钟不结束（530% CPU / 34 线程 / load average 21，极易误判为卡死），已改为 scipy.signal.fftconvolve（<75 秒，输出逐位相同）；该修正未回写上游仓库"
     ],
     "loudness": {
-      "truePeakDbtp": -2.33,
-      "integratedLufs": -14.34,
+      "truePeakDbtp": -1.65,
+      "integratedLufs": -14.04,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "lra": 7.6,
+      "lra": 8.2,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
-      "samplePeakDbfs": -2.33
+      "samplePeakDbfs": -1.654384
     }
   },
   "resolvedDefects": []

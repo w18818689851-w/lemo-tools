@@ -103,7 +103,7 @@ film: The Honeybee, Plate VII
 - **配乐**：巴洛克室内乐——**羽管键琴 + 弦乐四重奏**，**96 BPM、D 大调**，16 小节 = 40.0s，三 stem（harpsichord / pizz / bowed）（`DEMO.md:53`、`music/score.py`）。`music/score.py` **读 events.json**：每个细节段落（A 长 / B 俯仰 / C 拉远再推）写一次、放在片子放它的位置，outro 跟着细节结尾平移，所以**任意数量的细节都能配到乐**（`style-dna/engraving.md:251`）。刻制段落**全用拨弦**（对应雕刀小而准的切），密度随趟数递增；每个圆形图 = 刻环高音「叮」+ 飞行上行线 + 落地低拨弦；上色前跑动戛然而止 → **真静默 1.25s** → 上色是弦乐第一次上弓；终版图版落 **V–I 终止式**（`DEMO.md:53`）。
 - **拟音（按材料分层）**：纸（揭纸噼啪、衬纸轻拍、薄纸沙沙、整纸呼啦）；压印机（滚筒低鸣、闷响）；铜与钢（2.6–9kHz 带通雕刀嘶声 + 颤振 + 1.18/2.31/3.47kHz 版材共振、卷屑 5–9kHz 小叮、抬刀金属嗒、画圆刻划、擦亮摩擦）；墨与水（笔尖刮擦、刻字点状嗒、水滴 plip、湿笔唰）；排线 = 每一趟更密的微刮擦（`DEMO.md:55`）。
 - **旁白处理**：Kokoro `bm_fable`（en-gb）、speed 0.92，一位温和的博物学家；音乐在人声下压到 **~50%**（弓弦压得最少）；旋律比人声高一个八度（`DEMO.md:56`、`STYLE.md:69`）。
-- **响度目标**：`-14 LUFS`；**交付真峰值上限**：`-1.2 dBTP`（项目级交付线；本风格 `STYLE.md:69` 只写 −14 LUFS，未额外声明更严上限）。**本次成片实测：I = −14.4 LUFS / LRA 5.2 LU（`ebur128`）/ 真峰值 −3.27 dBTP（`loudnorm` 的 `input_tp`，4× 过采样）—— 真峰值远在 −1.2 dBTP 交付线内、未削波**（`logs/engraving.log:170-172` 的 `I: -14.4 LUFS` / `LRA: 5.2 LU` / `Peak: -3.3 dBFS` 与 `:173` 的 `astats` `Peak level dB: -3.332701` 都是**采样峰值/1 位小数读数**，只能当下界参考，不能当真峰值用）。
+- **响度目标**：`-14 LUFS`；**交付真峰值上限**：`-1.2 dBTP`（项目级交付线；本风格 `STYLE.md:69` 只写 −14 LUFS，未额外声明更严上限）。**本次成片实测：I = −14.14 LUFS / LRA 5.2 LU（`ebur128`）/ 真峰值 −1.54 dBTP（`loudnorm` 的 `input_tp`，4× 过采样）—— 真峰值远在 −1.2 dBTP 交付线内、未削波**（`logs/engraving.log:177-180` 的 ebur128 `Peak: -1.5 dBFS` 与 `astats` `Peak level dB: -1.577556` 都是**低精度峰值读数**（1 位小数 / 采样峰值），只能当参考，不能当真峰值用）。
 - **静默策略**：静默是**真实存在的一段，不是空**。本次实测两处：**0.0–1.87s** 与 **25.00–26.25s**，均 peak **−240.0 dBFS**（全层数字零），此时连房间底噪都压到 0.25 倍，全片只留一个极小的声音（`DEMO.md:54`、`style-dna/engraving.md:94`、`logs/engraving.log:147-148`）。
 - **混音/编码前峰值**：`score.py` 的限幅前峰值在 7.538s / 2.585s / 15.955s 分别为 **+1.1 / +0.6 / +0.1 dBFS**，靠 limiter 压回；最终 `mix.wav` peak **−1.20 dBFS**、integrated **−18.0 LUFS**（`logs/engraving.log:85-87,154`）。
 
@@ -181,7 +181,7 @@ film: The Honeybee, Plate VII
 
 ### 已知缺陷
 - **ASR 校对未通过 1 条**：本次 `mismatches: 1`，标题行 `Apis mellifera` 被 whisper 转成 `a piece mellafura`（`DIFF title | …`），日志有 `STEP_WARN asr_check 未通过（继续）`——ASR 失败不致命、只警告，但这句学名的可听性存疑（`logs/engraving.log:72,79-80`）。`STYLE.md:93` 的既定对策是给 checker 一个 plain spelling（`asr` 字段），标题行已设 `asr`，仍差 1 条。
-- **配乐限幅前峰值超过 0 dBFS**：`score.py` 在 7.538s / 2.585s / 15.955s 的限幅前峰值分别为 `+1.1 / +0.6 / +0.1 dBFS`（`logs/engraving.log:85-87`），靠 limiter 压回；最终 mix peak `-1.20 dBFS`、mix integrated `-18.0 LUFS`（`:154`），成片安全但配乐本身头部余量偏紧。成片真峰值实测 **−3.27 dBTP**（`loudnorm` `input_tp`，4× 过采样），在 −1.2 dBTP 交付线内、未削波。
+- **配乐限幅前峰值超过 0 dBFS**：`score.py` 在 7.538s / 2.585s / 15.955s 的限幅前峰值分别为 `+1.1 / +0.6 / +0.1 dBFS`（`logs/engraving.log:85-87`），靠 limiter 压回；最终 mix peak `-1.20 dBFS`、mix integrated `-18.0 LUFS`（`:154`），成片安全但配乐本身头部余量偏紧。成片真峰值实测 **−1.54 dBTP**（`loudnorm` `input_tp`，4× 过采样），在 −1.2 dBTP 交付线内、未削波。
 - **通路派生条目与两处 accent 不一致**：`dub-styles.json#engraving` 的 `accent #7F582B` 只是 §3「透明水彩、赭石与矿物色」的**土色代理值**、非 §3 原文色；字幕字体用 `KaiTi` 顶替 Pinyon Script（通路侧本机无 Pinyon，demo 自带该 OFL 字体）。`dub-visual.json#engraving.palette.accent` 记的却是 `#9a6a34`（= `PAL.foxing`）——**同一风格两个 accent**，下游复现时存在色值漂移风险。★ 另：`dub-styles.json#engraving.notes` 仍写着「`bg2` = null（源文件只给一个纸色）」，而**实际字段 `palette.bg2` 已是 `#e8ddc2`**（= `PAL.plateTone`）——notes 文本已陈旧（本文件不在我的可改范围，仅记录）。
 
 ### 素材缺口

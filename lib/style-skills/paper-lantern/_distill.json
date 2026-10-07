@@ -116,15 +116,15 @@
       "渲染：2922 帧耗时 489s（`logs/paper-lantern.log:93`），产物 video_gpu.mp4 103.5MB；首版混流 MUX_OK 55812383 src_frames=2922 out_frames=2922（帧数一致，末帧未被切）。2026-10-03 重混只换音轨、视频流不变，成片 59,657,832 B / 121.750000 s；本轮未重新渲染、未跑 TTS（音频修复由 fix-paperlantern-audio 完成，本文件只做回填）"
     ],
     "loudness": {
-      "truePeakDbtp": -3.37,
-      "integratedLufs": -14.03,
+      "truePeakDbtp": -1.68,
+      "integratedLufs": -14.01,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= -3.37 dBTP，见 selfCheck.loudness.truePeakDbtp。（★ 2026-10-05 复测当前入库成片：59,360,035 B / 2923 帧 / 121.791667 s；原记 -1.66 属 2026-10-03 版，已按实测更正。）",
-      "lra": 3.2,
+      "peakNote": "真峰值口径更正：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= -1.68 dBTP，见 selfCheck.loudness.truePeakDbtp。（★ 2026-10-07 重渲后成片：59,348,253 B / 2923 帧 / 121.791667 s；原记 -3.37 属重渲前版本，已按实测更正。）",
+      "lra": 3.3,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
-      "samplePeakDbfs": -3.384677
+      "samplePeakDbfs": -1.675971
     }
   },
   "audioEvidence": {
@@ -167,17 +167,17 @@
       "videoUnchanged": "1920x1080 / 24 fps / 2922 帧 / 121.750000 s 与首版逐项一致（只换音轨）"
     },
     "measuredInFilm": {
-      "integratedLufs": -14,
-      "lra": 3.2,
-      "truePeakDbfs": -3.4,
-      "astatsPeak6dp": -3.384677,
+      "integratedLufs": -14.01,
+      "lra": 3.3,
+      "truePeakDbfs": -1.7,
+      "astatsPeak6dp": -1.675971,
       "astatsPeakPerChannel": [
-        -3.428516,
-        -3.384677
+        -1.697485,
+        -1.675971
       ],
-      "overshootVsLnTpDb": -1.68,
-      "clippingCriterion": "`core/render/mux.sh:277` 判据 p ≤ −1.2 dBTP，实测 −3.385（astats 采样峰值）/ −3.37（loudnorm input_tp 真峰值）均在判据内，不削波",
-      "note": "★ 2026-10-05 复测当前入库成片（59,360,035 B / 2923 帧 / 121.791667 s）。原记（lra 3.4 / truePeakDbfs −1.7 / astatsPeak6dp −1.668024 / astatsPeakPerChannel [-1.706245,-1.668024] / overshootVsLnTpDb 0.032）属 2026-10-03 版（2922 帧 / 121.750000 s / 59,657,832 B），已按实测更正。"
+      "overshootVsLnTpDb": 0.02,
+      "clippingCriterion": "`core/render/mux.sh:277` 判据 p ≤ −1.2 dBTP，实测 −1.676（astats 采样峰值）/ −1.68（loudnorm input_tp 真峰值）均在判据内，不削波（2026-10-07 重渲后成片；原记 −3.385 / −3.37）",
+      "note": "★ 2026-10-07 重渲后成片实测（59,348,253 B / 2923 帧 / 121.791667 s）。原记（integratedLufs −14.03 / lra 3.2 / truePeakDbfs −3.4 / astatsPeak6dp −3.384677 / astatsPeakPerChannel [−3.428516,−3.384677] / overshootVsLnTpDb −1.68）属重渲前版本，已按实测更正。"
     },
     "alignment": {
       "reference": "vo/dur.json 对 out/timeline.json 的 C 表（已提交时间线）",
