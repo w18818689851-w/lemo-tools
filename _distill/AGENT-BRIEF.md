@@ -676,3 +676,125 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    **所以「让引用可见」只能靠写作侧统一**（就是本条），**改判据没用**。
    ★ 自查：写完 `_distill.json` / `SKILL.md` 后把候选引用列出来，逐条看**有没有落在反引号外的** ——
    `grep -rnoE '[A-Za-z0-9_/.-]+\.[a-z]+:[0-9]+' <你改的目录>`，在反引号外的就是漏网的裸引用。
+
+---
+
+## ★ 孤儿脚本审计的口径与判据（2026-10-07 立，供以后每批复用）
+
+**一句话**：判活只认「**全路径语义引用 ∪ 库语义段 ∪ `lib/**` 代码**」这三条**硬证据**，外加「**外部文档 / 编排器 / 同风格构建链**」三条；**`style-fingerprints.json` 只列不判**；「脚本头自述」是**弱证据**，单独立「**自述入口**」一类。
+
+### 一、判据清单：六条「活着」证据（任一命中 ⇒ 活）
+
+| # | 证据 | 核法（要点） | 为什么 |
+|---|---|---|---|
+| E1 | **全路径语义引用** | **代码里**（★ **排除注释**，见 §五 陷阱⑥）按 `styles/<slug>/demo/<rel>` 全路径出现（`import` / `require` / `execFileSync` / `<script src=` / 动态 `?scene=` 分派） | 最硬：有人真的加载它 |
+| E2 | **库语义段引用** | `lib/dub-visual.json` / `lib/dub-styles.json` 的 `sourceFiles` / `evidence` / `notes` 里按全路径或语义提到它 | 主线给下游的「视觉 / 风格」契约，删了就断链 |
+| E3 | **`lib/**` 代码引用** | 同上但目标是 `lib/**` 的**任意类型**（★ **含 `.json`**） | 见 §五 陷阱① |
+| E4 | **外部文档提及** | `styles/<slug>/DEMO.md`、`styles/<slug>/STYLE.md`、`lib/style-skills/<slug>/SKILL.md`、`lib/style-dna/<slug>.md` 或同名 `.json` | 「**他证**」：别人写下来了 |
+| E5 | **编排器引用** | `lemo-make.mjs` 的 `runs[]` / `ORCH_SKIP_STEPS`（按**相对路径**匹配，**不含 slug**） | 编排器认得 ⇒ 已知的可选步 |
+| E6 | **同风格构建链** | 同风格 `build.sh` / `mux.sh` / `mix.py` / `render.mjs` 调它 | 出片链上的一环 |
+
+★ **E6 的延伸：「约定式引用」必须显式处理**（否则**系统性误判**）。有的「引用」不是字面路径，而是**命名约定**：
+- `lib/aspects.mjs` 扫 `demo/film*.js` ⇒ **每个风格的 `film.js` 都活**（哪怕页面根本不 import 它 —— 它只放 `FILM_META` 画幅声明）；
+- `lib/originality.mjs` 扫 `subjects/*.js`；`lib/style-skills/impasto/SKILL.md` 与 `lib/style-dna/impasto.md` 声明 `scenes/*.js`；
+  `pictogram-motion` 的 `poses/*.js`；`paper-lantern` 的 `src/shots/sNN_*.js`；
+- `scripts/check-mux-parity.mjs` 扫 `styles/*/demo/mux.sh` 与 `styles/*/demo/tools/mux.sh`。
+⇒ **只做字面 token 匹配会把这批全判成「无引用」**（实测：不做约定匹配 ⇒ **90 条假「无引用」**；做了 ⇒ 只剩 **50 条**真候选 = 45 已声明入口 + 5 自述入口）。
+
+### 二、两条弱证据（单独**不足以**判活）
+
+| # | 弱证据 | 处置 |
+|---|---|---|
+| W1 | **脚本头自述**（`usage` / docstring / `# 用法：…`） | ⇒ **自述入口**：保留，但**强制标注「无外部引用」** |
+| W2 | **仅注释引用**（只在别的脚本的 `//` / `#` 里被提到） | ⇒ 同上，按自述入口处理 |
+
+★ **为什么必须把 W1 单独立类**：实测「**配乐自检**」子类（`music/analyze.py`、`music/check.py`）**确实有用**，但它们**没进任何外部文档** ⇒ 收紧成「只有外部文档提及才算」会**误杀**；反之「**一次性调试草稿**」子类（两个 `vo_try.py`）放宽口径时又会**漏**。⇒ **四分类**就是这两个方向误差的折中。
+
+### 三、★ 指纹降级：`lib/style-fingerprints.json` **只列不判**
+
+它是**全树 hash 登记**（按 slug 分组，逐个文件记 sha256），**不是「使用引用」**。实测登记率（2026-10-07）：
+`.mjs` **54/54 = 100%**、`.js` **440/444 ≈ 99%**、`.cjs` **1/3 = 33%**、`.py` **0/175 = 0%**、`.sh` **0/57 = 0%**。
+
+⇒ 若把「被它登记」当成「有引用 ⇒ 活」，会**自动豁免整个 JS 类**（≈99%），而**孤儿恰恰多在 JS 页面模块里**。
+⇒ **判活只认 E1∪E2∪E3；指纹命中只在清单里当「参考列」列出，不进判据。**
+★ 实测复核：本批 733 条里「**仅靠指纹才活**」的 = **0 条**（降级后判据没塌）。
+
+### 四、「手工入口」四分类口径（★ 已采纳）
+
+`活 / 已声明入口 / 自述入口（保留但强制标注）/ 孤儿`，把「**自述入口**」**排除在「已声明」之外**。
+
+| 分类 | 判据 | 处置 |
+|---|---|---|
+| **活** | E1–E6（含约定式）任一 | 保留 |
+| **已声明入口** | **他证**：E4 外部文档提及 | 保留 |
+| **自述入口** | **自证**：仅脚本头 usage/docstring 自述，**无外部文档提及**、无代码/数据引用 | 保留 + **强制标注「无外部引用」** |
+| **孤儿** | 三者皆无 | 只登记，**删不删由人决定** |
+
+★ **若收紧成「只有外部文档提及才算」⇒ 新产生 5 条孤儿**（实测，误报全集中在「**配乐自检**」子类）：
+`cel-anime-80s/demo/music/analyze.py`、`dark-keynote/demo/music/check.py`、`hologram-hud/demo/music/check.py`、
+`living-screencast/demo/tools/vo_try.py`、`whiteboard/demo/tools/vo_try.py`（后两条是「**一次性调试草稿**」子类，放宽口径就会漏）。
+
+### 五、★ 结构性陷阱（不处理就会系统性判错）
+
+**① 判据盲区：库级引用必须扫 `lib/**` 全类型（含 `.json`）。**
+上一批的「库级引用」用 `--include=*.mjs` ⇒ **`lemo-tools/lib/*.json` 一个都没进判据**。受害者实测 **2 个**：
+`styles/pixel-rpg/demo/pixel.js`（被 `lib/dub-visual.json` 的 `sourceFiles` 全路径 + `evidence` 引用）、
+`styles/microgame/demo/frames.js`（同上，被 `styles.microgame.sourceFiles` 引用）。
+⇒ 核法**必须**带 `--include=*.json --include=*.mjs --include=*.js --include=*.py --include=*.sh --include=*.html`，**别只写 `.mjs`**。
+
+**② 同名不同物 ⇒ 任何按文件名统计的结论都不可信。**
+`words.py` 全库 **4 份**（行数 21 / 19 / 7 / 21、语义各不相同）、`check.py` **3 份**（2 份配乐自检 + 1 份 161 行的另一物），
+`sheet.py` / `sheet.sh` / `probe.mjs` / `shot.mjs` / `frames.js` / `subs.py` / `subs.mjs` / `final_asr.py` / `score.py` / `mix.py` **全都有多份**。
+⇒ **只按 basename 匹配会串味**；**必须**「全路径 ∪ 同风格作用域」双条件。
+★ 附带的结构性事实：**8 个风格没有 `build.sh`**（`brick-toy` / `cel-anime-80s` / `game-show` / `halftone-dossier` / `hd-2d` / `paper-popup` / `pictogram-motion` / `watercolor`）⇒「同风格 shell 调用」这条判据对它们**结构性失效**，**必须**靠 E1–E5 兜底。
+
+**③ 相对路径 import 必须解析**（否则**成批**误判）。
+`import { SHOTS } from './shots/index.js'` 里的 token 是 `shots/index.js`，而脚本的相对路径是 `src/shots/index.js` ⇒ **不解析就匹配不上**。实测受害者成批：
+`styles/paper-lantern/demo/src/shots/index.js`、`styles/paper-lantern/demo/src/people.js`、`styles/paper-lantern/demo/src/props.js`（被 `src/shots/*.js` 以 `../people.js` 引用）。
+⇒ 建索引时**必须**对以 `./` / `../` 开头的 token 做「相对所在文件目录」的解析，再把**解析后的仓内相对路径**当键。
+
+**④ Python 的 `import` 不带扩展名**。
+`game-show/demo/music.py` 写 `import synth_lib as S` ⇒ token 是 `synth_lib`（**没有 `.py`**），而脚本是 `synth_lib.py` ⇒ **不专门处理就漏判**（实测 `styles/game-show/demo/synth_lib.py` 就这样被漏成「无引用」）。
+⇒ 建索引时**必须**对 `.py` 文件额外抽 `^\s*(from|import)\s+<mod>` 并**补一条 `<mod>.py`**（含相对目录解析）。
+
+**⑤ shell 变量前缀会被吃进 token**。
+`node "$D/tools/dump_timeline.mjs"` 里的 token 是 `D/tools/dump_timeline.mjs`（`$` 不在 token 字符集内，`D` 被当成了首段）⇒ **整批 `build.sh` 调用都匹配不上**。
+实测受害者：`styles/impasto/demo/tools/dump_timeline.mjs`（`build.sh` 明写 `node "$D/tools/dump_timeline.mjs"`）等**多个风格的同名脚本**。
+⇒ 建索引时**必须**对「首段 ≤3 字符且全大写」的 token **补一条去掉首段的键**（`D/tools/x.py` → `tools/x.py`）。
+
+**⑥ 「被别的脚本注释提到」≠「有引用」**（必须做**近似注释剔除**）。
+`lemo-make.mjs` 的**注释**里裸提 `words.py`（`:507` 附近的候选说明、`:2506` 的小节标题）⇒ 若不做注释剔除，**每个**风格的根级 `words.py` 都会被误判成「编排器引用 ⇒ 活」。
+实测受害者：`styles/paper-lantern/demo/words.py`、`styles/paper-popup/demo/words.py`（真身是**一次性调试草稿**，编排器只探 `tools/words.py`）。
+⇒ 判据**必须**区分「代码里出现」与「注释里出现」：**只有代码里出现才算 E1/E5**；注释里出现的降级成 **W2**（`comment-only` ⇒ 自述入口）。
+
+### 六、可直接复制的核法
+
+```bash
+# 0) 枚举（基线 733；排除产物目录）
+find D:/lemo-opuscar/styles/*/demo -type f \( -name "*.py" -o -name "*.mjs" -o -name "*.js" -o -name "*.cjs" -o -name "*.sh" \) \
+  -not -path "*/node_modules/*" -not -path "*/out/*" -not -path "*/stills/*" | wc -l
+
+# 1) E1+E3 全路径语义引用（★ 必须全类型、含 .json —— 见陷阱①）
+grep -rn "styles/<slug>/demo/<rel>" D:/lemo-tools/lib D:/lemo-opuscar \
+  --include=*.json --include=*.mjs --include=*.js --include=*.py --include=*.sh --include=*.html
+
+# 2) E2 库语义段
+grep -rn "<rel>\|<base>" D:/lemo-tools/lib/dub-visual.json D:/lemo-tools/lib/dub-styles.json
+
+# 3) E4 外部文档（他证）
+grep -rn "<rel>\|<base>" D:/lemo-opuscar/styles/<slug>/DEMO.md D:/lemo-opuscar/styles/<slug>/STYLE.md \
+  D:/lemo-tools/lib/style-skills/<slug>/SKILL.md D:/lemo-tools/lib/style-dna/<slug>.md
+
+# 4) E5 编排器
+grep -n "<rel>" D:/lemo-tools/lemo-make.mjs
+
+# 5) 指纹（★ 只列不判）
+grep -n "demo/<rel>" D:/lemo-tools/lib/style-fingerprints.json
+```
+
+★ **上面 5 条 `grep` 只是「最小核法」**：它们**看不出** §五 的 ③④⑤⑥（相对 import / Python 无扩展名 import / shell 变量前缀 / 注释剔除）——
+要得到本批那份 733 行清单，需要**一个能解析相对路径 + 抽 Python import + 补 shell 变量键 + 近似剔除注释**的小脚本（本批用 Node 写了约 120 行；口径就是本节 §一–§五）。
+
+★ **2026-10-07 基线**（供回归对比）：**733 条 ⇒ 活 683 / 已声明入口 45 / 自述入口 5 / 孤儿 0**。
+完整清单见 `_distill/孤儿脚本清单-2026-10-07.md` + 同名 `.tsv`（机器可核对）。
+★ 重跑前**先比对** `lib/dub-visual.json` / `lib/style-fingerprints.json` 的 md5 —— 这两份会被别的作业改（清单里记了快照 md5）。
