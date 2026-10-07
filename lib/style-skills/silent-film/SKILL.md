@@ -144,7 +144,7 @@ film: The Runaway Loaf
 | 帧率 | **输出 24 fps**（1301 帧）；**运动采样 16 fps**（追逐段 18 fps）——两套帧率并存是风格核心（`demo/timeline.js:3`、`demo/film.js:34`） |
 | 分辨率 / 比例 | 原生 **1920×1080（16:9）**；内层片门 **1440×1080 居中（x=240）**，圆角 r=22；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，`demo/film.js:20`），由 `stage.setFrame()`（`stage.js:25`）按视口尺寸重排：影院（黑场 + 两侧幕布）随帧铺满整帧（`demo/film.js:71`）、**4:3 片门按紧轴等比装入并居中**（`GATE.w = FW × S`，`stage.js:27-28`）、片门里的 1440×1080 印片按 `S` 缩放进片门（`demo/film.js:73`）；16:9 时 `FX=FY=S=1`、`GATE={240,0,1440,1080}`，每个表达式逐字节退化成设计帧 |
 | 混流 | `sh core/render/mux.sh <video> <mix.wav> <out> 24 1`（第 5 个参数 **24 = 帧率**，第 6 个 **1 = mux 颗粒**；颗粒主要已在画面里，mux 只补 1）（build.sh 第 7 步） |
-| 编码器 | 混流走 **`h264_nvenc`**（本地 GPU，`_distill/logs/silent-film.log:74`）；最终胶片颗粒压缩用 **`libx264 -preset slow -crf 25 -tune grain`**（build.sh 第 8 步） |
+| 编码器 | 混流走 **`h264_nvenc`**（本地 GPU，`_distill/logs/silent-film.log:74`）；最终胶片颗粒压缩用 **`libx264 -preset slow -crf 25 -tune grain`**（build.sh 第 8 步）（★ **原记（2026-10-07 订正）**：`styles/silent-film/demo/build.sh:6-11` 现在有 **`LEMO_VENC` 守卫** —— **未设即走 GPU**（`h264_nvenc -preset p5 -profile high -rc vbr -cq 30 -b:v 0`），而 `libx264 -preset slow -crf 25 -tune grain` 只是**显式 `LEMO_VENC=libx264` 才走的 CPU 分支**（`-tune grain` 是 libx264 专属选项，GPU 路径不带它）；第 8 步用的是 `$VARG` ⇒ **默认走 GPU**） |
 | 音频入口 | `demo/music/score.py`（配乐 → `music/score.wav` + `score.json`）→ `demo/mix.py`（配乐 + 放映机 → `mix.wav`）；校验 `demo/tools/cuecheck.py`（画面卡点 ↔ 配乐卡点） |
 | 字幕入口 | `demo/tools/subs.py`（字幕卡文字 → `out/srt.json`）+ `core/render/srt.py`（→ `.srt`）；卡就是字幕 |
 | 事件导出 | `node core/render/events.mjs styles/silent-film/demo`（本次输出 `events 47 dur 54.2159`） |

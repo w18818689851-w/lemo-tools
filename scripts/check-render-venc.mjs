@@ -16,6 +16,11 @@
  *     · `core/render/video.mjs`、`core/render/mux.sh`、以及**被编排器挑中的** `demo/tools/mux.sh`
  *       （挑选规则同 `check-mux-selection.mjs`：`demo/tools/mux.sh` → `demo/mux.sh`，门槛含 `A="$2"`，
  *        否则回退 `core/render/mux.sh`）。
+ *     · ★ 2026-10-07（b85-a）补：**渲染器候选** `styles/<slug>/demo/tools/video_png.mjs`
+ *       —— 编排器渲染段按候选探测它替换 `core/render/video.mjs`（`lemo-make.mjs:1484` 的
+ *       `demoRenderRel`，全库现只有 `risograph` 有），故它**在出片路径上**。此前被错列进 B 类
+ *       （「不在出片路径的手工脚本」）⇒ **分类过期**，现挪进 A 类。它与 core 版同口径
+ *       （未设 ⇒ `h264_nvenc`；显式 `libx264` ⇒ CPU；其它值 ⇒ 报错退出）。
  *     · ★ 2026-10-07 补：`D:/lemo-tools/dub.mjs` —— **第三条通路**（文案+口播+风格）的最终编码。
  *       它**不在 `D:/lemo-opuscar` 树里**（属 lemo-tools 仓），此前**既不被本闸门登记、也不读
  *       `LEMO_VENC`**：两处混流命令**硬编码 `-c:v h264_nvenc`**（约 `:378` 与 `:1119`）。
@@ -25,9 +30,12 @@
  *     · 任何「未设或非法 ⇒ 静默 libx264」判 FAIL，报出**文件 + 行号 + 实际写法**。
  *     · ★ A 类**不再全在 opuscar 树内**（`dub.mjs` 在 lemo-tools）⇒ 展示路径按「文件属于哪个仓」加前缀，
  *       且 C 类双副本只比 **opuscar 树内**的文件（lemo-tools 无 WSL 副本）。
- *   B 类（**只列 backlog，不判 FAIL**）—— 不在出片路径上的 15 个手工脚本：
+ *   B 类（**只列 backlog，不判 FAIL**）—— 不在出片路径上的 14 个手工脚本：
  *     · 列出「已支持 LEMO_VENC / 仍硬写 libx264」两类计数，供人工决定。符合本项目纪律
  *       （已记录积压不判 FAIL）。
+ *     · ★ 2026-10-07（b85-a）：由 15 项缩为 14 项 —— `styles/risograph/demo/tools/video_png.mjs`
+ *       已**在出片路径上**（编排器渲染段候选探测）⇒ 挪进 A 类（见上）。其余 14 项逐项核实
+ *       确不在出片路径（编排器与 `dub.mjs` 都不执行；三份 `demo/mux.sh` 接口不符 ⇒ 回退 core）。
  *   C. **两份副本一致性（判 FAIL）**：上述文件在 `D:/lemo-opuscar` 与 WSL `/home/lemo/lemo-opuscar`
  *     必须**逐字节一致**（比 md5）。
  *     · ★ 2026-10-07：只比 **opuscar 树内**的 A/B 类文件 —— `dub.mjs` 属 lemo-tools 仓，
@@ -62,6 +70,25 @@
  *       `libx264 是默认安装自带的软件编码器` 里 `默认` 右侧紧接实词「安装」⇒ 同样判「不相邻」⇒ 不报。
  *       而真正的过期声称（`默认使用 libx264 编码` / `libx264 是默认编码器` / `未设 LEMO_VENC 时使用 libx264`）
  *       限定词与编码器名之间只有连接词 ⇒ 仍**照旧判 FAIL**（实测见 test/README.md 条目）。
+ *     · ★★ 2026-10-07（b85-a）**D 类②**：旧判据要求小句内有 (b)「默认/未设」限定词，而文档里
+ *       **更常见**的写法是「demo 自带 `mux.sh` 用的是 `libx264 -preset slow -crf 17 -r 60`」
+ *       —— **没有 (b)** ⇒ 旧判据**抓不到**（实证：`pictogram-motion`/`paper-popup` 的 SKILL.md 与
+ *       `paper-popup/_distill.json`、`silent-film/SKILL.md` 都曾这么写，而对应的自带脚本
+ *       **现在都默认走 `h264_nvenc`**）。判据②（同一小句内）：`libx264` + 编码上下文（**行级**，
+ *       与旧判据同口径）+ **脚本引用** `D_SCRIPT`（`mux.sh|render.mjs|build.sh|finish.sh|
+ *       render/video|video_png|video_range|render_range|自带`），且**不**出现 `h264_nvenc`、
+ *       **不**出现豁免词 `D_EXPL2`（旧 `D_EXPL` + `判据|原为|原记|曾写|已过期|已修|以前|不要|别写|别用|
+ *       禁止|示例|命令|代码块|写法|语法|说成|写成|称作`；`判据` 与旧表的 `断言|闸门|守卫` 同源 ——
+ *       用来放行「**描述本闸门判据自身**」的文字）。判 FAIL，报**仓库 + 文件 + 行号 + 片段**。
+ *       ★ **自指豁免**：`*.test.mjs`（本闸门的**回归夹具**）不扫 —— 夹具里**逐字携带**要抓的形态
+ *       （「demo 自带 `mux.sh` 用的是 `libx264 …`」），扫它只会产生**恒定假阳**（同 `D_SKIP_BASE`）。
+ *       说明性文字若引用该形态，用「示例/说成/误称」标注即可正常放行（见 `test/README.md`）。
+ *       ★ 误报率实测（先测再定稿，真实语料 1562 文件逐条人工分类）：v1（只要 (a)+(c)+(f)）命中 4
+ *       → v2（+追加豁免）命中 3 → 定稿（+`说成|写成|称作`）命中 2 = **真阳性 2 / 误报 0**；
+ *       那 2 条与随后发现的 `silent-film` 1 条都是**真阳性**、已按「保留原句 + `原记` + 补现值」修正
+ *       （修正后重测 0 命中 ⇒ 闸门 exit 0）。★ 试过但**否决**的形态：只要求 (a)+(c)+(f) 不加追加
+ *       豁免 ⇒ 误报 3/3（全是「原记/曾写」的已修行）；要求 `用|走|是` 紧邻 `libx264` ⇒ 漏掉真阳性
+ *       「而不是 demo mux.sh 的 `libx264` crf17」⇒ 收窄过度。
  *
  * ★ ③ 已知局限 / 会误报的边界：
  *   · 只做**文本/语法级**判定，不跑 ffmpeg —— 「未设时真的会调 h264_nvenc」是靠读代码确认的，不是实测编码。
@@ -88,6 +115,19 @@
  *       理由：**同一形态也正是假红的来源**（`| libx264 | 默认安装… |`），纯文本判据无法两全；
  *       本闸门选择「宁漏不乱报」—— 漏报可由人工/其它闸门兜底，乱报会让整条守卫失去可信度。
  *       连接词白名单是**正向**的：不在表内的实词一律使 (e) 不成立（宁可判「不相邻」）。
+ *   · ★ D 类②**自身的边界（有意取舍，非疏漏）**：
+ *     - **编码上下文 (c) 只做行级**：只要**整行**某处有编码语境就够 —— 这是为了抓
+ *       「最终胶片颗粒压缩用 `libx264 -preset slow -crf 25 -tune grain`（build.sh 第 8 步）」
+ *       这种**另半句才是编码语境**的真声称（实测语料里那条就是行级 (c) 才抓得到）。
+ *       代价：同一行「前半句谈编码、后半句 `libx264` 在别的话题」理论上会误报（实测语料 0 例）。
+ *     - **脚本引用 `D_SCRIPT` 是正向白名单**：只认那 9 个写法；换一种脚本名（如 `make.sh`）会**漏报**。
+ *       刻意**不含**裸 `demo`/`脚本`（太泛，实测会把「远低于 DEMO.md 记录的 libx264 CRF28」一类误报）。
+ *     - **豁免词 `D_EXPL2` 也是正向白名单**：漏了某个豁免写法（如 `已改`/`现为`）会**误报**；
+ *       实测已把语料里出现的全收进来（见 ②），将来新增写法需同步补 `D_EXPL2`。
+ *     - **同一行不叠加**：一行若同时满足 ① 与 ②，只报 ①（避免同一行重复计）。
+ *     - **`*.test.mjs` 不扫（自指豁免）**：夹具逐字携带目标形态 ⇒ 扫它只会恒定假阳（见 ②）。
+ *     - 与 ① 一样只做**关键词级**判定，**不做语义理解**：「把 libx264 说成某脚本编码器」的
+ *       反讽/引用/待办写法（如「待确认 mux.sh 是否仍用 libx264」）会被当**真声称**报出（假阳性方向）。
  *   · D 类**有意不查**的形态（显式排除，非疏漏）：
  *     - 本闸门自身 `scripts/check-render-venc.mjs` 与配套 `scripts/patch-render-venc.mjs`
  *       —— 它们天然携带旧文本（判据说明 / 替换搜索键），扫它们只会产生恒定误报；
@@ -235,6 +275,12 @@ const slugs = fs.existsSync(STYLES)
 for (const slug of slugs) {
   const p = pickMux(slug);
   if (p.own) pushA(p.file, 'sh', `${slug} 被挑中的混流脚本`);
+  // ★ 2026-10-07（b85-a）补：**渲染器候选**（与 lemo-make.mjs 的 `demoRenderRel` 同源探测，不写死 slug）。
+  //   编排器渲染段按候选清单找 `demo/tools/video_png.mjs`（全库现只有 risograph 有）替换 core 渲染器
+  //   ⇒ 它**在出片路径上**，其编码器决策点必须被守。此前它被列在 B 类「不在出片路径的手工脚本」里，
+  //   是**分类过期**（详见头注释 ② 与 test/README.md）。它已满足「未设⇒h264_nvenc / 非法⇒非静默」。
+  const rp = path.join(STYLES, slug, 'demo', 'tools', 'video_png.mjs');
+  if (fs.existsSync(rp)) pushA(rp, 'mjs', `${slug} 替换渲染器（PNG 无损中间片）`);
 }
 
 const aRows = aPoints.map((p) => {
@@ -245,7 +291,11 @@ const aRows = aPoints.map((p) => {
 const aParsed = aRows.filter((r) => r.parsed).length;
 const aFails = aRows.filter((r) => !r.ok);
 
-// ── B 类：15 个手工脚本（只列 backlog）───────────────────────────────────────
+// ── B 类：手工脚本（只列 backlog）───────────────────────────────────────────
+// ★ 2026-10-07（b85-a）：由 15 项缩为 14 项 —— `styles/risograph/demo/tools/video_png.mjs`
+//   已**在出片路径上**（编排器渲染段候选探测 `demoRenderRel`，见 lemo-make.mjs:1484）
+//   且**已支持 `LEMO_VENC`** ⇒ 按分类纪律挪进 **A 类**（`pushA`，判 FAIL 的那一类），
+//   不再列在此处。其余 14 项经逐项核实**确不在出片路径**（编排器与 dub.mjs 都不执行它们）。
 const B_FILES = [
   'styles/blueprint/demo/tools/video_range.mjs',
   'styles/game-show/demo/finish.sh',
@@ -257,7 +307,6 @@ const B_FILES = [
   'styles/paper-popup/demo/render.mjs',
   'styles/pictogram-motion/demo/mux.sh',
   'styles/pictogram-motion/demo/render.mjs',
-  'styles/risograph/demo/tools/video_png.mjs',
   'styles/silent-film/demo/build.sh',
   'styles/watercolor/demo/mux.sh',
   'styles/watercolor/demo/render.mjs',
@@ -285,9 +334,51 @@ const D_SKIP_SEG = /^(node_modules|\.git|\.venv|out|logs|ref|fonts|voices|dist|b
 const D_SKIP_FILE = /\.orig-|\.orig$|\.tmp$|\.log$/;
 // ★ 有意不查：本闸门自身与配套 patch 脚本（天然携带旧文本：判据说明 / 替换搜索键）。
 const D_SKIP_BASE = new Set(['check-render-venc.mjs', 'patch-render-venc.mjs']);
+// ★ 2026-10-07（b85-a）：**回归夹具自指豁免** —— 本闸门的回归套件（`*.test.mjs`）里**逐字携带**
+//   D 类② 要抓的**夹具字符串**（「demo 自带 `mux.sh` 用的是 `libx264 -preset slow -crf 17 -r 60`」）
+//   ⇒ 扫它只会产生**恒定假阳**（与 `D_SKIP_BASE` 同源：都是「闸门自己的产物天然携带目标形态」）。
+//   真实文档不受影响：说明性文字若引用该形态，用「示例 / 误称 / 说成」标注 ⇒ 由 `D_EXPL2` 正常放行
+//   （见 `test/README.md` 与 `_distill/AGENT-BRIEF.md` 的写法）；本豁免**只**放过 `*.test.mjs`。
+const D_SKIP_TEST = /\.test\.mjs$/;
 const D_QUAL = /(默认|缺省|不设|没设|未设|unset|default)/i;
 const D_EXPL = /(显式|指定|explicit|才走|才用|回退|回落|fallback|硬写|硬编码|写死|违反|违规|判\s*FAIL|FAIL|此前|原来|原先|曾经|历史上|used to|previously|legacy|已弃用|不再|断言|闸门|守卫)/i;
 const D_CTX = /(LEMO_VENC|编码|encoder|venc|nvenc|ffmpeg|mux|转码|transcod)/i;
+
+// ★★ 2026-10-07（b85-a）D 类②：**无限定词**的错claim —— 「把 `libx264` 说成某脚本的编码器」。
+//   盲区（用户最高优先级硬规则「渲染一律 GPU」在文档里被说反）：
+//     旧 D 类要求同一小句内同时出现 (a) `libx264` (b) 默认/未设类限定词 (c) 编码上下文。
+//     但文档里**更常见**的写法是「demo 自带 `mux.sh` 用的是 `libx264 -preset slow -crf 17 -r 60`」
+//     —— **没有 (b)** ⇒ 旧判据**抓不到**（实证：`pictogram-motion`/`paper-popup` 的 SKILL.md 与
+//     `paper-popup/_distill.json` 都曾这么写，而三份自带 `mux.sh` 现在都默认走 `h264_nvenc`）。
+//   判据②（机械）：同一「小句」内同时出现
+//     (a) `libx264` (c) 编码上下文（**行级**，与旧判据同口径）(f) **脚本引用** `D_SCRIPT`
+//   且 **不**出现 `h264_nvenc`、**不**出现豁免词 `D_EXPL2`。
+//   ★ 为什么必须 (f)：`libx264` 出现在**别的话题**里（如「`libx264` 会把噪声吃掉」的编码器行为描述、
+//     「一版 `libx264` 与一版 nvenc 做 A/B」）**不是**过期声称 —— (f) 把判据限定在
+//     「把 libx264 说成**某个脚本/自带实现**的编码器」这一类，正是本盲区要抓的形态。
+//   ★ 为什么 (c) 只做**行级**：与旧判据一致（旧判据也只在行级查 `D_CTX`），免得把
+//     「最终胶片颗粒压缩用 `libx264 …`（build.sh 第 8 步）」这种**同一行另半句才是编码语境**的
+//     真声称漏掉（实测该条就是行级 (c) 才抓得到）。
+//   ★ 误报率实测（**先测再定稿**；语料 = 两仓 D 类扫描集 1544 个文件，其中 3 个已知过期声称文件
+//     取其**修正前**（HEAD）文本，使真阳性在场；逐条人工分类）：
+//       收窄级别                         命中 = 真阳性 + 误报
+//       v1（只要 (a)+(c)+(f)，无豁免）     16 = 3 + 13
+//       v2（+ 旧 D_EXPL 豁免词）            7 = 3 + 4
+//       v3（+ 原为/原记/已修/示例/命令…）   5 = 3 + 2
+//       v4（定稿：+ 判据/说成/写成/称作）   3 = 3 + 0   ← 真阳性全留、误报归零
+//     3 条真阳性 = `paper-popup/_distill.json:21`（「demo 的 mux.sh 用 libx264 -preset slow -crf 17」）、
+//     `:128`（「而不是 demo mux.sh 的 60fps / libx264 crf17」）、`silent-film/SKILL.md:147`
+//     （「最终胶片颗粒压缩用 libx264 …（build.sh 第 8 步）」）—— 三处均已由 team-lead 同步修正。
+//     修正后重测（当前树）：命中 **0**（真阳性 0 + 误报 0）。
+//     13 条 v1 误报的形态（全部被 v2~v4 逐级豁免）：判据自述 / 复盘条目 / 闸门由来（「此前是…」）、
+//     「回退/回落 `libx264`」（legit 回退语义）、「原先硬写 / 曾硬写 / 硬写 … 违反 … 已修」、
+//     「显式 `libx264` 才走 CPU」、「写死 … 违反」。
+//   ★ 试过但**否决**的形态：(i) 不加追加豁免（停在 v1）⇒ 误报 13/16；
+//     (ii) 要求「`用|走|是` 紧邻 `libx264`」⇒ 漏掉真阳性「而不是 demo mux.sh 的
+//     `libx264` crf17」（无紧邻动词）⇒ 收窄过度、否决。
+const D_EXPL2 = /(显式|指定|explicit|才走|才用|回退|回落|fallback|硬写|硬编码|写死|违反|违规|判\s*FAIL|FAIL|此前|原来|原先|曾经|历史上|used to|previously|legacy|已弃用|不再|断言|闸门|守卫|判据|原为|原记|曾写|已过期|已修|以前|不要|别写|别用|禁止|示例|命令|代码块|写法|语法|说成|写成|称作)/i;
+/** 脚本引用：把 `libx264` 说成**该脚本的编码器**（不含裸 `demo`/`脚本` —— 那两个太泛，会误报）。 */
+const D_SCRIPT = /(mux\.sh|render\.mjs|build\.sh|finish\.sh|render\/video|video_png|video_range|render_range|自带)/i;
 
 // ★ D 类「相邻性」(e) 辅助（2026-10-06 修假红）—— 详见头注释 ② (e) / ③。
 //   连接词白名单：允许垫在「限定词」与 `libx264` 之间的**连接性**文字（长词在前，避免半截匹配）。
@@ -338,6 +429,7 @@ function dQualModifiesX264(c) {
 
 function scanD(root, tag) {
   const hits = [];
+  const hits2 = [];
   const stack = [root];
   let files = 0;
   while (stack.length) {
@@ -350,34 +442,47 @@ function scanD(root, tag) {
         if (D_SKIP_SEG.test(e.name)) continue;
         stack.push(p);
       } else if (e.isFile()) {
-        if (D_SKIP_FILE.test(e.name) || D_SKIP_BASE.has(e.name)) continue;
+        if (D_SKIP_FILE.test(e.name) || D_SKIP_BASE.has(e.name) || D_SKIP_TEST.test(e.name)) continue;
         const ext = path.extname(e.name).toLowerCase();
         if (!D_EXT.has(ext) && !D_NAMES.has(e.name)) continue;
         let text;
         try { text = read(p); } catch { continue; }
         files++;
         const lines = text.split('\n');
+        const relFile = path.relative(root, p).replace(/\\/g, '/');
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           if (!/libx264/.test(line) || !D_CTX.test(line)) continue;
+          // ① 旧形态：限定词直接修饰 libx264（判据 (a)(b)(c)(d)(e)）。
+          let oldHit = false;
           for (const c of line.split(/[；;。，,]/)) {
             if (!/libx264/.test(c) || !D_QUAL.test(c) || D_EXPL.test(c) || /h264_nvenc/i.test(c)) continue;
             // ★ (e) 相邻性：限定词必须**直接修饰** libx264（详见头注释 ②(e)）——
             //   挡掉「限定词其实在修饰别的词」的假红（如表格里 `默认` 修饰「默认安装」）。
             if (!dQualModifiesX264(c)) continue;
-            hits.push({ repo: tag, file: path.relative(root, p).replace(/\\/g, '/'), line: i + 1, text: line.trim().slice(0, 200) });
+            hits.push({ repo: tag, file: relFile, line: i + 1, text: line.trim().slice(0, 200) });
+            oldHit = true;
+            break;
+          }
+          if (oldHit) continue;
+          // ② 新形态（2026-10-07 b85-a）：把 `libx264` 说成某脚本的编码器（**无限定词**）。
+          //   同一行只报一次；若 ① 已命中则不重复报（同一行两种形态不叠加）。
+          for (const c of line.split(/[；;。，,]/)) {
+            if (!/libx264/.test(c) || /h264_nvenc/i.test(c) || D_EXPL2.test(c) || !D_SCRIPT.test(c)) continue;
+            hits2.push({ repo: tag, file: relFile, line: i + 1, text: line.trim().slice(0, 200) });
             break;
           }
         }
       }
     }
   }
-  return { hits, files };
+  return { hits, hits2, files };
 }
 
 const dWin = scanD(OPUSCAR, 'opuscar');
 const dTools = scanD(path.resolve(HERE, '..'), 'lemo-tools');
 const dHits = [...dWin.hits, ...dTools.hits];
+const d2Hits = [...dWin.hits2, ...dTools.hits2];
 const dFiles = dWin.files + dTools.files;
 // ★ 失明判据**按仓库**：任一仓库扫到 0 个文件即失明 —— 否则 lemo-tools 恒非空会把守卫架空。
 const dBlindRoots = [dWin.files === 0 ? 'opuscar' : null, dTools.files === 0 ? 'lemo-tools' : null].filter(Boolean);
@@ -416,7 +521,7 @@ if (isCanon && !NO_WSL) {
 
 // ── 汇总 ────────────────────────────────────────────────────────────────────
 const blind = aParsed === 0;
-const ok = !blind && !dBlind && aFails.length === 0 && dHits.length === 0 && dual.mismatches.length === 0;
+const ok = !blind && !dBlind && aFails.length === 0 && dHits.length === 0 && d2Hits.length === 0 && dual.mismatches.length === 0;
 
 if (JSON_OUT) {
   console.log(JSON.stringify({
@@ -424,6 +529,7 @@ if (JSON_OUT) {
     aClass: { points: aPoints.length, parsed: aParsed, fails: aFails.map((r) => ({ file: rel(r.file), label: r.label, problems: r.problems })) },
     bClass: { total: bRows.length, supported: bSupported, partial: bPartial, hardcoded: bHard, missing: bMissing, rows: bRows },
     dClass: { files: dFiles, filesByRepo: { opuscar: dWin.files, 'lemo-tools': dTools.files }, blind: dBlind, blindRoots: dBlindRoots, hits: dHits },
+    d2Class: { hits: d2Hits },
     dual,
     blind,
     ok,
@@ -463,6 +569,15 @@ if (dBlind) {
   console.log('  ✓ 未发现「未设/默认 ⇒ libx264」的过期声称');
 }
 
+// ★ 2026-10-07（b85-a）D 类②：**无限定词**的错claim（把 libx264 说成某脚本的编码器）。
+console.log('ℹ D 类②·文档/注释「把 libx264 说成某脚本的编码器」（无限定词）过期声称');
+if (d2Hits.length) {
+  console.log(`  ✘ ${d2Hits.length} 处过期声称（脚本实际跟随 \`LEMO_VENC\`：未设 ⇒ h264_nvenc；应补「未设 ⇒ h264_nvenc」或加 \`原记\` 标注）：`);
+  for (const h of d2Hits) console.log(`     ✘ [${h.repo}] ${h.file}:${h.line}  ${h.text}`);
+} else {
+  console.log('  ✓ 未发现「把 libx264 说成某脚本编码器」的过期声称');
+}
+
 console.log(`\nℹ C 类·两份副本一致性：${dual.checked ? `已比 ${dual.files} 个文件` : '跳过（非规范路径或 --no-wsl）'}`);
 if (dual.mismatches.length) {
   console.log(`  ✘ ${dual.mismatches.length} 处不一致：`);
@@ -471,5 +586,5 @@ if (dual.mismatches.length) {
   console.log('  ✓ 两侧逐字节一致');
 }
 
-console.log(`\n[闸门] 渲染编码器 GPU 优先：A 类违规 ${aFails.length} 个、D 类过期声称 ${dHits.length} 处、双副本不一致 ${dual.mismatches.length} 处${blind ? '、**A 类已失明**' : ''}${dBlind ? '、**D 类已失明**' : ''} ${ok ? 'OK' : '✘'}`);
+console.log(`\n[闸门] 渲染编码器 GPU 优先：A 类违规 ${aFails.length} 个、D 类过期声称 ${dHits.length} 处、D 类②无限定词 claim ${d2Hits.length} 处、双副本不一致 ${dual.mismatches.length} 处${blind ? '、**A 类已失明**' : ''}${dBlind ? '、**D 类已失明**' : ''} ${ok ? 'OK' : '✘'}`);
 process.exitCode = ok ? 0 : 1;

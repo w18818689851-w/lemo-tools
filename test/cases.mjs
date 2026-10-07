@@ -441,6 +441,110 @@ export async function freshDeadPid() {
   return null;
 }
 
+// ── 配音锁「前置占用」检查（★ 与工具侧 core/tts/tts_indextts.py 的**过期接管**判据同源）──────────
+//
+// 背景：Index-TTS 的串行锁是**全局独占**的（编排器 / 控制台 / 手工跑共用一把）。工具侧
+//   `acquire_lock()`（`tts_indextts.py:807`）在抢锁时有一条**过期接管**判据：
+//       `if (same_host and not _pid_alive(owner)) or age > LOCK_STALE:`   ← 属主 pid 已死 **或** 锁龄超龄
+//   满足即视为残留、清掉重抢。而本套件原先的前置检查**只判「文件在不在」** ⇒ **比工具更严**：
+//   一次被中断的 TTS 留下的死锁（内容 `posix:<pid>`，宿主进程早已不在）会让 5 条现场 TTS 用例**假红**
+//   （实测白跑了 3 次 `smoke --full`）。所以这里把工具那条判据**原样搬过来**：
+//       · 属主已死 或 锁龄 > LOCK_STALE ⇒ 视为残留、**放行**（并打一行 ℹ）；
+//       · 属主仍活着且锁龄 ≤ LOCK_STALE ⇒ 保持原行为，**拒绝**（`assert.fail`）。
+//   ★ 绝不放宽「真占用就拒绝」的语义：查不动（WSL 起不来 / 解析不出属主）一律**保守拒绝** ——
+//     宁可拒绝，也不放行一个可能真在跑的 TTS（放行会造成**并发跑 TTS**，实测把单句从 6 秒拖到 4~7 分钟）。
+//
+// 锁文件格式（`tts_indextts.py:770`）：`<宿主>:<pid>`（如 `posix:437`）；兼容旧格式「裸 pid」。
+// ★ LOCK_STALE 与工具**同源同默认**：优先读 `INDEXTTS_LOCK_STALE`，缺省 21600s（= 6h，见 `tts_indextts.py:742`）。
+const LOCK_STALE_SEC = Number(process.env.INDEXTTS_LOCK_STALE) > 0
+  ? Number(process.env.INDEXTTS_LOCK_STALE)
+  : 21600;
+
+/**
+ * 判断某 pid 在指定宿主上是否还活着。返回 true=活着 / false=确定已死 / null=判不出（保守）。
+ * ★ 跨宿主：Windows 与 WSL 是**两套 pid 命名空间**，`posix:<pid>` 必须去 WSL 里 `kill -0` 才准
+ *   （与 `tts_indextts.py:772` 的注释同因：拿 Windows 的 pid 去 Linux 里查必然查不到，会误判残留）。
+ * ★ 与工具侧 `_pid_alive`（`tts_indextts.py:745`）同口径：判不出来一律不抢（这里返回 null，由调用方按「占用」处理）。
+ */
+async function pidAliveOn(hostKind, pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;      // 非法 pid ⇒ 未知
+  if (hostKind === 'nt') {
+    try { process.kill(pid, 0); return true; }
+    catch (e) { return e && e.code === 'EPERM' ? true : false; }   // EPERM=存在但无权限 ⇒ 活着
+  }
+  if (hostKind === 'posix') {
+    const r = await wsl(`if kill -0 ${pid} 2>/dev/null; then echo ALIVE; else echo DEAD; fi`);   // 用 wsl() 的默认 60s 超时：发行版空闲被回收后可能是**冷启动**
+    if (!r.ok) return null;                                 // WSL 起不来 / 超时 ⇒ 未知 ⇒ 保守
+    if (/\bALIVE\b/.test(r.out)) return true;
+    if (/\bDEAD\b/.test(r.out)) return false;
+    return null;
+  }
+  return null;
+}
+
+/**
+ * 配音锁前置检查（放行 / 拒绝）。返回值：
+ *   `{ ok:true }`                     锁不存在 ⇒ 放行
+ *   `{ ok:true, takeover:true, note }` 属主已死 或 锁龄>LOCK_STALE ⇒ 视为残留，放行（调用方打 ℹ）
+ *   `{ ok:false, message }`           真占用（属主活着且锁龄≤LOCK_STALE）/ 判不出 ⇒ 拒绝（调用方 assert.fail）
+ *
+ * @param {string} lockPath 锁文件绝对路径
+ */
+export async function checkIndexttsLock(lockPath) {
+  if (!fs.existsSync(lockPath)) return { ok: true };
+
+  let raw = '', ageSec = 0;
+  try {
+    raw = (fs.readFileSync(lockPath, 'utf8') || '').trim();
+    ageSec = Date.now() / 1000 - fs.statSync(lockPath).mtimeMs / 1000;
+  } catch { /* 读不到内容/时间 ⇒ 下面按「判不出」保守处理 */ }
+
+  const fail = (why) => ({
+    ok: false,
+    message: `配音锁已被占用：${lockPath}（内容 "${raw || '?'}"）\n`
+      + `  ${why}\n`
+      + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS，\n'
+      + '  等它结束后再跑 --full —— 这是**环境占用**，不是被测代码坏了。\n'
+      + '  若确认属主已死（残留锁），可删掉该锁文件重试。',
+  });
+  const takeover = (why) => ({
+    ok: true, takeover: true, raw, ageSec,
+    note: `接管了残留的配音锁（${lockPath}，内容 "${raw || '?'}"，${why}）—— 本次按「残留」放行。`,
+  });
+
+  // ── 判据一：锁龄 > LOCK_STALE ⇒ 残留（与 tts_indextts.py:807 的 `age > LOCK_STALE` 同源）──
+  if (ageSec > LOCK_STALE_SEC) {
+    return takeover(`锁龄 ${Math.round(ageSec)}s > LOCK_STALE ${LOCK_STALE_SEC}s`);
+  }
+
+  // ── 解析锁内容：`<宿主>:<pid>` / 裸 pid / 其它 ──
+  const m = /^(nt|posix):(\d+)$/.exec(raw);
+  let kind, pid;
+  if (m) { kind = m[1]; pid = Number(m[2]); }
+  else if (/^\d+$/.test(raw)) { kind = ''; pid = Number(raw); }   // 旧格式裸 pid（宿主未知）
+  else {
+    return fail(`锁内容解析不出属主 pid（"${raw || '?'}"）—— 无法判定它是否还在跑，保守按「占用」处理。`);
+  }
+
+  // ── 判据二：属主已死 ⇒ 残留（与 tts_indextts.py:807 的 `not _pid_alive(owner)` 同源）──
+  let alive;
+  if (kind === '') {
+    // 裸 pid：宿主未知。工具侧按「同宿主尽力判」；本套件跨宿主，取**最保守**口径 ——
+    // 两个宿主都确认已死才敢接管，任一「活着 / 判不出」都按占用。
+    const nt = await pidAliveOn('nt', pid);
+    const posix = await pidAliveOn('posix', pid);
+    if (nt === false && posix === false) alive = false;
+    else if (nt === true || posix === true) alive = true;
+    else alive = null;
+  } else {
+    alive = await pidAliveOn(kind, pid);
+  }
+
+  if (alive === false) return takeover(`属主 ${kind ? `${kind}:` : ''}${pid} 已不在`);
+  if (alive === null) return fail(`判不出属主 ${kind ? `${kind}:` : ''}${pid} 是否还活着（跨宿主查不动？）—— 保守按「占用」处理。`);
+  return fail(`属主 ${kind}:${pid} 仍在运行`);
+}
+
 /**
  * 清理测试产物。**只动登记过的东西**。
  *
@@ -2441,11 +2545,11 @@ export const FULL_CASES = [
       const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
       const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
       const readLock = () => { try { return fs.readFileSync(lockPath, 'utf8').trim(); } catch { return '?'; } };
-      if (fs.existsSync(lockPath)) {
-        assert.fail(`配音锁已被占用：${lockPath}（内容 "${readLock()}"）\n`
-          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS，\n'
-          + '  等它结束后再跑 --full —— 这是**环境占用**，不是被测代码坏了。');
-      }
+      // ★ 判据不是「文件在不在」，而是工具的**过期接管**判据（属主已死 / 锁龄>LOCK_STALE ⇒ 残留放行）——
+      //   见本文件顶部 `checkIndexttsLock` 与 `tts_indextts.py:807`。
+      const lockGate = await checkIndexttsLock(lockPath);
+      if (!lockGate.ok) assert.fail(lockGate.message);
+      if (lockGate.takeover) console.log(`ℹ ${lockGate.note}`);
 
       // ── 建测试输出目录（前缀 _smoke- ⇒ cleanupArtifacts 的两道守卫才认它）──
       fs.mkdirSync(CFG.exportDir, { recursive: true });
@@ -2930,12 +3034,10 @@ export const FULL_CASES = [
       // ── 前置 3：真锁没被别的任务占着（TTS 的串行锁是**全局**独占的）──
       const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
       const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
-      if (fs.existsSync(lockPath)) {
-        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
-        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
-          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS，\n'
-          + '  等它结束后再跑 --full —— 这是**环境占用**，不是被测代码坏了。');
-      }
+      // ★ 用工具的**过期接管**判据（属主已死 / 锁龄>LOCK_STALE ⇒ 残留放行），不是「文件在不在」
+      const lockGate = await checkIndexttsLock(lockPath);
+      if (!lockGate.ok) assert.fail(lockGate.message);
+      if (lockGate.takeover) console.log(`ℹ ${lockGate.note}`);
 
       // ── 夹具 + 输出目录（前缀 `_smoke-` ⇒ cleanupArtifacts 的两道守卫才认它）──
       fs.mkdirSync(CFG.exportDir, { recursive: true });
@@ -3097,11 +3199,10 @@ export const FULL_CASES = [
         + '`--fit` 的真出片行为 —— 这是**用例无法成立**，不是被测代码坏了。');
       const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
       const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
-      if (fs.existsSync(lockPath)) {
-        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
-        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
-          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS。');
-      }
+      // ★ 用工具的**过期接管**判据（属主已死 / 锁龄>LOCK_STALE ⇒ 残留放行），不是「文件在不在」
+      const lockGate = await checkIndexttsLock(lockPath);
+      if (!lockGate.ok) assert.fail(lockGate.message);
+      if (lockGate.takeover) console.log(`ℹ ${lockGate.note}`);
 
       fs.mkdirSync(CFG.exportDir, { recursive: true });
       const baseDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fitd-${process.pid}-${Date.now().toString(36)}`);
@@ -3245,11 +3346,10 @@ export const FULL_CASES = [
         + '`--fit` 的反向分支 —— 这是**用例无法成立**，不是被测代码坏了。');
       const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
       const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
-      if (fs.existsSync(lockPath)) {
-        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
-        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
-          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS。');
-      }
+      // ★ 用工具的**过期接管**判据（属主已死 / 锁龄>LOCK_STALE ⇒ 残留放行），不是「文件在不在」
+      const lockGate = await checkIndexttsLock(lockPath);
+      if (!lockGate.ok) assert.fail(lockGate.message);
+      if (lockGate.takeover) console.log(`ℹ ${lockGate.note}`);
 
       fs.mkdirSync(CFG.exportDir, { recursive: true });
       const baseDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fitr-${process.pid}-${Date.now().toString(36)}`);
@@ -3380,11 +3480,10 @@ export const FULL_CASES = [
         + '缺了就无法覆盖 `--fit slow` 的 atempo 链 —— 这是**用例无法成立**，不是被测代码坏了。');
       const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
       const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
-      if (fs.existsSync(lockPath)) {
-        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
-        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
-          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS。');
-      }
+      // ★ 用工具的**过期接管**判据（属主已死 / 锁龄>LOCK_STALE ⇒ 残留放行），不是「文件在不在」
+      const lockGate = await checkIndexttsLock(lockPath);
+      if (!lockGate.ok) assert.fail(lockGate.message);
+      if (lockGate.takeover) console.log(`ℹ ${lockGate.note}`);
 
       fs.mkdirSync(CFG.exportDir, { recursive: true });
       const baseDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fita-${process.pid}-${Date.now().toString(36)}`);

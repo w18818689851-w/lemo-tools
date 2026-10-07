@@ -5,13 +5,13 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 69 条用例 / 覆盖全部 31 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 71 条用例 / 覆盖全部 31 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
  *      **每次都是人工发现**。这些守卫的**证据只写在闸门的头注释里**（那是档案，不是测试）
  *      —— 没有任何**自动化**手段防止它们被改回去。
- *   ② **核心判据**（11 条，2026-10-07 补/扩）：**不是**空转，而是「闸门真的判了、但判错/判漏」的
+ *   ② **核心判据**（12 条，2026-10-07 补/扩）：**不是**空转，而是「闸门真的判了、但判错/判漏」的
  *      那几条主判据 —— 它们同样是「读起来像已完成」的缺陷，只有夹具级回归能钉住：
  *        · `check-lra-caliber`：文档里的 LRA 看起来是 **loudnorm** 口径 ⇒ 判**不符**；
  *        · `check-loudness-targets`：响度目标**偏离 −14 交付线** ⇒ FAIL；
@@ -662,6 +662,103 @@ test('check-render-venc：A 类失明守卫（解析出的编码器决策点为 
     expectClean(r2, '本闸门已**失明**', 'check-render-venc 阴性对照');
     assert.ok(r2.out.includes('A 类·出片路径编码器决策点 3 个（成功解析 3 个）'),
       `阴性对照应真的解析出 3 个决策点\n${r2.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 11b. check-render-venc 的 D 类②（**无限定词**的错claim，2026-10-07 b85-a）──
+// ★ 盲区：旧 D 类要求小句内有「默认/未设」限定词，而文档更常见的写法是
+//   「demo 自带 `mux.sh` 用的是 `libx264 -preset slow -crf 17 -r 60`」——**没有限定词** ⇒ 抓不到。
+//   新判据：同一小句内 `libx264` + 编码上下文（行级）+ **脚本引用**（`mux.sh`/`build.sh`/`自带`…），
+//   且无 `h264_nvenc`、无豁免词（显式/回退/硬写/已修/原记/示例/命令/说成…）。
+test('check-render-venc：D 类② 无限定词 claim（把 libx264 说成某脚本的编码器）', async () => {
+  const dir = path.join(TMP, 'venc-d2');
+  // ★ 该闸门的 A 类决策点落点 = `<脚本>/../../lemo-opuscar/core/render/*` 与 `<脚本>/../dub.mjs`
+  //   ⇒ 只能把闸门**拷到临时目录**、让它自己「落点写死」的路径都指向夹具；D 类扫描根同理
+  //   （opuscar 走 `LEMO_OPUSCAR`，lemo-tools 走 `<脚本>/..` = 临时根）。
+  const VALID_MJS =
+    "const VENC = process.env.LEMO_VENC || 'h264_nvenc';\n"
+    + "if (VENC !== 'h264_nvenc' && VENC !== 'libx264') { process.exit(1); }\n";
+  const VALID_SH =
+    '#!/bin/sh\n'
+    + 'case "${LEMO_VENC:-}" in\n'
+    + "  '') VENC=h264_nvenc ;;\n"
+    + '  libx264) VENC=libx264 ;;\n'
+    + '  *) echo bad; exit 1 ;;\n'
+    + 'esac\n';
+  /** 建一个「A 类 3 决策点合法 + D 类两仓非空」的极小夹具根，并写入一份文档。 */
+  const fixture = (root, docMd) => {
+    const gate = copyGate('check-render-venc.mjs', root);
+    wf(path.join(root, 'dub.mjs'), VALID_MJS);
+    wf(path.join(root, 'opuscar', 'core', 'render', 'video.mjs'), VALID_MJS);
+    wf(path.join(root, 'opuscar', 'core', 'render', 'mux.sh'), VALID_SH);
+    mk(path.join(root, 'styles'));
+    wf(path.join(root, 'doc.md'), docMd);
+    return gate;
+  };
+  const envFor = (root) => ({
+    LEMO_OPUSCAR: path.join(root, 'opuscar'),
+    LEMO_STYLES_ROOT: path.join(root, 'styles'),
+  });
+  try {
+    // 正向：文档把**自带 `mux.sh`** 说成用 `libx264`（无限定词）⇒ D 类② 命中 ⇒ exit 1 + 特有文案 + 点名。
+    const pos = path.join(dir, 'pos');
+    const gatePos = fixture(pos, 'demo 自带的 mux.sh 用的是 `libx264 -preset slow -crf 17 -r 60`。\n');
+    const r1 = await run(NODE, [gatePos, '--no-wsl'], { env: envFor(pos) });
+    expectBlind(r1, '1 处过期声称（脚本实际跟随', 'check-render-venc D 类② 正向');
+    assert.ok(r1.out.includes('doc.md:1'),
+      `D 类② 应点名 doc.md:1\n${r1.out.slice(0, 900)}`);
+    // ★ 必须恰是 1 处：证明判据没有把同一行重复计（旧 D 类① 与 D 类② 不叠加）。
+    assert.ok(!r1.out.includes('2 处过期声称（脚本实际跟随'),
+      `D 类② 应只 1 处\n${r1.out.slice(0, 900)}`);
+
+    // 阴性对照：同一份文档改成**合法表述**（显式/回退/不要写/硬写已修/命令示例）⇒ 0 命中、exit 0。
+    const neg = path.join(dir, 'neg');
+    const gateNeg = fixture(neg, [
+      '- 显式 `libx264` 才走 CPU（默认走 GPU）。',
+      '- `libx264` 回退分支只在显式指定时启用。',
+      '- 不要写 `libx264` 当默认值。',
+      '- 回退 `libx264 -preset slow -crf 16`（描述 CPU 分支）。',
+      '- 以前 mux.sh 硬写 `libx264`，已修。',
+      '- 命令示例：`ffmpeg -i in.mp4 -c:v libx264 -preset slow out.mp4`',
+      '',
+    ].join('\n'));
+    const r2 = await run(NODE, [gateNeg, '--no-wsl'], { env: envFor(neg) });
+    expectClean(r2, '处过期声称（脚本实际跟随', 'check-render-venc D 类② 阴性');
+    assert.ok(r2.out.includes('D 类②·文档/注释'),
+      `阴性对照应真的跑过 D 类② 判据\n${r2.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 11c. ★自证 check-render-venc 的 D 类② ───────────────────────────────────
+test('★自证 check-render-venc：短路 D 类② 判据后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-venc-d2');
+  const VALID_MJS =
+    "const VENC = process.env.LEMO_VENC || 'h264_nvenc';\n"
+    + "if (VENC !== 'h264_nvenc' && VENC !== 'libx264') { process.exit(1); }\n";
+  const VALID_SH =
+    '#!/bin/sh\n'
+    + 'case "${LEMO_VENC:-}" in\n'
+    + "  '') VENC=h264_nvenc ;;\n"
+    + '  libx264) VENC=libx264 ;;\n'
+    + '  *) echo bad; exit 1 ;;\n'
+    + 'esac\n';
+  try {
+    // 把 D 类② 的判据行短路成 `if (true) continue;`（该行整行不再匹配任何 clause）。
+    const gate = mutate('check-render-venc.mjs', dir,
+      'if (!/libx264/.test(c) || /h264_nvenc/i.test(c) || D_EXPL2.test(c) || !D_SCRIPT.test(c)) continue;',
+      'if (true) continue;');
+    // 同一套正向夹具：文档把自带 mux.sh 说成用 libx264（无限定词）。
+    wf(path.join(dir, 'dub.mjs'), VALID_MJS);
+    wf(path.join(dir, 'opuscar', 'core', 'render', 'video.mjs'), VALID_MJS);
+    wf(path.join(dir, 'opuscar', 'core', 'render', 'mux.sh'), VALID_SH);
+    mk(path.join(dir, 'styles'));
+    wf(path.join(dir, 'doc.md'), 'demo 自带的 mux.sh 用的是 `libx264 -preset slow -crf 17 -r 60`。\n');
+    const res = await run(NODE, [gate, '--no-wsl'], {
+      env: { LEMO_OPUSCAR: path.join(dir, 'opuscar'), LEMO_STYLES_ROOT: path.join(dir, 'styles') },
+    });
+    // 判据被短路后：D 类② 不再命中（exit 0、无那句文案）⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '1 处过期声称（脚本实际跟随', 'mut'),
+      undefined, '短路 D 类② 后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
 });
 
