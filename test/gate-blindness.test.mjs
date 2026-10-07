@@ -590,7 +590,10 @@ test('check-mix-candidates：失明守卫②（全部风格无候选 ⇒ 一个�
 // 第 10–25 条（2026-10-07 扩批）：把覆盖面从 9 个闸门扩到 24 个。
 //   每条都照既有纪律：**正向**（命中「该失明」的条件 ⇒ exit≠0 + 逐字抄自源码的失明文案）
 //   ＋**阴性对照**（最小合法夹具 ⇒ exit 0 且不含那句文案）。
-//   ★ 造不出阴性对照的闸门**一律不造**（见文件末「未覆盖清单」，宁缺勿滥）。
+//   ★ 造不出阴性对照的闸门**一律不造**（宁缺勿滥）。
+//     ★ 2026-10-07 订正：此处原写「见文件末『未覆盖清单』」—— 该清单**已不存在**（覆盖面达到
+//       31/31 个闸门全部覆盖后即移除），属**悬空引用**，已删。若将来又出现「造不出阴性对照」的闸门，
+//       请在**本注释块内**就地登记，不要再指向一个可能被删掉的小节。
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── 10. check-line-endings.mjs（J4 失明守卫）────────────────────────────────
@@ -2433,6 +2436,64 @@ test('★自证 check-ref-lines：摘掉裸引用判据整段 ⇒ 源码标记�
     assert.notEqual(r.code, 0, `摘掉裸引用判据后应 exit≠0\n${r.out.slice(0, 900)}`);
     assert.ok(r.out.includes('裸引用判据的关键代码标记不见了'),
       `应报「关键代码标记不见了」\n${r.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 21b. check-ref-lines.mjs 的**第二个数据文件覆盖守卫**（#7，2026-10-07）──────────
+//   与 21 同型：`lib/dub-visual.json` 是**第二个已声明的覆盖目标**（证据层）。
+//   本条证明「把它从 `DOCS` 摘掉 / 它的引用被清空」会被抓住，而**合法的两种写作方向**不假红。
+test('check-ref-lines：`dub-visual.json` 覆盖守卫（#7，第二个数据文件覆盖目标）', async () => {
+  const dir = path.join(TMP, 'reflines-dv');
+  const BT = '`';
+  // ★ 夹具里**必须**同时放 `dub-styles.json`（带引用）—— 否则覆盖守卫①会先命中 ⇒ 阴性对照假红。
+  const DUB_STYLES = '{\n  "version": 1,\n  "styles": [\n    {\n      "id": "gb-bare",\n'
+    + `      "notes": "见 ${BT}test/target.mjs:1${BT} 与 test/target.mjs:1。",\n      "palette": {}\n    }\n  ]\n}\n`;
+  const DUB_VISUAL = (ev) => '{\n  "version": 1,\n  "styles": [\n    {\n      "id": "gb-vis",\n'
+    + `      "evidence": "${ev}",\n      "palette": {}\n    }\n  ]\n}\n`;
+  const DIRS = ['test', '_distill', 'lib', 'scripts', 'opuscar/styles'];
+  const envFor = (root) => ({
+    LEMO_TOOLS_ROOT: root,
+    LEMO_OPUSCAR: path.join(root, 'opuscar'),
+    LEMO_STYLES_ROOT: path.join(root, 'opuscar', 'styles'),
+    LEMO_DISTILL_ROOT: path.join(root, 'lib', 'style-skills'),
+  });
+  const tree = (root, dv) => {
+    for (const d of DIRS) mk(path.join(root, d));
+    wf(path.join(root, 'test', 'target.mjs'), 'line1\nline2\n');
+    wf(path.join(root, 'test', 'README.md'), '# 测试\n\n见 `target.mjs:1`。\n');
+    wf(path.join(root, 'lib', 'dub-styles.json'), DUB_STYLES);
+    wf(path.join(root, 'lib', 'dub-visual.json'), dv);
+  };
+  try {
+    // 正向：`dub-visual.json` **存在**但一处引用都没有 ⇒ 覆盖守卫②判失明，且文案点明是这个文件。
+    const pos = path.join(dir, 'pos');
+    tree(pos, DUB_VISUAL('无引用的说明文字'));
+    const r1 = await runGate('check-ref-lines.mjs', envFor(pos));
+    assert.notEqual(r1.code, 0, `dub-visual 零引用应 exit≠0\n${r1.out.slice(0, 900)}`);
+    assert.ok(r1.out.includes('本闸门已失明'), `应判失明\n${r1.out.slice(0, 900)}`);
+    assert.ok(r1.out.includes('lib/dub-visual.json'), `失明文案应点明 dub-visual.json\n${r1.out.slice(0, 900)}`);
+
+    // 阴性 A：反引号 + 裸 各一条 ⇒ exit 0（合计口径，不假红）。
+    const neg = path.join(dir, 'neg');
+    tree(neg, DUB_VISUAL(`见 ${BT}test/target.mjs:1${BT} 与 test/target.mjs:1。`));
+    const r2 = await runGate('check-ref-lines.mjs', envFor(neg));
+    expectClean(r2, '已失明', 'check-ref-lines dub-visual 阴性 A');
+
+    // 阴性 B（守卫脆弱点回归）：**只有裸引用、0 反引号** ⇒ 同样不许假红。
+    const n2 = path.join(dir, 'bareonly');
+    tree(n2, DUB_VISUAL('见 test/target.mjs:1。'));
+    const r3 = await runGate('check-ref-lines.mjs', envFor(n2));
+    assert.ok(!r3.out.includes('已失明'), `dub-visual 只有裸引用不应判失明\n${r3.out.slice(0, 900)}`);
+    assert.strictEqual(r3.code, 0, `dub-visual 只有裸引用应 exit 0\n${r3.out.slice(0, 900)}`);
+
+    // ★自证：把覆盖守卫②的条件改成恒假 ⇒ **同一个正向夹具**必须不再判失明（证明断言真的在测那条守卫）。
+    const gdir = path.join(dir, 'mut');
+    mk(path.join(gdir, 'scripts'));
+    const mut = patchGate('check-ref-lines.mjs', path.join(gdir, 'scripts'),
+      [['dvExists && dvRefCount + dvBareCount === 0', 'false']]);
+    const rm1 = await run(NODE, [mut], { env: envFor(pos) });
+    assert.ok(!rm1.out.includes('lib/dub-visual.json'),
+      `★自证：摘掉覆盖守卫②后，同一夹具**不该**再报 dub-visual 失明 ⇒ 断言确实在测该守卫\n${rm1.out.slice(0, 900)}`);
   } finally { rm(dir); }
 });
 

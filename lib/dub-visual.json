@@ -424,7 +424,7 @@
         "setters": [
           "setLines(lines,dur)"
         ],
-        "evidence": "styles/blueprint/demo/film.js:38",
+        "evidence": "`styles/blueprint/demo/film.js:48`",
         "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
       },
       "fontCoverage": {
@@ -872,7 +872,7 @@
         "setters": [
           "setLines(lines,dur)"
         ],
-        "evidence": "styles/dark-keynote/demo/film.js:504",
+        "evidence": "`styles/dark-keynote/demo/film.js:519`",
         "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
       },
       "fontCoverage": {
@@ -990,7 +990,7 @@
           "setCaptions(lines,dur,words)",
           "setData(d)"
         ],
-        "evidence": "styles/dataviz/demo/film.js:208,10",
+        "evidence": "`styles/dataviz/demo/film.js:18`",
         "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
       },
       "fontCoverage": {
@@ -1131,7 +1131,7 @@
         "size": 38,
         "pos": "底部居中 W/2，y1=1058*fy；宽=max行宽+70S",
         "reveal": "seg 淡入 0.25s / 淡出 0.2s；文字用 writeScript 逐笔书写",
-        "note": "纸块是不规则手撕边（RNG(7) 逐点 ±2.2px 抖动）；带 rgba(60,40,20,.28) 14px 投影；film_coffee.js:694 另有一版"
+        "note": "纸块是不规则手撕边（RNG(7) 逐点 ±2.2px 抖动）；带 rgba(60,40,20,.28) 14px 投影；`styles/engraving/demo/film_coffee.js:695` 另有一版"
       },
       "transition": {
         "type": "named-fn",
@@ -2589,7 +2589,7 @@
         "setters": [
           "setLines(lines,dur)"
         ],
-        "evidence": "styles/microgame/demo/film.js:32",
+        "evidence": "`styles/microgame/demo/film.js:42`",
         "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
       },
       "fontCoverage": {
@@ -2843,8 +2843,8 @@
         "fn": null,
         "file": null,
         "line": null,
-        "cutSource": "styles/one-line/demo/main.js:46 `if (t >= P.T[0] …) drawLine(...)`",
-        "chapterCard": "title @ styles/one-line/demo/subs.js:21",
+        "cutSource": "`styles/one-line/demo/film.js:59` `if (t >= P.T[0] …) drawLine(...)`",
+        "chapterCard": "title @ `styles/one-line/demo/subs.js:23`",
         "note": "按 P.T / P.SEG 段落推进（一条线连续生长），未发现「切镜」——更接近**连续长镜头**"
       },
       "cameraMotion": {
@@ -3082,7 +3082,7 @@
         "styles/papercut-red/demo/paper.js",
         "styles/papercut-red/demo/fold.js"
       ],
-      "evidence": "paper.js:3-9 `export const PAL = { red:'#d2201f', nian:'#b00f26', far:'#7e1424', mid:'#9c1323', rice:'#f2e8d0', indigo:'#1c2446', gold:'#d9a93f', ... }`；fold.js:9 `const FRONT = PAL.red, BACK = '#de3b30'`；★ 底色证据：main.js:65/111/138 `fillPaper(g, 'rice', …)` —— 场景实际地色是米白宣纸 rice #f2e8d0，red #d2201f 是主角剪纸片（girl/团花/房子），夜间场景另用 indigo #1c2446（main.js:206/213/239）。★ 修正：先前 palette.bg 误填 hero 红 #d2201f（把主角色当地色），违反 STYLE.md:28「Ground and hero must be different paper families. If background and hero are both red, the silhouettes stop popping.」；已改为 bg=rice #f2e8d0（地色）、bg2=indigo #1c2446（夜地色）、fg=red #d2201f（主角）、accent=gold #d9a93f（金箔，§3:29 仅片尾一次）。",
+      "evidence": "paper.js:3-9 `export const PAL = { red:'#d2201f', nian:'#b00f26', far:'#7e1424', mid:'#9c1323', rice:'#f2e8d0', indigo:'#1c2446', gold:'#d9a93f', ... }`；`styles/papercut-red/demo/fold.js:10` `const FRONT = PAL.red, BACK = '#de3b30'`；★ 底色证据：main.js:65/111/138 `fillPaper(g, 'rice', …)` —— 场景实际地色是米白宣纸 rice #f2e8d0，red #d2201f 是主角剪纸片（girl/团花/房子），夜间场景另用 indigo #1c2446（main.js:206/213/239）。★ 修正：先前 palette.bg 误填 hero 红 #d2201f（把主角色当地色），违反 STYLE.md:28「Ground and hero must be different paper families. If background and hero are both red, the silhouettes stop popping.」；已改为 bg=rice #f2e8d0（地色）、bg2=indigo #1c2446（夜地色）、fg=red #d2201f（主角）、accent=gold #d9a93f（金箔，§3:29 仅片尾一次）。",
       "palette": {
         "bg": "#f2e8d0",
         "bg2": "#1c2446",
@@ -3491,7 +3491,7 @@
         "setters": [
           "setLines(lines,dur)"
         ],
-        "evidence": "styles/risograph/demo/film.js:29",
+        "evidence": "`styles/risograph/demo/film.js:39`",
         "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
       },
       "fontCoverage": {
@@ -3783,7 +3783,7 @@
         "file": "styles/scifi-toon/demo/main.js",
         "line": 361,
         "cutSource": "styles/scifi-toon/demo/story.js WIPES（story.js 里另有 WIPES 表）",
-        "chapterCard": "titleCard @ styles/scifi-toon/demo/main.js:420 / titleArt @ :426",
+        "chapterCard": "titleCard @ `styles/scifi-toon/demo/film.js:439` / titleArt @ `styles/scifi-toon/demo/film.js:445`",
         "note": "**WIPES 表驱动的擦除**（story.js 导出 WIPES；main.js:6 import）"
       },
       "cameraMotion": {
@@ -3910,7 +3910,7 @@
         "note": "有 wipe（scenery.js:148）"
       },
       "cameraMotion": {
-        "evidence": "camAt @ styles/shadow-puppet/demo/main.js:136（camRaw + 插值）",
+        "evidence": "camAt @ `styles/shadow-puppet/demo/film.js:149`（camRaw + 插值）",
         "note": "皮影戏台式推拉"
       },
       "assets": {
@@ -4186,7 +4186,7 @@
         "setters": [
           "setLines(l,d)"
         ],
-        "evidence": "styles/spy-titles/demo/film.js:20",
+        "evidence": "`styles/spy-titles/demo/film.js:29`",
         "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
       },
       "fontCoverage": {
@@ -4430,7 +4430,7 @@
           "setLines(lines,dur)",
           "setWords(w)"
         ],
-        "evidence": "styles/swiss-motion/demo/film.js:30,27",
+        "evidence": "`styles/swiss-motion/demo/film.js:38`",
         "note": "有注入 API：调用方可直接喂文案数组，无需改文件"
       },
       "fontCoverage": {
@@ -4706,12 +4706,12 @@
         "fn": "pan（连续横移）",
         "file": "styles/ukiyoe/demo/main.js",
         "line": 115,
-        "cutSource": "styles/ukiyoe/demo/main.js:115-119 T.pan12 / pan23 / pan34 区间",
-        "chapterCard": "titleCard @ styles/ukiyoe/demo/main.js:90 / cartouche @ styles/ukiyoe/demo/print.js:262",
+        "cutSource": "`styles/ukiyoe/demo/film.js:127-131` T.pan12 / pan23 / pan34 区间",
+        "chapterCard": "titleCard @ `styles/ukiyoe/demo/film.js:102` / cartouche @ `styles/ukiyoe/demo/print.js:278`",
         "note": "**不是切镜而是连续摇镜**：五景之间用 pan 横移 + 轻微推近（z 1→1.065）连起来，像画卷展开"
       },
       "cameraMotion": {
-        "evidence": "pan @ styles/ukiyoe/demo/main.js:115-119",
+        "evidence": "pan @ `styles/ukiyoe/demo/film.js:127-131`",
         "note": "画卷式连续横移 + 轻推近"
       },
       "assets": {

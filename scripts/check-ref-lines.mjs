@@ -546,6 +546,36 @@
  *     且文档有意引它，也只会被 (d) 抓（那一行本来就**没有内容**可引）⇒ 不构成误报。
  *   · `logs/**` 豁免（见上）。
  *
+ * ── ★★ 2026-10-07（#7）第二个数据文件覆盖目标：`lib/dub-visual.json` ─────────────────
+ *   与 `lib/dub-styles.json` **同型**（证据层：从 `styles/<slug>/demo` 的绘图代码逐行抽出的 `file:line` 证据），
+ *   此前**既不在 `DOCS` 也不在 `SRCS`** ⇒ 它那 **16 处**引用（反引号 5 + 裸 11）**零覆盖**。
+ *   ★ **首跑误报率（逐条人读 10 处 FAIL）**：**(b) 6 + (d) 4**，**误报 0 ⇒ 精度 100%** ⇒ 判 FAIL、**不收窄**。
+ *     · (b) 那 6 处全是**路径指错**：指到 `styles/<slug>/demo/main.js` —— 而那是 **12–21 行**的
+ *       「页面契约加载器」（只做「把画布对齐视口 + 预载字体 + 接 `window.*`」），**影片本体在 `film.js`**。
+ *       实测真身：one-line 的 cutSource 在 film.js 的 59、scifi-toon 的 titleCard/titleArt 在 439/445、
+ *       shadow-puppet 的 camAt 在 149、ukiyoe 的 pan 区间在 127-131 与 titleCard 在 102。
+ *     · (d) 那 4 处：one-line 的 `subs.js`、engraving 的 `film_coffee.js`、papercut-red 的 `fold.js`、
+ *       spy-titles 的 `film.js`（各漂到一行空行上）。
+ *   ★★ **本闸门抓不到、但人工核出来的 7 处**（正是上面「已知局限」那条缝的**实测实例**）：
+ *     **6 处 `injectionApi.evidence` 系统性指错** —— 它们指到的是**行号在范围内、那一行也有内容**的
+ *     **任意行**，而**不是**该注入 API 的 **setter 定义行**（blueprint 的 38 应改 48、dark-keynote 的 504 改 519、
+ *     dataviz 的「208,10」改 18、microgame 的 32 改 42、risograph 的 29 改 39、swiss-motion 的「30,27」改 38）；
+ *     另 1 处是 ukiyoe 的 `cartouche` 指到 print.js 的**注释行**（262 应改 278）。
+ *     ⇒ **(a)(b)(c)(d) 四条全跑也一条都抓不到** —— 这是「本闸门只筛**明显**失效、**不是**引用正确的证明」
+ *     的又一例证（同第 11 条末尾那个缝）。**修法只能靠人读 + 符号锚**。
+ *   ★ **修法（本轮已做）**：16 处全部「**行号按实测改正 + 补反引号 + 补完整目录**」（写作纪律第 12 条）；
+ *     上述 7 处（6 个 `injectionApi` + 1 个 `cartouche`）一并改正 —— 它们本就是**真失效**，只是闸门看不见。
+ *     ★ 核法：用一次性脚本做**带断言的精确替换**（每处断言「原串恰好出现 1 次」），
+ *     并自检「`styles` 键数不变」+「每个风格的 `palette` **一个字节都没动**」——后者是硬约束：
+ *     `scripts/check-derivation-caliber.mjs` 拿本文件的 `palette.bg` / `palette.accent` 当**证据层**做判据。
+ *     ★ 该脚本是**一次性的**、**不入库**（改完即弃）；要复现就把上面 16 条「原串 → 新串」重新写一遍。
+ *   ★ **守卫**：新增**第二个数据文件覆盖守卫**（与 `dub-styles.json` 那条同型：文件**在**却
+ *     `dvRefCount + dvBareCount === 0` ⇒ 判失明），**只在它存在时判**（夹具树里没有它 ⇒ 不误伤）；
+ *     用**合计口径**（**不用**「裸引用数为 0」），理由同 `dub-styles.json` 那条 —— 见上「守卫脆弱点」。
+ *   ★ **用例**：`test/gate-blindness.test.mjs` 第 21b 条（正向：dub-visual 零引用 ⇒ 失明 + 文案点明该文件；
+ *     阴性 A：反引号 + 裸各一条 ⇒ exit 0；阴性 B：只有裸引用 ⇒ 仍 exit 0；
+ *     ★自证：把守卫条件改成恒假 ⇒ **同一个正向夹具**不再报失明 ⇒ 证明断言真的在测那条守卫）。
+ *
  * 用法：node scripts/check-ref-lines.mjs [--list-backlog]
  * 退出码：有 FAIL（或失明）→ 1；否则 0。
  */
@@ -584,6 +614,12 @@ const DOCS = [
   //   （实测 **57 处**：反引号包裹 11 + 裸 46）—— 此前它**既不在 DOCS 也不在 SRCS**，
   //   ⇒ 那 57 处**没有任何闸门在管**（`.json` 数据文件里的引用此前是**零覆盖**）。
   path.join(ROOT, 'lib', 'dub-styles.json'),
+  // ★ 2026-10-07（#7）：`lib/dub-visual.json` 的 `evidence` / `file` / `fn` 字段里同样有同类引用
+  //   （实测 **16 处**：反引号包裹 5 + 裸 11）—— 此前它**既不在 DOCS 也不在 SRCS**，
+  //   ⇒ 那 16 处**没有任何闸门在管**（与 `dub-styles.json` 同型的数据文件盲区）。
+  //   ★ 两类字段的判据**不同**：`palette.evidence` 是**散文 + 反引号引文片段** ⇒ 走 (a)(b)(c)(d) 全跑；
+  //     `injectionApi.evidence` 是**裸 `styles/<slug>/demo/film.js:NN`、无引文片段** ⇒ 只走 (a)(b)(d)。
+  path.join(ROOT, 'lib', 'dub-visual.json'),
   path.join(OPUSCAR, 'MAINTAINING.md'),
   path.join(OPUSCAR, 'TECHNIQUE.md'),
   path.join(OPUSCAR, 'core', 'README.md'),
@@ -798,6 +834,10 @@ function treeIndex(root) {
  *     （`styles/ukiyoe/demo/print.js:278`）⇒ **归零**。
  */
 const DUB_STYLES_FILE = path.join(ROOT, 'lib', 'dub-styles.json');
+// ★ 2026-10-07（#7）：第二个「已声明的数据文件覆盖目标」—— `lib/dub-visual.json`（证据层）。
+//   它与 `dub-styles.json` **同型**（`styles/<slug>/demo` 的绘图代码逐行抽取，每条带 `file:line` 证据），
+//   此前**既不在 DOCS 也不在 SRCS** ⇒ 它那 16 处引用**零覆盖**。同型守卫见下（`dvRefCount + dvBareCount`）。
+const DUB_VISUAL_FILE = path.join(ROOT, 'lib', 'dub-visual.json');
 const dubStyleBlocks = (() => {
   try {
     const ls = fs.readFileSync(DUB_STYLES_FILE, 'utf8').split('\n');
@@ -924,6 +964,8 @@ let refCount = 0, resolvedCount = 0, cApplied = 0;
 let bareCount = 0;     // ★ 裸引用（正文里不带反引号）—— 2026-10-07 起**纳入 (a)(b)(d)**
 let dubRefCount = 0;   // ★ 只数 `lib/dub-styles.json` 的（反引号）引用 —— 供覆盖守卫用
 let dubBareCount = 0;  // ★ 只数 `lib/dub-styles.json` 的裸引用 —— 供覆盖守卫用
+let dvRefCount = 0;    // ★ 只数 `lib/dub-visual.json` 的（反引号）引用 —— 供覆盖守卫用（#7）
+let dvBareCount = 0;   // ★ 只数 `lib/dub-visual.json` 的裸引用 —— 供覆盖守卫用（#7）
 
 for (const file of SCAN) {
   const slug = slugOf(file, 0);
@@ -939,6 +981,7 @@ for (const file of SCAN) {
       if (isPlaceholder(bm[1])) continue;      // `styles/<slug>/demo`、`film*.js` 这类占位/通配不算
       bareCount++;
       if (path.resolve(file) === DUB_STYLES_FILE) dubBareCount++;
+      if (path.resolve(file) === DUB_VISUAL_FILE) dvBareCount++;
       const bWhere = `${path.relative('D:/', file).replace(/\\/g, '/')}:${lineNo}`;
       const bRef = bm[1], bFirst = Number(bm[2]), bRest = bm[3];
       // ★ `masked` 是**等长**替换 ⇒ `bm.index` 与原文下标一致，可以直接去原文取上下文片段。
@@ -1002,6 +1045,7 @@ for (const file of SCAN) {
       if (isPlaceholder(refPath)) continue;
       refCount++;
       if (path.resolve(file) === DUB_STYLES_FILE) dubRefCount++;
+      if (path.resolve(file) === DUB_VISUAL_FILE) dvRefCount++;
 
       const nums = [Number(firstLine), ...[...rest.matchAll(/\d+/g)].map((x) => Number(x[0]))];
       const maxN = Math.max(...nums);
@@ -1131,6 +1175,21 @@ if (dubStylesExists && dubRefCount + dubBareCount === 0) {
   blind.push(`\`lib/dub-styles.json\` **存在**，但**一处 \`<路径>:<行号>\` 引用都没扫到** ⇒ 要么它的引用被清空了、要么「把它纳入扫描范围」那一步被摘掉了`);
 }
 const dubBareEmpty = dubStylesExists && dubBareCount === 0;   // ★ 只打 ℹ、不判 FAIL（理由见下）
+
+/**
+ * ★★ 2026-10-07（#7）：**第二个数据文件的覆盖守卫** —— `lib/dub-visual.json`（证据层）。
+ *   与上面 `dub-styles.json` 那条**同型同理由**：它是**已声明的覆盖目标**，若它**存在**却
+ *   一处引用都扫不到，只可能是「把它纳入 `DOCS`」那一步被摘掉了（假绿灯）。
+ *   ★ **只用「反引号 + 裸 合计为 0」这一个条件**（沿用第一条的修法）：不用「裸引用数为 0」，
+ *     因为「把裸引用改写成反引号引用」是本仓**推荐的写作方向** ⇒ 用裸计数会假红、进而被删。
+ *   ★ 只在它存在时判（夹具树里没有它）。
+ *   ★ 实测（首跑）：`lib/dub-visual.json` 有 **16 处**引用（反引号 5 + 裸 11），
+ *     逐条人读 **10 处真失效**（(b) 6 + (d) 4）、**误报 0**（详见头注释「数据文件覆盖目标②」段）。
+ */
+const dvExists = (() => { try { return fs.statSync(DUB_VISUAL_FILE).isFile(); } catch { return false; } })();
+if (dvExists && dvRefCount + dvBareCount === 0) {
+  blind.push(`\`lib/dub-visual.json\` **存在**，但**一处 \`<路径>:<行号>\` 引用都没扫到** ⇒ 要么它的引用被清空了、要么「把它纳入扫描范围」那一步被摘掉了`);
+}
 
 /**
  * ★★ 2026-10-07（b84-b 第二轮）：**裸引用判据的存在性，改成查「本闸门自己的源码」**
