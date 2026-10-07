@@ -96,7 +96,7 @@ const USAGE = `dub.mjs —— 把一段自定义文案做成成片（可选配�
   --size <WxH>             输出像素尺寸，如 1080x1920（自定义）。优先级高于 --ratio
                            ★ 两个都不给时用默认比例 9:16（任务没指定尺寸时的默认值）。
                            比例→像素的换算见 core/render/size.mjs（唯一来源，本文件不另写一份）
-  --gap <sec>              句间停顿，默认 0.25。
+  --gap <sec>              句间停顿，默认 0.25，范围 0–5。★ 控制台入口（POST /api/dub/run）**只允许 0–3** —— 它与 UI 的输入上限（web/index.html 的 max="3"）对齐，是有意的**更严**口径；核心 buildTimeline() 不设上限（lib/dub-core.mjs）⇒ 3 与 5 都不是实现要求的，两侧**故意不统一**，且 0–3 ⊂ 0–5（API 从不放过 CLI 会拒的值，无功能性差异）。
   --fit loop|trim|slow     素材与配音时长不匹配时怎么办，默认 loop。
   --keep-original-audio    保留素材原声（压到很低的背景音量）。默认不保留。
   --style <id|auto>        视觉风格。不给 = 现有行为逐帧不变（plain-dark）。

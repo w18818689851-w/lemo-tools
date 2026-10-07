@@ -140,8 +140,26 @@ for (const slug of slugs) {
   }
 }
 
+// ── ★ 失明守卫 ②（2026-10-07 补）：**全部 SKIP** 也是失明 ──────────────────────
+//   主循环的 `!gv.path` 分支 `continue` ⇒ 它把「文档 vs 实物比对」**和**「evidenceFrames
+//   帧图存在性」**一起跳过**。若所有风格都 SKIP（例如 `_distill.json` 的
+//   `generatedVideo.path` 集体缺失），`fails` 与 `blind` 都是空 ⇒ 本闸门会打印
+//   「✓ 文档记录的成片信息与实物全部一致」并 exit 0 —— **一个东西都没检查过**。
+//   判据：SKIP 数 == 风格总数 ⇒ 判 FAIL 并明说「一个都没比对」。
+//   （写法照 `check-dub-styles.mjs:214` 的 `skipped === dub.styles.length` 与
+//     `check-config-vs-doc.mjs:308` 的 `noSec.length === cfg.styles.length` 同型守卫。）
+//   ★ 为什么只判「全部」、不给「部分 SKIP」设阈值：SKIP 是**设计允许**的状态
+//     （见文件头「只校验文档确实记了的字段；没记的跳过，不当失败」）—— 新纳入、尚未出片的
+//     风格本来就没有 `generatedVideo.path`。真实语料 43/43 都有 path ⇒ 部分 SKIP 的
+//     **误报率无样本可测**，此时设阈值 = 凭猜收窄（违背本项目「先测误报率再收窄」的纪律）。
+//     故只把「一个都没比对」判 FAIL；部分 SKIP 用下面那行 ℹ 显式报出（不判 FAIL）。
+const skipped = rows.filter((r) => r.status === 'SKIP').length;
+if (slugs.length > 0 && skipped === slugs.length) {
+  blind.push(`全部 ${slugs.length} 个风格都 SKIP（文档都没记 generatedVideo.path）⇒ 一个都没比对，evidenceFrames 也一个都没检查`);
+}
+
 if (asJson) {
-  console.log(JSON.stringify({ ffprobe: FFPROBE, rows, fails, ...(blind.length ? { blind } : {}) }, null, 2));
+  console.log(JSON.stringify({ ffprobe: FFPROBE, rows, fails, skipped, ...(blind.length ? { blind } : {}) }, null, 2));
 } else {
   console.log('check-skill-artifacts —— 文档记录的成片信息 vs 磁盘实物');
   console.log(`  ffprobe: ${FFPROBE}`);
@@ -153,6 +171,11 @@ if (asJson) {
     console.log(`${mark}  ${String(r.slug).padEnd(22)} ${r.why || ''}`);
   }
   console.log('');
+  // ★ 部分 SKIP（非全部）不判 FAIL，但**必须显式报出** —— 否则下面那句 ✓ 会被读成
+  //   「全都检查过了」。失明时不打这句（那 43 条明细会把失明信号淹掉，且失明段已概括）。
+  if (skipped && !blind.length) {
+    console.log(`ℹ 有 ${skipped}/${slugs.length} 个风格 SKIP（文档没记 generatedVideo.path）⇒ 这些没被比对、evidenceFrames 也没检查。\n`);
+  }
   if (blind.length) {
     console.log(`✘ 本闸门已失明：`);
     for (const b of blind) console.log(`  ✘ ${b}`);

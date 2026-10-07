@@ -53,6 +53,7 @@ const UPLOAD_DIR = dub.UPLOAD_DIR;
 const INDEX_FILE = path.join(UPLOAD_DIR, 'index.json');
 const MAX_UPLOAD_BYTES = dub.MAX_UPLOAD_BYTES;
 const MAX_SCRIPT_CHARS = dub.MAX_SCRIPT_CHARS;
+const MAX_TITLE_CHARS = dub.MAX_TITLE_CHARS;
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
 
 // ── 命令行 ──────────────────────────────────────────────────
@@ -645,6 +646,44 @@ async function main() {
       const after = await jobsCount(P);
       need(after === before, `上面 3 条 400 里有人起了任务（${before} → ${after}）`);
       notes.push(`⑯ run：keepOriginalLimit 非布尔（字符串/数字）、单独 true（无 keepOriginal）→ 400；任务数全程 ${before}`);
+    });
+
+    // ══ ⑱ run 校验：speed / gap / title / keepOriginalAudio 四条零覆盖的边界 ══
+    //
+    // ★ 由来（2026-10-07 覆盖审计）：`/api/dub/run` 的校验分支此前只测了
+    //   size / ratio / style / videoToken / bgToken / srtToken / keepOriginalLimit，
+    //   而 `speed` / `gap` / `title` / `keepOriginalAudio` **四条零覆盖**。
+    //
+    // ★★ 同时把一处 **CLI ↔ API 的口径分歧**钉住（审计原文：「没有任何测试或闸门在对齐它们」）：
+    //   · CLI  `dub.mjs` 的 `--gap`     允许 **0–5**（`if (!(o.gap >= 0 && o.gap <= 5))`）
+    //   · API  `lib/dub.mjs` 的 `gap`   只允许 **0–3**（`if (… n < 0 || n > 3)`），
+    //     且与**控制台 UI 的输入上限** `web/index.html` 的 `<input id="dubGap" max="3">` 一致
+    //     ⇒ 控制台通路（UI → API）**内部自洽**，是有意的更严口径。
+    //   核心 `lib/dub-core.mjs` 的 `buildTimeline(lines, durs, gap)` **不设上限**（gap 只是加在句间），
+    //   所以 3 与 5 都不是核心实现要求的；两者是**包含关系**（API 0–3 ⊂ CLI 0–5），
+    //   API 从不放过 CLI 会拒的值 ⇒ 不存在功能性错误。⇒ 判「**各有道理、不硬统一**」，
+    //   改为在这里把 **API 侧的口径钉死**（下面 `gap: 3.5` 在 CLI 里合法、在 API 里必须 400），
+    //   差异已写进 `dub.mjs` 的 USAGE 与 `README.md`。
+    await runCase('⑱ run 校验：speed / gap / title / keepOriginalAudio 边界 → 400 且不起任务', async () => {
+      const before = await jobsCount(P);
+      // speed 0.5–2（lib/dub.mjs 的 ④）
+      await runExpect400(P, { script: 'x', speed: 0.4 }, 'speed 低于下限（0.4）');
+      await runExpect400(P, { script: 'x', speed: 2.1 }, 'speed 高于上限（2.1）');
+      await runExpect400(P, { script: 'x', speed: 'x' }, 'speed 非数字');
+      // gap 0–3（lib/dub.mjs 的 ⑥）★ 3.5 在 CLI 的 0–5 里合法、在 API 里必须 400
+      await runExpect400(P, { script: 'x', gap: -0.1 }, 'gap 为负（-0.1）');
+      await runExpect400(P, { script: 'x', gap: 3.5 }, 'gap 超 API 上限（3.5）—— CLI 允许 0–5、API 只到 3');
+      await runExpect400(P, { script: 'x', gap: 'x' }, 'gap 非数字');
+      // title：必须是字符串且有长度上限（lib/dub.mjs 的 ⑨）
+      await runExpect400(P, { script: 'x', title: 123 }, 'title 非字符串');
+      await runExpect400(P, { script: 'x', title: 'x'.repeat(MAX_TITLE_CHARS + 1) }, 'title 过长');
+      // keepOriginalAudio：只认真正的布尔（lib/dub.mjs 的 ⑧）
+      await runExpect400(P, { script: 'x', keepOriginalAudio: 'yes' }, 'keepOriginalAudio 非布尔（字符串）');
+      await runExpect400(P, { script: 'x', keepOriginalAudio: 1 }, 'keepOriginalAudio 非布尔（数字）');
+      const after = await jobsCount(P);
+      need(after === before, `上面这些 400 里有人起了任务（${before} → ${after}）`);
+      notes.push(`⑱ run：speed 0.4 / 2.1 / 'x'、gap −0.1 / 3.5 / 'x'、title 非串 / 过长、`
+        + `keepOriginalAudio 非布尔（字符串 / 数字）→ 全部 400；任务数全程 ${before}`);
     });
 
     // ══ ⑰ ★ 文案出片成片字节：GET/HEAD /api/films/dub/:dir/:file ════════
