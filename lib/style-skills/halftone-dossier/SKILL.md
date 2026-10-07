@@ -99,11 +99,13 @@ film: Case File: Chubby
 ## 6. BGM / 音效特征
 
 > ★ **本风格的配乐是它自己的 `music.py` 真跑出来的**（纯 numpy/scipy 代码合成、无第三方素材、seed 7 确定性），与另两个风格不同——**不是占位**。本次成片音频轨实测 **−13.8 LUFS / 峰值 0.4 dBFS**（见第 11 节的响度缺陷）。★ 口径更正：上述 `峰值 0.4 dBFS` 是 `ebur128` 的 1 位小数读数、口径不同，不能当真峰值引用；**成片真峰值 = `loudnorm` 的 `input_tp`，4× 过采样 = +0.43 dBTP**。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 **→ −2.06 dBTP**（后经 2026-10-05 复跑、入库版再测为 **−3.26 dBTP**）、已在 −1.2 dBTP 交付线内；本条判语为**修复前**状态，保留作历史。
+> ★ 2026-10-07 复测当前入库成片真峰值 **−2.79 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 
 - **配乐**：**120 BPM、一小节 2 秒、C 大调每小节一个和弦（`PLAN`，15 小节）**。乐器：synth kick/snare/clap/hat、方波式八分 bass、三角波 pad、**马林巴式 `pluck`**（基频 + 3.99× 泛音）主旋律 + 轻八度回声；`pizz` 拨弦与指响做潜行（第 6–7 小节 = Count 02）；军鼓滚 + 上升正弦扫做 build（第 10 小节 = 总结）（`DEMO.md:60`）。
 - **拟音（foley）**：按印刷与笑点——每个标题字一个 pop、头探出来的 boing、每个图章的 `stamp()`（音高下坠 boom + click，大图章加 crackle）、mugshot 的 `shutter()`、合成的 `meow()`（共振峰 /i/→/a/→/u/）、杯子 `clink`、破碎 `crash_glass()`、每次擦除前的 whoosh、猫躺键盘的 `plop` + 一串 `key_click`、"太可爱了" 的 `sparkle`（`DEMO.md:61`）。
 - **旁白处理**：无旁白（可选，若有则用干、冷静的播报声，绝不喘气）（`STYLE.md:78`）。
 - **响度目标**：`−14 LUFS`、真峰 ≤ −1 dB（`STYLE.md:79`）；**本次实测 −13.8 LUFS / 峰值 0.4 dBFS，未达 −1.2 dBTP 目标**（`_distill/logs/halftone-dossier.log:61`）。（口径更正：`峰值 0.4 dBFS` 是 `ebur128` 的 1 位小数读数、口径不同，真峰值以 `loudnorm` 的 `input_tp`、4× 过采样 **+0.43 dBTP** 为准） ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 +0.43 dBTP → **−2.06 dBTP**（后经 2026-10-05 复跑、入库版再测为 **−3.26 dBTP**）、已在 −1.2 dBTP 交付线内（达标）；原 +0.43 dBTP 记录保留为历史。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−2.79 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **静音策略**：**判决图章之前把音乐清空**，让图章独自落下——demo 的 drop 把第 11 小节前半留空，判决图章在 23.0s 单独落地（`DEMO.md:60`）。
 
 ---
@@ -166,6 +168,7 @@ film: Case File: Chubby
 ### 已知缺陷
 - **★ 本次修了一个真 bug（不改画面，纯加性）**：`core/render/video.mjs` 的页面契约要求 `window.DUR`，而本风格 `index.html` 里 `DUR` 是脚本作用域的 `const`、没挂到 window，通用渲染器探到 `window.DUR === undefined` 直接 fail（`window.DUR must be a positive number of seconds`），**本风格因此一直出不了片**。已加一行 `window.DUR = DUR; window.FPS = FPS;`（`index.html:70`）修复，画面未动。
 - **★ 音频这次是真配乐（非占位）**：`music.py` 纯 numpy/scipy 合成、120 BPM、一小节 2 秒、无第三方素材，本次就是跑它自己的 `music.py` 产出真实配乐。但**响度未达标**：实测 **−13.8 LUFS / 峰值 0.4 dBFS**，目标 −14 LUFS / TP ≤ −1.2 dBTP，mux.sh 报「missed the target…probably clipping or has very hot peaks」（`_distill/logs/halftone-dossier.log:61`）。（口径更正：`峰值 0.4 dBFS` 是 `ebur128` 的 1 位小数读数、口径不同，真峰值以 `loudnorm` 的 `input_tp`、4× 过采样 **+0.43 dBTP** 为准） ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 +0.43 dBTP → **−2.06 dBTP**（后经 2026-10-05 复跑、入库版再测为 **−3.26 dBTP**），已在 −1.2 dBTP 交付线内；音频评分回补 +4（见第 10 节）。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−2.79 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - ~~**9:16 硬渲会丢画面**：无 `aspects` 声明，产品默认 9:16 导出时右侧约 43.75% 丢失、下方黑边；出血数字与右中主体全被裁掉。~~ **★ 2026-10-04 已修**：`demo/index.html` 加「设计帧等比装入」外壳 + 新增薄壳 `demo/film.js` 声明 `aspects`（5 个比例全支持），9:16 下整幅画面都在（见第 2 节）。残留代价：竖屏有效画面只占 1080×607、半调网点缩放会摩尔纹。
 - ~~**走不了编排器的音频链**：本风格没有独立的混音脚本，而 `lemo-make.mjs` 的混音步只按 `mix.py` / `sound.py` / `audio/mix.py` 三个**文件名**找脚本，一个都找不到就 `STEP_FAIL 该 demo 没有 mix.py / sound.py / audio/mix.py —— 它用的是另一套音频架构` 并 `exit 1`（`lemo-make.mjs` 的混音步）⇒ 本风格只能 `--skip-audio` 复用仓库里那份旧的 `demo/mix.wav`，走不了标准「主题出片」通路。~~ **★ 2026-10-05 已修**：新增薄壳 `demo/mix.py`（**不接受命令行参数**、用同一个解释器 `subprocess` 调既有 `music.py` 并把输出路径指向 `demo/mix.wav`；不重写任何配乐逻辑、不碰视频、幂等），编排器混音步现已命中本风格 —— 实测 `MIX_OK 5292044 …/styles/halftone-dossier/demo/mix.wav`，随后 `MUX_OK 46164256 src_frames=720 out_frames=720`，**该次另存的 9:16 交付片**（`D:/lemo-films/_mixfix/halftone-dossier/halftone-dossier.mp4`，**音频链修复的验证产物，非本风格入库样板片**——入库样板片是 16:9 / 1920×1080，见 `_distill.json#generatedVideo`）实测 1080×1920 / 30.00s / 真峰值 −2.79 dBTP / −14.24 LUFS（两条交付口径都达标；2026-10-07 复测：真峰值 −2.79 dBTP、响度 −14.26 LUFS，与上式一致、响度差 0.02 LU）。**不再需要 `--skip-audio`**。（★ **原记**：上述 −2.79 dBTP 是那次复跑产物的读数；当时记「入库成片实测真峰值 −3.26 dBTP」——**2026-10-07 复测未复现该值**：入库样板片（16:9 母版，mtime 2026-10-07 09:20）现测真峰值 **−2.79 dBTP**，按约定保留原句并补现值。）★ 这条缺陷原本**没有**独立扣分项（`_distill.json#defects` 里从未记过它、也无 `【audio −N】`），故 `scoreBreakdown` / `matchScore` 不变。
 - **本 demo 没有 build.sh**，一键复现只能照 DEMO.md 六步手动走。
@@ -204,5 +207,6 @@ film: Case File: Chubby
 **逐帧拆解要点**：f01 标题首帧——蓝底（`#2E55D6`）满幅半调网点（右上角点更密、向中心变稀），中央奶油色 Bagel Fat One「CHU」带 navy 偏移阴影，右上角 JetBrains Mono「CASE FILE · 2026」。f02 标题卡——「CHUBBY」大字落定、橘猫头从字母后探出，下方中文副标题「胖橘 · 一份来自铲屎官的起诉书」。f04 mugshot——米色纸底 + 左侧身高尺刻度，橘猫正面居中、蓝粉双色半调光晕在它身后，脚下 navy 名牌「PANG JU, O.」。f06 同场续帧——左侧巨型「99+」（Bagel Fat One，粉红套印），右侧 profile 文字块，左上 HUD「案卷 No.2026-CAT-001」+ 章节 chip。f11 夜场 Count 02——切到深墨底（`#18203F`）+ 同色系更亮点，左上中文标题「凌晨四点跑酷」，右上黄色数字时钟「04:00」，床与猫剪影，底部 navy 字幕条「每晚 4:00 准时开跑，从不迟到。」（「从不迟到」黄字高亮）。f13 同场续帧——猫在床上奔跑（`runCycle`）、速度线。f15 Count 03——回到米色纸底，标题「代写周报」、笔记本上打满乱码、右侧巨型粉红半调「3」、右上黄便签「18:00 必须交！」、猫趴在键盘上。全程可见网点、纸纹与套印错位；转场为点状擦除（部分硬切）；无渐变、无柔阴影。
 
 **自检发现的缺陷**：音频响度未达标（−13.8 LUFS / 峰值 0.4 dBFS，该值为 `ebur128` 1 位小数读数，真峰值以 `loudnorm input_tp` 4× 过采样 **+0.43 dBTP** 为准）；9:16 不支持；无 build.sh；events.json 0 条；字幕源未重生成。 ★ 2026-10-03：成片真峰值已修（+0.43 dBTP → −2.06 dBTP，音频重混；后经 2026-10-05 复跑、入库版再测为 **−3.26 dBTP**），见第 11 节。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−2.79 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 
 **本次为补齐短板做了什么**：给 `index.html` 加了一行 `window.DUR = DUR; window.FPS = FPS;`（`index.html:70`），修复通用渲染器的 `window.DUR must be a positive number of seconds` 契约缺失——**纯加性、不改画面**，本风格因此首次出片成功。

@@ -102,6 +102,7 @@ film: Five-Second Astronaut
 - **拟音（foley）清单**：**跟着媒介走**——蜡笔橡皮吱 + 空气；水墨湿 splat + 滴；ASCII 电传打字 + 继电器；riso 纸闷响 + crunch；像素 bit-crushed 噪；蓝图棘轮齿 + 印章闷响；瑞士空心 bonk + 小橡皮 boing。家舞台：弹簧皇冠 click、碎玻璃（失一条命）+ 弹跳叮、翻牌、老虎机 whirr、稀疏掌声（`DEMO.md:57`）。
 - **旁白处理**：主持人 = Kokoro `am_fenrir`，speed **1.05–1.15**，**每个命令词喊在铜管 stab 之后 0.1s**，免得铜管盖住词；主角 = `af_bella` 升 **+2.5 半音**，只有「Oh no.」加「ah… ah…」与喷嚏（后两者当 SFX 处理，豁免 whisper 校验）（`DEMO.md:58`）。音乐在语音下 duck **约 11 dB**、foley duck **约 6 dB**（`STYLE.md:79`）。
 - **响度目标**：`-14 LUFS`；**交付真峰值上限**：`-1.2 dBTP`（项目级交付线；`STYLE.md` 只写 −14 LUFS，未额外声明更严上限）。本次实测 **I −14.1 LUFS / LRA 3.5 LU（`ebur128`）/ 真峰值 −0.86 dBTP（`loudnorm` `input_tp`，4× 过采样）—— 真峰值超交付线 0.34 dB，但真峰值为负、未削波**（`logs/microgame.log:129-130` 只印了 I 与 LRA）；混音文件 `mix.wav` 峰值 **0.89**（`logs/microgame.log:118`）。混流走自带副本 `styles/microgame/demo/tools/mux.sh`（`TP=-1.2`，**无 AAC 编码余量**）。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 −0.86 dBTP → **−2.18 dBTP**、已在 −1.2 dBTP 交付线内（达标）；原 −0.86 dBTP 记录保留为历史。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.35 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **静默策略**：至少一次在**最大的 hit 之前留真实静默**——demo 里第一次喷嚏前 1 拍、只剩一条命的舞台（只剩心跳）、Boss 特写（心跳 + 与第一粒尘埃同一根 guqin 音）。**最响的时刻紧跟最长的静默之后**（`DEMO.md:56`）。加速选项：每次 SPEED UP 前一段上行铜管、每轮升一个调、改用减半音符而非改速度、最后一条命把 groove 降成心跳（`STYLE.md:77`）。
 
 ---
@@ -169,6 +170,7 @@ film: Five-Second Astronaut
 - **ASR 未全通过**：本次 `mismatches: 4`（`d_ah` / `fx_choo1` / `d_ah2` / `fx_choo2`），日志打 **`STEP_WARN asr_check 未通过（继续）`**（`logs/microgame.log:87-110`）。按 `DEMO.md:58` 这四条属于**当 SFX 处理、豁免 whisper 校验**的条目，所以不算真缺陷，但流程上确实亮了黄灯。
 - **混音峰值偏高**：`mix.wav peak 0.89`（`logs/microgame.log:118`），距削波只剩约 1 dB。
 - **真峰值超交付线 0.34 dB（本次新补记）**：成片真峰值 **−0.86 dBTP**（`loudnorm` `input_tp`，4× 过采样；`STYLE.md` 未声明更严上限，按项目线 −1.2 dBTP 判）。真峰值为负 ⇒ **未削波**，属『仅超线』。根因在下游 AAC 编码余量——本风格副本 `styles/microgame/demo/tools/mux.sh` 的 loudnorm 目标写死 `TP=-1.2`（`tools/mux.sh:5,9`），未采用 core 版 `LN_TP=-1.7`；按 AGENT-BRIEF 取 −2 档后**减半 = −1**（项目级既有缺陷，非本风格音频链所致），`audio 18→17`（理由见 `_distill.json.audioScoreBasis`）。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −0.86 dBTP → **−2.18 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +1（见第 10 节）。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.35 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **音视频长度不一致**：`mux.sh` 提示 `audio (59.826792 s) shorter than video (59.833333 s); padding to 59.875000 s`（`logs/microgame.log:132`）——已自动补足，无实际影响。
 - **字幕底衬色为回退值**：目前用风格自身地色/辅色替代（回退原因见第 5 节）；若要完全对齐 demo，需先统一 `palette.subtitle` 与 demo 的 `textColor`。
 - **细纹理 `textureRaw: toon` 声明了但渲染未实现**：`lib/dub-styles.json#microgame.bgRecipe.textureRaw` 是 `toon`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）**只把粗粒度 `bgRecipe.texture` 当主权威源**（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），**不读** `textureRaw` ⇒ `toon` 这一层质感在「文案 + 风格」通路上**从未画出来过**。为什么没实现：`bgFilters()` 里没有 `toon` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径**只如实标注、不猜参数**（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里）。
@@ -218,5 +220,6 @@ film: Five-Second Astronaut
 - **瑕疵帧**：未发现糊帧、错位、字幕溢出或黑边。f11 三条滚轮条之间的细缝是刻意的老虎机结构，不是瑕疵。f19 右上角的 ASCII 高度读数面板被缩到角落——这是 Boss 混媒帧「一条焦点链 + 信息面板推角落」规则的正确执行（`DEMO.md:81`）。
 
 **自检发现的缺陷**：见第 11 节「已知缺陷」六条——9:16 丢生命板、「文案+风格」通路字幕完全不对（KaiTi + 黑底条）、ASR 亮黄灯（4 条豁免项）、混音峰值 0.89 偏高、**成片真峰值 −0.86 dBTP 超交付线 0.34 dB（−2 档减半 = −1）**、音视频长度差已自动补足。 ★ 2026-10-03：成片真峰值已修（−0.86 dBTP → −2.18 dBTP，音频重混），见第 11 节。 ★ **2026-10-04：9:16 丢生命板已修**——改为页面外壳整幅等比装入（见第 2 节）。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.35 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 
 **本次为补齐短板做了什么**：**未改动任何源码**（遵守红线）。本次仅做文档蒸馏；第 11 节已把「命令词专用字幕样式」「9:16 舞台布局变体」「ASR 豁免标注」列为下次迭代的优先项。 ★ **2026-10-04（多比例改造）**：为支持多比例，改了 **2 个源文件** —— `demo/index.html`（新增页面外壳等比装入脚本）与 `demo/film.js`（新增 `FILM_META.aspects` 声明）；**影片绘制代码（8 个 `g_*.js` / `stage.js` / `frames.js` / `hud.js` / `chars.js` / `toon.js` / `glpass.js`）一字未动**，故 16:9 逐字节不变（md5 实测）。

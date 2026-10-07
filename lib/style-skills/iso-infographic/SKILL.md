@@ -99,6 +99,7 @@ film: From Bean to Cup
 - **拟音（foley）清单**：纤维断裂（茎）、肉闷响（樱桃落掌）、颗粒哗啦（樱桃过网）、倒谷入麻袋、集装箱门与落箱的**非谐钢泛音**、麻布撕裂、鼓筒旋转轰鸣、干裂爆响（一爆）、磨豆啸叫 + 碾压、压粉 thock、陶瓷 plink、**升调**倾倒（`DEMO.md:76`）。**每点亮一个 Isotype 图标 = 一个声音。**
 - **旁白处理**：Kokoro `bf_alice`、速度 0.88–1.0，六句短句；音乐在人声下 **−8 dB**、环境 **−7 dB**，说话时**鸟叫静音**——样片实测「一个词尾的鸟叫让 whisper 把 travel 听成 travels」（`DEMO.md:77`）。每句都过 dry take + 最终混音两次 whisper 校验。
 - **响度目标**：`−14 LUFS`（`STYLE.md:75`）；**真峰值上限 −1.2 dBTP**（mux.sh 的告警阈值）。**本次成片未达标**：实测 **−14.2 LUFS / 真峰值 +1.20 dBTP**（口径 = `loudnorm` 的 `input_tp`，4× 过采样；mux 告警里的 `peak 0.326858 dB` 是 `astats` 的**采样峰值**，不是真峰值，会低估削波），超 −1.2 dBTP 交付线 **2.40 dB**，且真峰值为正即已**实际削波**，见第 11 节。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 +1.20 dBTP → **−1.69 dBTP**、已在 −1.2 dBTP 交付线内（达标）；原 +1.20 dBTP 记录保留为历史。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.39 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **静音策略**：**两段真静默**——下潜（30.0–33.6s，只剩路线与 **−66 dB** 船体吱呀）与第一滴咖啡之前（45.3–45.9s，数字零）。每段之后的第一声都是全片最重要的声音之一：**船笛**（约高出一切 10 dB，D2 锯齿叠失谐 + 2.8s 尾音，实测 horn peak **−8.3 dB**）与**一滴落进空杯**（`DEMO.md:73`）。
 - **声音转场**：港口噪声 **J-cut 提前 0.6s**、烘焙鼓提前 0.6s、船笛尾巴 **L-cut 进城市**；最终拉回时**每站一个 kalimba 音**（`DEMO.md:78`）。
 
@@ -164,6 +165,7 @@ film: From Bean to Cup
 
 ### 已知缺陷
 - **成片音频削顶，未达真峰值目标**。出片日志里 `mux.sh` 明确告警：`missed the target (-14 LUFS, true peak <= -1.2 dB): measured -14.2 LUFS, peak 0.326858 dB (ebur128 1-decimal readout 1.2 dB)`。**注意口径**：`peak 0.326858 dB` 是 `astats` 的**采样峰值**（`logs/iso-infographic.log:102`），不是真峰值；同一行括号里的 ebur128 1 位小数读值 `1.2` 才接近真峰值。**本次复测真峰值 = `loudnorm` 的 `input_tp` = +1.20 dBTP（4× 过采样）——超 −1.2 dBTP 交付线 2.40 dB，且为正值即已经过 0 dBFS、实际削波。** 日志自己也说了「通常来自 mix.wav 本身峰值偏高，不是 mux.sh 的问题」。这是本次最实的一个缺陷。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 +1.20 dBTP → **−1.69 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +6（见第 10 节）。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.39 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **第一段静默不静**。`DEMO.md:73` 声明下潜静默（30.0–33.6s）里只该剩路线与 −66 dB 船体吱呀；但 `mix.wav` 实测 `silence 30.1–33.5: -25.9 dB`，其中 **`voc sil1 -26.8 dB`**——静默段里仍有人声残留（环境 / 音乐 / 拟音三路都已是 −180 / −180 / −66.4，所以残留来自人声）。第二段静默（45.35–45.85s）实测 −180.0 dB，是干净的。
 - **标签与字幕卡纵向间距偏紧**。帧 f21 / f22 里「11,000 km」引线的横线末端离底部的字幕卡很近，逼近 `DEMO.md:105`「lines never overlap the end card」的边界（未真正重叠，但余量小）。
 - **片尾图例卡会压在板上**。帧 f23 的「FROM BEAN TO CUP」图例卡落在右下角时与城市 / 板面有轻微叠压；f24 拉回后位置才清爽。`DEMO.md:106` 说它该在「空的奶油角」——拉回到位前并非空角。
@@ -192,6 +194,7 @@ film: From Bean to Cup
 
 ### 下次迭代优先补什么
 - **修混音峰值**：把 `mix.wav` 整体降 **≥ 2.5 dB**（真峰值 +1.20 dBTP 要压到 ≤ −1.2 dBTP 至少需 2.4 dB）并压掉瞬态峰值，让成片回到 −14 LUFS / ≤ −1.2 dBTP。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 **→ −1.69 dBTP**、已在 −1.2 dBTP 交付线内；本条判语为**修复前**状态，保留作历史。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.39 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **修第一段静默的人声残留**：确认 30.1–33.5s 是否有一条 VO 的尾巴压进了静默窗，在 `timeline.js` 的 `SUBS` / `lines.json` 里把该句收尾提前，或让 `mix.py` 的静默清零也覆盖人声总线。
 - ~~给编排器补 `aspects` 声明，或对 16:9-only 风格**直接拒绝 9:16 导出**。~~ ★ **2026-10-04 已完成**：本风格已在 `demo/film.js:11` 补上字面量 `FILM_META.aspects = ['16:9','9:16']`（控制台按源码文本探测，见 `D:/lemo-tools/lib/aspects.mjs`），`styleAspects('iso-infographic')` 返回 `declared:true` 且含 `9:16`；无需再拒绝导出。
 - 片尾图例卡加一个「拉回到位前淡出」的规则，避免 f23 那种压在板上的中间态。
@@ -223,5 +226,6 @@ film: From Bean to Cup
 - **整体色走**：全片**没有冷暖推移**，是「站点换色」（绿山 → 蓝海 → 城市灰砖 → 咖啡棕 → 奶油底）；唯一的「色走」事件是 f13/f14 的**全片去饱和**（焦点 + 上下文），之后在 f21 恢复。节奏是「持续累积 + 两次急停」。
 
 **自检发现的缺陷**：成片真峰值 **+1.20 dBTP**（口径 = `loudnorm` `input_tp`，4× 过采样；超 −1.2 dBTP 交付线 2.40 dB，实际削波。`astats` 采样峰值 +0.33 dB 会低估削波程度）；第一段静默内人声残留（−26.8 dB）；标签与字幕卡余量小；片尾图例卡中间态压在板上。 ★ 2026-10-03：成片真峰值已修（+1.20 dBTP → −1.69 dBTP，音频重混），见第 11 节。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.39 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 
 **本次为补齐短板做了什么**：**未改动 `lemo-make.mjs`、未改动 `styles/iso-infographic/` 下任何源码**。仅完成本 Skill 文档与 `_distill.json` 的蒸馏；上述短板已全部记录在第 11 节，留给下一轮迭代。

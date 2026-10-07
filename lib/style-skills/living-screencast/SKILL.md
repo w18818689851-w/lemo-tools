@@ -97,6 +97,7 @@ film: Clawd Moves In
 - **拟音（foley）清单**：键盘（thock + click，**带人手时值抖动**）、触控板点击、窗格 swish、浮层 pop、通知铃声、CI tick、截图快门；**吉祥物的走 / 跳 / 落地是 8-bit 的**（`STYLE.md:79`）。
 - **旁白处理**：样片 Kokoro `am_michael`、speed 1.0（其他声线会把 Claude 读成 Clod），**一功能一句**，产品名用 whisper 验证；**效果声必须避开词的首音**——样片里一记按键落在「Start」上把那个词盖住了（`DEMO.md:66`、`STYLE.md:105`）。音乐在人声下压（ducking 由 `sound.py` 做）。
 - **响度目标**：`−14 LUFS`（`STYLE.md:81`）；真峰值上限 **−1.2 dBTP**。**本次成片略未达标**：实测 **−14.2 LUFS / 真峰值 −0.94 dBTP**（口径 = `loudnorm` 的 `input_tp`，4× 过采样；mux 告警里印的 `peak -1.110876 dB` 是 `astats` 的**采样峰值**、不是真峰值），超 −1.2 dBTP 交付线 **0.26 dB**，见第 11 节。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变），真峰值 −0.94 dBTP → **−2.14 dBTP**、已在 −1.2 dBTP 交付线内（达标）；原 −0.94 dBTP 记录保留为历史。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.59 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **静音策略**：**在关键承诺之前**把音乐降到只剩房间底噪，让那句最重要的话落地（`STYLE.md:80`）；样片用的是聚光冻结 + 承诺徽章。
 
 ---
@@ -161,6 +162,7 @@ film: Clawd Moves In
 ### 已知缺陷
 - **ASR 校验未通过（本次唯一 mismatch）**。出片日志：`DIFF v05 | Point at a file with the at sign, → Point at a file with the head sign.`，随后 `STEP_WARN asr_check 未通过（继续）`、`mismatches: 1`。即旁白里的 **「at sign」被 whisper 听成「head sign」**——这是本风格最该防的一类错（`STYLE.md:106` 明写「TTS mispronounces the product name → try voices and spellings, verify with whisper」）。成片未因此阻断，但这条校验没过。
 - **成片响度 / 峰值略未达标**。`mux.sh` 告警：`missed the target (-14 LUFS, true peak <= -1.2 dB): measured -14.2 LUFS, peak -1.110876 dB (ebur128 1-decimal readout -0.9 dB)`。**注意口径**：`peak -1.110876 dB` 是 `astats` 的**采样峰值**、不是真峰值；同一行括号里的 ebur128 读值 `-0.9` 才接近真峰值。本次复测**真峰值 = `loudnorm` 的 `input_tp` = −0.94 dBTP（4× 过采样），超 −1.2 dBTP 交付线 0.26 dB**。比 iso-infographic 轻微（那里真峰值 **+1.20 dBTP**，已过 0 dBFS），但同样越过了 −1.2 dBTP 上限。 ★ **2026-10-03 已修**：成片已用 `scripts/fix-truepeak.mjs` 音频重混（`-c:v copy`，视频流逐字节未变、帧数与时长不变），真峰值 −0.94 dBTP → **−2.14 dBTP**，已在 −1.2 dBTP 交付线内；音频评分回补 +2（见第 10 节）。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.59 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **按键 HUD 会压到应用窗口的下缘**。帧 f09（Plan 模式那一段）左下角的按键 HUD 胶囊与窗口底边重叠；`STYLE.md:45` 只规定「屏幕上不叠别的」，没规定 HUD 与窗口的间距，属于规则空白带来的实际瑕疵。
 - **dub 通路与 demo 观感不一致**。`dub-styles.json#living-screencast` 的 `bg #0C1016` 是**兜底值**（`bgSameAsDefault:true`），渲染出来是「暗底 + 白字 + 强暗角（vignette 0.35）」的通用暗色板；而 demo 是**浅色主题的桌面录屏**。也就是说走「文案 + 风格」通路时，**画面底与 demo 完全不是一回事**——这一条是已知的、条目自带的缺陷（其 `notes` 里也写了「⚠ 本条目 dub-visual 未抽到 palette.bg，已按 plain-dark 底色兜底」）。
 - **字幕底衬色为回退值**：目前用风格自身地色/辅色替代（回退原因见第 5 节）；若要完全对齐 demo，需先统一 `palette.subtitle` 与 demo 的 `textColor`。
@@ -219,5 +221,6 @@ film: Clawd Moves In
 - **节奏观察**：没有一帧是静态的——即使「安静」的段落，吉祥物也在按拍呼吸、不规则眨眼，应用窗口的插入符在闪。字幕胶囊始终在底部、始终不压被讨论的元素。
 
 **自检发现的缺陷**：ASR 1 条 mismatch（`at sign` → `head sign`）；成片真峰值 −0.94 dBTP（`loudnorm` `input_tp`，4× 过采样）越过 −1.2 dBTP 交付线 0.26 dB；按键 HUD 与窗口下缘重叠；dub 通路底色是兜底暗色板、与 demo 浅色主题不一致。 ★ 2026-10-03：成片真峰值已修（−0.94 dBTP → −2.14 dBTP，音频重混），见第 11 节。
+  ★ 2026-10-07 复测当前入库成片真峰值 **−1.59 dBTP**（`loudnorm` 的 `input_tp`，4× 过采样；核法见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 
 **本次为补齐短板做了什么**：**未改动 `lemo-make.mjs`、未改动 `styles/living-screencast/` 下任何源码**。仅完成本 Skill 文档与 `_distill.json` 的蒸馏；上述短板已全部记录在第 11 节，留给下一轮迭代。
