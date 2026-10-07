@@ -54,7 +54,7 @@
     "lib/style-dna/scifi-toon.md",
     "lib/style-dna/scifi-toon.json",
     "lib/dub-styles.json#scifi-toon",
-    "logs/scifi-toon.log",
+    "_distill/logs/scifi-toon.log",
     "styles/scifi-toon/demo/toon.js",
     "styles/scifi-toon/demo/chars.js",
     "styles/scifi-toon/demo/worlds.js",

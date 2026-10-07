@@ -10,7 +10,7 @@
     "rhythm": 20,
     "audio": 19
   },
-  "audioScoreBasis": "audio 18/20（本轮由 19 扣为 18）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−0.76 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.44 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位取 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量——本风格副本 styles/risograph/demo/tools/mux.sh（core 副本）的 loudnorm 目标写死 TP=-1.2（`tools/mux.sh:3,5,9`），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），故**减半 = −1**，audio 19→18。属项目级既有缺陷、非本风格音频链所致。另 −1 为既有：实测 −13.9 LUFS（目标 −14，偏 0.1 LU，可接受）、LRA 5.3 LU 远低于 loudnorm 目标 11 LU，静音小节与满乐队之间的动态落差被线性增益压平。",
+  "audioScoreBasis": "audio 18/20（本轮由 19 扣为 18）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−0.76 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.44 dB；真峰值为负 ⇒ 未削波，属『仅超线』。扣分档位取 AGENT-BRIEF「真峰值超标怎么扣」的 −2 档（真峰值为负但超线），因根因在下游 AAC 编码余量——本风格副本 styles/risograph/demo/tools/mux.sh（core 副本）的 loudnorm 目标写死 TP=-1.2（`tools/mux.sh:3,5,9`），未采用 core 版 LN_TP=-1.7（留 0.5 dB 编码余量），故**减半 = −1**，audio 19→18。属项目级既有缺陷、非本风格音频链所致。另 −1 为既有：实测 −13.9 LUFS（目标 −14，偏 0.1 LU，可接受）、LRA 5.3 LU 远低于 loudnorm 目标 11 LU，静音小节与满乐队之间的动态落差被线性增益压平。★ **2026-10-08 更正**（原句保留作历史）：首句「audio 18/20」与真峰值 −0.76 dBTP 超线的 −1 扣分是当时的快照；成片已修复重渲，**当前入库成片真峰值 = −3.11 dBTP**（达标、未削波，与 `selfCheck.loudness.truePeakDbtp` 一致）⇒ 该扣分撤销，**权威 `scoreBreakdown.audio = 19`**。",
   "defects": [
     "composition −2：f09（≈15s）骑车人叠在带窗格与门廊的立面上、f13（≈21.7s）叠在鸽群与绿地上，主体与网点/窗格打架，违反 `STYLE.md:33`「人物的头要压在画面里最平的那块颜色上」",
     "typography −3：样本字幕用 Jost 500（42px）、片名用 Bricolage Grotesque 800（190px），本机两套字体都没有，dub 通路回退到 DengXian，片名「Riso 双印」的重黑体气质在模板通路里掉一半",

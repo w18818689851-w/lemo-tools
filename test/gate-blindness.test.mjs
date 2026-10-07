@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 84 条用例 / 覆盖全部 35 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 88 条用例 / 覆盖全部 36 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -59,6 +59,16 @@
  *          ④ **失明三态**（空风格树 / 数据里 0 字段 / 空登记表）⇒ FAIL +「本闸门已**失明**」；
  *          ★ 夹具**整棵拷真实 `_distill.json` 语料**（276 条登记表抄第二遍必然漂移）；
  *            要变异**登记表**本身时只能「拷闸门 + `LEMO_TOOLS_ROOT` 指回真实仓」（判据② 才找得到那些闸门）。
+ *        · `check-sources-paths`（2026-10-08 建，`_distill.json#sources` 的**路径引用存在性**）：
+ *          ① **解析不到的路径**（临时语料给 `art-deco` 加 `lib/style-dna/__NOPE__art-deco.md`）⇒ FAIL 并点名
+ *            `slug + 那条 source`；② **变异 B**（把 `scifi-toon` 那条**改回**裸 `logs/scifi-toon.log`）⇒ FAIL 并点名
+ *            —— 钉住本批修好的那一条**真的被守着**；③ **生成物登记表**（照库仓 `.gitignore:138-142` 建）
+ *            命中只列 ℹ、不判 FAIL（真实语料 3 条：`brick-toy` 的 `music/score.json`、`hd-2d`/`watercolor`
+ *            的 `voices/dur.json`）；④ **登记表 ↔ `.gitignore` 一致性**（合成库仓改掉 `:138` 规则行 ⇒ FAIL 点名）；
+ *            ⑤ **失明四态**（空风格树 / 0 条 source / 0 条路径样 / 库仓根不可达）⇒ FAIL +「本闸门已失明」；
+ *            ⑥ **★自证**：短路判据①（`else fails.push(...)` → 空块）⇒ 变异 A/B **重新变绿**。
+ *          ★ 主夹具**整棵拷真实 `_distill.json` 语料**（生成物登记表照它建的，手写最小树 = 抄第二遍）；
+ *            判据④ 的夹具则用**合成的 1 风格语料 + 合成 `.gitignore`**（不该去读另一个仓的真实文件）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -543,6 +553,11 @@ test('check-doc-coverage：失明守卫（scripts/ 只有非闸门非工具的 f
     //   见其 `CLAIMS` 表）⇒ 最小合法夹具必须**同时**提供 `test/gate-blindness.test.mjs`
     //   （否则 `gbText` 读不到 ⇒ 「用例数 / 自证数无法计算」）与两处文档里的**计数锚点**。
     //   本夹具按 **1 个闸门 / 2 条用例 / 1 条 ★自证** 配平（旧夹具没有这两样 ⇒ 阴性对照被误判成失明）。
+    // ★ 2026-10-08（第二次顺带修**夹具陈旧**）：`check-doc-coverage.mjs` 的判据③ 又扩到**顶层
+    //   `README.md`**（新增 8 条计数声称：`上表共 N 条` + 库侧 7 条）。⇒ 最小合法夹具还须提供
+    //   `README.md`（否则「顶层 README 读不到」⇒ 判失明）。库侧 7 条依赖**另一个仓**（lemo-opuscar）：
+    //   本夹具把 `LEMO_STYLES_ROOT` 指到一个**不存在**的路径 ⇒ 闸门按「库仓不可达 ⇒ 只 ℹ、跳过其声称、
+    //   **不判失明**」处理（与 `check-env-overrides.mjs` 的库仓口径一致）⇒ 只需配平 `上表共 N 条` 这 1 条。
     const neg = path.join(dir, 'neg');
     wf(path.join(neg, 'scripts', 'check-x.mjs'), '// 一个闸门\n');
     wf(path.join(neg, 'test', 'gb-doc.test.mjs'), '// 一个测试入口\n');
@@ -564,7 +579,15 @@ test('check-doc-coverage：失明守卫（scripts/ 只有非闸门非工具的 f
       + '| `test/gate-blindness.test.mjs` | 说明 |\n');
     wf(path.join(neg, '_distill', 'AGENT-BRIEF.md'),
       '# 简报\n\nnode D:/x/scripts/check-x.mjs\n');
-    const r2 = await runGate('check-doc-coverage.mjs', { LEMO_TOOLS_ROOT: neg });
+    // ★ 顶层 README（2026-10-08 补）：只需配平「上表共 N 条」这 1 条锚点（库侧 7 条被 LEMO_STYLES_ROOT 指空跳过）。
+    wf(path.join(neg, 'README.md'),
+      '# 夹具 README\n\n上表共 **1** 条\n\n'
+      + '| 方法 | 路径 | 用途 | 类型 |\n|---|---|---|---|\n| GET | `/api/x` | 夹具接口 | 同步 |\n');
+    const r2 = await runGate('check-doc-coverage.mjs', {
+      LEMO_TOOLS_ROOT: neg,
+      // ★ 指向**不存在**的库侧风格根：闸门按「库仓不可达 ⇒ 只 ℹ、不判失明」处理（同 check-env-overrides）。
+      LEMO_STYLES_ROOT: path.join(neg, 'no-such-lib', 'styles'),
+    });
     expectClean(r2, '本闸门已失明', 'check-doc-coverage 阴性对照');
   } finally { rm(dir); }
 });
@@ -718,9 +741,13 @@ test('check-selfcheck-claims：★ 达标判据（成片实为 libx264 ⇒ FAIL�
 
     // ── ★自证：把「达标」与「自洽」两条判据**短路**（只改条件、不动括号结构）⇒ 同夹具必须变绿 ──
     //   ⇒ 证明上面那条断言真的在测这两条判据，而不是在测「闸门有没有崩」。
+    //   ★ 2026-10-08 扩：本夹具只有 1 个风格（用真 `art-deco` json ⇒ 只带「带 LRA=11」那一种写法）
+    //     ⇒ 判据 F 的**反向守卫**（登记项必须被用到）必然报「另一条写法从未被使用」。
+    //     那是**夹具形态**问题、不是本用例要测的东西 ⇒ 连同正向一起短路（同进同出，防假绿）。
     const gateCopy = patchGate('check-selfcheck-claims.mjs', path.join(dir, 'rev'), [
       ['} else if (!norm(tag).includes(norm(EXPECTED))) {', '} else if (false) {'],
       ['if (tag && !norm(tag).includes(norm(claim))) {', 'if (false) {'],
+      ['if (!caliberUsed.has(`${k}\\u0000${v}`)) {', 'if (false) {'],
     ]);
     const r2 = await run(NODE, [gateCopy], { env: { LEMO_DISTILL_ROOT: pos } });
     assert.equal(r2.code, 0, `★自证：短路达标/自洽判据后应 exit 0，实得 ${r2.code}\n${r2.out.slice(0, 900)}`);
@@ -728,15 +755,93 @@ test('check-selfcheck-claims：★ 达标判据（成片实为 libx264 ⇒ FAIL�
       `★自证：短路后**不该**再报「成片未走 h264_nvenc」\n${r2.out.slice(0, 900)}`);
 
     // ── 阴性对照：真风格 + 真成片（nvenc）⇒ exit 0 且不含失明文案 ──
+    //   ★ 2026-10-08 扩：判据 F（口径声明登记表）上线后，「最小合法夹具」必须**把登记表用满**
+    //     —— 否则反向守卫会判「登记项从未被任何风格使用」。故这里放**两个**风格，两条合法
+    //     `truePeakMethod` 写法各来一份（两串与 `CALIBER_REGISTRY` **逐字相同**）。
     const realFilm = 'D:/lemo-films/art-deco/art-deco.mp4';
     assert.ok(fs.existsSync(realFilm), `阴性对照依赖真实成片存在：${realFilm}`);
+    const TP_WITH_LRA = 'ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）';
+    const TP_NO_LRA = 'ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）';
+    const LRA_METHOD = 'ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）';
     const neg = path.join(dir, 'neg');
     rj(path.join(neg, 'art-deco', '_distill.json'),
-      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc' } });
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc', loudness: { truePeakMethod: TP_WITH_LRA, lraMethod: LRA_METHOD } } });
+    rj(path.join(neg, 'ascii-crt', '_distill.json'),
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc', loudness: { truePeakMethod: TP_NO_LRA, lraMethod: LRA_METHOD } } });
     const r3 = await runGate('check-selfcheck-claims.mjs', { LEMO_DISTILL_ROOT: neg });
     expectClean(r3, '已失明', 'check-selfcheck-claims 阴性对照');
     assert.ok(r3.out.includes('与真值全部一致'),
       `阴性对照应报「与真值全部一致」\n${r3.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ── 8c. check-selfcheck-claims.mjs · 判据 F（口径声明登记表，2026-10-08 补）────────────
+//   ★ 由来：`selfCheck.loudness.{truePeakMethod,lraMethod}`（43/43）声明「本片真峰值 / LRA 用哪条命令测的」，
+//     此前**零闸门读**（`check-distill-fields.mjs` 记 `coveredBy: null`）⇒ 实测踩到一处真错：
+//     `engraving` 写 `loudnorm=I=-16:TP=-1.5`（那是 `check-lra-caliber.mjs:45` 的**探测**命令），
+//     而本片实跑的是 `I=-14:TP=-1.7`（`_distill/logs/engraving.log:182`）。本用例钉住「未登记 ⇒ FAIL」。
+test('check-selfcheck-claims：★ 口径声明登记表（未登记的 truePeakMethod ⇒ FAIL；全缺 ⇒ 失明）', async () => {
+  const dir = path.join(TMP, 'scc-caliber');
+  try {
+    const realFilm = 'D:/lemo-films/art-deco/art-deco.mp4';
+    assert.ok(fs.existsSync(realFilm), `夹具依赖真实成片存在：${realFilm}`);
+    const LRA_METHOD = 'ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）';
+    // ★ 未登记的串 = `engraving` 2026-10-08 修前的原值（`I=-16:TP=-1.5`，不是本片实跑的那条）
+    const WRONG = 'ffmpeg -i <film> -af loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）';
+
+    // ── 正向：未登记 ⇒ exit≠0 且点名 slug + 实际串 ──
+    const pos = path.join(dir, 'pos');
+    rj(path.join(pos, 'art-deco', '_distill.json'),
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc', loudness: { truePeakMethod: WRONG, lraMethod: LRA_METHOD } } });
+    const r1 = await runGate('check-selfcheck-claims.mjs', { LEMO_DISTILL_ROOT: pos });
+    expectBlind(r1, '未登记（声称的测量命令与项目实跑的那条不符）', 'check-selfcheck-claims 判据F 正向');
+    assert.ok(r1.out.includes('art-deco') && r1.out.includes('I=-16:TP=-1.5'),
+      `正向应点名 slug 并回显实际串\n${r1.out.slice(0, 900)}`);
+
+    // ── 失明守卫：两个口径声明字段全缺 ⇒ exit≠0 且明说「已失明」──
+    const blindDir = path.join(dir, 'blind');
+    rj(path.join(blindDir, 'art-deco', '_distill.json'),
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc' } });
+    const r2 = await runGate('check-selfcheck-claims.mjs', { LEMO_DISTILL_ROOT: blindDir });
+    expectBlind(r2, '一个口径声明字段都没读到', 'check-selfcheck-claims 判据F 失明');
+
+    // ── 阴性对照：登记表用满 + 真成片 ⇒ exit 0 且不含失明文案 ──
+    const neg = path.join(dir, 'neg');
+    const TP_WITH_LRA = 'ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）';
+    const TP_NO_LRA = 'ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）';
+    rj(path.join(neg, 'art-deco', '_distill.json'),
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc', loudness: { truePeakMethod: TP_WITH_LRA, lraMethod: LRA_METHOD } } });
+    rj(path.join(neg, 'ascii-crt', '_distill.json'),
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc', loudness: { truePeakMethod: TP_NO_LRA, lraMethod: LRA_METHOD } } });
+    const r3 = await runGate('check-selfcheck-claims.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r3, '已失明', 'check-selfcheck-claims 判据F 阴性对照');
+    assert.ok(r3.out.includes('口径声明 4 处'),
+      `阴性对照应报「口径声明 4 处」（2 风格 × 2 字段）\n${r3.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+test('★自证 check-selfcheck-claims：短路口径声明判据（正向 + 反向）后，未登记的 truePeakMethod 必须重新变绿', async () => {
+  const dir = path.join(TMP, 'scc-caliber-rev');
+  try {
+    const realFilm = 'D:/lemo-films/art-deco/art-deco.mp4';
+    assert.ok(fs.existsSync(realFilm), `夹具依赖真实成片存在：${realFilm}`);
+    const LRA_METHOD = 'ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）';
+    const WRONG = 'ffmpeg -i <film> -af loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）';
+    const pos = path.join(dir, 'pos');
+    rj(path.join(pos, 'art-deco', '_distill.json'),
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc', loudness: { truePeakMethod: WRONG, lraMethod: LRA_METHOD } } });
+
+    // ★ 自证：把「未登记 ⇒ FAIL」与反向守卫**两条一起**短路（只改条件、不动括号结构）。
+    //   单风格夹具在正向判据短路后仍会因「登记项没用满」而红 ⇒ 两条必须同进同出，
+    //   否则这条自证会变成「因为别的原因仍然红」的假绿（本项目反复治过的坑）。
+    const gateCopy = patchGate('check-selfcheck-claims.mjs', path.join(dir, 'rev'), [
+      ['if (reg.includes(v)) {', 'if (true) {'],
+      ['if (!caliberUsed.has(`${k}\\u0000${v}`)) {', 'if (false) {'],
+    ]);
+    const r2 = await run(NODE, [gateCopy], { env: { LEMO_DISTILL_ROOT: pos } });
+    assert.equal(r2.code, 0, `★自证：短路判据 F 后应 exit 0，实得 ${r2.code}\n${r2.out.slice(0, 900)}`);
+    assert.ok(!r2.out.includes('未登记'),
+      `★自证：短路后**不该**再报「未登记」\n${r2.out.slice(0, 900)}`);
   } finally { rm(dir); }
 });
 
@@ -3172,6 +3277,126 @@ test('★自证 check-distill-fields：短路判据① / 判据② 后，各自�
     const rb = await run(NODE, [gb], { env: { LEMO_TOOLS_ROOT: TOOLS } });
     assert.throws(() => expectBlind(rb, N_GONE, 'mut'),
       undefined, '短路判据② 后变异B 竟然还报 ⇒ 那条正向断言没在测判据②');
+  } finally { rm(dir); }
+});
+
+// ── 12d. check-sources-paths.mjs（`_distill.json#sources` 路径存在性，2026-10-08 建）──
+// ★ 为什么主夹具是「**整棵拷真实 `_distill.json` 语料**」：与 `check-distill-fields` 同理 ——
+//   判据② 的生成物登记表是照真实语料建的，手写最小树会退化成「把登记表抄第二遍」。
+// ★ 但判据④（登记表 ↔ `.gitignore` 一致性）的夹具用**合成的 1 风格语料 + 合成 `.gitignore`**
+//   —— 它只依赖「`.gitignore` 第 N 行是什么」，不该去读**另一个仓**（`D:/lemo-opuscar`）的真实文件。
+const OPUSCAR_REAL = path.join(TOOLS, '..', 'lemo-opuscar');
+
+test('check-sources-paths：解析不到的路径 ⇒ FAIL 并点名；生成物 ℹ 不误报；登记依据失效 ⇒ FAIL（含失明）', async () => {
+  const dir = path.join(TMP, 'sources-paths');
+  // 该闸门的四条特有文案（逐字抄自闸门源码）
+  const N_FAIL = '也不属于已登记生成物';
+  const N_GEN = '命中生成物登记表（不判 FAIL）';
+  const N_STALE = '生成物登记表的依据失效';
+  const N_BLIND = '本闸门已失明';
+  try {
+    // ① 阴性对照：真实语料副本、**不改动** ⇒ exit 0，且判据①② 都真的跑过（否则「永远 exit 1」也能骗过）
+    const neg = copyDistillCorpus(path.join(dir, 'neg'));
+    const r0 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r0, N_FAIL, 'check-sources-paths 阴性对照');
+    assert.ok(/source 共 \d+ 条：路径样 \d+ 条、跳过 \d+ 条/.test(r0.out),
+      `阴性对照应打印枚举计数（证明真的扫过语料）\n${r0.out.slice(0, 900)}`);
+    assert.ok(r0.out.includes(N_GEN),
+      `阴性对照应列出生成物 ℹ（证明判据② 也跑了）\n${r0.out.slice(0, 900)}`);
+
+    // ② 变异 A（判据①）：给 art-deco 加一条**不存在**的路径 ⇒ FAIL 并点名 slug + 那条 source
+    const a = copyDistillCorpus(path.join(dir, 'a'));
+    editDistill(path.join(a, 'art-deco', '_distill.json'), (j) => {
+      j.sources = [...(j.sources || []), 'lib/style-dna/__NOPE__art-deco.md'];
+    });
+    const r1 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: a });
+    expectBlind(r1, N_FAIL, 'check-sources-paths 变异A');
+    assert.ok(r1.out.includes('art-deco') && r1.out.includes('lib/style-dna/__NOPE__art-deco.md'),
+      `判据① 应点名 slug + 那条 source\n${r1.out.slice(0, 1200)}`);
+
+    // ③ 变异 B：把 scifi-toon 那条**改回**裸 `logs/scifi-toon.log` ⇒ FAIL 并点名
+    //    —— 证明本批修好的那一条**真的被守着**（不是「恰好现在没坏」）。
+    const b = copyDistillCorpus(path.join(dir, 'b'));
+    editDistill(path.join(b, 'scifi-toon', '_distill.json'), (j) => {
+      j.sources = (j.sources || []).map((x) => (x === '_distill/logs/scifi-toon.log' ? 'logs/scifi-toon.log' : x));
+    });
+    const r2 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: b });
+    expectBlind(r2, N_FAIL, 'check-sources-paths 变异B');
+    assert.ok(r2.out.includes('scifi-toon') && r2.out.includes('logs/scifi-toon.log'),
+      `变异B 应点名 scifi-toon + 裸 logs 路径\n${r2.out.slice(0, 1200)}`);
+    // ★ 生成物登记表应仍**只**命中 3 处 ⇒ 证明「为了让闸门变绿而把真失效塞进登记表」没有发生。
+    assert.ok(r2.out.includes(`${N_GEN}3 处`),
+      `生成物登记表应仍只命中 3 处（真失效没被塞进登记表）\n${r2.out.slice(0, 1200)}`);
+
+    // ④ 判据④：合成库仓把 `.gitignore:138` 的规则行改掉 ⇒ FAIL 并点名「登记表依据失效」
+    //    夹具自洽：1 风格语料 + 只引用**仓根**下路径（不依赖真实 `styles/`）+ 合成 `.gitignore`。
+    const syn = path.join(dir, 'syn');
+    wf(path.join(syn, 'gb-src', '_distill.json'),
+      `${JSON.stringify({ slug: 'gb-src', sources: ['lib/style-dna/art-deco.md'] }, null, 2)}\n`);
+    const giLines = [...Array(137).fill(''), 'styles/*/demo/voices/*.json', 'styles/*/demo/voices_raw/*.json',
+      'styles/*/demo/music/score.json', 'styles/*/*.srt', 'styles/*/demo/music/timing_report*.txt', ''];
+    const okOpus = path.join(dir, 'opus-ok'); mk(okOpus);
+    wf(path.join(okOpus, '.gitignore'), giLines.join('\n'));
+    const r3 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: syn, LEMO_OPUSCAR: okOpus });
+    expectClean(r3, N_STALE, 'check-sources-paths 判据④ 阴性');
+    const badOpus = path.join(dir, 'opus-bad'); mk(badOpus);
+    wf(path.join(badOpus, '.gitignore'),
+      giLines.map((l, i) => (i === 137 ? 'styles/*/demo/voices/*.json   # 被改过' : l)).join('\n'));
+    const r4 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: syn, LEMO_OPUSCAR: badOpus });
+    expectBlind(r4, N_STALE, 'check-sources-paths 判据④ 正向');
+    assert.ok(r4.out.includes('.gitignore:138'),
+      `判据④ 应点名 .gitignore:138\n${r4.out.slice(0, 1200)}`);
+
+    // ⑤ 失明四态（防空转绿灯）：空风格树 / 0 条 source / 0 条路径样 / 库仓根不可达 ⇒ 均 exit 1 +「已失明」
+    const e1 = path.join(dir, 'blind-empty'); mk(e1);
+    const rb1 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: e1 });
+    expectBlind(rb1, N_BLIND, 'check-sources-paths 失明①（空风格树）');
+    assert.ok(!rb1.out.includes(N_FAIL) && !rb1.out.includes(N_GEN),
+      `失明时不该输出判据①②\n${rb1.out.slice(0, 900)}`);
+
+    const e2 = copyDistillCorpus(path.join(dir, 'blind-nosrc'));
+    for (const s of fs.readdirSync(e2)) editDistill(path.join(e2, s, '_distill.json'), (j) => { j.sources = []; });
+    const rb2 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: e2 });
+    expectBlind(rb2, N_BLIND, 'check-sources-paths 失明②（0 条 source）');
+
+    const e3 = path.join(dir, 'blind-nopath');
+    wf(path.join(e3, 'gb-src', '_distill.json'),
+      `${JSON.stringify({ slug: 'gb-src', sources: ['对照实验（我自己生成、已清理）：一段说明文字'] }, null, 2)}\n`);
+    const rb3 = await runGate('check-sources-paths.mjs', { LEMO_DISTILL_ROOT: e3, LEMO_OPUSCAR: OPUSCAR_REAL });
+    expectBlind(rb3, N_BLIND, 'check-sources-paths 失明③（0 条路径样）');
+
+    const rb4 = await runGate('check-sources-paths.mjs', { LEMO_OPUSCAR: path.join(dir, 'nope-opuscar') });
+    expectBlind(rb4, N_BLIND, 'check-sources-paths 失明④（库仓根不可达）');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-sources-paths：短路判据① 后，变异 A/B 必须重新变绿', async () => {
+  const dir = path.join(TMP, 'mut-sources-paths');
+  const N_FAIL = '也不属于已登记生成物';
+  try {
+    // 短路判据①：把「解析不到 ⇒ 记 FAIL」那一句换成空块（**只改这一处**，不动其它结构）。
+    const subs = [['      else fails.push({ slug, raw: p.raw, path: p.path, tried: triedPaths(p.path, slug), why: null });',
+      '      else { /* 短路判据① */ }']];
+
+    // 变异 A：不存在的路径
+    const a = copyDistillCorpus(path.join(dir, 'a'));
+    editDistill(path.join(a, 'art-deco', '_distill.json'), (j) => {
+      j.sources = [...(j.sources || []), 'lib/style-dna/__NOPE__art-deco.md'];
+    });
+    const ga = patchGate('check-sources-paths.mjs', path.join(dir, 'ga'), subs);
+    const ra = await run(NODE, [ga], { env: { LEMO_DISTILL_ROOT: a, LEMO_TOOLS_ROOT: TOOLS, LEMO_OPUSCAR: OPUSCAR_REAL } });
+    assert.throws(() => expectBlind(ra, N_FAIL, 'mut'), undefined,
+      '短路判据① 后变异A 竟然还报 ⇒ 那条正向断言没在测判据①');
+
+    // 变异 B：scifi-toon 改回裸 logs/
+    const b = copyDistillCorpus(path.join(dir, 'b'));
+    editDistill(path.join(b, 'scifi-toon', '_distill.json'), (j) => {
+      j.sources = (j.sources || []).map((x) => (x === '_distill/logs/scifi-toon.log' ? 'logs/scifi-toon.log' : x));
+    });
+    const gb = patchGate('check-sources-paths.mjs', path.join(dir, 'gb'), subs);
+    const rb = await run(NODE, [gb], { env: { LEMO_DISTILL_ROOT: b, LEMO_TOOLS_ROOT: TOOLS, LEMO_OPUSCAR: OPUSCAR_REAL } });
+    assert.throws(() => expectBlind(rb, N_FAIL, 'mut'), undefined,
+      '短路判据① 后变异B 竟然还报 ⇒ 那条正向断言没在测判据①');
   } finally { rm(dir); }
 });
 

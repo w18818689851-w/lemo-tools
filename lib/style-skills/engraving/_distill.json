@@ -89,7 +89,7 @@
       "samplePeakDbfs": -1.577556,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
-      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
+      "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.54 dBTP（2026-10-07 重渲后成片实测；原记 −3.27 属重渲前版本），在 −1.2 dBTP 交付线内（余量 0.34 dB）、未削波。`logs/engraving.log:177-179` 的 ebur128 `Peak -1.5 dBFS`（1 位小数）与 `:180` 的 astats `Peak level dB: -1.577556` 都是低精度峰值读数，不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。"
     },

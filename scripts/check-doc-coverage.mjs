@@ -136,11 +136,76 @@ if (unlisted.length) {
 //     （形态变了 ⇒ 判据失明，不许静默放行 —— 同 `check-redline-md5.mjs` 的「锚定唯一性」纪律）。
 //   ★ 实测值一律**从文件系统现算**（闸门数 = `scripts/check-*.mjs`；用例数 = `^test(` 出现次数；
 //     自证数 = `^test('★自证` 出现次数）⇒ 代码变了文档必须跟，闸门自身不会过期。
+//
+// ── ★★ 2026-10-08 延伸③：把**顶层 `README.md`** 的「计数声称 ↔ 实测」也纳入同一判据 ──────────
+//   由来（实测的真缺陷）：顶层 `README.md` 一度写「全库 **43** 个风格的 `demo/build.sh`」，
+//   而实测只有 **35** 个风格带 `build.sh`（有 `demo/` 的是 43 个，其中 **8** 个没有 `build.sh`）。
+//   这条能长期存在，正是因为判据③此前只覆盖 `test/README.md` 与 `test/gate-blindness.test.mjs`。
+//   ⇒ 把顶层 README 里**可机械验证**的计数纳入（实测值一律**从文件系统现算**，如
+//     `styles/*/demo/build.sh` 的计数、`styles/*/demo/tools/<脚本>` 的存在性）。
+//   ★ 锚点必须**唯一**（命中 ≠ 1 处 ⇒ 判失明，同既有纪律）。
+//   ★ 顶层 README 读不到 ⇒ 判失明（本仓主文档缺失）。库侧风格根**可达但 0 风格目录** ⇒ 判失明；
+//     **不可达**（库仓是另一个仓、可能没 clone）⇒ 只 ℹ、跳过其计数声称、**不判失明**
+//     —— 与 `check-env-overrides.mjs` 的「库仓不可达 ⇒ 只 ℹ」口径一致（外部仓不该让本闸门误红）。
 const gateCount = files.filter(isGate).length;
 const GB = path.join(testDir, 'gate-blindness.test.mjs');
 const gbText = fs.existsSync(GB) ? fs.readFileSync(GB, 'utf8') : '';
 const caseCount = (gbText.match(/^test\(/gm) || []).length;
 const selfCount = (gbText.match(/^test\('★自证/gm) || []).length;
+
+// ── ★ 2026-10-08 延伸③：顶层 `README.md` 的计数声称（实测值全部从文件系统现算）──────
+const README_TOP = path.join(ROOT, 'README.md');
+const readmeTop = fs.existsSync(README_TOP) ? fs.readFileSync(README_TOP, 'utf8') : '';
+// 库侧风格根（默认 lemo-opuscar；可用 env 覆盖，便于变异测试）。
+// ★ 库仓是**另一个仓**（由安装向导 `git clone` 而来），**不能假设它在别人机器上存在** ⇒
+//   与 `check-env-overrides.mjs` 的「库仓不可达 ⇒ 只 ℹ、**不判失明**」同一口径（见其头注释的库仓侧扩展）。
+//   但**可达却扫到 0 个风格目录** ⇒ 判失明（真·空转），同 `scripts/` / `test/` 两个扫描根。
+const STYLES_ROOT = process.env.LEMO_STYLES_ROOT || 'D:/lemo-opuscar/styles';
+let styleDirs = null;
+let stylesNote = '';
+try {
+  styleDirs = fs.readdirSync(STYLES_ROOT, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name !== '_template')      // 排除模板目录
+    .map((e) => e.name).sort();
+} catch {
+  styleDirs = null;                                                // 库仓不可达 ⇒ 跳过其计数声称（不判失明）
+  stylesNote = `库侧风格根 \`${STYLES_ROOT}\` 不可达 ⇒ 跳过其计数声称（只 ℹ、不判失明；同 check-env-overrides 的库仓口径）`;
+}
+const hasIn = (slug, rel) => { try { return fs.existsSync(path.join(STYLES_ROOT, slug, rel)); } catch { return false; } };
+const readIn = (slug, rel) => { try { return fs.readFileSync(path.join(STYLES_ROOT, slug, rel), 'utf8'); } catch { return ''; } };
+// 各实测计数（`null` ⇒ 库仓不可达；空数组 ⇒ 可达但 0 风格 ⇒ 交由失明守卫）。
+const stylesCount = styleDirs ? styleDirs.length : null;
+const buildShCount = styleDirs ? styleDirs.filter((s) => hasIn(s, 'demo/build.sh')).length : null;
+// `core/render/still.mjs` 是**库侧**脚本 ⇒ 判据按 `build.sh` 里是否引用它（与 README 差异表同源）。
+const stillCount = styleDirs
+  ? styleDirs.filter((s) => /core\/render\/still\.mjs/.test(readIn(s, 'demo/build.sh'))).length
+  : null;
+// 下面三个是**demo 自带**脚本 ⇒ 判据按文件是否存在（`demo/` 或 `demo/tools/`），与 ORCH_SKIP_STEPS 同源。
+const cuecheckCount = styleDirs
+  ? styleDirs.filter((s) => hasIn(s, 'demo/tools/cuecheck.py') || hasIn(s, 'demo/cuecheck.py')).length : null;
+const finalAsrCount = styleDirs
+  ? styleDirs.filter((s) => hasIn(s, 'demo/tools/final_asr.py') || hasIn(s, 'demo/final_asr.py')).length : null;
+const checkMixCount = styleDirs
+  ? styleDirs.filter((s) => hasIn(s, 'demo/check_mix.py') || hasIn(s, 'demo/tools/check_mix.py')).length : null;
+// HTTP 接口表条数（= 「上表共 N 条」的实测；与 `check-api-docs.mjs` 的双向闸门互补）。
+const apiRowCount = (readmeTop.match(/^\|\s*(GET|HEAD|POST|PUT|PATCH|DELETE)\s*\|\s*`?\/api\//gm) || []).length;
+
+// 顶层 README 的 CLAIMS：只有「文档读得到 + 实测算得出」时才登记（否则交由失明守卫，不误报不符）。
+const README_CLAIMS = [];
+if (readmeTop) {
+  README_CLAIMS.push(['README.md', /上表共 \*\*(\d+)\*\* 条/g, 1, apiRowCount, '顶层README·HTTP 接口表条数']);
+}
+if (readmeTop && styleDirs && styleDirs.length) {
+  README_CLAIMS.push(
+    ['README.md', /全库 (\d+) 个风格的 `demo\/build\.sh`/g, 1, buildShCount, '顶层README·带 build.sh 的风格数(全库N个)'],
+    ['README.md', /按 `build\.sh` 逐条抽取核对，(\d+) 个带 `build\.sh` 的风格里/g, 1, buildShCount, '顶层README·带 build.sh 的风格数(干净名单)'],
+    ['README.md', /环境状态条 · (\d+) 个风格列表/g, 1, stylesCount, '顶层README·风格总数'],
+    ['README.md', /只影响交付图 \| \*\*(\d+) 个\*\*风格（含 art-deco）/g, 1, stillCount, '顶层README·still.mjs 覆盖风格数'],
+    ['README.md', /`tools\/cuecheck\.py`\s*\|\s*纯自检\s*\|\s*(\d+) 个/g, 1, cuecheckCount, '顶层README·cuecheck 覆盖风格数'],
+    ['README.md', /`tools\/final_asr\.py`\s*\|\s*纯自检\s*\|\s*\*\*(\d+) 个\*\*/g, 1, finalAsrCount, '顶层README·final_asr 覆盖风格数'],
+    ['README.md', /`check_mix\.py`（`demo\/` 或 `demo\/tools\/`）\s*\|\s*纯自检\s*\|\s*(\d+) 个/g, 1, checkMixCount, '顶层README·check_mix 覆盖风格数'],
+  );
+}
 
 // [文档, 锚定正则, 捕获组序号(1-based), 实测值, 名称]
 const CLAIMS = [
@@ -153,26 +218,34 @@ const CLAIMS = [
   ['test/README.md', /另含 \*\*(\d+)\*\* 个\*\*故意破坏自证\*\*/g, 1, selfCount, 'README(详述)·自证数'],
   ['test/gate-blindness.test.mjs', /共 (\d+) 条用例 \/ 覆盖全部 (\d+) 个闸门/g, 1, caseCount, 'gate-blindness·用例数'],
   ['test/gate-blindness.test.mjs', /共 (\d+) 条用例 \/ 覆盖全部 (\d+) 个闸门/g, 2, gateCount, 'gate-blindness·闸门数'],
+  ...README_CLAIMS,
 ];
 
 const countBad = [];
 const countBlind = [];
 if (!gbText) countBlind.push(`\`${GB}\` 读不到 ⇒ 用例数 / 自证数**无法计算**`);
 else if (caseCount === 0) countBlind.push(`\`${GB}\` 里扫到 0 个 \`^test(\` ⇒ 「用例数」这条判据空转`);
+// ★ 2026-10-08：顶层 README 读不到 ⇒ 其计数声称空转 ⇒ 判失明（它是本仓主文档，缺失即失明）。
+if (!readmeTop) countBlind.push(`\`${README_TOP}\` 读不到 ⇒ 顶层 README 的计数声称**无法比对**`);
+// ★ 库仓**可达却 0 风格目录** ⇒ 真·空转 ⇒ 判失明；库仓**不可达**则只 ℹ（见上面 `stylesNote`），不在此判。
+if (styleDirs && styleDirs.length === 0) countBlind.push(`\`${STYLES_ROOT}\` 可达但扫到 0 个风格目录 ⇒ 风格 / build.sh / 自检脚本覆盖数**全部空转**`);
 for (const [doc, re, gi, truth, label] of CLAIMS) {
-  const text = doc === 'test/README.md' ? readme : gbText;
+  const text = doc === 'test/README.md' ? readme : doc === 'README.md' ? readmeTop : gbText;
   const hits = [...text.matchAll(re)];
   if (hits.length !== 1) { countBlind.push(`${label}：锚点命中 **${hits.length}** 处（应为 1）⇒ 抽不到 / 不唯一（形态变了？）`); continue; }
   const got = Number(hits[0][gi]);
   if (got !== truth) countBad.push(`${label}：文档写 **${got}**、实测 **${truth}**（${doc}）`);
 }
 
+if (stylesNote) console.log(`\nℹ ${stylesNote}`);
+
 if (countBad.length) {
   console.log(`\n✘ 文档里的计数声称与实测不符 ${countBad.length} 处：`);
   for (const c of countBad) console.log(`  ${c}`);
-  console.log('\n修法：把文档里的数字改成实测值（`test/README.md` 与 `test/gate-blindness.test.mjs` 头部）。');
+  console.log('\n修法：把文档里的数字改成实测值（`test/README.md` / `test/gate-blindness.test.mjs` 头部 / 顶层 `README.md`）。');
 } else if (!countBlind.length) {
-  console.log(`\n✓ 文档里的计数声称与实测一致（闸门 ${gateCount} 个、用例 ${caseCount} 条、★自证 ${selfCount} 条）。`);
+  const extra = README_CLAIMS.length ? `、顶层 README ${README_CLAIMS.length} 条声称` : '';
+  console.log(`\n✓ 文档里的计数声称与实测一致（闸门 ${gateCount} 个、用例 ${caseCount} 条、★自证 ${selfCount} 条${extra}）。`);
 }
 
 if (missing.length) {

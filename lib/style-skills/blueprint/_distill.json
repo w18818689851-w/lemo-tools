@@ -10,7 +10,7 @@
     "rhythm": 19,
     "audio": 18
   },
-  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.03 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.17 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**按 2026-10-03 统一口径减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲），非本风格音频链所致，属项目级既有缺陷。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半。另 −2 为既有：成片 I=−13.9 LUFS 比 −14 目标高 0.1 LU、LRA 4.5 LU 偏紧（`logs/blueprint.log:164-166`）。音频链本次真实跑过（TTS 6 行 + ASR 6/6 OK + score.py + mix.py，logs:40-152）。",
+  "audioScoreBasis": "audio 17/20（本轮由 18 扣为 17）。本次新补记一条真峰值缺陷：成片真峰值 input_tp=−1.03 dBTP（判据 = loudnorm 的 input_tp，4× 过采样，2026-10-03 离线复测），超 −1.2 dBTP 交付线 0.17 dB；真峰值为负 ⇒ 未削波，属『仅超线』，基准 −2 档。**按 2026-10-03 统一口径减半为 −1**：过冲根因在 mux/编码阶段（loudnorm 抬峰 + AAC 编码过冲），非本风格音频链所致，属项目级既有缺陷。★ 口径不按「走 core 还是走自带副本」分：core/render/mux.sh（LN_TP=−1.7）与各 demo 自带的 mux.sh 副本（多半写死 TP=−1.2）都是项目提供的模板，都不是该风格音频设计的锅 ⇒ 两类一律减半。另 −2 为既有：成片 I=−13.9 LUFS 比 −14 目标高 0.1 LU、LRA 4.5 LU 偏紧（`logs/blueprint.log:164-166`）。音频链本次真实跑过（TTS 6 行 + ASR 6/6 OK + score.py + mix.py，logs:40-152）。★ **2026-10-08 更正**（原句保留作历史）：首句「audio 17/20」是**当时**的评分依据 —— 成片真峰值 −1.03 dBTP 超 −1.2 dBTP 交付线，故按 −1 档扣分；该片其后已修复/重渲，**当前入库成片真峰值 = −1.42 dBTP**（达标、未削波，与 `selfCheck.loudness.truePeakDbtp` 一致），这条 −1 扣分随之撤销 ⇒ **权威 `scoreBreakdown.audio = 18`**。",
   "defects": [
     "【typography −4】本次出片字幕源未重新生成：日志告警 styles/blueprint/demo/tools/subs.mjs 退出码 1（`logs/blueprint.log:27/33/161`），.srt 沿用仓库里已提交的旧文件，成片字幕时间不是本次新算的、与本次音频的对齐未被验证。",
     "【typography −4 补充】下游 dub-styles.json#blueprint 因本机无 Architects Daughter / B612，subtitle.fontFamily 退回 KaiTi，字形观感与样片（手写体注记框 + B612 的 NOTE/n 单元格）不一致。",
