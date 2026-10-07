@@ -17,6 +17,10 @@
  *   | `selfCheck.srtCues`（2/43）      | 字幕条数        | **成片同名 `.srt` 的实际 cue 数**（实测 2/2 一致）              |
  *   | `selfCheck.loudness.truePeakMethod` | 真峰值**怎么测的** | ★ 登记表（`CALIBER_REGISTRY`）：合法串 = 本片实跑的那条命令； |
  *   | `selfCheck.loudness.lraMethod`（43/43） | （口径声明）  | 未登记的偏离 ⇒ FAIL（见判据 F 与 §「为什么有两条合法写法」）    |
+ *   | `audioScoreBasis`（9/43，**散文**）  | 「audio N/20」  | ★ **权威 `scoreBreakdown.audio`**（`check-skill-scores` 已钉）    |
+ *   |                                  |                 | 不符 ⇒ 需「锚定权威值 + 更正/历史标记」，缺一 FAIL（见判据 G）  |
+ *   | `selfCheck.ratio`（3/43）        | 画幅比          | `generatedVideo.{width,height}`（派生量，见判据 H）             |
+ *   | `selfCheck.clippedSamples`（1/43）| 削波样本数      | 0 ⇒ `loudness.{samplePeakDbfs,truePeakDbtp}` 必须 ≤ 0（判据 H）  |
  *
  * ★★ 为什么 `muxEncoder` 这条最重要（本闸门存在的理由）：
  *   它声称「nvenc」，而此前**零读者** ⇒ 若哪天渲染回退成 `libx264`（违反项目第一硬规则
@@ -25,7 +29,9 @@
  *   `check-skill-artifacts.mjs` 核的是 `generatedVideo.*` 的**数值**（不含编码器）。
  *   ⇒ 本条闸门是**那条硬规则在 `_distill.json` 侧的落点**：它判的是**成片实际用的编码器**。
  *
- * ★ 判据（四组，全部只核「能对实物/权威字段核」的字段；**不核散文** —— 那已由 `check-tp-prose.mjs` 管）：
+ * ★ 判据（八组，全部只核「能对实物/权威字段核」的字段；**不核散文** —— 那已由 `check-tp-prose.mjs` 管；
+ *   ★ 判据 G 是**例外**：它读的正是**散文** `audioScoreBasis`，但**只核其中机器可辨的「audio N/20」分数**，
+ *   且以**结构化权威字段** `scoreBreakdown.audio` 为准绳 —— 不是「核散文措辞」）：
  *   (A) `selfCheck.muxEncoder` 存在且非空 ⇒ 否则 FAIL（声称缺失 = 无凭据）。
  *   (B) ★ **达标**（不是「自洽」）：成片实际的视频流编码器 tag 必须含**期望编码器**
  *       —— 期望值 = `LEMO_VENC`（若设）否则 `h264_nvenc`。
@@ -64,12 +70,55 @@
  *     判据 F 上线前，真实树 **命中 1 = 真阳 1（`engraving`）/ 误报 0**（43×2=86 个声明串里，85 个与登记表一致）；
  *     改正 `engraving` 后真实树 **命中 0 / 误报 0**（86 个声明串全部命中登记表、登记表 3 条全部被用到）。
  *
+ *   (G) ★★ **`audioScoreBasis`（散文）里的分数 ↔ 权威 `scoreBreakdown.audio`**（2026-10-08 新增，
+ *       补第三个独立审计实测确认的零覆盖区）：`audioScoreBasis` 是**散文**（43 份里 **9 份**有），
+ *       里面常写「audio N/20」；**权威**是 `scoreBreakdown.audio`（`check-skill-scores.mjs` 判据①
+ *       已钉住 `matchScore == sum(scoreBreakdown)` ⇒ breakdown 是权威）—— 此前**零闸门读**
+ *       （`check-distill-fields.mjs` 登记为 `coveredBy: null`）。
+ *       ★ 现状（实测，先测再定稿）：9 份里 **6 份**的首个「audio N/20」与权威**差 1**
+ *         （`blueprint` 17/18、`crayon-book` 17/18、`dataviz` 15/16、`microgame` 17/18、
+ *         `risograph` 18/19、`stained-glass` 17/18），但这 6 份**都已按 house style 追加了
+ *         「★ 2026-10-08 更正」**（原句保留 + 句末更正、写明了现值）⇒ **不能简单判「首个 N 必须 == 权威」**
+ *         （那会把 6 处 house-style 历史链**全判红**）。判据设计：
+ *           · 首个「audio N/20」== 权威 ⇒ **通过**（真实 2 份：`cel-anime-80s`、`paper-popup`）；
+ *           · 首个「audio N/20」**没有**（`brick-toy` 写「满分 20，扣 2 分」不写 N/20）⇒ 无分数声称、**不判**；
+ *           · 不等 ⇒ **同时**要求：① **锚定权威值**（文中出现 `scoreBreakdown.audio = <权威>` 或
+ *             「权威 …<权威>」形态）+ ② **有更正/历史标记**（`★ 20XX-XX-XX 更正` / `原句保留作历史` / `原记`）；
+ *             两者缺一 ⇒ FAIL 并点名 slug + 实际「audio N/20」+ 权威值 + 缺哪一项。
+ *       ★ **为什么用「锚定 + 标记」而不是「只要求文中出现权威值」**：只要求「文中出现权威数字」的话，
+ *         `17/20` 这种**同一数字**会到处误命中（`audio 17/20`、日期、别的分数…）⇒ 判据会被**无关数字满足**
+ *         （本项目反复治过的「匹配判据可被无关代码满足」）；`scoreBreakdown.audio = N` 是**显式绑定**，
+ *         不会与散文里的裸数字混淆。★ **它挡不住什么**：把「更正」标记与锚定句**照抄**进去、而首句其实
+ *         仍然错（**主动造假**不在守卫职责内）；也**不核**「更正后的现值是否真的等于成片实测」
+ *         （那要跑 loudnorm，属 `check-tp-prose` / `check-film-delivery` 的活）。
+ *       ★ 误报率实测（真实 43 份逐条人读，**先测再定稿**）：9 个 `audioScoreBasis` 里 8 个有「audio N/20」
+ *         声称、6 个与权威不等 ⇒ **命中 6 / 真阳 0 / 误报 0**（6 个全带锚定 + 更正标记 ⇒ 全放行）。
+ *         ★ 反向（`scoreBreakdown.audio` 被改坏 ⇒ 锚定句里的数字对不上权威）同判 FAIL —— 见下「双向」。
+ *
+ *   (H) ★ **派生量回归护栏**（2026-10-08 新增；本库**全对**，做护栏防将来漂）：两条「由别的字段派生、
+ *       应当恒成立」的关系，实测 43 份**全对** ⇒ 做成护栏：
+ *         · `selfCheck.ratio`（3/43，形如 `"16:9"`）↔ `generatedVideo.width` / `height`（比例一致，容差 0.01）；
+ *         · `selfCheck.clippedSamples === 0`（1/43）⇒ `loudness.samplePeakDbfs ≤ 0` **且**
+ *           `loudness.truePeakDbtp ≤ 0`（**物理不可能**：0 削波却峰值 > 0）。
+ *       ★ **有意不加** `selfCheck.size` ↔ `generatedVideo.{width,height}`：**判据 (D) 已在做**
+ *         （`selfCheck.size` 是**尺寸串** `"WxH"`、不是字节数；D 在 `hasFps` 分支里已逐项核过）⇒ 再加就是重复。
+ *       ★ **为什么这是「真没被覆盖的」**：`check-distill-fields.mjs` 把 `selfCheck.ratio` 与
+ *         `selfCheck.clippedSamples` 都登记为 `coveredBy: null`（零读者）—— 实测确认。
+ *       ★ 误报率实测（真实 43 份逐条人读，**先测再定稿**）：`ratio` 命中 **3 处**（`one-line` /
+ *         `papercut-red` / `pixel-rpg`，都是 `16:9` vs 1920×1080 = 1.7778 ⇒ 通过）、`clippedSamples`
+ *         命中 **1 处**（`pixel-rpg` = 0，其 `samplePeakDbfs` −3.35 / `truePeakDbtp` −1.72 均 ≤ 0 ⇒ 通过）
+ *         ⇒ **命中 0 / 真阳 0 / 误报 0**。
+ *       ★ **它挡不住什么**：`ratio` 只在**同时**有 `generatedVideo.width/height` 时才比对（缺一边则跳过）；
+ *         `clippedSamples` 只判「0 ⇒ 峰值必须 ≤ 0」这一条**物理不可能**关系，**不**判「>0 时峰值是否真的 >0」，
+ *         也**不**核 `clippedSamples` 这个数**本身**是否等于成片实测（那要跑 ffmpeg 扫削波，本项目明令别把闸门做成分钟级）。
+ *
  * ★ **有意不核的 `selfCheck` 字段（逐条给理由，非疏漏）**：
  *   · `loudness.{truePeakDbtp,integratedLufs,lra,peakDbtpTarget,peakTargetMet,samplePeakDbfs}`（43/43）
  *     —— **已被** `check-film-delivery.mjs`（A/B/C 类，对着成片实测核）+ `check-tp-prose.mjs`（json 数值自洽）
  *     + `check-lra-caliber.mjs` 覆盖 ⇒ 再核一遍是**重复**。
  *   · `rendered`（43/43）/ `usedPreGeneratedAudio` / `warnings[]` / 一切 `*note` / `audio.*` / `events` /
- *     `totalSec` / `renderSec` / `ratio` / `nativeResolution` / `grain` / `skipSync` / `preflight` …
+ *     `totalSec` / `renderSec` / `nativeResolution` / `grain` / `skipSync` / `preflight` …
+ *     ★ `ratio` 与 `clippedSamples` **已从本清单移出** —— 2026-10-08 起由判据 (H) 覆盖（见上）。
  *     —— 要么是**散文**（已由 `check-tp-prose.mjs` 的 json pass 管）、要么**口径不明**
  *     （实测 `selfCheck.totalSec` 与 `generatedVideo.durSec` **本来就不同**：`one-line` 67.1 vs 47.5，
  *     说明它是**另一个量**、不是成片时长 ⇒ 拿 durSec 判它就是**凭猜收窄**）、
@@ -80,7 +129,10 @@
  * ★ **失明守卫**（防空转绿灯；写法照 `check-skill-artifacts.mjs` 的两条 / `check-loudness-targets.mjs:64-79`）：
  *   ① 一个带 `_distill.json` 的风格都枚举不到 ⇒ FAIL 并明说「本闸门已失明」；
  *   ② **一个可核字段都没有**（43 份里 `muxEncoder` 与 `fps/frames/size` 全缺）⇒ FAIL 并明说「本闸门已失明」；
- *   ③ **一个成片文件都读不到**（`ffprobe` 一个都没成功）⇒ FAIL 并明说「本闸门已失明」。
+ *   ③ **一个成片文件都读不到**（`ffprobe` 一个都没成功）⇒ FAIL 并明说「本闸门已失明」；
+ *   ④ **判据 F 失明**：一个口径声明字段都没读到、或登记表为空 ⇒ FAIL 并明说「本闸门已失明」；
+ *   ⑤ **判据 G 失明**：一个 `audioScoreBasis` 都没读到 ⇒ FAIL 并明说「本闸门已失明」；
+ *   ⑥ **判据 H 失明**：`ratio` 与 `clippedSamples` 一个都没读到 ⇒ FAIL 并明说「本闸门已失明」。
  *   ⇒ 否则「fails 为空」会打印「✓ 全部一致」—— 那是**假的**（一个东西都没核）。
  *
  * ★ 覆盖点（供非破坏变异验证；与既有闸门同名同义）：
@@ -138,6 +190,34 @@ const CALIBER_REGISTRY = {
 /** 登记表里的字段名（顺序固定，输出可复现）。 */
 const CALIBER_FIELDS = ['truePeakMethod', 'lraMethod'];
 
+/**
+ * ★★ 判据 G 的形态（`audioScoreBasis` 散文里的分数 ↔ 权威 `scoreBreakdown.audio`）。
+ *   · `AUDIO_SCORE_RE`：散文里的**首个**「audio N/20」分数声称（大小写不敏感）。
+ *   · `anchorAudio()`：该散文是否**显式锚定**了权威值 —— 两种合法锚定形态：
+ *     ① `scoreBreakdown.audio = <N>`（`=` 两侧允许空格 / 反引号）；② 「权威 …<N>」（`权威` 后 ≤4 字符内出现该数字）。
+ *     ★ 用「显式绑定」而非「文中出现该数字」：后者会被同一数字的**无关出现**满足（见头注释「匹配判据可被无关代码满足」）。
+ *   · `AUDIO_FIX_MARKS`：house style 的**更正 / 历史**标记（原句保留 + 句末更正）。
+ *     ★ 只认「日期 + 更正」或 `原句保留作历史` / `原记` —— **不许放宽到「只要有个日期就行」**。
+ */
+const AUDIO_SCORE_RE = /audio\s*(\d+)\s*\/\s*20/i;
+const anchorAudio = (text, n) =>
+  new RegExp('scoreBreakdown\\.audio\\s*=\\s*' + n).test(text) ||
+  new RegExp('权威\\s*.{0,4}' + n).test(text);
+const AUDIO_FIX_MARKS = [
+  /★[^★\n]{0,12}\d{4}-\d{2}-\d{2}\s*更正/,
+  /原句保留作历史/,
+  /原记/,
+];
+const hasAudioFixMark = (text) => AUDIO_FIX_MARKS.some((re) => re.test(text));
+
+/** 解析 `selfCheck.ratio`（`"16:9"`）→ 数值比；解析不出返回 null。 */
+function parseRatio(s) {
+  const m = String(s).match(/^\s*(\d+(?:\.\d+)?)\s*[:：\/xX×*]\s*(\d+(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+  const b = Number(m[2]);
+  return b === 0 ? null : Number(m[1]) / b;
+}
+
 const argv = process.argv.slice(2);
 const asJson = argv.includes('--json');
 const argOf = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
@@ -188,6 +268,9 @@ let filmsRead = 0;      // ffprobe 成功读到的成片数
 let compared = 0;       // 真正做过的「声称 vs 真值」比对次数
 let caliberSeen = 0;    // ★ 判据 F：真实语料里出现过的口径声明串数（slug × 字段）
 const caliberUsed = new Set();   // ★ 判据 F：被真实语料用到的登记项（用于反向守卫）
+let audioBasisSeen = 0; // ★ 判据 G：读到的 audioScoreBasis 字段数
+let audioClaimSeen = 0; // ★ 判据 G：其中带「audio N/20」分数声称的数
+let hSeen = 0;          // ★ 判据 H：读到的派生量护栏字段数（ratio / clippedSamples）
 
 for (const slug of slugs) {
   const p = path.join(DIR, slug, '_distill.json');
@@ -202,9 +285,15 @@ for (const slug of slugs) {
   const hasSrtCues = sc.srtCues != null;
   // ★ 判据 F 的字段（`selfCheck.loudness.{truePeakMethod,lraMethod}`）：43/43 都有
   const hasCaliber = !!sc.loudness && CALIBER_FIELDS.some((k) => sc.loudness[k] != null);
+  // ★ 判据 G 的字段（散文 `audioScoreBasis`，9/43 有）与权威 `scoreBreakdown.audio`
+  const hasAudioBasis = j.audioScoreBasis != null;
+  const authoritativeAudio = (j.scoreBreakdown || {}).audio;
+  // ★ 判据 H 的字段（派生量护栏）：`selfCheck.ratio`（3/43）/ `selfCheck.clippedSamples`（1/43）
+  const hasRatio = sc.ratio != null;
+  const hasClip = sc.clippedSamples != null;
 
-  if (claim == null && !hasFps && !hasSrtCues && !hasCaliber) {
-    rows.push({ slug, status: 'SKIP', why: 'selfCheck 里没有一个可核字段（muxEncoder / fps / frames / size / srtCues / loudness.*Method 全缺）' });
+  if (claim == null && !hasFps && !hasSrtCues && !hasCaliber && !hasAudioBasis && !hasRatio && !hasClip) {
+    rows.push({ slug, status: 'SKIP', why: 'selfCheck 里没有一个可核字段（muxEncoder / fps / frames / size / srtCues / loudness.*Method / ratio / clippedSamples 全缺，且无 audioScoreBasis）' });
     continue;
   }
 
@@ -296,6 +385,69 @@ for (const slug of slugs) {
     }
   }
 
+  // ── (G) ★ `audioScoreBasis`（散文）里的分数 ↔ 权威 `scoreBreakdown.audio` ─────
+  //   首个「audio N/20」== 权威 ⇒ 通过；无分数声称 ⇒ 不判；
+  //   不等 ⇒ 必须「显式锚定权威值」+「有更正/历史标记」，缺一 FAIL（见头注释 §判据 G）。
+  if (hasAudioBasis) {
+    audioBasisSeen++;
+    const basis = j.audioScoreBasis;
+    if (typeof basis !== 'string' || !basis.trim()) {
+      bad.push(`audioScoreBasis 不是非空字符串：${JSON.stringify(basis)}`);
+    } else if (authoritativeAudio == null || !Number.isFinite(Number(authoritativeAudio))) {
+      bad.push(`权威 scoreBreakdown.audio 缺失 / 非数值（${JSON.stringify(authoritativeAudio)}）⇒ 无法核 audioScoreBasis`);
+    } else {
+      const m = basis.match(AUDIO_SCORE_RE);
+      if (m) {
+        audioClaimSeen++;
+        compared++;
+        const claimed = Number(m[1]);
+        const auth = Number(authoritativeAudio);
+        // ★ 短路点（供 gate-blindness 的「改坏判据必须变红」自证精确替换，见 test/gate-blindness.test.mjs）。
+        if (claimed !== auth) {
+          if (!anchorAudio(basis, auth)) {
+            bad.push(`★ audioScoreBasis 首个「audio ${claimed}/20」与权威 scoreBreakdown.audio = ${auth} 不符，且**未锚定权威值**（缺 \`scoreBreakdown.audio = ${auth}\` 之类）`);
+          }
+          if (!hasAudioFixMark(basis)) {
+            bad.push(`★ audioScoreBasis 首个「audio ${claimed}/20」与权威 scoreBreakdown.audio = ${auth} 不符，且**无更正/历史标记**（缺 \`★ 20XX-XX-XX 更正\` / \`原句保留作历史\` / \`原记\`）`);
+          }
+        }
+      }
+      // 无「audio N/20」⇒ 无分数声称，不判（真实 1 份：`brick-toy` 写「满分 20，扣 2 分」）。
+    }
+  }
+
+  // ── (H) ★ 派生量回归护栏（本库全对，做护栏防将来漂）─────────────────────────
+  //   (H1) `selfCheck.ratio` ↔ `generatedVideo.width / height`（容差 0.01）
+  //   (H2) `selfCheck.clippedSamples === 0` ⇒ `loudness.{samplePeakDbfs,truePeakDbtp}` 必须 ≤ 0（物理不可能）
+  //   ★ `selfCheck.size` ↔ `generatedVideo.{width,height}` **有意不加** —— 判据 (D) 已在做（见头注释 §判据 H）。
+  if (hasRatio) {
+    hSeen++;
+    const r = parseRatio(sc.ratio);
+    if (r == null) {
+      bad.push(`selfCheck.ratio 解析不出 W:H：${JSON.stringify(sc.ratio)}`);
+    } else if (gv.width != null && gv.height != null && gv.height !== 0) {
+      compared++;
+      const actual = gv.width / gv.height;
+      if (Math.abs(r - actual) > 0.01) {
+        bad.push(`selfCheck.ratio ${JSON.stringify(sc.ratio)} 与 generatedVideo ${gv.width}x${gv.height}（比值 ${actual.toFixed(4)}）比例不符`);
+      }
+    }
+  }
+  if (hasClip) {
+    hSeen++;
+    if (sc.clippedSamples === 0) {
+      compared++;
+      const sp = sc.loudness && sc.loudness.samplePeakDbfs;
+      const tp = sc.loudness && sc.loudness.truePeakDbtp;
+      if (typeof sp === 'number' && sp > 0) {
+        bad.push(`selfCheck.clippedSamples=0 但 loudness.samplePeakDbfs=${sp} > 0（物理不可能：0 削波却采样峰值超 0 dBFS）`);
+      }
+      if (typeof tp === 'number' && tp > 0) {
+        bad.push(`selfCheck.clippedSamples=0 但 loudness.truePeakDbtp=${tp} > 0（物理不可能：0 削波却真峰值超 0 dBTP）`);
+      }
+    }
+  }
+
   if (bad.length) { fails.push(`${slug}: ${bad.join('；')}`); rows.push({ slug, status: 'FAIL', why: bad.join('；') }); }
   else if (srtSkip) rows.push({ slug, status: 'SKIP', why: srtSkip });
   else rows.push({ slug, status: 'PASS', why: '' });
@@ -307,7 +459,7 @@ if (slugs.length === 0) {
   blind.push(`\`${DIR}\` 下一个带 _distill.json 的风格都没枚举到（路径 / \`--only\` / 过滤变了？）⇒ 一份声称都没核过`);
 }
 if (slugs.length > 0 && compared === 0) {
-  blind.push(`${slugs.length} 个风格里**一个可核字段都没核到**（muxEncoder 与 fps/frames/size/srtCues 全缺，或全 SKIP）⇒ 本闸门什么都没检查`);
+  blind.push(`${slugs.length} 个风格里**一个可核字段都没核到**（muxEncoder 与 fps/frames/size/srtCues / ratio / clippedSamples / audioScoreBasis 全缺，或全 SKIP）⇒ 本闸门什么都没检查`);
 }
 if (slugs.length > 0 && filmsRead === 0) {
   blind.push(`**一个成片文件都读不到**（ffprobe 成功 0 部；成片根 = \`${FILM_DIR}\`）⇒ 「成片实际编码器」这一维已失明`);
@@ -319,6 +471,14 @@ if (slugs.length > 0 && caliberSeen === 0) {
 }
 if (caliberTotal === 0) {
   blind.push('口径声明登记表为空（`CALIBER_REGISTRY` 一条都没登记）⇒ 判据 F 无判据可依');
+}
+// ★ 判据 G 的失明守卫（2026-10-08 补）：`audioScoreBasis` 这一维自己也要防空转绿灯
+if (slugs.length > 0 && audioBasisSeen === 0) {
+  blind.push(`**一个 \`audioScoreBasis\` 都没读到**（${slugs.length} 份里全缺）⇒ 「散文分数 ↔ 权威 scoreBreakdown.audio」这一维已失明`);
+}
+// ★ 判据 H 的失明守卫（2026-10-08 补）：派生量护栏这一维自己也要防空转绿灯
+if (slugs.length > 0 && hSeen === 0) {
+  blind.push(`**一个派生量护栏字段都没读到**（${slugs.length} 份里 \`selfCheck.ratio\` 与 \`selfCheck.clippedSamples\` 全缺）⇒ 「派生量护栏」这一维已失明`);
 }
 
 // ── ★ 判据 F 反向守卫：登记项必须至少被一份真实 json 使用（否则登记表腐化 / 该写法已淘汰）──
@@ -334,13 +494,13 @@ if (!only.length) {
 }
 
 if (asJson) {
-  console.log(JSON.stringify({ ffprobe: FFPROBE, distillRoot: DIR, filmDir: FILM_DIR, expected: EXPECTED, slugs: slugs.length, filmsRead, compared, caliberSeen, caliberTotal, caliberUsed: [...caliberUsed].map((x) => x.replace('\u0000', ' → ')), caliberRegistry: CALIBER_REGISTRY, rows, fails, ...(blind.length ? { blind } : {}) }, null, 2));
+  console.log(JSON.stringify({ ffprobe: FFPROBE, distillRoot: DIR, filmDir: FILM_DIR, expected: EXPECTED, slugs: slugs.length, filmsRead, compared, caliberSeen, caliberTotal, audioBasisSeen, audioClaimSeen, hSeen, caliberUsed: [...caliberUsed].map((x) => x.replace('\u0000', ' → ')), caliberRegistry: CALIBER_REGISTRY, rows, fails, ...(blind.length ? { blind } : {}) }, null, 2));
 } else {
   console.log('check-selfcheck-claims —— `_distill.json#selfCheck` 里对实物可核的声称 vs 真值');
   console.log(`  ffprobe    : ${FFPROBE}`);
   console.log(`  风格树     : ${DIR}`);
   console.log(`  成片根     : ${FILM_DIR}   期望编码器: ${EXPECTED}`);
-  console.log(`  风格数 ${slugs.length}   成片读到 ${filmsRead}   比对 ${compared} 处   口径声明 ${caliberSeen} 处（登记表 ${caliberTotal} 条）`);
+  console.log(`  风格数 ${slugs.length}   成片读到 ${filmsRead}   比对 ${compared} 处   口径声明 ${caliberSeen} 处（登记表 ${caliberTotal} 条）   audioScoreBasis ${audioBasisSeen} 份（分数声称 ${audioClaimSeen} 处）   派生量护栏 ${hSeen} 处`);
   console.log('');
   for (const r of rows) {
     const mark = r.status === 'PASS' ? '  ok ' : r.status === 'SKIP' ? ' skip' : ' FAIL';
@@ -353,6 +513,6 @@ if (asJson) {
     console.log('');
   }
   if (fails.length) { console.log(`✗ ${fails.length} 条声称与真值不符：`); for (const f of fails) console.log(`  - ${f}`); }
-  else if (!blind.length) console.log(`✓ ${slugs.length} 个风格的 selfCheck 声称（muxEncoder ${EXPECTED} + fps/frames/size + srtCues + loudness.{truePeakMethod,lraMethod} 口径声明）与真值全部一致。`);
+  else if (!blind.length) console.log(`✓ ${slugs.length} 个风格的 selfCheck 声称（muxEncoder ${EXPECTED} + fps/frames/size + srtCues + loudness.{truePeakMethod,lraMethod} 口径声明 + audioScoreBasis 分数 ↔ 权威 scoreBreakdown.audio + ratio/clippedSamples 派生量护栏）与真值全部一致。`);
 }
 process.exit((fails.length || blind.length) ? 1 : 0);

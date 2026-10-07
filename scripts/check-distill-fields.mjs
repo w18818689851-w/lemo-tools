@@ -17,14 +17,27 @@
  *      ⇒ 否则 FAIL，并列出受影响的所有字段路径。
  *      ★ 判据② 的语义是「**登记了但闸门不在了才红**」：字段本身从数据里消失**不**触发它
  *      （字段不存在 ≠ 闸门不在）—— 见 ⑦ 的**变异 C**。
- *   ③ **ℹ 登记为「无闸门」（`coveredBy: null` + `reason`）只列、不判 FAIL**。
+ *   ③ **ℹ 登记为「无闸门」（`coveredBy: null` + `verifiability` + `reason`）只列、不判 FAIL**，
+ *      但**按可核性分三档**输出（见 ③）；人读输出与 `--json` 都要能**一眼看到计数**：
+ *      「N 条可核但无闸门 / M 条不可核」。
  *   ④ **失明守卫**：枚举到 **0 个风格** / **0 条字段路径** / **登记表为空** ⇒ **FAIL 并明说
  *      「本闸门已失明」**，且失明时**不再输出判据 ①②**（那只会刷屏且会被误读成「字段有问题」）。
+ *   ⑤ **登记表自洽性 ⇒ FAIL**：每条 `coveredBy: null` 条目**必须**带合法 `verifiability`
+ *      （`'value'` / `'claim'` / `'unverifiable'`）—— 否则三档计数会**静默失真**（新增的守卫，见 ③）。
  *
- * ★★ ③ 登记表的两档语义（与 `check-env-overrides.mjs` 的 OVERRIDES / EXTERNAL 同型）：
+ * ★★ ③ 登记表的**三档语义**（★ 2026-10-08 从「两档」升级；`--json` 见下）：
  *   · `coveredBy: '<闸门名>'` ⇒ 判据② 守着它（闸门文件在 + 源码里有 token）。
- *   · `coveredBy: null` + `reason` ⇒ 只列 ℹ、**不判 FAIL**（=「本闸门认了这件事：这个字段没有闸门读」）。
- *   ★ 纪律：**绝不为了让闸门变绿而瞎登记** —— 宁可多写 `null + 待定`，也不编一个假闸门名。
+ *   · `coveredBy: null` + `verifiability` + `reason` ⇒ 只列 ℹ、**不判 FAIL**，且按可核性分三档：
+ *     - `'value'`       **可核·值级**：有**权威对照物**（实物 / 权威结构化字段 / 代码），只是**还没建闸门**
+ *                       ⇒ **真缺口（该补）**。例：`selfCheck.ratio` 对 `generatedVideo.{width,height}` 派生。
+ *     - `'claim'`       **可核·声称级**：是**散文 / 口径声明**，但能被**机械核**（对代码锚 / 权威字段 / 白名单）
+ *                       ⇒ 该补闸门。例：`selfCheck.loudness.truePeakMethod` 对 `mux.sh` 实际命令。
+ *     - `'unverifiable'` **不可核**：**根本没有权威对照物**（纯标识 / 时点 / 孤儿字段 / 运行时读数且记录
+ *                       来源已被失败 run 覆盖 / 唯一「对照物」是自由散文）⇒ **如实标注「不可核」，不假装能覆盖**。
+ *   ★ 纪律：**绝不为了让闸门变绿而瞎登记** —— 宁可多写 `null`，也不编一个假闸门名。
+ *   ★★ 纪律：**不许把可核的偷偷标成不可核来省事**（那是自欺）；宁可多留几条「可核·待补闸门」。
+ *   ★ 判可核性的口径（本闸门采用，逐条写进 `reason`）：**存在独立于该字段自身、且在仓内持久可得、
+ *     可机械核（无需实跑 ffmpeg 重测、无需解析自由散文）的权威对照物** ⇒ 可核；否则 ⇒ 不可核。
  *
  * ★★ ④ `match` 字段（可选；判据② 要在闸门源码里找到的 token，缺省 = 叶名）—— **为什么需要它**：
  *   有些闸门是**按命名空间 / 按清单**覆盖一整棵子树的，此时**叶名根本不会出现在闸门源码里**：
@@ -55,12 +68,17 @@
  *   · 枚举到 **43 个风格 / 276 条去重字段路径**（★ 与 `check-selfcheck-claims.mjs` 头注释里那条
  *     一次性审计的「283 条」**口径不同**：那是**只看 `selfCheck` 子树**、且深度 / 数组展开规则未写明；
  *     本闸门的规则是「**整份 json**、对象递归、数组元素对象加 `[]`」，可复现 —— **以本闸门为准**）。
- *   · 登记 **276 条**（有闸门 **218** 条 / 无闸门 **58** 条）。
+ *   · 登记 **276 条**（有闸门 **224** 条 / 无闸门 **52** 条 = **可核·待补闸门 5**〔值级 4 / 声称级 1〕
+ *     **+ 不可核 47**）。★ 2026-10-08 复核时修正 **6 条过期条目**：`sources` 由「无闸门」**提升为有闸门**
+ *     （`check-sources-paths.mjs`，2026-10-08 新建、读 `json.sources`）；`audioScoreBasis` / `selfCheck.ratio` /
+ *     `selfCheck.clippedSamples` / `selfCheck.loudness.{truePeakMethod,lraMethod}` **5 条**由「可核·待补」
+ *     **提升为有闸门**（`check-selfcheck-claims.mjs` 2026-10-08 新增**判据 G / H1 / H2 / F** 读了它们）
+ *     ⇒ 无闸门由 58 → **52**（见 ⑧）。
  *   · 判据① 命中 **0**（真实语料 276 条**全部**已登记 —— 登记表就是照它建的）⇒ 真阳 0 / 误报 0。
- *   · 判据② 命中 **0**（218 条覆盖声明 = **184 条**用显式 `match`（归并为 **6 个 (闸门, token) 对**：
+ *   · 判据② 命中 **0**（224 条覆盖声明 = **184 条**用显式 `match`（归并为 **6 个 (闸门, token) 对**：
  *     `JSON_FIELDS` / `scoreBreakdown` / `audioEvidence` / `generatedVideo` / `loudness` / `selfCheck`）
- *     + **34 条**用**叶名** token（归并为 **34 个 (闸门, 叶名) 对**），共 **40 个 (闸门, token) 对**，
- *     **逐个**在闸门**剥注释后**的源码里核对过 token 存在）⇒ 真阳 0 / 误报 0。
+ *     + **40 条**用**叶名** token（含 `sources` 与 2026-10-08 提升的 5 条；归并为 **40 个 (闸门, 叶名) 对**），
+ *     共 **46 个 (闸门, token) 对**，**逐个**在闸门**剥注释后**的源码里核对过 token 存在）⇒ 真阳 0 / 误报 0。
  *   · ★ 误报率的**真实检验**在 ⑦ 的变异与反向验证里（阴性对照 = 真实语料 **exit 0**）。
  *
  * ★★ ⑦ 验证（**临时副本 + 覆盖点，绝不动真实仓**）：
@@ -69,13 +87,27 @@
  *   · **变异 B**（登记表某条 `coveredBy` 改成不存在的闸门名）⇒ **exit 1 且点名**。
  *   · **变异 C**（临时副本把**已登记为有闸门**的字段名从数据里删掉）⇒ **exit 0**
  *     —— 确认判据② 的语义是「登记了但闸门不在了才红」，不是「字段消失了就红」。
+ *   · **变异 D**（2026-10-08 新增；判据⑤）：把某条「无闸门」条目的 `verifiability` 删掉 / 改非法 ⇒ **exit 1**。
  *   · ★★ **反向验证**：分别**短路判据① / 判据②** ⇒ 对应变异必须**重新变绿**（证明判据承重，不是摆设）。
  *   · **失明三态**（空风格树 / 数据里 0 字段 / 清空登记表）⇒ **均 exit 1 + 「本闸门已失明」**。
- *   ★ **实测退出码**（2026-10-07 快照；同一套断言也写在 `test/gate-blindness.test.mjs` 的
+ *   ★ **实测退出码**（2026-10-08 复核；同一套断言也写在 `test/gate-blindness.test.mjs` 的
  *     `check-distill-fields` 用例里）：阴性对照 **0**；变异A **1**（点名 `art-deco` + `selfCheck.LEMO_ZZZ_PROBE`）；
  *     变异B **1**（点名 `check-zzz-not-exist.mjs`）；变异C **0**（275 条路径，判据② 未响）；
  *     短路判据① 后变异A **0**；短路判据② 后变异B **0**；
  *     失明三态（空风格树 / 数据里 0 字段 / 空登记表）**均 1** 且都打「本闸门已**失明**」、且不输出判据①②。
+ *
+ * ★★ ⑧ 2026-10-08 的「可核性分类」升级（本闸门的 `coveredBy: null` 条目由「一档 reason」拆成**三档**）：
+ *   · 起因：58 条 `coveredBy: null` 的 `reason` 原来**混着三种性质不同的东西**（值级可核 / 声称级可核 /
+ *     不可核），读起来分不清 ⇒ 本次按**可核性**拆成 `verifiability: 'value' | 'claim' | 'unverifiable'`，
+ *     并把 `reason` 写成「说清是哪一档 + 为什么」。★ 独立复核报告：`_distill/无闸门字段内容审计-2026-10-08.md`；
+ *     逐条清单：`_distill/不可核字段清单-2026-10-08.md`。
+ *   · ★ **同时修正 6 条过期条目**（登记表照 2026-10-07 快照建，之后新闸门/新判据上线 ⇒ 条目过期）：
+ *     · `sources` —— 被 2026-10-08 新建的 `check-sources-paths.mjs` 覆盖（读 `json.sources`）⇒ 提升为有闸门；
+ *     · `audioScoreBasis` / `selfCheck.ratio` / `selfCheck.clippedSamples` / `selfCheck.loudness.{truePeakMethod,lraMethod}`
+ *       —— 被 `check-selfcheck-claims.mjs` 2026-10-08 新增的**判据 G / H1 / H2 / F** 读了 ⇒ 由「可核·待补」提升为有闸门。
+ *     ⇒ 无闸门 **58 → 52**（可核·待补 **10 → 5**）。
+ *   · ★ **同时修正一条 `reason` 事实错**：`masterPeak*` 的旧 reason 写「单风格特例（`hologram-hud`）」，
+ *     实测**只出现在 `pixel-rpg`** ⇒ 已改。
  *
  * ★ 覆盖点（供非破坏变异验证；与既有闸门同名同义）：
  *   · `LEMO_DISTILL_ROOT` —— 风格技能树（默认 `<仓根>/lib/style-skills`；与 `check-skill-artifacts`
@@ -94,9 +126,12 @@
  *     —— 本闸门只保证「那条**声明**没有悄悄失效」，不保证「那个值被核过」。
  *   · 登记表是**人工决定**的产物（哪条算「有闸门」是本闸门的判断）⇒ 它守的是「**决定不再悄悄过期**」，
  *     不保证决定本身最优。
+ *   · **可核性分类也是人工判断**：`value` / `claim` / `unverifiable` 的界线由本闸门按 ③ 的口径逐条裁定，
+ *     存在**边界个案**（如「唯一对照物是自由散文」「对照物是渲染产物不在本仓」）⇒ 已在各条 `reason` 写明依据，
+ *     并允许**未来被推翻**（推翻时改 `verifiability` 即可，判据⑤ 会守住格式）。
  *
- * 用法：node scripts/check-distill-fields.mjs
- * 退出码：有未登记字段 / 覆盖声明失效 / 失明 ⇒ 1；否则 0（判据③ 的 ℹ 不影响退出码）。
+ * 用法：node scripts/check-distill-fields.mjs [--json]
+ * 退出码：有未登记字段 / 覆盖声明失效 / 失明 / 登记表失格 ⇒ 1；否则 0（判据③ 的 ℹ 不影响退出码）。
  */
 
 import fs from 'node:fs';
@@ -108,6 +143,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(process.env.LEMO_TOOLS_ROOT || path.join(HERE, '..'));
 /** ★ 风格技能树：覆盖点 `LEMO_DISTILL_ROOT`（与 `check-skill-artifacts` / `check-selfcheck-claims` / `check-tp-prose` 同名同义）。 */
 const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || path.join(ROOT, 'lib', 'style-skills'));
+/** ★ `--json`：机器可读输出（与 `check-env-overrides.mjs` 同款）。 */
+const JSON_OUT = process.argv.includes('--json');
 
 // ── ★ 剥注释 + 字符串（状态机；行号不变）────────────────────────────────────
 //   ★★ **逐字照抄** `scripts/check-env-overrides.mjs` 的 `codeOnly()`（同一套 `REGEX_PREV` /
@@ -174,13 +211,21 @@ function codeOnly(src) {
 const R_NS_AE = '命名空间：`check-tp-prose.mjs` 的 json 散文白名单按 `audioEvidence.` 前缀整体覆盖 + 数值自洽 pass（叶名在正则字面量里、剥注释后不可见 ⇒ match 指向命名空间 token `audioEvidence`）';
 /** 命名空间式覆盖：同上，但前缀是 `selfCheck.audio.`（token 用 `selfCheck`）。 */
 const R_NS_SCA = '命名空间：`check-tp-prose.mjs` 的 json 散文白名单按 `selfCheck.audio.` 前缀整体覆盖 + 数值自洽 pass（叶名不可见 ⇒ match 指向命名空间 token `selfCheck`）';
-/** 无闸门档的通用 reason：运行时读数 / 散文。 */
-const R_RUN = '运行时读数 / 散文（口径不明或无可对真值）；`check-selfcheck-claims.mjs` 头注释「有意不核」逐条给过理由；**全仓无闸门读** ⇒ 待定';
+// ★★ 判据③ 三档 reason 常量（见头注释 ③）：**必须说清是哪一档 + 为什么**。
+/** `unverifiable` —— 运行时 / 流程读数：口径不明或无可对真值。 */
+const R_UNV_RUNTIME = '**不可核**：运行时 / 流程读数（口径不明或无可对真值）；`check-selfcheck-claims.mjs` 头注释「有意不核」逐条给过理由；**全仓无闸门读**、也**无独立权威对照物** ⇒ 如实标注不可核';
+/** `unverifiable` —— 测量值出自「被否决开工」的失败 run（日志已被覆盖）。 */
+const R_UNV_FAILED = '**不可核**：测量值出自**「被否决开工」的失败 run**（`_distill/logs/<slug>.log` 已被失败运行覆盖 —— 见 `_distill/无闸门字段内容审计-2026-10-08.md` 观察①）⇒ 记录来源已失效、**无可对日志 / 实物复核**；要核**需实跑重测** ⇒ **不计为可补的真缺口**';
+/** `unverifiable` —— 单风格特例；唯一「对照物」是自由散文或自身内部派生。 */
+const R_UNV_SINGLE = '**不可核**：单风格特例读数；唯一「对照物」是 `lib/style-dna/*` 的**自由散文**（核它等于核散文）或**自身内部派生** ⇒ **无独立权威对照物**';
+/** `unverifiable` —— 对照物是 `lines.json`（渲染产物、不在本仓）。 */
+const R_UNV_NOLINES = '**不可核**：对照物是 `lines.json`（**渲染产物、不在本仓**）；本风格 run 日志已被失败运行覆盖 ⇒ 权威**不可持久获得**';
 
-// ── ★★ 登记表（`FIELDS`）—— 详见头注释 ②③④ ─────────────────────────────────
-//   每条：字段路径 → { coveredBy, match?, reason }。
+// ── ★★ 登记表（`FIELDS`）—— 详见头注释 ②③④⑧ ────────────────────────────────
+//   每条：字段路径 → { coveredBy, match?, verifiability?, reason }。
 //     · `coveredBy: '<闸门名>'` ⇒ 判据② 守着它（`scripts/<闸门名>.mjs` 必须在，且**剥注释后**有 token）。
-//     · `coveredBy: null` + `reason` ⇒ 判据③ **只列 ℹ、不判 FAIL**（=「本闸门认了：没有闸门读它」）。
+//     · `coveredBy: null` + `verifiability` + `reason` ⇒ 判据③ **只列 ℹ、不判 FAIL**（=「本闸门认了：没有闸门读它」）；
+//       `verifiability` 三档：`'value'` 值级可核 / `'claim'` 声称级可核 / `'unverifiable'` 不可核（判据⑤ 守住格式）。
 //     · `match` 缺省 = 字段路径的**叶名**；命名空间 / 清单式覆盖时指向承载覆盖的 token（见头注释 ④）。
 //   ★ 登记表是**照真实数据建的**（`_distill.json` 里出现的每条路径都在此有且仅有一个决定）。
 const FIELDS = {
@@ -295,9 +340,9 @@ const FIELDS = {
   'audioEvidence.voice.generator': { coveredBy: 'check-tp-prose.mjs', match: 'audioEvidence', reason: R_NS_AE },
   'audioEvidence.voice.lines': { coveredBy: 'check-tp-prose.mjs', match: 'audioEvidence', reason: R_NS_AE },
   'audioEvidence.voice.wasEngine': { coveredBy: 'check-tp-prose.mjs', match: 'audioEvidence', reason: R_NS_AE },
-  'audioScoreBasis': { coveredBy: null, reason: '待定：`check-tp-prose.mjs` 的 json 散文 **REF 白名单**（`/^audioScoreBasis$/`）读作「参考」（时点记录、不进退出码），但该字段名在闸门源码里**只以正则字面量出现**（剥注释后不可见）、**且没有可核的父路径 token** ⇒ 判据② 无法机械核 ⇒ 按「无逐字段机械守卫」登记' },
+  'audioScoreBasis': { coveredBy: 'check-selfcheck-claims.mjs', reason: '★ 2026-10-08 更新：**已被 `check-selfcheck-claims.mjs` 判据 G 覆盖** —— 散文里**首个**「audio N/20」↔ 权威 `scoreBreakdown.audio`；不等时要求「显式锚定权威值 + 更正/历史标记」，缺一 FAIL（token = 叶名 `audioScoreBasis`，出现在该闸门代码 `j.audioScoreBasis`）。★ 此前本表标 `coveredBy: null`（可核·值级·待补）**已过期**。★ 该字段里的 `input_tp` 读数仍是时点参考（`check-tp-prose.mjs` 降级为参考）—— 那一层不核' },
   'defects': { coveredBy: 'check-skill-scores.mjs', reason: '判据② `defects` 里不得有「能被当前配置值直接证伪」的条目' },
-  'distilledAt': { coveredBy: null, reason: '蒸馏时间戳（时点）；仅 `lib/style-skill-reader.mjs` 透传（**非闸门**）⇒ 无闸门守卫' },
+  'distilledAt': { coveredBy: null, verifiability: 'unverifiable', reason: '**不可核**：蒸馏时间戳（**时点**）；仅 `lib/style-skill-reader.mjs` 透传（**非闸门**）⇒ 无独立权威对照物可核该时点' },
   'evidenceFrames': { coveredBy: 'check-skill-artifacts.mjs', reason: '帧图文件必须真的存在（逐帧分析的凭据）' },
   'generatedVideo': { coveredBy: 'check-skill-artifacts.mjs', reason: '命名空间' },
   'generatedVideo.bytes': { coveredBy: 'check-skill-artifacts.mjs', reason: '与磁盘 `size` 比对（±1024 B）' },
@@ -318,7 +363,7 @@ const FIELDS = {
   'muxPatch.script': { coveredBy: 'check-mux-parity.mjs', reason: '被补丁脚本路径（存在性 + 现状复核）' },
   'muxPatch.verifiedAfter': { coveredBy: 'check-mux-parity.mjs', reason: '补丁后成功读数（只列 note）' },
   'muxPatch.verifiedBefore': { coveredBy: 'check-mux-parity.mjs', reason: '补丁前失败读数（只列 note）' },
-  'nameZh': { coveredBy: null, reason: '中文名，仅供人读；全仓无读者' },
+  'nameZh': { coveredBy: null, verifiability: 'unverifiable', reason: '**不可核**：纯人读中文名，全仓无读者、**无独立权威对照物**' },
   'resolvedDefects': { coveredBy: 'check-aspect-prose.mjs', match: 'JSON_FIELDS', reason: '在 `check-aspect-prose.mjs` 的 `JSON_FIELDS` 清单里（另 `check-tp-prose.mjs` 的 json 散文 REF 白名单也读作「参考」）' },
   'scoreBreakdown': { coveredBy: 'check-skill-scores.mjs', reason: '五项求和的载体' },
   'scoreBreakdown.audio': { coveredBy: 'check-skill-scores.mjs', match: 'scoreBreakdown', reason: '五项之一（键名在 `KEYS` 字符串数组里 ⇒ 叶名被剥掉）' },
@@ -327,8 +372,8 @@ const FIELDS = {
   'scoreBreakdown.rhythm': { coveredBy: 'check-skill-scores.mjs', match: 'scoreBreakdown', reason: '五项之一（键名在 `KEYS` 字符串数组里 ⇒ 叶名被剥掉）' },
   'scoreBreakdown.typography': { coveredBy: 'check-skill-scores.mjs', match: 'scoreBreakdown', reason: '五项之一（键名在 `KEYS` 字符串数组里 ⇒ 叶名被剥掉）' },
   'selfCheck': { coveredBy: 'check-selfcheck-claims.mjs', reason: '命名空间（该闸门核 `selfCheck` 里「对实物可核的声称」）' },
-  'selfCheck.asrMismatches': { coveredBy: null, reason: R_RUN },
-  'selfCheck.asrNote': { coveredBy: null, reason: R_RUN },
+  'selfCheck.asrMismatches': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_NOLINES },
+  'selfCheck.asrNote': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_NOLINES },
   'selfCheck.audio': { coveredBy: 'check-tp-prose.mjs', match: 'selfCheck', reason: '命名空间：json 散文白名单 `/^selfCheck\\.audio\\./` + 数值自洽 pass' },
   'selfCheck.audio.astatsPeakDb': { coveredBy: 'check-tp-prose.mjs', match: 'selfCheck', reason: R_NS_SCA },
   'selfCheck.audio.beats': { coveredBy: 'check-tp-prose.mjs', match: 'selfCheck', reason: R_NS_SCA },
@@ -393,73 +438,73 @@ const FIELDS = {
   'selfCheck.audio.voices.rate': { coveredBy: 'check-tp-prose.mjs', match: 'selfCheck', reason: R_NS_SCA },
   'selfCheck.audio.voicesAsrOk': { coveredBy: 'check-tp-prose.mjs', match: 'selfCheck', reason: R_NS_SCA },
   'selfCheck.audio.voicesWav': { coveredBy: 'check-tp-prose.mjs', match: 'selfCheck', reason: R_NS_SCA },
-  'selfCheck.audioRenderParallelSec': { coveredBy: null, reason: R_RUN },
-  'selfCheck.clippedSamples': { coveredBy: null, reason: R_RUN },
-  'selfCheck.events': { coveredBy: null, reason: R_RUN },
+  'selfCheck.audioRenderParallelSec': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME },
+  'selfCheck.clippedSamples': { coveredBy: 'check-selfcheck-claims.mjs', reason: '★ 2026-10-08 更新：**已被 `check-selfcheck-claims.mjs` 判据 H2 覆盖** —— `=== 0` ⇒ `loudness.{samplePeakDbfs,truePeakDbtp}` 必须 ≤ 0（物理不可能关系）；token = 叶名 `clippedSamples`（该闸门代码 `sc.clippedSamples`）。此前标 `coveredBy: null`（可核·值级·待补）**已过期**' },
+  'selfCheck.events': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME },
   'selfCheck.fps': { coveredBy: 'check-selfcheck-claims.mjs', reason: '与 `generatedVideo.fps` 一致' },
   'selfCheck.frames': { coveredBy: 'check-selfcheck-claims.mjs', reason: '与 `generatedVideo.frames` 一致' },
-  'selfCheck.grain': { coveredBy: null, reason: '「档位」只在 `lib/style-dna/*.json` 的**散文**里写着 `grain = 0`，无结构化真值 ⇒ 核它等于核散文' },
+  'selfCheck.grain': { coveredBy: null, verifiability: 'value', reason: '**可核·值级**：**对 mux 调用的末位参数**（`_distill/logs/<slug>.log` 的 `混流 … grain N` 行 + `SKILL.md` 记录的 mux 命令）可机械核；**尚无闸门核** ⇒ **真缺口（待补）**；实测本库全对' },
   'selfCheck.loudness': { coveredBy: 'check-film-delivery.mjs', reason: '命名空间（A/B/C 类音频口径）' },
-  'selfCheck.loudness.ebur128PeakDbfs': { coveredBy: null, reason: '待定：`check-tp-prose.mjs` 的 `JSON_NUM_DIM` 里有这个名字，但数值 pass 只扫 `selfCheck.audio.*` / `audioEvidence.*` ⇒ **当前无闸门读**' },
+  'selfCheck.loudness.ebur128PeakDbfs': { coveredBy: null, verifiability: 'value', reason: '**可核·值级**：**派生自 `selfCheck.loudness.truePeakDbtp`**（`round(truePeakDbtp,1)`）可机械核；`check-tp-prose.mjs` 的 `JSON_NUM_DIM` 虽含此名，但数值 pass 只扫 `selfCheck.audio.*` / `audioEvidence.*` ⇒ **当前无闸门读** ⇒ **真缺口（待补）**；实测 pixel-rpg `−1.7 == round(−1.72,1)`' },
   'selfCheck.loudness.integratedLufs': { coveredBy: 'check-film-delivery.mjs', reason: 'A 类：与实测 `input_i` 比对 + C 类：实测必须落在 −14 LUFS ± 容差' },
   'selfCheck.loudness.lra': { coveredBy: 'check-film-delivery.mjs', reason: 'A 类：与 ebur128 / loudnorm 两来源之一匹配（另 `check-lra-caliber.mjs` 专核口径）' },
-  'selfCheck.loudness.lraMethod': { coveredBy: null, reason: '★ 口径**声明**字段（43/43 有）；**无闸门读它** —— `check-lra-caliber.mjs` 只核 `lra` 的**值**与实测口径是否相符、**不读本字段** ⇒ 声明可能与实测口径不符而无人察觉（★ 值得补闸门；待定）' },
-  'selfCheck.loudness.masterPeakMatched': { coveredBy: null, reason: '待定：单风格特例读数（`hologram-hud`）；全仓无闸门读' },
-  'selfCheck.loudness.masterPeakTarget': { coveredBy: null, reason: '待定：单风格特例读数；全仓无闸门读' },
-  'selfCheck.loudness.masterPeakTargetDbfs': { coveredBy: null, reason: '待定：单风格特例读数；全仓无闸门读' },
-  'selfCheck.loudness.mixWavPeak': { coveredBy: null, reason: '待定：上游 `mix.wav` 读数；全仓无闸门读' },
+  'selfCheck.loudness.lraMethod': { coveredBy: 'check-selfcheck-claims.mjs', reason: '★ 2026-10-08 更新：**已被 `check-selfcheck-claims.mjs` 判据 F 覆盖** —— 口径声明串必须命中 `CALIBER_REGISTRY.lraMethod`（本片实跑口径的白名单），未登记 ⇒ FAIL + 点名 slug + 实际串；token = 叶名 `lraMethod`（该闸门 `CALIBER_REGISTRY` 的**对象键**）。此前标 `coveredBy: null`（可核·声称级·待补）**已过期**' },
+  'selfCheck.loudness.masterPeakMatched': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_SINGLE + '（实际只出现在 `pixel-rpg`，且其 run 是失败 run）' },
+  'selfCheck.loudness.masterPeakTarget': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_SINGLE + '（只出现在 `pixel-rpg`）' },
+  'selfCheck.loudness.masterPeakTargetDbfs': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_SINGLE + '（只出现在 `pixel-rpg`）' },
+  'selfCheck.loudness.mixWavPeak': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED + '（上游 `mix.wav` 读数）' },
   'selfCheck.loudness.peakDbtpTarget': { coveredBy: 'check-tp-prose.mjs', reason: '交付线本身（用于排除「阈值提及」误报）' },
   'selfCheck.loudness.peakNote': { coveredBy: 'check-tp-prose.mjs', match: 'loudness', reason: 'json 散文白名单（`/^selfCheck\\.loudness\\.peakNote$/`）+ (J5) 覆盖级自洽；正则字面量 ⇒ match 指向命名空间 `loudness`' },
   'selfCheck.loudness.peakTargetMet': { coveredBy: 'check-film-delivery.mjs', reason: 'B 类：布尔必须与实测「是否 ≤ 交付线」一致' },
   'selfCheck.loudness.samplePeakDbfs': { coveredBy: 'check-tp-prose.mjs', reason: 'dBFS 量纲真值之一 + 物理约束（采样峰值 ≤ 真峰值）' },
-  'selfCheck.loudness.targetLufsInStyleDna': { coveredBy: null, reason: '待定：跨文件引用（style-dna 的响度目标）；全仓无闸门读' },
-  'selfCheck.loudness.targetLufsNote': { coveredBy: null, reason: '待定：散文；全仓无闸门读' },
+  'selfCheck.loudness.targetLufsInStyleDna': { coveredBy: null, verifiability: 'value', reason: '**可核·值级**：**跨文件对 `lib/style-dna-reader.mjs` 解析出的 `targetLufs`** 可机械核（`check-loudness-targets.mjs` 已证 43/43 可解析 −14）；**尚无闸门核本字段** ⇒ **真缺口（待补）**；实测 pixel-rpg 现值 `null` 与现状不符' },
+  'selfCheck.loudness.targetLufsNote': { coveredBy: null, verifiability: 'claim', reason: '**可核·声称级**：跨文件**散文**，可对 style-dna 现状（`lib/style-dna-reader.mjs` 解析结果）机械核；**尚无闸门读它** ⇒ **真缺口（待补）**；实测 pixel-rpg 现值与现状不符' },
   'selfCheck.loudness.truePeakDbtp': { coveredBy: 'check-film-delivery.mjs', reason: 'A 类：与实测 `input_tp` 比对 + C 类：实测必须 ≤ −1.2 dBTP' },
-  'selfCheck.loudness.truePeakMethod': { coveredBy: null, reason: '同 `lraMethod`：口径**声明**字段，无闸门读（★ 值得补；待定）' },
+  'selfCheck.loudness.truePeakMethod': { coveredBy: 'check-selfcheck-claims.mjs', reason: '★ 2026-10-08 更新：**已被 `check-selfcheck-claims.mjs` 判据 F 覆盖** —— 口径声明串必须命中 `CALIBER_REGISTRY.truePeakMethod`（本片实跑命令的白名单），未登记 ⇒ FAIL + 点名 slug + 实际串；token = 叶名 `truePeakMethod`（该闸门 `CALIBER_REGISTRY` 的**对象键**）。此前标 `coveredBy: null`（可核·声称级·待补）**已过期**' },
   'selfCheck.muxEncoder': { coveredBy: 'check-selfcheck-claims.mjs', reason: '★ 项目第一硬规则「渲染一律 GPU 优先」在 json 侧的落点：声称 vs 成片 `encoder` tag（**达标** + 自洽）' },
-  'selfCheck.nativeResolution': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.32.0': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.32.25': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.32.5': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.32.75': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.33.0': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.33.25': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.33.5': { coveredBy: null, reason: R_RUN },
-  'selfCheck.onsetErrorsMs.33.75': { coveredBy: null, reason: R_RUN },
-  'selfCheck.preflight': { coveredBy: null, reason: R_RUN },
-  'selfCheck.ratio': { coveredBy: null, reason: R_RUN },
-  'selfCheck.renderSec': { coveredBy: null, reason: R_RUN },
-  'selfCheck.rendered': { coveredBy: null, reason: '待定：声称「已渲染」；`check-selfcheck-claims.mjs` 头注释：真实性由 (A)(B)「成片必须存在且可读」**隐式**覆盖 ⇒ 无独立读者' },
-  'selfCheck.sectionHfRelDb': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.A_savepoint': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.B_village': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.C_campfire': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.D_battle': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.E_lament_drain': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.F_present': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.G_lastdoor': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.H_coda': { coveredBy: null, reason: R_RUN },
-  'selfCheck.sectionHfRelDb.encounter': { coveredBy: null, reason: R_RUN },
-  'selfCheck.silenceWindowSec': { coveredBy: null, reason: R_RUN },
-  'selfCheck.silenceWindows': { coveredBy: null, reason: R_RUN },
-  'selfCheck.silenceWindows[].note': { coveredBy: null, reason: R_RUN },
-  'selfCheck.silenceWindows[].peakDb': { coveredBy: null, reason: R_RUN },
-  'selfCheck.silenceWindows[].range': { coveredBy: null, reason: R_RUN },
+  'selfCheck.nativeResolution': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_SINGLE + '（只出现在 `pixel-rpg`；唯一对照物是 `SKILL.md` 的散文「原生 320×180 ×6 最近邻」）' },
+  'selfCheck.onsetErrorsMs': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.32.0': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.32.25': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.32.5': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.32.75': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.33.0': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.33.25': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.33.5': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.onsetErrorsMs.33.75': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.preflight': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME },
+  'selfCheck.ratio': { coveredBy: 'check-selfcheck-claims.mjs', reason: '★ 2026-10-08 更新：**已被 `check-selfcheck-claims.mjs` 判据 H1 覆盖** —— ↔ `generatedVideo.{width,height}` 比例（容差 0.01；缺一边则跳过）；token = 叶名 `ratio`（该闸门代码 `sc.ratio`）。此前标 `coveredBy: null`（可核·值级·待补）**已过期**' },
+  'selfCheck.renderSec': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME + '（**孤儿字段**：全仓无生产者、无读者）' },
+  'selfCheck.rendered': { coveredBy: null, verifiability: 'unverifiable', reason: '**不可核**：**流程声称**「已渲染」；成片存在只证明「有片子」、**不证明本次 run 渲过** ⇒ 无独立权威对照物（真实性由 `check-skill-artifacts` 的成片存在性**隐式**覆盖，无独立读者）' },
+  'selfCheck.sectionHfRelDb': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.A_savepoint': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.B_village': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.C_campfire': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.D_battle': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.E_lament_drain': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.F_present': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.G_lastdoor': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.H_coda': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.sectionHfRelDb.encounter': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.silenceWindowSec': { coveredBy: null, verifiability: 'value', reason: '**可核·值级**：**对 `_distill/logs/one-line.log` 的 `score.wav … \'silence\': […]` 行**（持久日志）可机械核；**尚无闸门核** ⇒ **真缺口（待补）**；实测 `[24.6,26.85]` 与日志逐字一致' },
+  'selfCheck.silenceWindows': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.silenceWindows[].note': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.silenceWindows[].peakDb': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.silenceWindows[].range': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
   'selfCheck.size': { coveredBy: 'check-selfcheck-claims.mjs', reason: '解析 `WxH` 后与 `generatedVideo.width/height` 一致' },
-  'selfCheck.skipSync': { coveredBy: null, reason: R_RUN },
-  'selfCheck.spriteFps': { coveredBy: null, reason: R_RUN },
+  'selfCheck.skipSync': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME },
+  'selfCheck.spriteFps': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
   'selfCheck.srtCues': { coveredBy: 'check-selfcheck-claims.mjs', reason: '与成片同名 `.srt` 的实际 cue 数一致' },
-  'selfCheck.totalSec': { coveredBy: null, reason: '口径不明（实测与 `generatedVideo.durSec` **本来就不同**：`one-line` 67.1 vs 47.5）⇒ 拿 `durSec` 判它是凭猜收窄' },
-  'selfCheck.ttsRan': { coveredBy: null, reason: R_RUN },
-  'selfCheck.usedPreGeneratedAudio': { coveredBy: null, reason: R_RUN },
-  'selfCheck.voiceBedDiffDb': { coveredBy: null, reason: R_RUN },
-  'selfCheck.voiceLineNote': { coveredBy: null, reason: R_RUN },
-  'selfCheck.voiceLines': { coveredBy: null, reason: R_RUN },
+  'selfCheck.totalSec': { coveredBy: null, verifiability: 'unverifiable', reason: '**不可核**：**口径不明**（实测与 `generatedVideo.durSec` **本来就不同**：`one-line` 67.1 vs 47.5）⇒ 拿 `durSec` 判它是**凭猜收窄**；且**全仓无生产者、无读者**（孤儿字段）' },
+  'selfCheck.ttsRan': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME },
+  'selfCheck.usedPreGeneratedAudio': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME + '（流程声称）' },
+  'selfCheck.voiceBedDiffDb': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED },
+  'selfCheck.voiceLineNote': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_NOLINES },
+  'selfCheck.voiceLines': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_NOLINES },
   'selfCheck.warnings': { coveredBy: 'check-aspect-prose.mjs', match: 'JSON_FIELDS', reason: '在 `check-aspect-prose.mjs` 的 `JSON_FIELDS` 清单里（`selfCheck.warnings[]` 的论述句扫画幅声称）；另 `check-tp-prose.mjs` 的 json 散文 REF 白名单也读作「参考」' },
-  'selfCheck.workers': { coveredBy: null, reason: R_RUN },
-  'slug': { coveredBy: null, reason: '风格标识；闸门按**目录名**枚举风格、不读 json 里的 slug 字段（`lib/style-skill-reader.mjs` 也只用目录名）' },
-  'sources': { coveredBy: null, reason: '蒸馏来源清单（时点）；`check-aspect-prose.mjs` 头注释**明写不扫** `sources` ⇒ 无闸门读' },
+  'selfCheck.workers': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_RUNTIME },
+  'slug': { coveredBy: null, verifiability: 'unverifiable', reason: '**不可核**：风格标识，与**目录名同义**（闸门按目录名枚举、`lib/style-skill-reader.mjs` 也只认目录名）⇒ **无独立权威对照物**（核它 = 核目录名自身，冗余、无消费者）' },
+  'sources': { coveredBy: 'check-sources-paths.mjs', match: 'sources', reason: '★ 2026-10-08 **修正过期条目**：本字段**已被闸门 `check-sources-paths.mjs` 覆盖**（读 `json.sources`、逐条核引用的路径是否真实存在；实测 585 条 / exit 0）。此前登记为 `coveredBy: null` 是**过期**——该闸门 2026-10-08 00:40 才建，晚于本登记表的 2026-10-07 23:18 快照（`check-aspect-prose.mjs`「不扫 sources」的旧理由已被这条专门闸门取代）' },
 };
 
 // ── ★ 枚举：整份 json、对象递归、数组元素对象加 `[]` 后缀 ────────────────────
@@ -539,8 +584,17 @@ for (const [p, ent] of Object.entries(FIELDS)) {
   }
 }
 
-// ── 判据 ③：登记为「无闸门」⇒ 只列 ℹ（不判 FAIL）──────────────────────────
+// ── 判据 ③：登记为「无闸门」⇒ 只列 ℹ（不判 FAIL）；★ 按**可核性**分三档 ──────
+//   ★★ 三档（见头注释 ③）：`value` / `claim` = **可核但尚无闸门**（= 真缺口，该补）；
+//      `unverifiable` = **根本没有权威对照物**（如实标注，不假装能覆盖）。
 const noGate = Object.entries(FIELDS).filter(([, e]) => !e || !e.coveredBy);
+const TIER = { value: '可核·值级', claim: '可核·声称级', unverifiable: '不可核' };
+const valueNoGate = noGate.filter(([, e]) => e && e.verifiability === 'value');
+const claimNoGate = noGate.filter(([, e]) => e && e.verifiability === 'claim');
+const unverifiable = noGate.filter(([, e]) => e && e.verifiability === 'unverifiable');
+const verifiableNoGate = [...valueNoGate, ...claimNoGate];
+/** ★ 判据⑤（登记表自洽性）：每条「无闸门」条目**必须**带合法 `verifiability`（否则三档计数会静默失真）。 */
+const badTier = noGate.filter(([, e]) => !(e && TIER[e.verifiability]));
 
 // ── 判据 ④：失明守卫（防空转绿灯）──────────────────────────────────────────
 const blind = [];
@@ -550,7 +604,27 @@ if (Object.keys(FIELDS).length === 0) blind.push('`FIELDS` 登记表为空 ⇒ �
 
 // ── 输出 ────────────────────────────────────────────────────────────────────
 const nCov = Object.keys(FIELDS).length - noGate.length;
-const ok = unregistered.length === 0 && gone.length === 0 && blind.length === 0;
+const ok = unregistered.length === 0 && gone.length === 0 && blind.length === 0 && badTier.length === 0;
+
+if (JSON_OUT) {
+  console.log(JSON.stringify({
+    root: ROOT,
+    distillRoot: DIR,
+    scope: { styles: slugs.length, fieldPaths: real.size, registered: Object.keys(FIELDS).length,
+      covered: nCov, noGate: noGate.length, badJson: badJson.length },
+    verdict: { value: valueNoGate.length, claim: claimNoGate.length,
+      verifiableNoGate: verifiableNoGate.length, unverifiable: unverifiable.length, badTier: badTier.length },
+    unregistered,
+    gone,
+    verifiableNoGate: verifiableNoGate.map(([p, e]) => ({ path: p, verifiability: e.verifiability, tier: TIER[e.verifiability], reason: e.reason })),
+    unverifiable: unverifiable.map(([p, e]) => ({ path: p, verifiability: e.verifiability, reason: e.reason })),
+    badTier: badTier.map(([p, e]) => ({ path: p, verifiability: (e && e.verifiability) || null })),
+    blind,
+    ok,
+  }, null, 2));
+  process.exitCode = ok ? 0 : 1;
+  process.exit();
+}
 
 console.log(`风格树 : ${DIR}`);
 console.log(`仓根   : ${ROOT}（判据② 找 \`scripts/<闸门>.mjs\`；剥注释 / 字符串的状态机照抄 \`check-env-overrides.mjs\`）`);
@@ -579,7 +653,8 @@ if (unregistered.length) {
   console.log(`✘ 判据①·有 ${unregistered.length} 条**未登记**的字段路径（新字段要登记进 \`FIELDS\`）：`);
   for (const p of unregistered) console.log(`   ✘ ${p}   ←  出现在 ${[...real.get(p)].sort().join(', ')}/_distill.json`);
   console.log('   ↳ 修法：给它一个**明确的决定** —— 有闸门读它 ⇒ `coveredBy: \'<scripts 里的闸门名>\'`（必要时加 `match`）；');
-  console.log('     确实没有 ⇒ `coveredBy: null` + `reason`（**只列 ℹ、不判 FAIL**）。★ **别编一个假闸门名**。');
+  console.log('     确实没有 ⇒ `coveredBy: null` + **`verifiability`** + `reason`（**只列 ℹ、不判 FAIL**）——');
+  console.log('     `verifiability` 三档：`\'value\'` 值级可核 / `\'claim\'` 声称级可核 / `\'unverifiable\'` 不可核（见头注释 ③）。★ **别编一个假闸门名、也别把可核的偷标成不可核**。');
 } else {
   console.log(`✓ 判据①·真实数据里 ${real.size} 条字段路径**全部**已在登记表里`);
 }
@@ -594,12 +669,28 @@ if (gone.length) {
 }
 
 if (noGate.length) {
-  console.log(`\nℹ 判据③·登记为「无闸门」（\`coveredBy: null\`）的 ${noGate.length} 条（**只列，不判 FAIL**）：`);
-  for (const [p, e] of noGate) console.log(`   · ${p} —— ${(e && e.reason) || '（缺 reason）'}`);
+  console.log(`\nℹ 判据③·登记为「无闸门」（\`coveredBy: null\`）的 ${noGate.length} 条 = `
+    + `**可核·待补闸门 ${verifiableNoGate.length} 条**（值级 ${valueNoGate.length} / 声称级 ${claimNoGate.length}）`
+    + ` + **不可核 ${unverifiable.length} 条**（**只列，不判 FAIL**）：`);
+  if (verifiableNoGate.length) {
+    console.log(`   ▲ **可核·待补闸门**（有权威对照物、只是**还没建闸门** ⇒ **真缺口，该补**）—— ${verifiableNoGate.length} 条：`);
+    for (const [p, e] of verifiableNoGate) console.log(`   ▲ [${TIER[e.verifiability]}] ${p} —— ${e.reason}`);
+  }
+  if (unverifiable.length) {
+    console.log(`   · **不可核**（**没有权威对照物** ⇒ 如实标注，不假装能覆盖）—— ${unverifiable.length} 条：`);
+    for (const [p, e] of unverifiable) console.log(`   · [${TIER[e.verifiability]}] ${p} —— ${e.reason}`);
+  }
+}
+
+if (badTier.length) {
+  console.log(`\n✘ 判据⑤·有 ${badTier.length} 条「无闸门」条目**缺 / 非法 \`verifiability\`**（会让三档计数静默失真）：`);
+  for (const [p, e] of badTier) console.log(`   ✘ ${p} —— verifiability = ${(e && e.verifiability) || '（缺）'}`);
+  console.log('   ↳ 修法：给该条补 `verifiability: \'value\' | \'claim\' | \'unverifiable\'`（语义见头注释 ③）。');
 }
 
 console.log(`\n[闸门] _distill.json 字段登记：${slugs.length} 个风格 / ${real.size} 条字段路径 · `
-  + `登记 ${Object.keys(FIELDS).length} 条（有闸门 ${nCov} / 无闸门 ${noGate.length}）· `
-  + `未登记 ${unregistered.length} 条 · 覆盖声明失效 ${gone.length} 条`
+  + `登记 ${Object.keys(FIELDS).length} 条（有闸门 ${nCov} / 无闸门 ${noGate.length} = `
+  + `可核·待补 ${verifiableNoGate.length}〔值级 ${valueNoGate.length} / 声称级 ${claimNoGate.length}〕+ 不可核 ${unverifiable.length}）· `
+  + `未登记 ${unregistered.length} 条 · 覆盖声明失效 ${gone.length} 条 · 登记表失格 ${badTier.length} 条`
   + `${blind.length ? '、**已失明**' : ''} ${ok ? 'OK' : '✘'}`);
 process.exitCode = ok ? 0 : 1;
