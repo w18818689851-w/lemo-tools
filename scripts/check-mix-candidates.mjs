@@ -19,6 +19,12 @@
  *   ② 被挑中的那份**不能是静音/占位**（`volumedetect` 的 `mean_volume` ≤ −70 dB 或读不到 ⇒ FAIL）。
  *   ③ 顺带列出「一个都没有」的风格（不判 FAIL —— 那只是意味着要重跑音频链）。
  *
+ * ★ 失明守卫（2026-10-06 补）：`styles/` 读不到 / 扫到 0 个风格 ⇒ FAIL 并明说「本闸门已失明」。
+ *   ★ 2026-10-07 补（修「一个都没检查却全绿」）：主循环把「无候选」风格 `continue` **移出检查集** ⇒
+ *     若**全部**风格都无候选（`multi=0 / fails=[] / blind=[]`）⇒ 旧版打印「✓ 所有多候选的混音都逐字节
+ *     相同…」+ exit 0（**一个候选都没检查过**）。现判据 **无候选数 == 风格总数 ⇒ FAIL 并明说「一个都没判」**。
+ *     只判「全部」不判「部分」（「无候选」是设计允许态；真实语料 43 风格里 35 个无候选 ⇒ 部分无候选是常态）。
+ *
  * 用法：node scripts/check-mix-candidates.mjs
  * 退出码：有遮蔽 / 静音占位 → 1；否则 0。
  */
@@ -91,6 +97,22 @@ for (const slug of slugs) {
   if (mv === null) fails.push(`${slug}：被挑中的 \`${picked.c}\` 读不到音量（文件损坏？）`);
   else if (mv <= SILENT_DB) fails.push(`${slug}：被挑中的 \`${picked.c}\` 是**静音/占位**（mean ${mv} dB ≤ ${SILENT_DB}）—— 正是 paper-lantern 首版那类事故`);
 }
+
+// ── ★★ 失明守卫 ②（2026-10-07 补）：**全部风格都无候选** 也是失明 ────────────────────
+//   主循环里 `:75` 的 `if (!present.length) { none.push(slug); continue; }` 把「无候选」风格
+//   **移出检查集**。若**所有**风格都无候选 ⇒ `multi.length = 0 / fails = [] / blind = []`
+//   ⇒ `:106` 会打印「✓ 所有多候选的混音都逐字节相同，且被挑中的不是静音。」并 exit 0 ——
+//   **一个候选混音都没检查过**（既没比 md5、也没测静音）。
+//   判据：无候选数 == 风格总数 ⇒ 判 FAIL 并明说「一个都没判」。
+//   （写法照 `check-skill-artifacts.mjs:157` 的「全部 SKIP」/ `check-dub-styles.mjs:214` 的
+//     `skipped === dub.styles.length` / `check-config-vs-doc.mjs:308` 的同型守卫。）
+//   ★ 为什么只判「全部」、不给「部分无候选」设阈值：「无候选」是**设计允许**的状态
+//     （见文件头判据 ③：只意味着要重跑音频链，不判 FAIL）。真实语料实测 43 风格里 **35 个**
+//     无候选、8 个有候选 ⇒ 部分无候选是**常态**，误报率**无样本可测** ⇒ 此时设阈值 = 凭猜收窄
+//     （违背本项目「先测误报率再收窄」的纪律）。故只把「一个候选都没检查过」判 FAIL；
+//     部分无候选由下面 `:100` 那行 ℹ 显式报出（不判 FAIL）。
+if (slugs.length > 0 && none.length === slugs.length)
+  blind.push(`全部 ${slugs.length} 个风格一个候选混音都没有（\`${CANDS.join(' / ')}\` 都不存在）⇒ 一个候选混音都没检查过`);
 
 console.log(`风格 ${slugs.length} 个；有候选混音的 ${slugs.length - none.length} 个；**多候选的 ${multi.length} 个**`);
 if (multi.length) {

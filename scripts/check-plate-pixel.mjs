@@ -20,6 +20,9 @@
  * 用法：
  *   node scripts/check-plate-pixel.mjs [--only a,b] [--json] [--ffmpeg <path>] [--keep]
  * 退出码：实测底衬色与理论值偏差过大、或对比度 < 3.0 → 1；否则 0。
+ *   ★ 2026-10-07 补：**底衬差分 0 像素**（底盒没画出来 / 与背景同色 ⇒ 视觉上等于无底衬）
+ *     判**真缺陷 FAIL**（旧版这一行没有 `ok` 字段 ⇒ 被 `fails` 漏掉 ⇒ 全库差分 0 时仍打 ✓ + exit 0）；
+ *     并加计数式守卫：**全部**风格都差分 0 ⇒ 明说「一个底衬色都没真正判过」。
  */
 
 import fs from 'node:fs';
@@ -163,7 +166,15 @@ for (const st of list) {
       tally.set(k, (tally.get(k) || 0) + 1);
     }
   }
-  if (!tally.size) { rows.push({ slug: st.slug, diffN: 0, note: '底衬与背景同色 ⇒ 差分 0 像素（视觉上等于无底衬）' }); continue; }
+  // ── ★★ 失明/缺陷守卫（2026-10-07 补）──────────────────────────────────────────
+  //   差分 0 像素 ⇒ **底盒一个像素都没画出来**（`plateOn` 通路断了，或底衬色与背景完全同色
+  //   ⇒ 视觉上等于无底衬）。这是**该风格的真缺陷**，**不是「没判」** —— 闸门确实渲了 withBox /
+  //   noPlate 两帧并得出了结论，而且上面的品红标记测试在同一情形下同样会给出 `ok:false`
+  //   （`why: '差分 0 像素（底衬没画出来）'`）。⇒ 必须带 `ok:false` 落进 `fails`。
+  //   ★ 旧版这一行**没有 `ok` 字段** ⇒ `:185` 的 `rows.filter((r) => r.error || r.ok === false)`
+  //     **漏掉它** ⇒ 全部风格都差分 0 时仍打印「✓ 全部通过：底衬色确实取自 plateColor…」并 exit 0
+  //     （**一个底衬色都没真正判过**）。
+  if (!tally.size) { rows.push({ slug: st.slug, ok: false, diffN: 0, marker: mark.ok ? '✓' : '✗', markerWhy: mark.why || '', note: '底衬与背景同色 ⇒ 差分 0 像素（视觉上等于无底衬）' }); continue; }
   let bestK = 0, bestN = -1;
   for (const [k, n] of tally) if (n > bestN) { bestN = n; bestK = k; }
   const actual = [(bestK >> 16) & 255, (bestK >> 8) & 255, bestK & 255];
@@ -182,9 +193,16 @@ for (const st of list) {
   });
 }
 
+// ── ★★ 计数式失明守卫（2026-10-07 补）：**全部风格都差分 0 像素** ⇒ 一个底衬色都没判过 ─────────
+//   单个差分 0 已在上面的分支判成 `ok:false` 的**真缺陷**（进 `fails` ⇒ exit 1、抑制 ✓）。
+//   这里再把「**全**是差分 0」这个空转态**显式点出来**（明说「一个都没判」）——
+//   与 `check-skill-artifacts.mjs` 的「全部 SKIP」/ `check-config-vs-doc.mjs:308` 的
+//   `noSec.length === cfg.styles.length` 同型。非空转路径的输出**逐字节不变**。
+const zeroBox = rows.filter((r) => !r.error && r.diffN === 0).length;
+const allZero = list.length > 0 && zeroBox === list.length;
 const fails = rows.filter((r) => r.error || r.ok === false);
 if (asJson) {
-  console.log(JSON.stringify({ tmp: TMP, rows, fails: fails.map((f) => f.slug) }, null, 2));
+  console.log(JSON.stringify({ tmp: TMP, rows, fails: fails.map((f) => f.slug), zeroBox, ...(allZero ? { allZero: true } : {}) }, null, 2));
 } else {
   console.log(`check-plate-pixel —— 字幕底衬像素级校验`);
   console.log(`  ffmpeg: ${FF}`);
@@ -198,8 +216,15 @@ if (asJson) {
     console.log(`${r.slug.padEnd(20)} ${String(r.plate).padEnd(11)} ${String(r.alpha).padEnd(5)} ${r.expect.padEnd(8)} ${r.actual.padEnd(8)} ${String(r.maxDiff).padEnd(3)} ${r.box.padEnd(16)} ${(r.fillPct+'%').padEnd(6)} ${r.contrast.toFixed(2)}  ${r.marker}${r.marker?'':' '+r.markerWhy}`);
   }
   console.log('');
-  if (fails.length) { console.log(`✗ 不通过 ${fails.length} 个：`); for (const f of fails) console.log(`  - ${f.slug}${f.error?'（渲染失败）':` 标记=${f.marker}${f.markerWhy?'('+f.markerWhy+')':''}、实测 ${f.actual} vs 理论 ${f.expect}(Δ${f.maxDiff})、对比度 ${f.contrast}`}`); }
+  if (fails.length) { console.log(`✗ 不通过 ${fails.length} 个：`); for (const f of fails) {
+    // ★ 差分 0 的行没有 actual/expect/contrast ⇒ 单列一句，别打 undefined（2026-10-07 补）
+    if (f.error) { console.log(`  - ${f.slug}（渲染失败）`); continue; }
+    if (f.diffN === 0) { console.log(`  - ${f.slug}（底衬差分 0 像素 ⇒ 底盒没画出来 / 与背景同色，视觉上等于无底衬）${f.markerWhy ? '；' + f.markerWhy : ''}`); continue; }
+    console.log(`  - ${f.slug} 标记=${f.marker}${f.markerWhy?'('+f.markerWhy+')':''}、实测 ${f.actual} vs 理论 ${f.expect}(Δ${f.maxDiff})、对比度 ${f.contrast}`);
+  } }
   else console.log('✓ 全部通过：底衬色确实取自 plateColor（品红标记验证），且字色对比度达标。');
+  // ★ 空转态明说（全部差分 0 ⇒ 一个底衬色都没真正判过）。此时上面那句 ✓ 已被 `fails` 抑制。
+  if (allZero) console.log(`\n✘ 全部 ${list.length} 个 plate="box" 风格的底衬差分都是 0 像素（底盒一个都没画出来 / 与背景同色）⇒ **一个底衬色都没真正判过**。`);
   if (keep) console.log(`\n中间产物: ${TMP}`);
 }
 if (!keep) fs.rmSync(TMP, { recursive: true, force: true });
