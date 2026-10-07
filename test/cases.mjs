@@ -867,6 +867,10 @@ export const STATIC_CASES = [
         'scripts/check-shell-structure.mjs': ['LEMO_OPUSCAR', 'LEMO_TOOLS_ROOT', 'LEMO_WSL_ROOT', 'LEMO_WSL_DISTRO'],
         'scripts/patch-style-mux.mjs': ['LEMO_OPUSCAR', 'LEMO_WSL_ROOT', 'LEMO_WSL_DISTRO'],
         'scripts/unblock-placeholder-audio.mjs': ['LEMO_STYLES_ROOT_WSL'],
+        // ★ 2026-10-07 扩到 `lib/`：`LEMO_VOICE_TEST_TMP` 是**应用目录**（`D:\WSL\voicetest`）的覆盖点 ——
+        //   该目录由 `server.mjs` 的 `/api/voices/test` 真写盘、且测试会对其做 before/after 差集并删「新增项」，
+        //   所以它**必须**留一个口子给夹具/并发隔离；本表就是「这个口子不许被悄悄删掉」的守卫。
+        'lib/voices.mjs': ['LEMO_VOICE_TEST_TMP'],
       };
       const missing = [];
       for (const [rel, vars] of Object.entries(OVERRIDES)) {
@@ -880,7 +884,10 @@ export const STATIC_CASES = [
 
       ctx.note('③+ 两条根已收敛：dub-core.outRoot 派生自 exportDir；server / consistency-check / '
         + 'style-distill / unblock-placeholder-audio / fix-truepeak / patch-style-mux / style-skill-check '
-        + '去注释后无残留字面量；check-shell-structure 与 unblock 的 WSL 侧覆盖点齐备');
+        + '去注释后无残留字面量；check-shell-structure 与 unblock 的 WSL 侧覆盖点齐备'
+        + '；★ 2026-10-07：覆盖点守卫**扩到 lib/** —— `lib/voices.mjs` 的 `LEMO_VOICE_TEST_TMP` '
+        + '（它是应用目录 D:/WSL/voicetest 的**唯一**口子：那个目录由 server 的 /api/voices/test 真写盘、'
+        + '而测试会对它做 before/after 差集并删「新增项」⇒ 没有口子就没法在夹具树/并发下隔离）');
     },
   },
 ];
