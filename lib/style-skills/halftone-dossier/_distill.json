@@ -70,7 +70,7 @@
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= −3.26 dBTP，见 selfCheck.loudness.truePeakDbtp。★ 0.43 dBTP 是 2026-10-03 音频重混前的读数，仅作历史。",
+      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= −2.79 dBTP，见 selfCheck.loudness.truePeakDbtp。★ 原记 −3.26 dBTP 是更早一版成片的读数（已不适用），已按 2026-10-07 当前成片实测更正，仅作历史。★ 0.43 dBTP 是 2026-10-03 音频重混前的读数，仅作历史。",
       "lra": 3.1,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "samplePeakDbfs": -3.340726

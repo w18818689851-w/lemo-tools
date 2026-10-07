@@ -118,7 +118,7 @@
     "loudness": {
       "integratedLufs": -14.6,
       "lra": 8,
-      "ebur128PeakDbfs": 0.1,
+      "ebur128PeakDbfs": -1.7,
       "targetLufsInStyleDna": null,
       "targetLufsNote": "lib/style-dna/pixel-rpg 的 mix_rules 未抽出 LUFS 数值，只写了 duck 7–8 dB 与母带峰值归一 0.89 满量程；−14 LUFS 只出现在 `STYLE.md:74` 与 `DEMO.md:60`",
       "mixWavPeak": -1.0122,
@@ -129,7 +129,7 @@
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= 0.08 dBTP，见 selfCheck.loudness.truePeakDbtp。",
+      "peakNote": "真峰值口径更正（2026-10-03）：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= −1.72 dBTP，见 selfCheck.loudness.truePeakDbtp。★ 原记 0.08 dBTP 是音频重混前的读数（已不适用），已按 2026-10-07 当前成片实测更正，仅作历史。",
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "samplePeakDbfs": -3.346988
     },

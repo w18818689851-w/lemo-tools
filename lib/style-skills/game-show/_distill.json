@@ -70,6 +70,7 @@
       "lra": 4.2,
       "truePeakDbtp": -0.22,
       "truePeakMethod": "ffmpeg -af loudnorm=I=-14:TP=-1.7:print_format=json 的 input_tp（4x 过采样）",
+      "truePeakDbtpNote": "★ 本键是**首版成片（2026-10-03 音频重混前）**的真峰值快照，仅作历史（见 warnings[0] / resolvedDefects[0]：−0.22 → 重混后达标）；**不是**当前入库成片的真峰值。当前权威真峰值见 selfCheck.loudness.truePeakDbtp = −1.39 dBTP（2026-10-07 实测复核，达标；本块 deliveryTargetDbtp/overByDb 同属首版状态）。本块 mixWav.truePeakDbtp（−1.6）/ musicWav.truePeakDbtp（−1.7）是**上游中间产物**读数，不是成片读数。",
       "astatsPeakDb": -0.38328,
       "deliveryTargetDbtp": -1.2,
       "overByDb": 0.98,
