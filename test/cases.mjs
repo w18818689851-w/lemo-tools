@@ -370,6 +370,14 @@ export const ARTIFACTS = {
 //   `D:\lemo-films\dub\<文案名>` 或用户 `--out` 给的任意名字，绝不会以 `_smoke-` 开头。
 const TEST_DIR_PREFIX = '_smoke-';
 
+// ★ 被测的 dub 入口。默认就是项目根下的 `dub.mjs`（**默认值不改任何行为**）。
+//   存在的唯一理由：新用例的「故意破坏」验证 —— 要证明断言**真的能抓回归**，就得让被测入口
+//   指向一份「手工改坏」的副本。dub.mjs 是**红线**（不许为了验证去改它，并发跑测试时改它
+//   还会污染别人的结果），所以把「指向哪一份」做成一个只读的测试开关：
+//     `LEMO_TEST_DUB=_mut-dub.mjs node test/smoke.mjs --full --filter ⑤++++++++`
+//   副本自己放在项目根（相对 import `./lib/...` 才解析得到），验证完删掉 ⇒ git status 依然干净。
+const DUB_ENTRY = process.env.LEMO_TEST_DUB || 'dub.mjs';
+
 /**
  * 跑一段 WSL bash 脚本（本环境 spawnSync 一律 EBUSY，只能异步 spawn）。
  *
@@ -2147,20 +2155,45 @@ const FIT_TEXT = '这是一次形态B与配音时长适配的真实出片测试�
 //   判据与走默认无法区分（与 `⑤++` 同口径）。engraving 的 mix_rules 写「整体 −14 LUFS」。
 const FIT_STYLE = 'engraving';
 
-/** 造「亮度爬升 + 15 kHz 纯音」的极小假口播素材到 hostPath（Windows 路径）。 */
-function makeFitMaterial(hostPath) {
+/**
+ * 造「亮度爬升 + 15 kHz 纯音」的极小假口播素材到 hostPath（Windows 路径）。
+ *
+ * 全部参数都可覆盖（默认值 = 原来那一份 270x480 / 2.0s / 全程 15 kHz，既有调用点一个字没变）：
+ *   · `dur`   —— 素材时长（反向分支用例要一个**比旁白长**的素材；atempo 用例要一个**很短**的素材）
+ *   · `toneOnset` —— 音调**起始时刻**（秒）。>0 时前面那段是数字静音（`afade=t=in` 的 st 之前增益恒 0，
+ *     实测带内 mean_volume = −91 dB = 16 bit 的量化噪声底）。
+ *     ★ 为什么需要「音调晚一点开始」：`--fit slow` 会把素材**原声**按 ratio 一起 atempo 放慢
+ *       ⇒ 「音调从第几秒开始」就是「atempo 到底把原声拉长了没有」的一把刻度尺（见 ⑤+++++++++）。
+ */
+function makeFitMaterial(hostPath, {
+  dur = FIT_DUR, w = FIT_W, h = FIT_H, toneHz = FIT_TONE_HZ, toneOnset = 0,
+} = {}) {
+  const af = toneOnset > 0
+    ? `afade=t=in:st=${toneOnset}:d=0.02,volume=20.8dB`   // st 之前增益恒 0 ⇒ 数字静音
+    : 'volume=20.8dB';
   return wsl([
     'ffmpeg -hide_banner -loglevel error -nostdin -y',
-    `  -f lavfi -i "color=c=black:s=${FIT_W}x${FIT_H}:r=30:d=${FIT_DUR}"`,
-    `  -f lavfi -i "sine=f=${FIT_TONE_HZ}:r=48000:d=${FIT_DUR}"`,
-    `  -vf "geq=lum='255*T/${FIT_DUR}':cb=128:cr=128,format=yuv420p"`,
-    '  -af "volume=20.8dB"',
+    `  -f lavfi -i "color=c=black:s=${w}x${h}:r=30:d=${dur}"`,
+    `  -f lavfi -i "sine=f=${toneHz}:r=48000:d=${dur}"`,
+    `  -vf "geq=lum='255*T/${dur}':cb=128:cr=128,format=yuv420p"`,
+    `  -af "${af}"`,
     '  -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p',
     '  -c:a aac -b:a 96k -ar 48000 -ac 2',
     '  -shortest -movflags +faststart',
     `  "${toWsl(hostPath)}"`,
   ].join(' \\\n'), { timeoutMs: 180000 });
 }
+
+// ── ⑤++++++++ / ⑤+++++++++ 的夹具常量 ──────────────────────────
+// ★ 反向分支（素材 ≥ 旁白）：素材**必须比旁白长**，否则三条 fit 分支一条都走不到。
+//   文案刻意取短（约 25 字 ⇒ TTS 实测 total ≈ 4s），素材给 9.0s ⇒ 留 2 倍以上余量
+//   （TTS 时长有抖动，余量不够会让用例**偶发**掉进正向分支 —— 那样断言就不是在测反向分支了）。
+const FITR_DUR = 9.0;
+const FITR_TEXT = '反向分支：素材比旁白更长，画面只取素材开头的一段。';
+// ★ atempo 链：素材**必须比旁白短很多**。ratio = total/srcDur > 2 才逼出多级
+//   （单级 atempo 的合法范围是 [0.5, 100]，ratio>2 ⇒ 需要的 tempo < 0.5 ⇒ 一级放不下）。
+//   1.0s 素材 + 约 51 字文案（total ≈ 8.4s）⇒ ratio ≈ 8.4 ⇒ 链长 4 级。
+const FITB_DUR = 1.0, FITB_TONE_ONSET = 0.6;
 
 /**
  * 把整片解成「**每帧 1 个像素的灰度**」→ 返回长度 = 帧数的数组（第 i 项 = 第 i 帧的均值灰度）。
@@ -2183,6 +2216,20 @@ async function frameProfile(hostPath, scratchDir) {
 async function bandMeanDb(hostPath, f, widthHz = 2000) {
   const r = await wsl(`ffmpeg -hide_banner -nostdin -i "${toWsl(hostPath)}" `
     + `-af "bandpass=f=${f}:width_type=h:w=${widthHz},volumedetect" -f null - 2>&1 | grep mean_volume`,
+  { timeoutMs: 180000 });
+  const m = /mean_volume:\s*(-?[\d.]+|-inf)\s*dB/.exec(`${r.out}${r.err}`);
+  if (!m) return null;
+  return m[1] === '-inf' ? -Infinity : Number(m[1]);
+}
+
+/**
+ * 同上的**带内**平均电平，但只看 `[t0, t1)` 这一段（用来给「原声在成片里的**时间位置**」做判据）。
+ * ★ 用 `atrim` 而不是 `-ss/-t`：`-ss` 的定位有亚帧误差，而这里要卡的是「音调从第几秒开始」
+ *   （⑤+++++++++ 里两个窗口之间隔了 2 秒以上，误差量级完全够用，但 atrim 更干净）。
+ */
+async function bandMeanDbWindow(hostPath, f, t0, t1, widthHz = 2000) {
+  const r = await wsl(`ffmpeg -hide_banner -nostdin -i "${toWsl(hostPath)}" `
+    + `-af "atrim=${t0}:${t1},bandpass=f=${f}:width_type=h:w=${widthHz},volumedetect" -f null - 2>&1 | grep mean_volume`,
   { timeoutMs: 180000 });
   const m = /mean_volume:\s*(-?[\d.]+|-inf)\s*dB/.exec(`${r.out}${r.err}`);
   if (!m) return null;
@@ -3076,6 +3123,286 @@ export const FULL_CASES = [
       const fmt = (k) => `${k}: total ${runs[k].total.toFixed(3)}s / 帧数 ${runs[k].frames} / 剖面平均差 loop ${runs[k].maes.loop.toFixed(1)} trim ${runs[k].maes.trim.toFixed(1)} slow ${runs[k].maes.slow.toFixed(1)} / 下降沿 ${runs[k].dEdges} / 末30%最小 ${runs[k].tailMin}`;
       ctx.note('⑤+++++++ --fit 三值实测（★ 帧数都 = total×30，时长/帧数**不是**判据；差别在画面）：\n    '
         + ['loop', 'trim', 'slow'].map(fmt).join('\n    '));
+    },
+  },
+  {
+    // ★ 为什么必须有这条：`⑤+++++++` 只覆盖了 `--fit` 的**一个方向**（素材 2.0s < 旁白 ~8.4s）。
+    //   而 `dub.mjs` 的 fitFilter（dub.mjs:1096-1115）里每一条分支都写着**两个方向**：
+    //     · slow —— 只有 `srcDur < total-0.05` 才 `setpts=PTS*(total/srcDur)`；否则**掉进 loop 分支的 return**（只 `geom`）
+    //     · trim —— 只有 `srcDur < total-0.05` 才 `tpad=stop_mode=clone` 冻结末帧；否则只 `geom`
+    //     · loop —— 短则给输入加 `-stream_loop -1`；长则只 `geom`
+    //   而裁切一律由 mux 的 `-t total` 完成（dub.mjs:1142）
+    //   ⇒ **反向（素材 ≥ 旁白）时三者的画面滤镜链其实等价**：都只 `geom`，成片 = 素材的**前 total 秒**。
+    //   这条用例把这个「等价」**钉死**（而不是写成恒真断言）：三者的剖面都必须等于「素材前缀」这一条模型，
+    //   且**必须与 slow 的「整体拉长」模型差 4 倍以上**。若有人去掉 slow/trim 的方向守卫
+    //   （让 slow 在反向也去 setpts），slow 会把整条素材压进 total ⇒ 末帧亮度从中间值跳到 255，当场变红。
+    // ★ 期望值是从实现推出来的，不是抄正向用例的：反向时成片第 i 帧 = 素材第 i/30 秒
+    //   （因为 `-t total` 只裁不改速）⇒ 逐帧亮度 = 255·(i/30)/srcDur ⇒ 末帧亮度 ≈ **255·total/srcDur**
+    //   这个**中间值**。正向分支下末帧要么是 255（trim 冻结/slow 拉到顶）要么是 0（loop 回卷），
+    //   都不是它 —— 所以这条判据对「走错方向」是**可证伪**的。
+    name: '⑤++++++++ --fit 反向分支（素材 ≥ 旁白）真出片：loop/trim/slow 都只取素材前 total 秒（剖面 = 素材前缀、单调不循环、末帧亮度 = 255·total/srcDur）',
+    run: async (ctx) => {
+      const ttsPy = path.join(CFG.winLib, 'core', 'tts', 'tts_indextts.py');
+      assert.ok(fs.existsSync(ttsPy),
+        `Index-TTS 执行体不存在：${ttsPy}\n  这条用例要跑三次现场 TTS（每次一个 --fit 值）；缺了就无法覆盖`
+        + '`--fit` 的反向分支 —— 这是**用例无法成立**，不是被测代码坏了。');
+      const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
+      const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
+      if (fs.existsSync(lockPath)) {
+        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
+        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
+          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS。');
+      }
+
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const baseDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fitr-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(baseDir, { recursive: true });
+      ARTIFACTS.dirs.add(baseDir);   // 三次运行的子目录都在它下面，递归删一次即可
+
+      const srcFile = path.join(baseDir, '_src.mp4');
+      const m = await makeFitMaterial(srcFile, { dur: FITR_DUR });
+      assert.ok(m.ok && fs.existsSync(srcFile),
+        `造夹具素材失败（WSL ffmpeg lavfi）：code=${m.code}\n${String(m.err).slice(-800)}`);
+      const scriptFile = path.join(baseDir, '_script.txt');
+      fs.writeFileSync(scriptFile, `${FITR_TEXT}\n`, 'utf8');
+
+      // ── 夹具自检：素材必须是一条 0→255 的**单调**亮度斜坡（否则「取到第几秒」这把尺子不成立）──
+      const srcP = await probeMedia(srcFile);
+      assert.ok(srcP && srcP.v, `ffprobe 读不出素材的视频流：${JSON.stringify(srcP)}`);
+      const srcDur = Number(srcP.dur);
+      assert.ok(Math.abs(srcDur - FITR_DUR) < 0.05, `夹具素材时长 ${srcP.dur}s ≠ ${FITR_DUR}s`);
+      const M = await frameProfile(srcFile, baseDir);
+      assert.ok(M && M.length >= 60, `素材逐帧剖面读不到或太短：${M && M.length}`);
+      assert.ok(M[0] <= 20 && M[M.length - 1] >= 235,
+        `夹具素材不是一条 0→255 的斜坡：首帧 ${M[0]} / 末帧 ${M[M.length - 1]}`
+        + ' —— 亮度不随时间变的话，「成片某帧取到素材第几秒」就无从判断。');
+      assert.ok(fitMaxFallback(M) <= 12,
+        `夹具素材剖面有 ${fitMaxFallback(M)} 灰度的回落 —— 斜坡必须单调不减。`);
+
+      // ── 三次真出片：loop / trim / slow（都应当落在**反向**分支）──
+      const runs = {};
+      for (const fit of ['loop', 'trim', 'slow']) {
+        const runDir = path.join(baseDir, `${TEST_DIR_PREFIX}${fit}`);
+        fs.mkdirSync(runDir, { recursive: true });
+        ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(runDir)));
+        const r = await runNode([DUB_ENTRY, '--script', scriptFile, '--video', srcFile,
+          '--fit', fit, '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', runDir],
+        { cwd: ctx.root, timeoutMs: 900000 });
+        assert.strictEqual(r.code, 0,
+          `--fit ${fit} 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
+
+        const lastJson = (r.stdout.match(/^\{.*"truePeak".*\}$/m) || [])[0];
+        assert.ok(lastJson, `--fit ${fit}：stdout 末尾没有结果 JSON\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+        const fin = JSON.parse(lastJson);
+        const total = Number(fin.total);
+        assert.ok(Number.isFinite(total) && total > 0.5, `--fit ${fit}：total 不合理 ${JSON.stringify(fin.total)}`);
+
+        //   ★ 夹具守卫：这一次**必须**落在反向分支（素材 ≥ 旁白）。掉进正向分支的话，
+        //     下面的期望值全都不成立 —— 那是**用例配比**问题（TTS 时长抖动），不是被测代码坏了。
+        assert.ok(srcDur >= total - 0.05,
+          `--fit ${fit}：素材 ${srcDur}s 竟然短于旁白 ${total}s —— 本用例要测的是**反向分支**，`
+          + ' 文案/素材时长配比不对（TTS 时长抖动），请把文案改短或素材加长。');
+
+        //   ★ 结构判据：走的是**反向**那一支（「Xs ≥ 配音 Ys」这句只在反向打印，dub.mjs:1108/1113）
+        assert.match(r.stdout, /\d+\.\d+s ≥ 配音 \d+\.\d+s/,
+          `--fit ${fit}：stdout 里没有「素材 Xs ≥ 配音 Ys」—— 走的不是反向分支？\n`
+          + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+
+        const filmPath = path.join(runDir, 'film.mp4');
+        assert.ok(fs.existsSync(filmPath), `--fit ${fit}：没有 ${filmPath}`);
+        const filmP = await probeMedia(filmPath);
+        assert.ok(filmP && filmP.v, `--fit ${fit}：ffprobe 读不出成片视频流`);
+        assert.strictEqual(`${filmP.v.width}x${filmP.v.height}`, `${FIT_OUT_W}x${FIT_OUT_H}`,
+          `--fit ${fit}：成片尺寸 ${filmP.v.width}x${filmP.v.height} ≠ ${FIT_OUT_W}x${FIT_OUT_H}（--fit 不该改几何）`);
+
+        const O = await frameProfile(filmPath, runDir);
+        assert.ok(O && O.length >= 30, `--fit ${fit}：成片逐帧剖面读不到或太短：${O && O.length}`);
+        assert.ok(Math.abs(O.length - total * 30) <= 2,
+          `--fit ${fit}：成片帧数 ${O.length} ≠ total×30 = ${(total * 30).toFixed(0)}（±2）`);
+
+        // ── 判据 1（主判据，语义级）：末帧亮度 == 255·total/srcDur ──
+        const wantEnd = 255 * total / srcDur;
+        const gotEnd = O[O.length - 1];
+        assert.ok(Math.abs(gotEnd - wantEnd) <= 20,
+          `--fit ${fit}：成片末帧亮度 ${gotEnd}，而「只取素材前 total 秒」的模型给出 ${wantEnd.toFixed(1)}`
+          + `（素材 ${srcDur}s / 旁白 ${total}s，差 ${Math.abs(gotEnd - wantEnd).toFixed(1)} 灰度）。\n`
+          + '  ★ 反向分支下三者都该是「素材的一段**前缀**」：末帧停在 255·total/srcDur 这个**中间值**上；'
+          + ' 若末帧接近 255（整条素材被压进 total）或接近 0，说明实现走了别的分支。');
+
+        // ── 判据 2（结构级）：不循环、单调不减 ──
+        assert.strictEqual(fitDownEdges(O), 0,
+          `--fit ${fit}：剖面有 ${fitDownEdges(O)} 个「亮度骤降 >150」的下降沿 —— 反向分支不该循环。`);
+        assert.ok(fitMaxFallback(O) <= 12,
+          `--fit ${fit}：剖面最大回落 ${fitMaxFallback(O)} 灰度 —— 只取素材前缀应当单调不减。`);
+
+        // ── 判据 3（模型拟合）：贴合「素材前缀」，且与「整体拉长」模型差 4 倍以上 ──
+        //   No < Nm 时 FIT_MODELS.loop / .trim 都退化成「取素材第 i 帧」= 前缀模型；
+        //   FIT_MODELS.slow 是「把素材拉长到 No」= 陡得多的斜坡 ⇒ 必须差得远。
+        const maes = { loop: fitMae(O, M, 'loop'), trim: fitMae(O, M, 'trim'), slow: fitMae(O, M, 'slow') };
+        assert.ok(maes.loop <= 12 && maes.trim <= 12,
+          `--fit ${fit}：剖面与「素材前缀」模型不贴合 —— loop ${maes.loop.toFixed(2)} / trim ${maes.trim.toFixed(2)}`
+          + `（要求都 ≤ 12）。slow 模型 ${maes.slow.toFixed(2)}。`);
+        assert.ok(maes.slow >= 4 * Math.max(maes.loop, maes.trim),
+          `--fit ${fit}：剖面并没有与「整体拉长」模型分开 —— slow 模型 ${maes.slow.toFixed(2)}`
+          + ` vs 前缀模型 loop ${maes.loop.toFixed(2)} / trim ${maes.trim.toFixed(2)}（要求 slow 至少大 4 倍）`
+          + ' ⇒ 实现可能在反向分支错误地做了 setpts。');
+
+        runs[fit] = { total, frames: O.length, end: gotEnd, wantEnd, maes };
+      }
+
+      const fmt = (k) => `${k}: total ${runs[k].total.toFixed(3)}s / 帧数 ${runs[k].frames} / 末帧亮度 ${runs[k].end}`
+        + `（模型 ${runs[k].wantEnd.toFixed(1)}）/ 剖面平均差 loop ${runs[k].maes.loop.toFixed(1)}`
+        + ` trim ${runs[k].maes.trim.toFixed(1)} slow ${runs[k].maes.slow.toFixed(1)}`;
+      ctx.note(`⑤++++++++ --fit 反向分支实测（素材 ${FITR_DUR}s ≥ 旁白 ⇒ 三值都只取素材前 total 秒；`
+        + '★ 反向时 loop/trim/slow 的画面链**等价**，差别只在正向）：\n    '
+        + ['loop', 'trim', 'slow'].map(fmt).join('\n    '));
+    },
+  },
+  {
+    // ★ 为什么必须有这条：`--fit slow` 在 `--keep-original-audio` 下要把素材**原声**一起放慢，
+    //   走的是 `atempoChain(1/ratio)`（dub.mjs:1023-1035）。而**单级 atempo 的合法范围只有 [0.5, 100]**
+    //   （实测：`atempo=0.25` / `atempo=0.119` 直接报 `Value … out of range [0.5 - 100]`）
+    //   ⇒ ratio = total/srcDur > 2 时需要的 tempo < 0.5，**一级放不下，必须串多级**。
+    //   这条链此前**零覆盖**：`⑤+++++++` 不传 --keep-original-audio；`⑤+++`/`⑤++++` 走 --keep-original
+    //   根本不进这条链。链长算错（少串一级 / 只给一级）会让 ffmpeg 当场报越界，成片直接失败。
+    // ★ 判据全部落在**实物**上，不看退出码：
+    //   ① 从 `--echo-cmd` 打出的 WSL 脚本里**取出**真实的 atempo 链：逐级取值范围合法、连乘 == srcDur/total；
+    //   ② 把**这条链原样**作用在夹具素材的音轨上，量出的时长必须 ≈ total（≈ ratio×srcDur）；
+    //   ③ 夹具音调**故意从素材第 0.6s 才开始**（前面是数字静音，实测带内 −91 dB）
+    //      ⇒ 成片里 15 kHz 带内电平必须「前半段静、后半段响」—— 这是「atempo 真的把原声**拉长**了」的
+    //      **时间级**证据（若没接 atempo，音调会从成片第 0.6s 就开始，前半段窗口当场变响）；
+    //   ④ 成片 15 kHz 带内电平整体**远高于** TTS 自身（`⑤++++++` 实测 TTS 在该带 ≈ −57 dB）
+    //      —— 证明素材原声真的被混进来了，而不是只打印了一行「已混入」。
+    // ★ 期望值推导：ratio = total/srcDur ⇒ 素材音调起点 0.6s 应移到成片 ≈ 0.6·total 处；
+    //   `--keep-original-audio` 的混音链把原声压 −20 dB 后 atrim 到 total 再 amix（dub.mjs:1036-1039）。
+    name: '⑤+++++++++ --fit slow 的 atempo 链（--keep-original-audio）：多级 atempo、连乘 = srcDur/total、原声真的被放慢并混进成片',
+    run: async (ctx) => {
+      const ttsPy = path.join(CFG.winLib, 'core', 'tts', 'tts_indextts.py');
+      assert.ok(fs.existsSync(ttsPy),
+        `Index-TTS 执行体不存在：${ttsPy}\n  这条用例要跑一次现场 TTS（拿到真实 total 才能算出 ratio）；`
+        + '缺了就无法覆盖 `--fit slow` 的 atempo 链 —— 这是**用例无法成立**，不是被测代码坏了。');
+      const ttsHome = process.env.INDEXTTS_HOME || 'D:/Index-tts/Index-tts_v2.5';
+      const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
+      if (fs.existsSync(lockPath)) {
+        let held = '?'; try { held = fs.readFileSync(lockPath, 'utf8').trim(); } catch { /* ignore */ }
+        assert.fail(`配音锁已被占用：${lockPath}（内容 "${held}"）\n`
+          + '  本机正在跑另一个配音任务（Index-TTS 全局串行）。这条用例要独占 Index-TTS。');
+      }
+
+      fs.mkdirSync(CFG.exportDir, { recursive: true });
+      const baseDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fita-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(baseDir, { recursive: true });
+      ARTIFACTS.dirs.add(baseDir);
+
+      const srcFile = path.join(baseDir, '_src.mp4');
+      const m = await makeFitMaterial(srcFile, { dur: FITB_DUR, toneOnset: FITB_TONE_ONSET });
+      assert.ok(m.ok && fs.existsSync(srcFile),
+        `造夹具素材失败（WSL ffmpeg lavfi）：code=${m.code}\n${String(m.err).slice(-800)}`);
+      const scriptFile = path.join(baseDir, '_script.txt');
+      fs.writeFileSync(scriptFile, `${FIT_TEXT}\n`, 'utf8');
+
+      // ── 夹具自检：音轨必须「前段静音 + 后段 15 kHz 音调」（否则判据 ③ 不成立）──
+      const srcHead = await bandMeanDbWindow(srcFile, FIT_TONE_HZ, 0, FITB_TONE_ONSET - 0.1);
+      const srcTail = await bandMeanDbWindow(srcFile, FIT_TONE_HZ, FITB_TONE_ONSET + 0.1, FITB_DUR);
+      assert.ok(srcHead !== null && srcTail !== null,
+        `量不到夹具素材的 15 kHz 带内电平（前段 ${srcHead} / 后段 ${srcTail}）`);
+      assert.ok(srcHead <= -60,
+        `夹具素材前段（0→${(FITB_TONE_ONSET - 0.1).toFixed(1)}s）15 kHz 带内电平 ${srcHead} dB —— 应当是数字静音。`);
+      assert.ok(srcTail >= -20,
+        `夹具素材后段 15 kHz 带内电平只有 ${srcTail} dB —— 音调没推满，判据 ③ 会失去区分力。`);
+
+      const runDir = path.join(baseDir, `${TEST_DIR_PREFIX}slow`);
+      fs.mkdirSync(runDir, { recursive: true });
+      ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(runDir)));
+      const r = await runNode([DUB_ENTRY, '--script', scriptFile, '--video', srcFile,
+        '--fit', 'slow', '--keep-original-audio', '--echo-cmd',
+        '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', runDir],
+      { cwd: ctx.root, timeoutMs: 900000 });
+      assert.strictEqual(r.code, 0,
+        `--fit slow --keep-original-audio 出片退出码 ${r.code}（期望 0）\n`
+        + `--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
+
+      //   ★ 结构判据：真的走了「原声混入」那一支（这句 ok() 只在 dub.mjs:1044 打印）
+      assert.match(r.stdout, /素材原声已压到 -20 dB 混入（--keep-original-audio）/,
+        `stdout 里没有「素材原声已压到 -20 dB 混入」—— --keep-original-audio 没生效？\n`
+        + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+
+      const lastJson = (r.stdout.match(/^\{.*"truePeak".*\}$/m) || [])[0];
+      assert.ok(lastJson, `stdout 末尾没有结果 JSON\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
+      const fin = JSON.parse(lastJson);
+      const total = Number(fin.total);
+      assert.ok(Number.isFinite(total) && total > 1, `total 不合理 ${JSON.stringify(fin.total)}`);
+
+      const srcP = await probeMedia(srcFile);
+      const srcDur = Number(srcP.dur);
+      assert.ok(Math.abs(srcDur - FITB_DUR) < 0.05, `夹具素材时长 ${srcP.dur}s ≠ ${FITB_DUR}s`);
+      const ratio = total / srcDur;
+      //   ★ 夹具守卫：ratio 必须 > 2，否则 1/ratio ≥ 0.5 ⇒ 单级 atempo 就够了，本用例测不到多级链。
+      assert.ok(ratio > 2,
+        `ratio = total/srcDur = ${ratio.toFixed(3)} ≤ 2 —— 单级 atempo 就够用了，本用例测不到**多级**链。`
+        + `（素材 ${srcDur}s / 旁白 ${total}s；把文案加长或素材改短。）`);
+
+      // ── 判据 ①：取出真实的 atempo 链并逐级校验 ──
+      //   链在 `--echo-cmd` 打到 **stderr** 的 dub-mix 脚本里（lib/dub-core.mjs:526 的 echo 分支）。
+      const cm = /((?:atempo=[\d.]+,)+atempo=[\d.]+)/.exec(r.stderr);
+      assert.ok(cm,
+        `--echo-cmd 的 stderr 里找不到 atempo 链 —— --keep-original-audio 下没给素材原声做变速？\n`
+        + `--- 末尾 stderr ---\n${r.stderr.slice(-3000)}`);
+      const chain = cm[1];
+      const stages = chain.split(',').map((s) => Number(s.replace('atempo=', '')));
+      assert.ok(stages.every((v) => Number.isFinite(v)),
+        `atempo 链解析出的分级不是数字：${JSON.stringify(chain)}`);
+      assert.ok(stages.length >= 2,
+        `atempo 链只有 ${stages.length} 级（${chain}）—— ratio=${ratio.toFixed(3)} 需要 tempo=${(1 / ratio).toFixed(4)} < 0.5，`
+        + ' 单级 atempo 的合法范围是 [0.5, 100]，一级放不下 ⇒ 实现少串了级数（ffmpeg 会当场报越界）。');
+      for (const v of stages) {
+        assert.ok(v >= 0.5 && v <= 100,
+          `atempo=${v} 越出 ffmpeg 的合法范围 [0.5, 100]（整条链：${chain}）—— 成片会直接失败。`);
+      }
+      const prod = stages.reduce((a, b) => a * b, 1);
+      const wantProd = srcDur / total;   // = 1/ratio：把原声按 ratio 放慢所需的 tempo 连乘
+      assert.ok(Math.abs(prod - wantProd) <= 1e-3,
+        `atempo 链的连乘 ${prod.toFixed(6)} ≠ srcDur/total = ${wantProd.toFixed(6)}（链：${chain}）`
+        + ' —— 连乘不等于 1/ratio 的话，原声与画面的放慢倍数对不上（音画不同步）。');
+
+      // ── 判据 ②：把**这条链原样**作用在夹具素材的音轨上，量时长 ──
+      //   ★ 期望 ≈ total（= ratio×srcDur）。★ 容差取 6%：ffmpeg 的 atempo 是相位声码器，
+      //     实测每级会短 ~0.5%（1 级 1.0s→1.9797s / 2 级 →3.9407 / 3 级 →7.8643 / 4 级 →8.2550，
+      //     理想分别是 2.0/4.0/8.0/8.4）—— 这不是缺陷，是 atempo 的固有长度口径。
+      //     一个**没有** atempo 的结果会是 srcDur（≈1s）、差一个数量级；链错则会直接报错。
+      const tmpWav = `/tmp/fita-${process.pid}-${Date.now().toString(36)}.wav`;
+      const rA = await wsl([
+        `ffmpeg -v error -y -i "${toWsl(srcFile)}" -vn -af "${chain}" -ar 48000 -ac 2 -c:a pcm_s16le ${tmpWav}`,
+        `ffprobe -v error -select_streams a -show_entries stream=duration -of csv=p=0 ${tmpWav}`,
+        `rm -f ${tmpWav}`,
+      ].join('\n'), { timeoutMs: 180000 });
+      const chainedDur = Number(String(rA.out).trim().split('\n').filter(Boolean).pop());
+      assert.ok(Number.isFinite(chainedDur),
+        `把 atempo 链作用到素材音轨上失败：code=${rA.code}\n${String(rA.out).slice(-800)}\n${String(rA.err).slice(-800)}`);
+      assert.ok(Math.abs(chainedDur - total) <= 0.06 * total + 0.1,
+        `atempo 链把素材音轨（${srcDur}s）拉成了 ${chainedDur}s，而目标（= 成片总时长）是 ${total}s`
+        + `（链：${chain}）—— 原声的放慢倍数与画面不一致。`);
+
+      // ── 判据 ③④：成片里的 15 kHz 带内电平（时间位置 + 绝对电平）──
+      const filmPath = path.join(runDir, 'film.mp4');
+      assert.ok(fs.existsSync(filmPath), `没有 ${filmPath}`);
+      const filmHead = await bandMeanDbWindow(filmPath, FIT_TONE_HZ, 0, 0.35 * total);
+      const filmTail = await bandMeanDbWindow(filmPath, FIT_TONE_HZ, 0.75 * total, total);
+      assert.ok(filmHead !== null && filmTail !== null,
+        `量不到成片的 15 kHz 带内电平（前段 ${filmHead} / 后段 ${filmTail}）`);
+      //   ④ 原声真的进了成片（TTS 自身在该带 ≈ −57 dB）
+      assert.ok(filmTail >= -40,
+        `成片后段 15 kHz 带内电平只有 ${filmTail} dB —— 素材原声（音调在素材后 40%）没有混进成片。`);
+      //   ③ 时间位置：音调起点被 atempo 从素材的 0.6s 推到了成片 ≈ 0.6·total 处 ⇒ 前 35% 必须是静的
+      assert.ok(filmHead <= filmTail - 15,
+        `成片前段 15 kHz 带内 ${filmHead} dB 与后段 ${filmTail} dB 差不到 15 dB ——`
+        + ` 素材音调本来从第 ${FITB_TONE_ONSET}s 才开始，放慢后应当移到成片 ≈ ${(FITB_TONE_ONSET * total).toFixed(1)}s 处`
+        + '（≈ 60% 处）；前半段就响说明原声**没有被 atempo 放慢**（音画不同步）。');
+
+      ctx.note(`⑤+++++++++ --fit slow atempo 链实测（素材 ${srcDur}s / 旁白 ${total}s，ratio ${ratio.toFixed(2)}）：`
+        + `链 ${chain}（${stages.length} 级，连乘 ${prod.toFixed(6)} vs 期望 ${wantProd.toFixed(6)}）· `
+        + `链作用到原声后 ${chainedDur.toFixed(3)}s（目标 ${total.toFixed(3)}s）· `
+        + `成片 15 kHz 带内 前35% ${filmHead} dB → 后25% ${filmTail} dB（素材原声确实被放慢并混入）`);
     },
   },
 ];

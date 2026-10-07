@@ -4,14 +4,17 @@
  *
  * 用法：
  *   node test/smoke.mjs                跑全部（不含完整回归，约 15–40 秒；WSL 冷启动时会到 1–2 分钟）
- *   node test/smoke.mjs --full         额外跑完整回归（FULL_CASES **7 条**）：
+ *   node test/smoke.mjs --full         额外跑完整回归（FULL_CASES **9 条**）：
  *                                        · ①② 跑重活 —— ① ascii-crt 全链路出片（含其配音步）、② 现场 GPU TTS；
  *                                        · ③④⑤ 三条走 `--keep-original`（明令**不跑 TTS、不吃 GPU**），
  *                                          ★ **实测合计约 21–23 秒**（两次：22.7s / 21.1s）。
  *                                        · ⑥⑦ 两条（形态 B + 现场 TTS / `--fit` 真出片差异）**也要跑现场 TTS**
  *                                          —— 实测 ⑥ 约 57 秒、⑦ 约 2–3 分钟（三次 TTS）。
- *                                        · 整体约 6–15 分钟，波动几乎全来自 WSL 冷启动与 GPU 占用。
- *                                          ★ ②⑥⑦（现场 TTS）依赖 Index-TTS 独占锁 + 足够显存 ——
+ *                                        · ⑧⑨ 两条是 `--fit` 的**反向分支**（素材 ≥ 旁白，三次 TTS）
+ *                                          与 **atempo 链**（`--keep-original-audio`，一次 TTS）——
+ *                                          也都**要跑现场 TTS**。
+ *                                        · 整体约 6–18 分钟，波动几乎全来自 WSL 冷启动与 GPU 占用。
+ *                                          ★ ②⑥⑦⑧⑨（现场 TTS）依赖 Index-TTS 独占锁 + 足够显存 ——
  *                                            GPU 被别的任务占着时会**立刻失败并说明是环境占用**。
  *   node test/smoke.mjs --filter demos 只跑名字里含 "demos" 的用例
  *   node test/smoke.mjs --keep-server  跑完不杀测试服务（调试用）
@@ -367,9 +370,10 @@ async function main() {
     // ── 完整回归（可选）──
     if (OPT.full) {
       log('');
-      log(C.b('  完整回归（--full：FULL_CASES 7 条 —— ①② 跑重活（① ascii-crt 全链路出片、② 现场 GPU TTS），'
+      log(C.b('  完整回归（--full：FULL_CASES 9 条 —— ①② 跑重活（① ascii-crt 全链路出片、② 现场 GPU TTS），'
         + '③④⑤ 三条 `--keep-original` 明令**不跑 TTS / 不吃 GPU**、实测合计约 21–23 秒；'
-        + '⑥⑦ 形态 B + 现场 TTS / `--fit` 真出片差异，**也要跑现场 TTS**、实测 ⑥ 约 57 秒 + ⑦ 约 2–3 分钟）'));
+        + '⑥⑦ 形态 B + 现场 TTS / `--fit` 真出片差异，**也要跑现场 TTS**、实测 ⑥ 约 57 秒 + ⑦ 约 2–3 分钟；'
+        + '⑧⑨ `--fit` 反向分支（三次 TTS）与 atempo 链（一次 TTS），**同样要跑现场 TTS**）'));
       await runCases(FULL_CASES, makeCtx(), null);
     } else {
       log('');
