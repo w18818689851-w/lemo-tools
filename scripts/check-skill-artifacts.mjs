@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-// ★ 覆盖点（供非破坏变异验证）：`LEMO_DISTILL_ROOT` 与 `check-film-delivery.mjs:92` / `check-tp-prose.mjs:325` 同名同义（风格技能树）。
+// ★ 覆盖点（供非破坏变异验证）：`LEMO_DISTILL_ROOT` 与 `check-film-delivery.mjs` / `check-tp-prose.mjs` 的**同名常量**（都写作 `const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || …)`）同名同义（风格技能树）。★ 2026-10-07：原写 `check-film-delivery.mjs:92` / `check-tp-prose.mjs:325`（行号已漂，实为 `:95` / `:387`）⇒ 改符号锚。
 const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || path.join(ROOT, 'lib', 'style-skills'));
 const FFPROBE = process.env.LEMO_FFPROBE || 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffprobe.exe';
 

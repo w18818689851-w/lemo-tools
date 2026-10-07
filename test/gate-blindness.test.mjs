@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 81 条用例 / 覆盖全部 34 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 84 条用例 / 覆盖全部 35 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -51,6 +51,14 @@
  *          **不可达**（`LEMO_OPUSCAR` 指空目录）⇒ **只 ℹ、exit 0**（与失明成对，证明守卫不是「永远 exit 1」）。
  *          ★ 夹具用**手写的合成库仓**（库仓是**另一个仓**，不能假设它在别人机器上存在）；
  *          它**不碰** 12b 那张 100 对登记表 ⇒ 不会退化成「抄第二遍」。
+ *        · `check-distill-fields`（2026-10-07 建，`_distill.json` **字段路径**的「登记表 + 双向守卫」）：
+ *          ① **未登记字段**（临时语料里塞 `selfCheck.LEMO_ZZZ_PROBE`）⇒ FAIL 并点名 `slug + 字段路径`；
+ *          ② **覆盖声明失效**（登记表某条 `coveredBy` 改成不存在的 `check-zzz-not-exist.mjs`）⇒ FAIL 并点名；
+ *          ③ **变异 C**（把已登记的 `selfCheck.muxEncoder` 从**全部** json 删掉）⇒ **仍 exit 0**
+ *            —— 钉住判据② 的**语义**：「登记了但**闸门**不在了才红」，**不是**「字段消失了就红」；
+ *          ④ **失明三态**（空风格树 / 数据里 0 字段 / 空登记表）⇒ FAIL +「本闸门已**失明**」；
+ *          ★ 夹具**整棵拷真实 `_distill.json` 语料**（276 条登记表抄第二遍必然漂移）；
+ *            要变异**登记表**本身时只能「拷闸门 + `LEMO_TOOLS_ROOT` 指回真实仓」（判据② 才找得到那些闸门）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -530,11 +538,30 @@ test('check-doc-coverage：失明守卫（scripts/ 只有非闸门非工具的 f
     expectBlind(r1, '本闸门已失明', 'check-doc-coverage 正向');
 
     // 阴性对照：一个已登记闸门（两份文档都按各自格式登记）+ 一个已登记测试入口 ⇒ exit 0。
+    // ★ 2026-10-07（顺带修一处**夹具陈旧**，非本用例的原始判据）：`check-doc-coverage.mjs` 新增了
+    //   「文档里的**计数声称** vs **实测**」判据（闸门数 / 用例数 / ★自证数一律**从文件系统现算**，
+    //   见其 `CLAIMS` 表）⇒ 最小合法夹具必须**同时**提供 `test/gate-blindness.test.mjs`
+    //   （否则 `gbText` 读不到 ⇒ 「用例数 / 自证数无法计算」）与两处文档里的**计数锚点**。
+    //   本夹具按 **1 个闸门 / 2 条用例 / 1 条 ★自证** 配平（旧夹具没有这两样 ⇒ 阴性对照被误判成失明）。
     const neg = path.join(dir, 'neg');
     wf(path.join(neg, 'scripts', 'check-x.mjs'), '// 一个闸门\n');
     wf(path.join(neg, 'test', 'gb-doc.test.mjs'), '// 一个测试入口\n');
+    wf(path.join(neg, 'test', 'gate-blindness.test.mjs'),
+      '// 合成回归套件（2 条用例 / 1 条 ★自证）\n'
+      + "test('a', () => {});\n"
+      + "test('★自证 b', () => {});\n"
+      // ★ 这一行**必须拼接**：`check-doc-coverage.mjs` 的「gate-blindness·用例数 / 闸门数」锚点要求
+      //   那个句子在 `test/gate-blindness.test.mjs` 里**恰好命中 1 处**；写成连续字面量会让**本文件自己**
+      //   多出一处命中 ⇒ 锚点不唯一 ⇒ 判失明（实测：写完连续字面量后 check-doc-coverage 立刻报
+      //   「锚点命中 **2** 处（应为 1）」）。
+      + '// 共 2 条用例' + ' / 覆盖全部 1 个闸门\n');
     wf(path.join(neg, 'test', 'README.md'),
-      '# 测试\n\n| `scripts/check-x.mjs` | 说明 |\n| `test/gb-doc.test.mjs` | 说明 |\n');
+      '# 测试\n\n'
+      + '回归套件（独立入口，零依赖，**2 条**）：覆盖 **1/1** 个闸门，另含 **1** 个**故意破坏自证**。\n'
+      + '（2 条：**全部 1 个闸门**的守卫，另含 1 个「改坏守卫或判据必须变红」自证）\n\n'
+      + '| `scripts/check-x.mjs` | 说明 |\n'
+      + '| `test/gb-doc.test.mjs` | 说明 |\n'
+      + '| `test/gate-blindness.test.mjs` | 说明 |\n');
     wf(path.join(neg, '_distill', 'AGENT-BRIEF.md'),
       '# 简报\n\nnode D:/x/scripts/check-x.mjs\n');
     const r2 = await runGate('check-doc-coverage.mjs', { LEMO_TOOLS_ROOT: neg });
@@ -3031,6 +3058,120 @@ test('★自证 check-env-overrides·库仓侧：把判据⑤⑥⑦⑧ 整段摘
     const rbl = await run(NODE, [m3.gate], { env: { LEMO_OPUSCAR: m3.lib } });
     assert.throws(() => expectBlind(rbl, LIB_BLIND, 'mut'),
       undefined, '摘掉判据⑤⑥⑦⑧ 后失明夹具竟然还报 ⇒ 失明断言没在测判据⑧');
+  } finally { rm(dir); }
+});
+
+// ── 12c. check-distill-fields.mjs（`_distill.json` 字段路径的「登记表 + 双向守卫」，2026-10-07 建）──
+// ★ 为什么夹具是「**整棵拷真实 `_distill.json` 语料**」而不是手写最小树：判据① 要求「真实数据里出现的
+//   **每一条**字段路径都已在登记表里」⇒ 手写最小树等于把 276 条登记表**抄第二遍**（两套口径必然漂移）。
+//   拷真实语料则**自洽**（闸门与语料同一快照）—— 这也正是本闸门要守的那件事的反面。
+// ★ 本闸门**有**两个覆盖点（`LEMO_DISTILL_ROOT` 风格树 / `LEMO_TOOLS_ROOT` 仓根）⇒ 语料可重定向，
+//   但要变异**登记表**本身时，只能「拷闸门 + `LEMO_TOOLS_ROOT` 指回真实仓」（判据② 才找得到那些闸门）。
+const copyDistillCorpus = (root) => {
+  const dst = path.join(root, 'skills');
+  for (const e of fs.readdirSync(path.join(TOOLS, 'lib', 'style-skills'), { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    const f = path.join(TOOLS, 'lib', 'style-skills', e.name, '_distill.json');
+    if (!fs.existsSync(f)) continue;
+    mk(path.join(dst, e.name));
+    fs.copyFileSync(f, path.join(dst, e.name, '_distill.json'));
+  }
+  return dst;
+};
+/** 把某份 `_distill.json` 改一改（读 → 改 → 写回）。 */
+const editDistill = (file, fn) => {
+  const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+  fn(j);
+  wf(file, `${JSON.stringify(j, null, 2)}\n`);
+};
+
+test('check-distill-fields：未登记字段 ⇒ FAIL 并点名；删字段不误报；覆盖声明失效 ⇒ FAIL（含失明）', async () => {
+  const dir = path.join(TMP, 'distill-fields');
+  // 该闸门的三条特有文案（逐字抄自闸门源码）
+  const N_UNREG = '条**未登记**的字段路径';
+  const N_GONE = '条**覆盖声明失效**';
+  const N_BLIND = '本闸门已**失明**';
+  try {
+    // ① 阴性对照：真实语料副本、**不改动** ⇒ exit 0 且判据①② 都真的跑过（否则「永远 exit 1」也能骗过）
+    const neg = copyDistillCorpus(path.join(dir, 'neg'));
+    const r0 = await runGate('check-distill-fields.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r0, N_UNREG, 'check-distill-fields 阴性对照');
+    assert.ok(r0.out.includes('✓ 判据①·') && r0.out.includes('✓ 判据②·'),
+      `阴性对照应真的跑过判据①②\n${r0.out.slice(0, 900)}`);
+    assert.ok(/实测 43 个风格 \/ 276 条去重字段路径/.test(r0.out),
+      `阴性对照应打印「43 个风格 / 276 条字段路径」\n${r0.out.slice(0, 900)}`);
+
+    // ② 变异 A（判据①）：给某份 json 加一个全新字段 ⇒ FAIL 并**点名 slug + 字段路径**
+    const pos = copyDistillCorpus(path.join(dir, 'pos'));
+    const slug = fs.readdirSync(pos).sort()[0];
+    editDistill(path.join(pos, slug, '_distill.json'), (j) => { j.selfCheck = { ...(j.selfCheck || {}), LEMO_ZZZ_PROBE: 1 }; });
+    const r1 = await runGate('check-distill-fields.mjs', { LEMO_DISTILL_ROOT: pos });
+    expectBlind(r1, N_UNREG, 'check-distill-fields 判据① 正向');
+    assert.ok(r1.out.includes(slug) && r1.out.includes('selfCheck.LEMO_ZZZ_PROBE'),
+      `判据① 应点名 slug + 字段路径\n${r1.out.slice(0, 900)}`);
+
+    // ③ 变异 B（判据②）：把某条 `coveredBy` 改成**不存在的闸门名** ⇒ FAIL 并点名那个名字 + 字段路径
+    //    ★ 闸门拷到临时目录 ⇒ 必须把 `LEMO_TOOLS_ROOT` 指回**真实仓**（判据② 在那里找 `scripts/<闸门>.mjs`）。
+    const gateB = patchGate('check-distill-fields.mjs', path.join(dir, 'mut-b'),
+      [["coveredBy: 'check-skill-artifacts.mjs'", "coveredBy: 'check-zzz-not-exist.mjs'"]]);
+    const r2 = await run(NODE, [gateB], { env: { LEMO_TOOLS_ROOT: TOOLS } });
+    expectBlind(r2, N_GONE, 'check-distill-fields 判据② 正向');
+    assert.ok(r2.out.includes('check-zzz-not-exist.mjs') && r2.out.includes('generatedVideo.'),
+      `判据② 应点名闸门名 + 字段路径\n${r2.out.slice(0, 900)}`);
+
+    // ④ 变异 C（**语义**）：把某条**已登记为有闸门**的字段从**全部** json 里删掉 ⇒ 仍 exit 0
+    //    —— 确认判据② 的语义是「登记了但**闸门**不在了才红」，**不是**「字段消失了就红」。
+    const c = copyDistillCorpus(path.join(dir, 'c'));
+    for (const s of fs.readdirSync(c)) editDistill(path.join(c, s, '_distill.json'), (j) => { if (j.selfCheck) delete j.selfCheck.muxEncoder; });
+    const r3 = await runGate('check-distill-fields.mjs', { LEMO_DISTILL_ROOT: c });
+    expectClean(r3, N_GONE, 'check-distill-fields 变异 C（删字段）');
+    assert.ok(/实测 43 个风格 \/ 275 条去重字段路径/.test(r3.out) && r3.out.includes('✓ 判据②·'),
+      `变异 C 应显示 275 条、且判据② 不响\n${r3.out.slice(0, 900)}`);
+
+    // ⑤ 失明三态（防空转绿灯）：空风格树 / 数据里 0 字段 / 登记表为空 ⇒ **均** exit 1 +「本闸门已**失明**」
+    const empty = path.join(dir, 'blind-empty');
+    mk(empty);
+    const rb1 = await runGate('check-distill-fields.mjs', { LEMO_DISTILL_ROOT: empty });
+    expectBlind(rb1, N_BLIND, 'check-distill-fields 失明①（空风格树）');
+    assert.ok(!rb1.out.includes('判据①·') && !rb1.out.includes('判据②·'),
+      `失明时不该输出判据①②\n${rb1.out.slice(0, 900)}`);
+
+    const zero = copyDistillCorpus(path.join(dir, 'zero'));
+    for (const s of fs.readdirSync(zero)) wf(path.join(zero, s, '_distill.json'), '{}\n');
+    const rb2 = await runGate('check-distill-fields.mjs', { LEMO_DISTILL_ROOT: zero });
+    expectBlind(rb2, N_BLIND, 'check-distill-fields 失明②（数据里 0 字段）');
+
+    // ★ 清空登记表：把 `const FIELDS = {` 收成 `{}`，原登记表体改挂到一个死变量上（保持语法有效）。
+    const gateZ = patchGate('check-distill-fields.mjs', path.join(dir, 'mut-zero'),
+      [['const FIELDS = {', 'const FIELDS = {};\nconst __DEAD = {']]);
+    const rb3 = await run(NODE, [gateZ], { env: { LEMO_TOOLS_ROOT: TOOLS } });
+    expectBlind(rb3, N_BLIND, 'check-distill-fields 失明③（登记表为空）');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-distill-fields：短路判据① / 判据② 后，各自的变异必须重新变绿', async () => {
+  const dir = path.join(TMP, 'mut-distill-fields');
+  const N_UNREG = '条**未登记**的字段路径';
+  const N_GONE = '条**覆盖声明失效**';
+  try {
+    // 判据① 自证：把「未登记」集合短路成空数组 ⇒ 变异A 必须重新变绿
+    const a = copyDistillCorpus(path.join(dir, 'a'));
+    const slug = fs.readdirSync(a).sort()[0];
+    editDistill(path.join(a, slug, '_distill.json'), (j) => { j.selfCheck = { ...(j.selfCheck || {}), LEMO_ZZZ_PROBE: 1 }; });
+    const ga = patchGate('check-distill-fields.mjs', path.join(dir, 'ga'),
+      [['const unregistered = [...real.keys()].filter((p) => !FIELDS[p]).sort();', 'const unregistered = [];']]);
+    const ra = await run(NODE, [ga], { env: { LEMO_DISTILL_ROOT: a, LEMO_TOOLS_ROOT: TOOLS } });
+    assert.throws(() => expectBlind(ra, N_UNREG, 'mut'),
+      undefined, '短路判据① 后变异A 竟然还报 ⇒ 那条正向断言没在测判据①');
+
+    // 判据② 自证：把「遍历登记表」短路成空 ⇒ 变异B 必须重新变绿
+    const gb = patchGate('check-distill-fields.mjs', path.join(dir, 'gb'),
+      [["coveredBy: 'check-skill-artifacts.mjs'", "coveredBy: 'check-zzz-not-exist.mjs'"],
+        ['for (const [p, ent] of Object.entries(FIELDS)) {\n  if (!ent || !ent.coveredBy) continue;',
+          'for (const [p, ent] of []) {\n  if (!ent || !ent.coveredBy) continue;']]);
+    const rb = await run(NODE, [gb], { env: { LEMO_TOOLS_ROOT: TOOLS } });
+    assert.throws(() => expectBlind(rb, N_GONE, 'mut'),
+      undefined, '短路判据② 后变异B 竟然还报 ⇒ 那条正向断言没在测判据②');
   } finally { rm(dir); }
 });
 

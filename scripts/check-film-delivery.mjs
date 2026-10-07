@@ -61,7 +61,7 @@
  *     `defer = (film.mtime > _distill.json.mtime)` **且**下列**任一**成立：
  *       · **成片很新**：`now − film.mtime ≤ DEFER_FRESH_MS`（15 min）—— 刚渲完，回填可能还在路上；
  *       · **该 slug 的并发锁活着**：`<LOCK_DIR>/.<slug>.lock` 存在且按**编排器自己的判据**算活着 ——
- *         逐字复用 `lemo-make.mjs:1449-1453`：「锁里记的 pid 仍存在（`process.kill(pid,0)` 成功或 EPERM）
+ *         逐字复用 `lemo-make.mjs` 里那段锁活性判据（`try { process.kill(oldPid, 0); … }` + `ageMs < 6 * 3600 * 1000`；★ 2026-10-07 原写 `lemo-make.mjs:1449-1453`、行号已漂 ⇒ 改符号锚）：「锁里记的 pid 仍存在（`process.kill(pid,0)` 成功或 EPERM）
  *         且锁龄 < 6h」。这是**最准的 per-slug 信号**：批次每渲一个风格就建这个锁、渲完即删。
  *       · **批次在跑**：`_distill/render-run-*.log` / `_distill/state.json` / `_distill/logs/*.log`
  *         三者**最新 mtime 在 DEFER_ACTIVE_MS（10 min）内** —— 逐条对齐项目既有约定

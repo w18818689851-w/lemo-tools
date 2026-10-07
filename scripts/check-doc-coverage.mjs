@@ -126,6 +126,55 @@ if (unlisted.length) {
   console.log(`\n✓ ${testEntries.length} 个测试入口（test/*.test.mjs）都已登记进 test/README.md。`);
 }
 
+// ── ★ 2026-10-07 延伸②：文档里的「计数声称」必须与实测一致 ─────────────────────
+//   由来（实测的三处陈旧，先跑出来的）：`test/README.md:30` 写「**77** 条：**全部 33 个闸门**」、
+//   `:904` 写「**73 条**…覆盖 **32/32** 个闸门」、`test/gate-blindness.test.mjs:8` 写「共 **81** 条用例」，
+//   而实测是 **82 条用例 / 34 个闸门 / 28 个 ★自证**。
+//   ★★ 这**与本闸门主判据是同一病症** ——「工具加了 / 用例加了，文档里的数字没跟」，而且是**静默**的
+//     （没人会去数）。⇒ 归到本闸门，而不是新开一个（`check-doc-coverage` 的由来就是这条病）。
+//   ★ 判据：每个计数声称都用**锚定形态**抽出，与实测逐字比；**抽不到 / 锚点不唯一也 FAIL**
+//     （形态变了 ⇒ 判据失明，不许静默放行 —— 同 `check-redline-md5.mjs` 的「锚定唯一性」纪律）。
+//   ★ 实测值一律**从文件系统现算**（闸门数 = `scripts/check-*.mjs`；用例数 = `^test(` 出现次数；
+//     自证数 = `^test('★自证` 出现次数）⇒ 代码变了文档必须跟，闸门自身不会过期。
+const gateCount = files.filter(isGate).length;
+const GB = path.join(testDir, 'gate-blindness.test.mjs');
+const gbText = fs.existsSync(GB) ? fs.readFileSync(GB, 'utf8') : '';
+const caseCount = (gbText.match(/^test\(/gm) || []).length;
+const selfCount = (gbText.match(/^test\('★自证/gm) || []).length;
+
+// [文档, 锚定正则, 捕获组序号(1-based), 实测值, 名称]
+const CLAIMS = [
+  ['test/README.md', /（(\d+) 条：\*\*全部 (\d+) 个闸门\*\*/g, 1, caseCount, 'README·总用例数'],
+  ['test/README.md', /（(\d+) 条：\*\*全部 (\d+) 个闸门\*\*/g, 2, gateCount, 'README·闸门数'],
+  ['test/README.md', /另含 (\d+) 个「改坏守卫或判据必须变红」自证/g, 1, selfCount, 'README·自证数'],
+  ['test/README.md', /回归套件（独立入口，零依赖，\*\*(\d+) 条\*\*）/g, 1, caseCount, 'README(详述)·总用例数'],
+  ['test/README.md', /覆盖 \*\*(\d+)\/(\d+)\*\* 个闸门/g, 1, gateCount, 'README(详述)·闸门数(分子)'],
+  ['test/README.md', /覆盖 \*\*(\d+)\/(\d+)\*\* 个闸门/g, 2, gateCount, 'README(详述)·闸门数(分母)'],
+  ['test/README.md', /另含 \*\*(\d+)\*\* 个\*\*故意破坏自证\*\*/g, 1, selfCount, 'README(详述)·自证数'],
+  ['test/gate-blindness.test.mjs', /共 (\d+) 条用例 \/ 覆盖全部 (\d+) 个闸门/g, 1, caseCount, 'gate-blindness·用例数'],
+  ['test/gate-blindness.test.mjs', /共 (\d+) 条用例 \/ 覆盖全部 (\d+) 个闸门/g, 2, gateCount, 'gate-blindness·闸门数'],
+];
+
+const countBad = [];
+const countBlind = [];
+if (!gbText) countBlind.push(`\`${GB}\` 读不到 ⇒ 用例数 / 自证数**无法计算**`);
+else if (caseCount === 0) countBlind.push(`\`${GB}\` 里扫到 0 个 \`^test(\` ⇒ 「用例数」这条判据空转`);
+for (const [doc, re, gi, truth, label] of CLAIMS) {
+  const text = doc === 'test/README.md' ? readme : gbText;
+  const hits = [...text.matchAll(re)];
+  if (hits.length !== 1) { countBlind.push(`${label}：锚点命中 **${hits.length}** 处（应为 1）⇒ 抽不到 / 不唯一（形态变了？）`); continue; }
+  const got = Number(hits[0][gi]);
+  if (got !== truth) countBad.push(`${label}：文档写 **${got}**、实测 **${truth}**（${doc}）`);
+}
+
+if (countBad.length) {
+  console.log(`\n✘ 文档里的计数声称与实测不符 ${countBad.length} 处：`);
+  for (const c of countBad) console.log(`  ${c}`);
+  console.log('\n修法：把文档里的数字改成实测值（`test/README.md` 与 `test/gate-blindness.test.mjs` 头部）。');
+} else if (!countBlind.length) {
+  console.log(`\n✓ 文档里的计数声称与实测一致（闸门 ${gateCount} 个、用例 ${caseCount} 条、★自证 ${selfCount} 条）。`);
+}
+
 if (missing.length) {
   console.log(`\n✘ 有 ${missing.length} 个脚本没被登记进文档：\n`);
   for (const m of missing) console.log(`  ${m.f.padEnd(32)} 需要：${m.need}（当前只在：${m.where.join('、') || '哪儿都没有'}）`);
@@ -136,10 +185,11 @@ if (missing.length) {
   console.log('\n✓ 所有闸门类与工具类脚本都已在文档里登记。');
 }
 
-if (blind.length) {
+if (blind.length || countBlind.length) {
   console.log(`\n✘ 本闸门已失明：`);
   for (const b of blind) console.log(`  ✘ ${b}`);
+  for (const b of countBlind) console.log(`  ✘ ${b}`);
 }
 
-console.log(`\n[闸门] 未登记脚本 ${missing.length} 个、未登记测试入口 ${unlisted.length} 个${blind.length ? '、**已失明**' : ''} ${(missing.length || unlisted.length || blind.length) ? '✘' : 'OK'}`);
-process.exitCode = (missing.length || unlisted.length || blind.length) ? 1 : 0;
+console.log(`\n[闸门] 未登记脚本 ${missing.length} 个、未登记测试入口 ${unlisted.length} 个、计数不符 ${countBad.length} 处${(blind.length || countBlind.length) ? '、**已失明**' : ''} ${(missing.length || unlisted.length || countBad.length || blind.length || countBlind.length) ? '✘' : 'OK'}`);
+process.exitCode = (missing.length || unlisted.length || countBad.length || blind.length || countBlind.length) ? 1 : 0;

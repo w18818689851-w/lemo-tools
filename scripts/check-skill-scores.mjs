@@ -50,8 +50,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = 'D:/lemo-tools';
-// ★ 覆盖点（供非破坏变异验证）：`LEMO_DISTILL_ROOT` 与 `check-film-delivery.mjs:92` / `check-tp-prose.mjs:325`
-//   同名同义（风格技能树）；`LEMO_DUB_STYLES` 与 `check-dna-coverage.mjs:153` 同名同义（注册表）。
+// ★ 覆盖点（供非破坏变异验证）：`LEMO_DISTILL_ROOT` 与 `check-film-delivery.mjs` / `check-tp-prose.mjs` 的**同名常量**同名同义（风格技能树）；
+//   `LEMO_DUB_STYLES` 与 `check-dna-coverage.mjs` 的 `DUB_STYLES_FILE` 同名同义（注册表）。★ 2026-10-07：原写行号（`check-film-delivery.mjs:92` / `check-tp-prose.mjs:325` / `check-dna-coverage.mjs:153`）**三处全漂**（实为 `:95` / `:387` / `:187`）⇒ 改符号锚。
 const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || path.join(ROOT, 'lib', 'style-skills'));
 const DUB_STYLES = process.env.LEMO_DUB_STYLES || path.join(ROOT, 'lib', 'dub-styles.json');
 
