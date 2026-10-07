@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 73 条用例 / 覆盖全部 32 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 77 条用例 / 覆盖全部 33 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -626,6 +626,64 @@ test('check-skill-artifacts：失明守卫②（全部 SKIP ⇒ 一个都没比�
     expectClean(r2, '已失明', 'check-skill-artifacts 阴性对照');
     assert.ok(r2.out.includes('文档记录的成片信息与实物全部一致'),
       `阴性对照应报「全部一致」\n${r2.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+// ── 8b. check-selfcheck-claims.mjs（★ 项目第一硬规则「渲染一律 GPU 优先」的 json 侧落点）──
+//   ★ 2026-10-07 建：`selfCheck.muxEncoder`（43/43 声称「nvenc」）此前**零读者** ⇒ 渲染一旦
+//     静默回退成 CPU，**没有任何闸门会响**（`check-render-venc` 核的是**脚本**、`check-mux-parity`
+//     核的是两份 `mux.sh` 的口径、`check-skill-artifacts` 核的是 `generatedVideo.*` 的数值）。
+//   ★ 本用例专测那条**最容易漏**的判据 —— 「**达标**」而非「自洽」：一部真 `libx264` 成片
+//     配上「声称 libx264」是**自洽**的，只判自洽的闸门会**绿灯放行**（违反第一硬规则）。
+test('check-selfcheck-claims：★ 达标判据（成片实为 libx264 ⇒ FAIL，即便声称也写 libx264）', async () => {
+  const dir = path.join(TMP, 'scc');
+  mk(dir);                                   // ★ ffmpeg 不会自建目录 ⇒ 先建（否则「造片失败」被误读成夹具坏了）
+  const cpuFilm = path.join(dir, 'cpu.mp4');
+  try {
+    // ── 夹具前提：本机 ffmpeg 造一部**真 libx264** 成片（纯 CPU，不碰 GPU）──
+    assert.ok(fs.existsSync(FFMPEG), `夹具依赖本机 ffmpeg 存在：${FFMPEG}`);
+    const gen = await run(FFMPEG, ['-y', '-v', 'error', '-f', 'lavfi', '-i',
+      'testsrc=size=320x180:rate=24:duration=1', '-c:v', 'libx264', '-preset', 'ultrafast', cpuFilm]);
+    assert.equal(gen.code, 0, `夹具：ffmpeg 造 CPU 成片失败\n${gen.out.slice(0, 400)}`);
+    assert.ok(fs.existsSync(cpuFilm), `夹具：CPU 成片没造出来 ${cpuFilm}`);
+    // ★ 夹具前提：ffprobe 必须真的把它的 encoder tag 读成 libx264（否则用例测不到那个形态）
+    const pr = await run(FFPROBE, ['-v', 'error', '-select_streams', 'v:0',
+      '-show_entries', 'stream_tags=encoder', '-of', 'json', cpuFilm]);
+    assert.ok(/"encoder"\s*:\s*"[^"]*libx264/.test(pr.out),
+      `夹具：ffprobe 没把夹具片读成 libx264 ⇒ 用例测不到目标形态\n${pr.out.slice(0, 300)}`);
+
+    // 用真实风格的 json 当模板（只把 `generatedVideo.path` 换成夹具片；`muxEncoder` 保持真值 nvenc）
+    const real = JSON.parse(fs.readFileSync(path.join(TOOLS, 'lib', 'style-skills', 'art-deco', '_distill.json'), 'utf8'));
+    const pos = path.join(dir, 'pos');
+    rj(path.join(pos, 'art-deco', '_distill.json'),
+      { ...real, generatedVideo: { ...real.generatedVideo, path: fwd(cpuFilm) } });
+    const r1 = await runGate('check-selfcheck-claims.mjs', { LEMO_DISTILL_ROOT: pos });
+    // 正向：必须报出「成片未走 h264_nvenc（GPU 优先铁律）」（逐字抄自源码）+ 自洽不符
+    expectBlind(r1, '★ 成片未走 h264_nvenc（GPU 优先铁律）', 'check-selfcheck-claims 正向');
+    assert.ok(r1.out.includes('muxEncoder 声称 "nvenc" 与成片实际'),
+      `正向还应报「声称 vs 实际不符」\n${r1.out.slice(0, 900)}`);
+
+    // ── ★自证：把「达标」与「自洽」两条判据**短路**（只改条件、不动括号结构）⇒ 同夹具必须变绿 ──
+    //   ⇒ 证明上面那条断言真的在测这两条判据，而不是在测「闸门有没有崩」。
+    const gateCopy = patchGate('check-selfcheck-claims.mjs', path.join(dir, 'rev'), [
+      ['} else if (!norm(tag).includes(norm(EXPECTED))) {', '} else if (false) {'],
+      ['if (tag && !norm(tag).includes(norm(claim))) {', 'if (false) {'],
+    ]);
+    const r2 = await run(NODE, [gateCopy], { env: { LEMO_DISTILL_ROOT: pos } });
+    assert.equal(r2.code, 0, `★自证：短路达标/自洽判据后应 exit 0，实得 ${r2.code}\n${r2.out.slice(0, 900)}`);
+    assert.ok(!r2.out.includes('成片未走 h264_nvenc'),
+      `★自证：短路后**不该**再报「成片未走 h264_nvenc」\n${r2.out.slice(0, 900)}`);
+
+    // ── 阴性对照：真风格 + 真成片（nvenc）⇒ exit 0 且不含失明文案 ──
+    const realFilm = 'D:/lemo-films/art-deco/art-deco.mp4';
+    assert.ok(fs.existsSync(realFilm), `阴性对照依赖真实成片存在：${realFilm}`);
+    const neg = path.join(dir, 'neg');
+    rj(path.join(neg, 'art-deco', '_distill.json'),
+      { generatedVideo: { path: realFilm }, selfCheck: { muxEncoder: 'nvenc' } });
+    const r3 = await runGate('check-selfcheck-claims.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r3, '已失明', 'check-selfcheck-claims 阴性对照');
+    assert.ok(r3.out.includes('与真值全部一致'),
+      `阴性对照应报「与真值全部一致」\n${r3.out.slice(0, 900)}`);
   } finally { rm(dir); }
 });
 
