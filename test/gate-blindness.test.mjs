@@ -164,12 +164,24 @@ const skillTree = (root, slug, skillMd, distill) => {
   return root;
 };
 
-/** 一份「真值齐全」的 `_distill.json` —— 缺任何一维都会让 check-tp-prose 报「该量纲已失明」。 */
+/**
+ * 一份「真值齐全」的 `_distill.json` —— 缺任何一维都会让 check-tp-prose 报「该量纲已失明」。
+ * ★ 2026-10-07 起还**必须**带一条**与本 json 权威 `truePeakDbtp` 一致**的散文读数（`selfCheck.peakNote`）：
+ *   check-tp-prose 的 **json 散文失明守卫**规定「只要读到了 `_distill.json`，白名单散文里就必须有
+ *   ≥1 个可核读数」，否则报「本闸门已失明（json 散文）」exit 1。真实 `_distill.json` 43/43 都有
+ *   `peakNote` ⇒ 夹具补上这一字段才与真语料同形（否则「最小合法夹具」会被失明守卫误判为红）。
+ * ★ `truePeakDbtp`（实测真值 −1.25）**必须 ≠** `peakDbtpTarget`（交付线 −1.2）：`peakNote` 的覆盖级
+ *   判据 (J5) 会把「恰好等于交付线」的那个读数当**交付线本身**放掉；真语料 43/43 都是「实测 ≠ 交付线」
+ *   （实测统计：`truePeakDbtp == peakDbtpTarget` 的风格 0 个）⇒ 夹具按真语料形态取值，note 才核得中。
+ */
 const tpDistill = (over = {}) => ({
   generatedVideo: { bytes: 1000000, durSec: 60, width: 1920, height: 1080, frames: 1500 },
-  selfCheck: { loudness: {
-    truePeakDbtp: -1.2, integratedLufs: -14.2, lra: 3.2, peakDbtpTarget: -1.2, samplePeakDbfs: -1.3,
-  } },
+  selfCheck: {
+    peakNote: '本片成片实测真峰值 input_tp = −1.25 dBTP（本片成片实测）。',
+    loudness: {
+      truePeakDbtp: -1.25, integratedLufs: -14.2, lra: 3.2, peakDbtpTarget: -1.2, samplePeakDbfs: -1.3,
+    },
+  },
   ...over,
 });
 
@@ -344,6 +356,58 @@ test('check-tp-prose：失明（真值来源 = {} ⇒ 逐量纲「已失明」ex
       LEMO_DISTILL_ROOT: root, LEMO_READINGS_MEASURED_JSON: ov,
     });
     expectBlind(res, '本闸门已失明', 'check-tp-prose 失明');
+  } finally { rm(dir); }
+});
+
+// ── 1c. check-tp-prose 的 **json 散文** pass（2026-10-07 补的零覆盖区）───────────────
+//   背景：`_distill.json` 的散文字段（`selfCheck.peakNote` / `selfCheck.audio.*` / `audioEvidence.*` /
+//   一切 `*note`）**没有任何闸门读过** ⇒ `halftone-dossier.peakNote` 写 −3.26 dBTP（实测 −2.79）、
+//   `pixel-rpg` 写 0.08 dBTP 都能长期存活。现 check-tp-prose 把 json 散文当**第二路扫描源**。
+test('check-tp-prose：json 散文（selfCheck.audio.note 现值陈旧 ⇒ 判；与权威一致 ⇒ 放行）', async () => {
+  const dir = path.join(TMP, 'tp-jsonprose');
+  try {
+    // 真值（权威）= 同 json 的 `selfCheck.loudness.truePeakDbtp` = −1.25。
+    //   正向：`selfCheck.audio.note` 写 −0.50（Δ 0.75 ≫ 容差 0.15）⇒ 判 1 处、且**点名字段路径**。
+    const pos = path.join(dir, 'pos');
+    const djP = tpDistill();
+    djP.selfCheck.audio = { note: '本片成片实测真峰值 input_tp = −0.50 dBTP（本片成片实测）。' };
+    skillTree(pos, 'gb-tp', '# gb-tp\n\n本片成片真峰值 −1.25 dBTP（本片成片实测）。\n', djP);
+    const r1 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: pos });
+    expectBlind(r1, '陈旧读数 1 处', 'check-tp-prose json 散文正向');
+    // ★ 必须点名是**哪个 json 字段**（否则「判到了但没说在哪」= 不可用）。
+    assert.ok(r1.out.includes('_distill.json:selfCheck.audio.note'),
+      `json 散文正向：输出没点名 \`_distill.json:selfCheck.audio.note\`\n${r1.out.slice(0, 900)}`);
+
+    // 真阴性：同一字段改成与权威一致（−1.25）⇒ exit 0。
+    const neg = path.join(dir, 'neg');
+    const djN = tpDistill();
+    djN.selfCheck.audio = { note: '本片成片实测真峰值 input_tp = −1.25 dBTP（本片成片实测）。' };
+    skillTree(neg, 'gb-tp', '# gb-tp\n\n本片成片真峰值 −1.25 dBTP（本片成片实测）。\n', djN);
+    const r2 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r2, '陈旧读数 1 处', 'check-tp-prose json 散文真阴性');
+    assert.ok(!r2.out.includes('已失明'), `check-tp-prose json 散文真阴性：不应失明\n${r2.out.slice(0, 600)}`);
+  } finally { rm(dir); }
+});
+
+test('check-tp-prose：json 散文失明（读到 _distill.json 但白名单散文无任何可核读数 ⇒ exit 1）', async () => {
+  const dir = path.join(TMP, 'tp-jsonblind');
+  try {
+    // 有 `_distill.json`（真值齐全）但**散文里一个可核读数都没有** ⇒ json 这一路失明（假绿型病）。
+    const blind = path.join(dir, 'blind');
+    skillTree(blind, 'gb-tp', '# gb-tp\n\n本片成片真峰值 −1.25 dBTP（本片成片实测）。\n', {
+      generatedVideo: { bytes: 1000000, durSec: 60, width: 1920, height: 1080, frames: 1500 },
+      selfCheck: { loudness: {
+        truePeakDbtp: -1.25, integratedLufs: -14.2, lra: 3.2, peakDbtpTarget: -1.2, samplePeakDbfs: -1.3,
+      } },
+    });
+    const r1 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: blind });
+    expectBlind(r1, '本闸门已失明（json 散文）', 'check-tp-prose json 散文失明');
+
+    // 阴性对照：补一条**一致**的 `peakNote` ⇒ 不再失明 ⇒ exit 0。
+    const ok = path.join(dir, 'ok');
+    skillTree(ok, 'gb-tp', '# gb-tp\n\n本片成片真峰值 −1.25 dBTP（本片成片实测）。\n', tpDistill());
+    const r2 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: ok });
+    expectClean(r2, '本闸门已失明（json 散文）', 'check-tp-prose json 散文失明阴性对照');
   } finally { rm(dir); }
 });
 
@@ -1893,8 +1957,12 @@ test('★自证 check-tp-prose：删掉 CUR 反向守卫后，正向断言必须
   const dir = path.join(TMP, 'mut-tp');
   try {
     // 把「HIST 且非 CUR 才豁免」退化成「只要 HIST 就豁免」（即删掉 CUR 反向守卫）。
+    //   ★ 2026-10-07：主循环那行加了 `!S.json && ` 前缀（json 散文的历史豁免改由 J1–J4 承担）
+    //     ⇒ 变异锚点必须跟着带上前缀，否则 `replace` 会落到下方「物理不可能」段那行同名判据上、
+    //     主循环的守卫根本没被删掉（实测：带旧锚点时本自证会假绿）。
     const gate = mutate('check-tp-prose.mjs', dir,
-      'if (HIST.test(line) && !CUR.test(line)) continue;', 'if (HIST.test(line)) continue;');
+      'if (!S.json && HIST.test(line) && !CUR.test(line)) continue;',
+      'if (!S.json && HIST.test(line)) continue;');
     const pos = skillTree(path.join(dir, 'styles'), 'gb-tp',
       '# gb-tp\n\n已修：真峰值原为 −1.2 dBTP，现状 −0.5 dBTP（本片成片实测）\n', tpDistill());
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: pos } });
@@ -1954,6 +2022,24 @@ test('★自证 check-tp-prose：把 `修复后` 塞回 HIST 后，正向断言�
     // 把 `修复后` 塞回 HIST 后：整行被 ⑤ 豁免 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
     assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
       undefined, '把 `修复后` 塞回 HIST 后正向断言竟然还通过 ⇒ 断言没在测该收窄');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-tp-prose：摘掉「json 散文进 FAIL 桶」后，json 散文正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-tp-jsonprose');
+  try {
+    // 把「json 散文 token 进 FAIL 桶」这条新判据摘掉（`S.json` 的 token 一律降级为参考）。
+    const gate = mutate('check-tp-prose.mjs', dir,
+      "else if (D.mode === 'fail' && !S.jr) fails.get(D.key).push(rec2);",
+      "else if (D.mode === 'fail' && !S.jr && !S.json) fails.get(D.key).push(rec2);");
+    const root = path.join(dir, 'styles');
+    const dj = tpDistill();
+    dj.selfCheck.audio = { note: '本片成片实测真峰值 input_tp = −0.50 dBTP（本片成片实测）。' };
+    skillTree(root, 'gb-tp', '# gb-tp\n\n本片成片真峰值 −1.25 dBTP（本片成片实测）。\n', dj);
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
+    // 判据被摘后：json 散文的 −0.50 不再判 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
+      undefined, '摘掉 json 散文判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
 });
 

@@ -74,7 +74,7 @@
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
-      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.03 dBTP，超 −1.2 dBTP 交付线 0.17 dB、未削波（真峰值为负）。astats 采样峰值 −1.611899 是下界、ebur128 的 Peak −1.0 只有 1 位小数，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。 ★ 2026-10-05 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-2.4 dBTP**、astats 采样峰值 **-2.754564 dBFS**。原记（真峰值 -1.03 dBTP / astats -1.611899）属修复前或重渲前版本，已按实测更正。"
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−1.03 dBTP，超 −1.2 dBTP 交付线 0.17 dB、未削波（真峰值为负）。astats 采样峰值 −1.611899 是下界、ebur128 的 Peak −1.0 只有 1 位小数，都不能当真峰值用。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。 ★ **原记**：2026-10-05 复测当时记的是真峰值 = loudnorm input_tp（4× 过采样）**-2.4 dBTP**、astats 采样峰值 **-2.754564 dBFS**。原记（真峰值 -1.03 dBTP / astats -1.611899）属修复前或重渲前版本，（属更早一版成片，**已不是当前值**）。★ 2026-10-07 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-1.42 dBTP**、未削波、达标（与 selfCheck.loudness.truePeakDbtp 一致）。"
     },
     "warnings": [
       "styles/blueprint/demo/tools/subs.mjs 退出码 1：字幕源未重新生成，.srt 沿用仓库里已提交的旧文件（`logs/blueprint.log:27/33/161`）",

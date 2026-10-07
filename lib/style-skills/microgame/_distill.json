@@ -90,7 +90,7 @@
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:print_format=json -f null - 的 input_tp（4× 过采样）",
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
-      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−0.86 dBTP，超 −1.2 dBTP 交付线 0.34 dB、未削波（真峰值为负）。astats 采样峰值 −0.856469 是下界（此处两者数值接近但口径不同）。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。混流走自带副本 tools/mux.sh（TP=-1.2），无 AAC 余量。 ★ 2026-10-05 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-2.18 dBTP**、astats 采样峰值 **-2.291309 dBFS**。原记（真峰值 -0.86 dBTP / astats -0.856469）属修复前或重渲前版本，已按实测更正。"
+      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），−0.86 dBTP，超 −1.2 dBTP 交付线 0.34 dB、未削波（真峰值为负）。astats 采样峰值 −0.856469 是下界（此处两者数值接近但口径不同）。STYLE.md 未声明更严上限，按项目线 −1.2 dBTP 判。混流走自带副本 tools/mux.sh（TP=-1.2），无 AAC 余量。 ★ **原记**：2026-10-05 复测当时记的是真峰值 = loudnorm input_tp（4× 过采样）**-2.18 dBTP**、astats 采样峰值 **-2.291309 dBFS**。原记（真峰值 -0.86 dBTP / astats -0.856469）属修复前或重渲前版本，（属更早一版成片，**已不是当前值**）。★ 2026-10-07 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-1.32 dBTP**、未削波、达标（与 selfCheck.loudness.truePeakDbtp 一致）。"
     },
     "warnings": [
       "STEP_WARN asr_check 未通过（继续）：mismatches 4（d_ah / fx_choo1 / d_ah2 / fx_choo2，均为当 SFX 处理、豁免校验的条目）",

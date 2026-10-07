@@ -85,7 +85,7 @@
       "truePeakDbtp": -1.6,
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
-      "peakNote": "真峰值 = loudnorm 的 input_tp（4× 过采样），超 -1.2 dBTP 交付线 2.6 dB、已实际削波。本风格走自己的补丁副本 demo/tools/mux.sh，它只打 I / LRA、不打印 Peak 行，故未触发 missed-target 告警。",
+      "peakNote": "★ **原记**（**已失效的缺陷声称，保留作历史**）：真峰值 = loudnorm 的 input_tp（4× 过采样），超 -1.2 dBTP 交付线 2.6 dB、已实际削波 —— **该读数属更早一版成片；当前入库成片并未削波**。本风格走自己的补丁副本 demo/tools/mux.sh，它只打 I / LRA、不打印 Peak 行，故未触发 missed-target 告警。★ 2026-10-07 复测当前入库成片：真峰值 = loudnorm input_tp（4× 过采样）**-1.6 dBTP**、未削波、达标（与 selfCheck.loudness.truePeakDbtp 一致）。",
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
       "samplePeakDbfs": -2.727889

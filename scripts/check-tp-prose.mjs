@@ -467,6 +467,81 @@ const filmAttr = (line, idx) => FILM_ATTR.test(line.slice(Math.max(0, idx - 20),
 const NATIVE = /原生|样片|demo|DEMO|入库前|未渲|设计稿|风格声明|on ones/;
 const HYPO = /硬渲|渲成|裁|塞在|竖屏|内部|内含|超采样|世界|场景|片门|模板|画布|渲染|若|如果|原生|帧缓冲|索引|缓冲/;
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ★★ `_distill.json` **散文** pass（2026-10-07 新增，补一处**实测确认的零覆盖区**）
+// ══════════════════════════════════════════════════════════════════════════════
+// 背景（实测证据，2026-10-07）：三道相关闸门都只读 `SKILL.md` 正文与 json 的少数**结构化键**
+//   （`check-film-delivery` 读 `selfCheck.loudness.{TP,LUFS,LRA}`+`generatedVideo.*`+`peakTargetMet`；
+//    `check-skill-film-fields` 只读 `generatedVideo.{frames,w,h,dur}`；
+//    本闸门此前只读 `loudness.*`+`audioEvidence.measuredInFilm.*`+`generatedVideo.*`），
+//   于是 json 的**散文**字段（`selfCheck.loudness.peakNote` / `selfCheck.warnings[]` /
+//   `resolvedDefects[]` / `selfCheck.audio.*` / 一切 `*note`）**没有任何闸门在读** ⇒ 假值长期存活：
+//   · `halftone-dossier.peakNote` 曾写「−3.26 dBTP」（实测 −2.79）、`pixel-rpg.peakNote` 曾写
+//     「0.08 dBTP / ebur128PeakDbfs 0.1」（实测 −1.72 / −1.7）—— 见提交 `6cc328d` 的审计。
+//   · 更隐蔽的是「**更正记录里的现值**」：`resolvedDefects[]` 的 `★ …已修：X → Y` 里的 **Y**
+//     被 `SKILL.md` 侧改正过（提交 `fe8792b` / `51a8e3b` 共 26 处），json 侧**未同步**。
+//
+// ★★ 为什么**不**沿用 SKILL.md 的「整行历史豁免」：实测 25 份 `peakNote` **全部只有 1 个物理行**
+//   （原句 + 历史标记 + 现值挤在同一行）⇒ 整行豁免会把**现值一起放掉**（闸门当场失明）。
+//   故 json pass 的历史判定改用**关系粒度**（与 `check-tp-prose` 主循环 ⑦/⑨ 的「按关系」同源）：
+//     (J1) **箭头级**：`X → Y` 的 **X** 是「更正前值」⇒ 参考；**Y 是现值 ⇒ 判**（不因同句历史词豁免）。
+//     (J2) **原句级**：更正记录（字段内同时含 `→` 与历史标记）里**不含箭头**的行 = 保留的原句 ⇒ 参考。
+//     (J3) **句子级**：token 所在**句**（`。！？`）含 `HIST_JSON` 且不含 `CUR` ⇒ 参考。
+//     (J4) **值级**：**同一个值**在字段别处紧邻历史标记（前 12 字）⇒ 该值整体是历史引用 ⇒ 参考。
+//     (J5) **覆盖级**：`peakNote` 必须给出与权威 `selfCheck.loudness.truePeakDbtp` 一致的 dBTP 读数
+//          （否则 FAIL「未给出权威真峰值」）—— 这是**自洽性检查**，不需要跑 ffmpeg。
+//
+// ★ 真值来源与主循环**完全同源**（同 json 的 `selfCheck.loudness.*` / `generatedVideo.*`），
+//   不另跑 ffmpeg ⇒ 本 pass 是**秒级**，且与 `check-film-delivery` 的结论不分叉。
+/** json 散文的历史标记（在共享 `HIST` 上补 json 时点词：`首版|重混时|重渲前|属…版本|…`）。
+ *  ★ 实测依据：json 的散文是**时点记录**，其历史词比 SKILL.md 正文更宽（`首版` / `重混时` 等）。 */
+const HIST_JSON = /已修|原为|原记|原写|原先|曾是|曾为|历史|修复前|校正|拆分|移入|resolvedDefects|首版|旧版|原版|前版|重混时|重混前|重渲前|重渲版|快照|首轮|原句|曾用|曾写|更早|原值|旧读数|属[^。；]{0,10}版本/;
+/** json 散文字段白名单（**断言本片当前读数** ⇒ 判 FAIL） */
+const JSON_FAIL_PATH = [
+  /^selfCheck\.peakNote$/,              // 权威真峰值散文（本次确认的零覆盖区）
+  /^selfCheck\.loudness\.peakNote$/,
+  /^selfCheck\.audio\./,                // 音频自检（散文 + 数值）
+  /^audioEvidence\./,                   // 成片实测旁证（measuredInFilm / mux / mix.note …）
+  /(^|\.)\w*[Nn]otes?$/,                // 一切 `*note` / `notes` 字段
+  /^generatedVideo\.bytesNote$/,
+];
+/** json 散文字段白名单（**时点记录 / 评分依据** ⇒ 按实测误报率降级为「参考」，不进退出码） */
+const JSON_REF_PATH = [
+  /^selfCheck\.warnings\[\d+\]$/,       // 渲染时工具告警快照（原文转录，时点）
+  /^resolvedDefects\[\d+\]$/,           // 已解决缺陷记录（保留原句 + 追加更正，时点）
+  /^audioScoreBasis$/,                  // 音频评分依据（时点）
+  /^audioEvidence\.firstVersionDefect\./,
+];
+/** 遍历 json，取「散文字段」叶子（string / number）+ 其路径 */
+const collectJsonProse = (j) => {
+  const out = [];
+  const walk = (o, p) => {
+    if (typeof o === 'string' || typeof o === 'number') { out.push([p, o]); return; }
+    if (Array.isArray(o)) { o.forEach((v, i) => walk(v, `${p}[${i}]`)); return; }
+    if (o && typeof o === 'object') for (const k of Object.keys(o)) walk(o[k], p ? `${p}.${k}` : k);
+  };
+  if (j) walk(j, '');
+  return out;
+};
+/** 取「包含下标 idx 的那一句」（json pass 的 (J3) 句子级历史判定） */
+const sentenceAt = (line, idx) => {
+  const marks = [...line.matchAll(/[。！？]/g)].map((x) => x.index);
+  let a = 0;
+  for (const k of marks) { if (k < idx) a = k + 1; else break; }
+  const tail = line.slice(a);
+  const e = tail.search(/[。！？]/);
+  return e === -1 ? tail : tail.slice(0, e + 1);
+};
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** json **数值**自洽：`<叶键名>` → 权威真值量纲（真值仍取 `selfCheck.loudness.*`，与主循环同源） */
+const JSON_NUM_DIM = {
+  filmLufs: 'LUFS', filmTruePeakDbtp: 'dBTP', filmSamplePeakDbfs: 'dBFS', filmLra: 'LRA',
+  integratedLufs: 'LUFS', truePeakDbtp: 'dBTP', lra: 'LRA', samplePeakDbfs: 'dBFS',
+  astatsPeak6dp: 'dBFS', truePeakDbfs: 'dBTP', peakDbfs: 'dBTP', ebur128PeakDbfs: 'dBTP',
+};
+/** 上游 / 中间产物 / 首版快照 / 素材的路径 ⇒ 不是「本片当前读数」 */
+const JSON_NUM_SKIP = /(^|\.)(mix|score|master|music|voice|voices|src|old|new|beforeMux|measuredBeforeMux|firstVersionDefect|wav|target|limit)/i;
+
 const num = (t) => Number(String(t).replace('−', '-'));
 
 // ── ★ 量纲登记表：**加一种量纲 = 加一条登记**（不再加一条判据） ─────────────────
@@ -669,9 +744,25 @@ const fails = new Map(DIMS.map((D) => [D.key, []]));
 const refs = new Map(DIMS.map((D) => [D.key, []]));
 const scanLines = [], xref = [], thresholds = [], silent = [], blind = new Map(DIMS.map((D) => [D.key, []]));
 
+// ── ★★ 扫描源：`SKILL.md` 正文（**整行**级历史豁免）＋ `_distill.json` 散文（**关系**级历史豁免）──
+//   两路共用**同一套** DIMS / 阈值排除 / 成片语境 / 非本片产物 / 实验行 / 交叉引用 / 失明机制；
+//   唯一分叉点是**历史豁免的粒度**（SKILL.md = 整行；json 散文 = 句子/值/箭头，见 `HIST_JSON` 定义）。
+const sources = [];
 for (const slug of slugs) {
   const md = fs.readFileSync(path.join(DIR, slug, 'SKILL.md'), 'utf8');
-  const lines = md.split('\n');
+  sources.push({ slug, src: 'SKILL.md', json: false, lines: md.split('\n') });
+  for (const [p, v] of collectJsonProse(docs.get(slug))) {
+    if (typeof v !== 'string') continue;                     // 数值走后面的「json 数值自洽」pass
+    const jf = JSON_FAIL_PATH.some((r) => r.test(p));
+    const jr = JSON_REF_PATH.some((r) => r.test(p));
+    if (!jf && !jr) continue;
+    sources.push({ slug, src: p, json: true, jf, jr, fieldRaw: v, lines: v.split('\n') });
+  }
+}
+let jsonTokens = 0;   // ★ 失明守卫：json 散文里一共见到几个「可核读数」
+
+for (const S of sources) {
+  const slug = S.slug, lines = S.lines;
   const T = truths.get(slug), j = docs.get(slug);
   const others = slugs.filter((s) => s !== slug);
 
@@ -688,7 +779,8 @@ for (const slug of slugs) {
         const raw = m[1] !== undefined && D.key === 'WxH' ? `${m[1]}×${m[2]}` : m[1];
         if (raw === undefined || raw === null) continue;
         const v = D.num(raw);
-        const rec = { slug, ln: i + 1, v: raw, truth, line };
+        const rec = { slug, ln: i + 1, v: raw, truth, line, src: S.src };
+        if (S.json) jsonTokens++;
 
         // ① 值域合理性 ⇒ 非交付声称，单列「静音读数 / 参考」
         if (D.plaus) {
@@ -731,14 +823,46 @@ for (const slug of slugs) {
         if (!refWhy && !bandWhy && D.mismatchWhy) refWhy = D.mismatchWhy(line, m.index, m[0].length);
         // ★ LRA：正文未声明口径 / 声明 loudnorm ⇒ 无第二个真值来源 ⇒ 单列参考，不判 FAIL
         const lraNoTruth = D.key === 'LRA' && cal !== 'ebur128' && !bandWhy;
+        const rec2 = { ...rec, cal };
+        // ★★ json 散文：历史判定用**关系粒度**（见 `HIST_JSON` 定义），不用 SKILL.md 的「整行」
+        if (S.json) {
+          const afterArrow = /→\s*\**\s*$/.test(line.slice(Math.max(0, m.index - 6), m.index));
+          // (J1) `X → Y` 的 **X**（更正前值）⇒ 参考；**Y 是现值 ⇒ 继续判**
+          if (/^\s*\**\s*→/.test(line.slice(m.index + m[0].length, m.index + m[0].length + 6))) {
+            refs.get(D.key).push({ ...rec2, why: 'json 更正记录的「更正前值」(X → Y 的 X)' }); continue;
+          }
+          // (J2) 更正记录（字段内同时含 `→` 与历史标记）里**不含箭头**的行 = 保留的原句 ⇒ 参考
+          if (!afterArrow && /→/.test(S.fieldRaw) && HIST.test(S.fieldRaw) && !/→/.test(line)) {
+            refs.get(D.key).push({ ...rec2, why: 'json 更正记录里保留的原句行（时点快照）' }); continue;
+          }
+          // (J3) 句子级历史（token 所在**句**含历史标记且不含当前标记）——★ 现值（`→` 后）不受此豁免
+          const jSent = sentenceAt(line, m.index);
+          if (!afterArrow && HIST_JSON.test(jSent) && !CUR.test(jSent)) {
+            refs.get(D.key).push({ ...rec2, why: 'json 历史句（时点记录）' }); continue;
+          }
+          // (J4) 值级历史：**同一个值**在字段别处紧邻历史标记（前 12 字）⇒ 该值是历史引用
+          //   ★ 必须**归一负号**：正文里 U+2212（−）与 ASCII 连字符（-）混用（实测 blueprint 的
+          //     现值写 `−1.03`、`原记（真峰值 -1.03 …）` 写 `-1.03`）⇒ 不归一就找不到「同值」，
+          //     会把保留的原句当成现值（实测：不归一时 blueprint/dataviz/microgame 各多报 1 处误报）。
+          if (!afterArrow) {
+            const norm = (s) => String(s).replace(/−/g, '-');
+            const vr = new RegExp(`(?<![\\d.])${escRe(norm(raw))}(?![\\d])`, 'g');
+            const fieldNorm = norm(S.fieldRaw);
+            let histVal = false;
+            for (const mm of fieldNorm.matchAll(vr)) {
+              if (HIST_JSON.test(fieldNorm.slice(Math.max(0, mm.index - 12), mm.index))) { histVal = true; break; }
+            }
+            if (histVal) { refs.get(D.key).push({ ...rec2, why: 'json 同值在字段别处被标为历史' }); continue; }
+          }
+        }
         // ④ 成片语境（整行）
         if (!(D.ctx || CTX).test(line)) continue;
-        // ⑤ 历史语境（整行；★ 但若同时含「当前结论」标记 ⇒ **不豁免**，见 `CUR` 定义）
-        if (HIST.test(line) && !CUR.test(line)) continue;
+        // ⑤ 历史语境（SKILL.md = **整行**；★ json 已由 J1–J4 承担，不再重复整行豁免）
+        if (!S.json && HIST.test(line) && !CUR.test(line)) continue;
         // ⑥ 实验 / 扫描行 ⇒ 该行所有量纲都不计 FAIL
         if (isScan) {
-          if (!scanLines.some((s) => s.slug === slug && s.ln === i + 1)) {
-            scanLines.push({ slug, ln: i + 1, line });
+          if (!scanLines.some((s) => s.slug === slug && s.ln === i + 1 && s.src === S.src)) {
+            scanLines.push({ slug, ln: i + 1, line, src: S.src });
           }
           continue;
         }
@@ -758,25 +882,89 @@ for (const slug of slugs) {
         if (D.key === 'WxH') {
           const p = raw.split('×').map(Number), tw = String(truth).split('×').map(Number);
           if (p[0] > p[1] !== tw[0] > tw[1]) {
-            refs.get(D.key).push({ ...rec, why: '画幅朝向与成片相反（如 9:16 变体 1080×1920，本片 1920×1080）⇒ 不是本片画幅' });
+            refs.get(D.key).push({ ...rec2, why: '画幅朝向与成片相反（如 9:16 变体 1080×1920，本片 1920×1080）⇒ 不是本片画幅' });
             continue;
           }
         }
         // ⑨ 交叉引用 ⇒ 单列（★ 2026-10-07 收窄：别的风格名必须与读数**同子句**才算交叉引用）
         const isXref = others.some((o) => clauseOf(line, m.index).includes(o));
-        const rec2 = { ...rec, cal };
         if (isXref) xref.push(rec2);
         else if (refWhy) refs.get(D.key).push({ ...rec2, why: refWhy });
         else if (bandWhy) refs.get(D.key).push({ ...rec2, why: bandWhy });
         else if (lraNoTruth) refs.get(D.key).push({ ...rec2, why: cal === 'loudnorm'
           ? '口径为 loudnorm（本闸门真值只有 ebur128 口径）'
           : '未声明口径（两口径实测相差最多 1.4 LU，无法判定）' });
-        else if (D.mode === 'fail') fails.get(D.key).push(rec2);
-        else refs.get(D.key).push({ ...rec2, why: '本量纲按实测误报率降级为参考' });
+        else if (D.mode === 'fail' && !S.jr) fails.get(D.key).push(rec2);
+        else refs.get(D.key).push({ ...rec2, why: S.jr
+          ? 'json 时点记录 / 评分依据字段（按实测误报率降级为参考）'
+          : '本量纲按实测误报率降级为参考' });
       }
     }
   }
 }
+
+// ── ★★ (J5) json 散文「覆盖级」自洽检查：`peakNote` **必须给出**与权威 `truePeakDbtp` 一致的读数 ──
+//   为什么需要它：`peakNote` 的**现值**常与历史值挤在同一物理行（实测 25/25 都是 1 行），
+//   若该行含历史标记，token 级豁免（J1–J4）仍可能把现值放掉；而「字段里**有没有**权威值」
+//   是一个**与历史标记无关**的判据 ⇒ 现值被改错时必然暴露（这也正是本轮变异验证的抓手）。
+//   ★ 排除交付线本身（`peakDbtpTarget`，本库 43/43 = −1.2）：它**不是**对成片的读数。
+const DBTP_PROBE = DIMS.find((d) => d.key === 'dBTP').re;
+//   ★ 去重：某风格的 `peakNote` 已因「token 级」判过 FAIL（现值与权威不符）⇒ 不再重复报「覆盖级」。
+const peakNoteTokenFailed = new Set(
+  [...fails.values()].flat().filter((r) => /peakNote$/.test(r.src || '')).map((r) => `${r.slug}|${r.src}`),
+);
+const peakNoteFails = [];
+for (const slug of slugs) {
+  const j = docs.get(slug);
+  const tp = j?.selfCheck?.loudness?.truePeakDbtp;
+  if (!Number.isFinite(tp)) continue;
+  const tgt = j?.selfCheck?.loudness?.peakDbtpTarget;
+  for (const p of ['selfCheck.peakNote', 'selfCheck.loudness.peakNote']) {
+    const v = p.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), j);
+    if (typeof v !== 'string') continue;
+    if (peakNoteTokenFailed.has(`${slug}|${p}`)) continue;   // 已由 token 级点名，不重复
+    let found = false;
+    for (const m of v.matchAll(DBTP_PROBE)) {
+      const x = num(m[1]);
+      if (Number.isFinite(tgt) && Math.abs(x - tgt) < 1e-9) continue;   // 交付线不是读数
+      if (Math.abs(x - tp) <= 0.15) { found = true; break; }
+    }
+    if (!found) peakNoteFails.push({ slug, src: p, v: '(未给出与 truePeakDbtp 一致的读数)', truth: tp, line: v });
+  }
+}
+
+// ── ★★ json **数值**自洽（`selfCheck.audio.*` / `audioEvidence.*` 的数值键）──────────────────
+//   真值仍取同 json 的 `selfCheck.loudness.*`（与主循环同源）。跳过：上游/中间产物/首版快照路径
+//   （`mixWav` / `musicWav` / `measuredBeforeMux` / `firstVersionDefect` …）与「有历史 `*Note` 兄弟键」的键
+//   （本库惯例：`truePeakDbtp` + `truePeakDbtpNote`，如 `game-show` 的 `-0.22` 由 note 标明是首版快照）。
+const jsonNumFails = [];
+for (const slug of slugs) {
+  const j = docs.get(slug), T = truths.get(slug);
+  if (!j) continue;
+  for (const [p, v] of collectJsonProse(j)) {
+    if (typeof v !== 'number') continue;
+    if (!/^(selfCheck\.audio\.|audioEvidence\.)/.test(p)) continue;
+    const leaf = p.split('.').pop();
+    const dim = JSON_NUM_DIM[leaf];
+    if (!dim) continue;
+    if (JSON_NUM_SKIP.test(p)) continue;
+    const parentPath = p.slice(0, p.length - leaf.length).replace(/\.$/, '');
+    const noteKey = leaf + 'Note';
+    const sib = parentPath.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), j);
+    const noteTxt = (sib && typeof sib === 'object') ? sib[noteKey] : undefined;
+    if (typeof noteTxt === 'string' && HIST.test(noteTxt)) continue;   // 历史快照，由 note 显式标明
+    const truth = dim === 'LUFS' ? T.LUFS : dim === 'dBTP' ? T.dBTP : dim === 'LRA' ? T.LRA : T.dBFS?.samplePeak;
+    if (!Number.isFinite(truth) || !Number.isFinite(v)) continue;
+    const tol = leaf === 'ebur128PeakDbfs' ? 0.06 : 0.15;
+    if (Math.abs(v - truth) > tol) {
+      jsonNumFails.push({ slug, src: p, v: String(v), truth, line: `${p} = ${v}（权威 ${dim} = ${truth}）` });
+    }
+  }
+}
+
+// ── 失明守卫（json 散文）：一个 `_distill.json` 都读不到 ⇒ 已有 `allBlind` 兜底；
+//    但「读到了 json、却**一个可核的散文读数都没有**」是**新的假绿型病** ⇒ 必须显式 FAIL。 ──
+const jsonBlind = slugs.length > 0 && jsonTokens === 0 && sources.every((s) => !s.json);
 
 // ── ★★ 物理约束单列一类 FAIL：**真峰值 ≥ 采样峰值 恒成立** ⇒ 「采样峰值 > 真峰值」物理不可能 ──
 //   这一类**不需要口径判断**（真峰值在定义上就 ≥ 采样峰值：真峰值 = 4× 过采样的峰值，采样峰值是它的下界）
@@ -858,12 +1046,13 @@ const fmtTruth = (t) => (t && typeof t === 'object'
   : String(t));
 const dump = (list) => {
   for (const s of list) {
-    console.log(`  ${s.slug.padEnd(20)} L${String(s.ln).padStart(4)}  正文 ${s.v}${''} / 实测 ${fmtTruth(s.truth)}${s.cal ? `（口径 ${s.cal}）` : ''}\n      ${s.line.trim().slice(0, 150)}`);
+    const where = s.src && s.src !== 'SKILL.md' ? `  _distill.json:${s.src}` : '';
+    console.log(`  ${s.slug.padEnd(20)} L${String(s.ln).padStart(4)}  正文 ${s.v}${''} / 实测 ${fmtTruth(s.truth)}${s.cal ? `（口径 ${s.cal}）` : ''}${where}\n      ${s.line.trim().slice(0, 150)}`);
   }
 };
 const totalFail = [...fails.values()].reduce((a, b) => a + b.length, 0);
 if (totalFail) {
-  console.log(`✘ 疑似「陈旧且非历史语境」的正文成片读数声称 ${totalFail} 处：\n`);
+  console.log(`✘ 疑似「陈旧且非历史语境」的成片读数声称 ${totalFail} 处（正文 + json 散文）：\n`);
   for (const D of DIMS) {
     const list = fails.get(D.key);
     if (!list.length) continue;
@@ -877,6 +1066,19 @@ if (physFails.length) {
   for (const p of physFails) {
     console.log(`  ${p.slug.padEnd(20)} L${String(p.ln).padStart(4)}  [${p.kind}] ${p.msg}\n      ${p.line}`);
   }
+  console.log('');
+}
+// ── ★★ json 散文的专项 FAIL 桶（(J5) 覆盖级 + 数值自洽） ──
+if (peakNoteFails.length) {
+  console.log(`✘ json 散文：\`peakNote\` 未给出与权威 \`selfCheck.loudness.truePeakDbtp\` 一致的读数 ${peakNoteFails.length} 处（(J5) 覆盖级自洽；交付线本身不算）：\n`);
+  for (const p of peakNoteFails) {
+    console.log(`  ${p.slug.padEnd(20)}  ${p.src}\n      权威真峰值 ${p.truth} dBTP；字段内无 ±0.15 内的 dBTP 读数\n      ${p.line.trim().slice(0, 220)}`);
+  }
+  console.log('');
+}
+if (jsonNumFails.length) {
+  console.log(`✘ json 数值自洽（\`selfCheck.audio.*\` / \`audioEvidence.*\` 的 film 口径数值键）${jsonNumFails.length} 处：\n`);
+  for (const p of jsonNumFails) console.log(`  ${p.slug.padEnd(20)}  ${p.src}\n      ${p.line}`);
   console.log('');
 }
 // ── 输出（参考桶条目多时只列计数，`--refs` 打印全量明细，避免刷屏） ──
@@ -919,14 +1121,19 @@ for (const D of DIMS) {
 if (allBlind) {
   console.log(`\n✘ 本闸门已失明：\`${DIR}\` 下一个带 _distill.json 的风格都找不到，没有任何可比对的真值。`);
 }
+if (jsonBlind) {
+  console.log(`\n✘ 本闸门已失明（json 散文）：读到 ${slugs.length} 份 _distill.json，但白名单散文里**一个可核的读数都没有** —— json 散文这一路没有任何可比对的真值。`);
+}
 for (const D of blindDims) {
   console.log(`\n✘ 本闸门已失明：${slugs.length} 个风格**全部**读不到 ${D.key} 的真值（${D.label}）—— 该量纲没有任何可比对的真值。`);
 }
 
-const fail = totalFail + physFails.length + blindDims.length + (allBlind ? 1 : 0);
-if (!fail) console.log('✓ 未发现「陈旧且非历史语境」的正文成片读数声称。');
+const fail = totalFail + physFails.length + peakNoteFails.length + jsonNumFails.length
+  + blindDims.length + (allBlind ? 1 : 0) + (jsonBlind ? 1 : 0);
+if (!fail) console.log('✓ 未发现「陈旧且非历史语境」的成片读数声称（SKILL.md 正文 + _distill.json 散文）。');
 const per = DIMS.filter((D) => D.mode === 'fail').map((D) => `${D.key} ${fails.get(D.key).length}`).join(' / ');
 const thrEq = thresholds.filter((t) => t.by === 'eqTarget').length;
 const blindStat = DIMS.filter((D) => blind.get(D.key).length).map((D) => `${D.key} ${blind.get(D.key).length}`).join(' ') || '无';
-console.log(`\n[闸门] 陈旧读数 ${totalFail} 处（${per}）/ 物理不可能 ${physFails.length} 处 / 阈值提及排除 ${thresholds.length} 处（== 交付线 ${thrEq} + 紧贴阈值词 ${thresholds.length - thrEq}）/ 参考 ${[...refs.values()].reduce((a, b) => a + b.length, 0)} 处 / 静音读数 ${silent.length} 处 / 实验行 ${scanLines.length} 处 / 交叉引用 ${xref.length} 处 / 失明 ${blindStat} ${fail ? '✘' : 'OK'}`);
+const jsonSrc = sources.filter((s) => s.json).length;
+console.log(`\n[闸门] 陈旧读数 ${totalFail} 处（${per}）/ 物理不可能 ${physFails.length} 处 / peakNote 覆盖 ${peakNoteFails.length} 处 / json 数值 ${jsonNumFails.length} 处 / 阈值提及排除 ${thresholds.length} 处（== 交付线 ${thrEq} + 紧贴阈值词 ${thresholds.length - thrEq}）/ 参考 ${[...refs.values()].reduce((a, b) => a + b.length, 0)} 处 / 静音读数 ${silent.length} 处 / 实验行 ${scanLines.length} 处 / 交叉引用 ${xref.length} 处 / json 散文 ${jsonSrc} 字段（可核读数 ${jsonTokens} 个）/ 失明 ${blindStat}${jsonBlind ? ' + json散文失明' : ''} ${fail ? '✘' : 'OK'}`);
 process.exitCode = fail ? 1 : 0;
