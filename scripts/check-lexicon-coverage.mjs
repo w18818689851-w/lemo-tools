@@ -25,8 +25,19 @@
  *   · 维度是**硬编码四维** theme/emotion/scene/pace —— 若未来 `TAG_LEXICON` 扩维度，
  *     本闸门需同步加维度名，否则新维度不参与检查（属**假阴性**）。
  *   · 只读 `lib/dub-styles.json`，不校验该文件本身的 schema（那是 `check-dub-styles.mjs` 的事）。
- *   · ★ `styles` 不是**非空数组**时**判 FAIL**（防空转绿灯）—— 否则 schema 一变，本闸门会
- *     静默枚举到 0 个风格、报「0 处漏登记」并**绿灯通过**，比不检查更危险。
+ *   · ★ **两道失明守卫**（都判 FAIL 并明说「本闸门已失明」）：
+ *     ① `styles` 不是**非空数组**时判 FAIL（见下 L81-95）—— 否则 schema 一变，本闸门会
+ *        静默枚举到 0 个风格、报「0 处漏登记」并**绿灯通过**，比不检查更危险。
+ *     ②（2026-10-07 补）`styles` 非空、但**全库没有一个风格声明 tag** 时判 FAIL —— 因为
+ *        `lexiconCoverage({})`（`lib/dub-lexicon.mjs:222-229`）对「没有任何 tag」的输入返回
+ *        四维**空数组** ⇒ `missing=[]` ⇒ A 类假绿「0 处漏登记」，**实际一个 tag 都没见过**。
+ *        判据 = 全库四维实际声明的 tag 总数，为 0 即失明。
+ *        实测（非破坏夹具 `D:/lemo-tmp/lxfix/`，3 风格、四维 tag 全空）：加守卫前
+ *        `✓ A 类·漏登记 0 处` + **exit 0**（假绿）；加守卫后
+ *        `✘ 本闸门已失明：3 个风格里没有一个声明了 tag` + **exit 1**；
+ *        真实语料（44 风格）改前改后输出**完全一致**、exit 0。
+ *   · ★ `--json` 模式下 **stdout 恒为纯 JSON**（可 `JSON.parse`），人读的说明/汇总行走 **stderr**
+ *     —— 项目既有约定，见 `check-derivation-caliber.mjs:325-328`（`check-film-delivery.mjs` 的 `[E]` 行同理）。
  *
  * ★ 路径**基于脚本自身位置推导**（`import.meta.url` → `..`），**不写死 `D:/lemo-tools`**：
  *   这样才能把 `lib/` 与 `scripts/` 一起拷到临时目录做**变异测试**（本项目已发生过的教训：
@@ -58,8 +69,13 @@ let raw = null;
 try {
   raw = JSON.parse(fs.readFileSync(STYLES_JSON, 'utf8'));
 } catch (e) {
-  console.log(`✘ 读不了 ${STYLES_JSON}：${(e && e.message) || e}`);
-  console.log('\n[闸门] 词表覆盖 ✘');
+  // ★ `--json` 时人读的说明行走 stderr、机器读的 JSON 走 stdout（stdout 保持纯 JSON）——
+  //   项目既有约定，见 `check-derivation-caliber.mjs:325-328`。
+  const why = `读不了 ${STYLES_JSON}：${(e && e.message) || e}`;
+  const out = JSON_OUT ? console.error : console.log;
+  out(`✘ ${why}`);
+  out('\n[闸门] 词表覆盖 ✘');
+  if (JSON_OUT) console.log(JSON.stringify({ styles: null, missing: [], dead: [], blind: [why], ok: false }, null, 2));
   process.exitCode = 1;
   process.exit();
 }
@@ -67,14 +83,43 @@ if (!Array.isArray(raw.styles) || !raw.styles.length) {
   const got = raw.styles === undefined ? 'undefined（缺字段）'
     : Array.isArray(raw.styles) ? '空数组'
       : `${typeof raw.styles}（${Array.isArray(raw.styles) ? '' : '疑似改成映射了？'}）`;
-  console.log(`✘ ${STYLES_JSON} 的 \`styles\` 不是**非空数组**（实得：${got}）——`);
-  console.log('  本闸门已**失明**：无法枚举风格，任何「0 处漏登记」都是假的。');
-  console.log('  请先修 schema，或同步修改本闸门的读法，然后再信它的结论。');
-  console.log('\n[闸门] 词表覆盖 ✘（schema 不符，无法判定）');
+  const why = `${STYLES_JSON} 的 \`styles\` 不是**非空数组**（实得：${got}）`;
+  // ★ 同上一处：`--json` 时说明行走 stderr，stdout 保持纯 JSON。
+  const out = JSON_OUT ? console.error : console.log;
+  out(`✘ ${why} ——`);
+  out('  本闸门已**失明**：无法枚举风格，任何「0 处漏登记」都是假的。');
+  out('  请先修 schema，或同步修改本闸门的读法，然后再信它的结论。');
+  out('\n[闸门] 词表覆盖 ✘（schema 不符，无法判定）');
+  if (JSON_OUT) console.log(JSON.stringify({ styles: null, missing: [], dead: [], blind: [why], ok: false }, null, 2));
   process.exitCode = 1;
   process.exit();
 }
 styles = raw.styles;
+
+// ── ★ 失明守卫②（防空转绿灯）：全库「声明了 tag」总数为 0 ⇒ A 类判据什么都没检查 ──────────
+//   由来：`lexiconCoverage({})`（`lib/dub-lexicon.mjs:222-229`）对**没有任何 tag** 的输入返回四维
+//   **空数组** ⇒ `missing=[]` ⇒ A 类报「0 处漏登记」并**绿灯通过**。若所有风格的 `tags` 集体缺失
+//   / 为空（配置被重新生成、tags 全丢），主循环一次都没命中任何 tag，那句「所有 tag 都能在词表
+//   同维度里找到 bucket」是**假的**（一个 tag 都没见到）。故统计「全库实际声明的 tag 总数」并判 FAIL。
+//   实测证据（非破坏夹具，2026-10-07）：把 `lib/` 与本源码拷到 `D:/lemo-tmp/lxfix/`（保持
+//   `lib/`↔`scripts/` 相对位置，照本文件头 L41-44 的变异测试设计），把 `lxfix/lib/dub-styles.json`
+//   写成 3 个风格、四维 tag 全空：
+//     · 加守卫前：`✓ A 类·漏登记 0 处：…` + `[闸门] … 0 处、死词条 backlog 134 个 OK` + **exit 0**（假绿）。
+//     · 加守卫后：`✘ 本闸门已失明：3 个风格里没有一个声明了 tag` + **exit 1**。
+//     · 真实语料（44 风格）：改前改后输出**完全一致**，仍 `漏登记 0 处、死词条 backlog 0 个 OK` + exit 0。
+let declaredTags = 0;
+for (const s of styles) {
+  for (const dim of DIMS) declaredTags += ((s.tags && s.tags[dim]) || []).length;
+}
+if (declaredTags === 0) {
+  const why = `${STYLES_JSON} 的 ${styles.length} 个风格里**没有一个声明了 tag**（四维 ${DIMS.join('/')} 实际声明的 tag 总数 = 0）`;
+  const out = JSON_OUT ? console.error : console.log;
+  out(`\n✘ 本闸门已失明：${styles.length} 个风格里没有一个声明了 tag —— A 类判据什么都没检查，任何「0 处漏登记」都是假的。`);
+  out(`  ${why}`);
+  out(`\n[闸门] 词表覆盖 **已失明** ✘`);
+  if (JSON_OUT) console.log(JSON.stringify({ styles: styles.length, missing: [], dead: [], blind: [why], ok: false }, null, 2));
+  process.exit(1);
+}
 
 // ── A. 漏登记（判 FAIL）—— 直接用 lexiconCoverage，不重写逻辑 ──
 const missing = []; // { slug, dim, tag }
@@ -106,6 +151,7 @@ if (JSON_OUT) {
     styles: styles.length,
     missing,             // A 类：漏登记（判 FAIL）
     dead,                // B 类：死词条（backlog，不判 FAIL）
+    blind: false,        // ★ 失明守卫：false = 真检查过（全库有 tag 可查）；失明时在到达这里之前已 exit 1
     ok: missing.length === 0,
   }, null, 2));
 } else {
@@ -125,5 +171,8 @@ if (JSON_OUT) {
   if (!dead.length) console.log('  （无）');
 }
 
-console.log(`\n[闸门] 词表覆盖：漏登记 ${missing.length} 处、死词条 backlog ${dead.length} 个 ${missing.length ? '✘' : 'OK'}`);
+// ★ `--json` 时把汇总行走 **stderr**，stdout 保持**纯 JSON**（可 `JSON.parse`）——
+//   项目既有约定，见 `check-derivation-caliber.mjs:325-328`（否则管道里多一行中文汇总就解析失败）。
+const summary = `\n[闸门] 词表覆盖：漏登记 ${missing.length} 处、死词条 backlog ${dead.length} 个 ${missing.length ? '✘' : 'OK'}`;
+if (JSON_OUT) console.error(summary); else console.log(summary);
 process.exitCode = missing.length ? 1 : 0;

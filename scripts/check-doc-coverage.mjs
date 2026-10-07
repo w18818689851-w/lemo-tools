@@ -33,6 +33,12 @@
  *     ★ 失明守卫（`test/` 扫到 0 个 `*.test.mjs`）**早已存在**（见下面 `blind[]`），本侧无需新增。
  *   ★ 放宽锚点（多接受几种合法行首）是允许的；**绝不许退回裸子串**。
  *
+ * ★★ 2026-10-07 修「失明守卫口径不一致」的假绿：主循环只检查 `isGate(f) || isTool(f)` 的**过滤集**，
+ *   但失明守卫用的是**未过滤**的 `files.length` ⇒ `scripts/` 下若还有别的 .mjs（`style-distill` /
+ *   `style-scan` 等「其他类」）而过滤集恰为 0（命名约定变了），则 `missing=[]`、`blind=[]` ⇒
+ *   打印「都已登记」+ exit 0（一个闸门/工具都没检查过）。现改为守卫主循环**实际检查的** `checked`
+ *   （= `files.filter(isGate||isTool)`），与 test 侧（用过滤过的 `testEntries.length`）口径一致。
+ *
  * 用法：node scripts/check-doc-coverage.mjs
  * 退出码：有未登记的脚本 → 1；否则 0。
  */
@@ -58,6 +64,10 @@ const files = (() => {
 })();
 const isGate = (f) => /^check-/.test(f);
 const isTool = (f) => /^(sync|patch|normalize|refresh|fix|measure|prune)-/.test(f);
+// ★ 主循环**实际检查**的集合（闸门类 ∪ 工具类）—— 失明守卫必须用它，而不是未过滤的 `files`。
+//   否则「`scripts/` 下有别的 .mjs（style-distill / style-scan 等「其他类」）、但闸门/工具类过滤集为 0」
+//   时 `missing=[]`、`blind=[]` ⇒ 打印「都已登记」+ exit 0 —— 一个闸门/工具都没检查过（2026-10-07 修）。
+const checked = files.filter((f) => isGate(f) || isTool(f));
 
 // ★ 行锚定判据（2026-10-06 收紧，见头注释）—— 每个文档一种「登记格式」。
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // 脚本名正则转义（含 `.`）
@@ -73,8 +83,7 @@ const ANCHORS = {
 const TEST_ENTRY = (f) => new RegExp('^(?:node\\s+(?:\\S*[\\/\\\\])?test[\\/\\\\]|\\|\\s*`test[\\/\\\\])' + esc(f), 'm');
 
 const missing = [];
-for (const f of files) {
-  if (!isGate(f) && !isTool(f)) continue;          // style-distill / style-scan / unblock-* 等不强制登记
+for (const f of checked) {                         // ★ 与失明守卫同一集合（style-distill / style-scan / unblock-* 等「其他类」不强制登记）
   const where = Object.entries(DOCS).filter(([k]) => ANCHORS[k] && ANCHORS[k](f).test(texts[k])).map(([k]) => k);
   if (isGate(f) && where.length < 2) missing.push({ f, need: '两个文档都要', where });
   else if (isTool(f) && where.length < 1) missing.push({ f, need: '至少一个文档', where });
@@ -99,7 +108,14 @@ const unlisted = testEntries.filter((f) => !TEST_ENTRY(f).test(readme));
 //   否则 `missing` / `unlisted` 全空会打印「都已在文档里登记」—— 那是**假的**（什么都没扫到）。
 //   （写法照 `check-config-vs-doc.mjs` 头注释的「★ 失明守卫」段 / `blind[]` 块 / `check-loudness-targets.mjs:64-79` 的同型守卫。）
 const blind = [];
-if (files.length === 0) blind.push(`\`${SCRIPTS}\` 下扫到 0 个 .mjs（目录不存在 / 过滤变了？）⇒ 一个脚本都没检查过`);
+if (files.length === 0) {
+  blind.push(`\`${SCRIPTS}\` 下扫到 0 个 .mjs（目录不存在 / 过滤变了？）⇒ 一个脚本都没检查过`);
+} else if (checked.length === 0) {
+  // ★ 2026-10-07 修假绿：`files.length > 0`（有「其他类」.mjs）但**过滤后**闸门/工具类为 0 ⇒ 主循环
+  //   一个都没检查、`missing` 恒空 ⇒ 会打印「都已登记」+ exit 0。守卫必须看主循环实际检查的 `checked`，
+  //   与下面 test 侧（用过滤过的 `testEntries.length`）口径一致。
+  blind.push(`\`${SCRIPTS}\` 下 ${files.length} 个 .mjs 里**过滤后**闸门类 ∪ 工具类为 0 个（命名约定变了？）⇒ 「脚本已登记」这条判据什么都没检查`);
+}
 if (testEntries.length === 0) blind.push(`\`${testDir}\` 下扫到 0 个 *.test.mjs（目录不存在 / 枚举为空？）⇒ 「测试入口已登记」这条判据什么都没检查`);
 
 if (unlisted.length) {

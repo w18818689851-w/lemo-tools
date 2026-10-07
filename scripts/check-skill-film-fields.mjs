@@ -22,7 +22,8 @@
  *     ② 与**本风格实测**不符（帧数/分辨率容差 0，时长差 > 1s）；
  *     ③ **成片语境** —— 帧数看**整行**含「成片/全片/本片/帧数/帧率/入库版」；
  *        分辨率看**近邻 60 字**内含「成片/全片/本片/交付/输出」；
- *     ④ 所在**整行**没有历史语境标记（`HIST` 正则，与 `check-tp-prose.mjs` 逐字一致）。
+ *     ④ 所在**整行**没有历史语境标记（`HIST` 正则，与 `check-tp-prose.mjs` 逐字一致）；
+ *        但同行若**同时**含「当前结论」标记（`CUR`）⇒ **不豁免**（见下方 ★★ CUR 反向守卫）。
  *   ★ 另加「**非本片来源**」排除：近邻 60 字内出现 `原生/样片/demo/DEMO/入库前/未渲/声明/设计稿`
  *     ⇒ **不判 FAIL**（那是设计期尺寸 / 风格声明值，不是本片成片的声称）。
  *   ★ 分辨率再加「**非假设语境**」排除：近邻 60 字内含
@@ -48,6 +49,26 @@
  *       「音频链 46.2s」）。要把它收窄到高精度只能靠「成片实测/全片时长」这类自定义锚点，
  *       而锚点一旦漏写就静默失明 ⇒ **按纪律降级为「参考」，不进退出码**。
  *
+ *   ★★ CUR 反向守卫（2026-10-07 加固；修的是「整行历史语境豁免过宽」这个缺陷）：
+ *     · **缺陷**：④ 只判「整行有历史语境」就**整行豁免**。但项目习惯是**保留原句 + 追加更正**，
+ *       于是会出现**同一行里既有历史叙述、又有当前结论**（「原先只走 X，**现已切到 Y**」）。
+ *       这类行里的**当前读数**会逃过检查 —— 正是本项目最忌讳的「文档撒谎而闸门失明」。
+ *     · **修法**：`if (HIST.test(line) && !CUR.test(line)) continue;`。
+ *       `CUR` 正则与 `check-aspect-prose.mjs` 的 `CUR` 常量 **逐字一致**（同项目已用这道保险治过同一个病，
+ *       机制直接移植）。帧数 / 分辨率 / 时长**三处口径一并对齐**（时长只列参考、不进退出码，故不影响退出码）。
+ *     · **量化**（插桩副本，放仓库外 `D:/lemo-tmp/`，真实语料 43 份正文）：
+ *       走到 HIST 判定处的 token **62** 个（帧数 7 / 分辨率 4 / 时长 51），
+ *       其中**被 HIST 豁免**的 **22** 个（帧数 7 / 分辨率 4 / 时长 11），
+ *       其中**所在行同时匹配 CUR 的 0 个** ⇒ 真实语料**零误报**：
+ *       改前改后输出**逐字节一致**（`陈旧帧数 0 / 陈旧分辨率 0 / 参考时长 40 / 失明 1`，exit 0，md5 相同）。
+ *     · **反向夹具**（仓库外 `D:/lemo-tmp/fffix/probe-style/`，`generatedVideo.frames=100`）：
+ *       `已修：成片帧数原为 100 帧，现状 999 帧。` ⇒ **改前 exit 0 / 改后 exit 1、陈旧帧数 1**；
+ *       而只有 HIST、没有 CUR 的那行（`已修：成片帧数原为 120 帧（历史记录）。`）**仍被豁免**
+ *       （判别版把 HIST 豁免整条移除后会报 2 处，证明第二行确实走到了 ④ 判定处、豁免是承重的）。
+ *     · ★ 为做**非破坏**反向测试，本闸门新增覆盖点 `LEMO_DISTILL_ROOT`
+ *       （与 `check-tp-prose.mjs:325` **同名同义**）：环境变量不设时逐字等价于原硬编码路径，
+ *       已自证改前改后输出 md5 不变。**绝不**为此改真实语料。
+ *
  * ③ 已知局限：
  *   · 只认**字面量**：正文若写「约两分钟」「一帧不差」，闸门看不见（假阴）。
  *   · 帧数的「成片语境」用**整行**判定（这些表格行很长，行首的「成片 |」「帧数 |」离数字常 > 60 字）——
@@ -66,8 +87,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const DIR = 'D:/lemo-tools/lib/style-skills';
+/** 风格文档根。★ 允许覆盖（与 `check-tp-prose.mjs:325` **同名同义**）：仅供**非破坏**反向测试，
+ *  环境变量不设时逐字等价于原来的硬编码路径，行为完全不变。 */
+const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || 'D:/lemo-tools/lib/style-skills');
 const HIST = /已修|原为|原记|原先|曾是|曾为|历史|修复前|修复后|校正|拆分|移入|resolvedDefects/;
+/** ★ 当前结论标记 —— 一行里**同时**出现它 + 历史标记 ⇒ **不豁免**（防「一刀切豁免」）。
+ *  依据：项目习惯是「保留原句 + 追加更正」，于是同一行里会既有历史叙述、又有当前结论
+ *  （「原先只走 X，**现已切到 Y**」）。这类行里的**当前读数**必须照判，否则就是「文档撒谎而闸门失明」。
+ *  机制逐字移植自 `check-aspect-prose.mjs` 的 `CUR` 常量（同项目已用它治过同一个病）。 */
+const CUR = /现状|当前结论|目前|仍然|依旧|仍是只|仍只/;
 const FRAME_CTX = /成片|全片|本片|帧数|帧率|入库版/;            // 帧数：整行
 const RES_CTX = /成片|全片|本片|交付|输出/;                    // 分辨率：近邻
 const NATIVE = /原生|样片|demo|DEMO|入库前|未渲|设计稿|风格声明|on ones/;  // 非本片来源 ⇒ 排除
@@ -98,7 +126,7 @@ for (const slug of dirs) {
       if (v === gv.frames) continue;               // ② 与实测一致
       if (!FRAME_CTX.test(line)) continue;         // ③ 整行不是关于成片
       if (NATIVE.test(near(m.index, m[0].length))) continue;  // 设计期 / 他版来源
-      if (HIST.test(line)) continue;               // ④ 整行有历史语境
+      if (HIST.test(line) && !CUR.test(line)) continue;       // ④ 整行有历史语境（但同行有当前结论 ⇒ 不豁免）
       const isXref = others.some((o) => line.includes(o));
       (isXref ? xref : staleFrame).push({ slug, ln: i + 1, v, measured: gv.frames, line });
     }
@@ -111,7 +139,7 @@ for (const slug of dirs) {
       const n = near(m.index, m[0].length);
       if (!RES_CTX.test(n)) continue;              // ③ 只认「关于成片」的断言（近邻）
       if (HYPO.test(n)) continue;                  // 非假设语境（硬渲 / 裁切 / 内部尺寸…）
-      if (HIST.test(line)) continue;               // ④ 整行有历史语境
+      if (HIST.test(line) && !CUR.test(line)) continue;       // ④ 整行有历史语境（但同行有当前结论 ⇒ 不豁免）
       const isXref = others.some((o) => line.includes(o));
       (isXref ? xref : staleRes).push({ slug, ln: i + 1, v: `${w}×${h}`, measured: `${gv.width}×${gv.height}`, line });
     }
@@ -121,7 +149,7 @@ for (const slug of dirs) {
       const v = Number(m[1]);
       if (!Number.isFinite(v) || Math.abs(v - gv.durSec) <= 1) continue;
       if (!/成片/.test(near(m.index, m[0].length))) continue;
-      if (HIST.test(line)) continue;
+      if (HIST.test(line) && !CUR.test(line)) continue;       // ④ 同上（时长只列参考，不进退出码，口径一并对齐）
       refDur.push({ slug, ln: i + 1, v, measured: gv.durSec, line });
     }
   }

@@ -30,10 +30,20 @@ import fs from 'node:fs';
 // ★ 覆盖点（供非破坏变异验证）：与 `check-dna-coverage.mjs:153` 的 `LEMO_DUB_STYLES` 同名同义。
 const CFG = process.env.LEMO_DUB_STYLES || 'D:/lemo-tools/lib/dub-styles.json';
 
-// ── ★ 失明守卫（防空转绿灯）────────────────────────────────────────────────
-//   判据（与 `check-dna-coverage.mjs:149` 同一组）：**注册表读不到 / 解析失败 / `styles` 不是非空数组** ⇒
-//   一条 `notes` 都没检查过 ⇒ 下面那句「未发现 notes 与字段自相矛盾」是**假的**（`for` 循环根本没跑）
-//   ⇒ 判 FAIL 并明说「本闸门已失明」。写法照 `check-lexicon-coverage.mjs:57-75` 的同型守卫。
+// ── ★ 失明守卫（两道，均判 FAIL 并明说「本闸门已失明」）────────────────────────
+//   ① 注册表读不到 / 解析失败 / `styles` 不是非空数组（判据与 `check-dna-coverage.mjs:149` 同一组）⇒
+//      一条 `notes` 都没检查过 ⇒ 下面那句「未发现 notes 与字段自相矛盾」是**假的**（`for` 循环根本没跑）。
+//      写法照 `check-lexicon-coverage.mjs:81-95` 的同型守卫。
+//   ②（2026-10-07 补）`styles` 非空、但**没有一条**带非空 `notes` ⇒ 主循环 `if (!full) continue`
+//      把**全部**条目跳掉、循环体一次都不跑 ⇒ `fails=[]` ⇒ 假绿「未发现自相矛盾」+ **exit 0**
+//      —— 它宣称「检查过了」，实际一条 notes 都没读过。故统计「真正读过 notes 的条目数」
+//      （`checkedNotes`），为 0 且 `styles` 非空 ⇒ 判 FAIL。
+//      实测证据（非破坏夹具，2026-10-07）：
+//        · 夹具 `D:/lemo-tmp/cfg-notes-fixture.json` = `{"styles":[{"slug":"a","notes":""},{"slug":"b"}]}`
+//          （所有 notes 为空），经覆盖点 `LEMO_DUB_STYLES`（L31）注入。
+//        · 加守卫前：`✓ 未发现 notes 与字段自相矛盾（…）` + `[闸门] … 0 处 OK` + **exit 0**（假绿）。
+//        · 加守卫后：`✘ 本闸门已失明：2 条配置里没有一条带 notes，一条都没检查过` + **exit 1**。
+//        · 真实语料（44 条 notes 全非空）：改前改后输出**完全一致**，仍 `notes 自相矛盾 0 处 OK；hex 参考 17 条` + exit 0。
 let cfg = null;
 const blind = [];
 try {
@@ -64,10 +74,12 @@ const get = (obj, p) => p.split('.').reduce((o, k) => (o == null ? undefined : o
 
 const fails = [];
 const notes = [];
+let checkedNotes = 0; // ★ 真正读过 notes 的条目数（有非空 notes）—— 供失明守卫②用
 
 for (const e of cfg.styles) {
   const full = String(e.notes || '');
   if (!full) continue;
+  checkedNotes++;
   const mi = full.search(MARK_RE);
   const head = mi >= 0 ? full.slice(0, mi) : full;
   const tail = mi >= 0 ? full.slice(mi) : '';
@@ -91,6 +103,17 @@ for (const e of cfg.styles) {
   if (hexes.length && notInPal.length) {
     notes.push({ slug: e.slug, notesHex: hexes.length, notInPalette: notInPal.length, sample: notInPal.slice(0, 4).join(' ') });
   }
+}
+
+// ── ★ 失明守卫②（防空转绿灯）：有风格、但没有一条带 notes ⇒ 主循环一次都没跑 ────────────
+//   上面 L47-64 的守卫只保证 `styles` 是非空数组；但主循环会把 **notes 为空**的条目全部
+//   `continue` 掉。若**所有**条目的 notes 都为空（配置被重新生成、notes 全丢），循环体一次都不
+//   执行 ⇒ `fails=[]` ⇒ 打印「未发现 notes 与字段自相矛盾」并 **exit 0** —— 假绿：它宣称
+//   「检查过了」，实际一条 notes 都没读过。故这里显式统计「真正检查过的条目数」并判 FAIL。
+if (cfg.styles.length > 0 && checkedNotes === 0) {
+  console.log(`\n✘ 本闸门已失明：${cfg.styles.length} 条配置里没有一条带 notes，一条都没检查过（notes 全空 ⇒ 主循环把全部条目 continue 掉了）。`);
+  console.log(`\n[闸门] notes 自相矛盾 **已失明** ✘`);
+  process.exit(1);
 }
 
 if (fails.length) {

@@ -64,6 +64,19 @@
  *        实测：60 字窗下命中 0 ⇒ 8 处真陈旧**全部漏报**（假阴率 100%）。
  *   ⑤ **历史语境豁免**（`HIST`，看**整行**）：`已修|原为|原记|原先|曾是|曾为|历史|修复前|修复后|校正|拆分|移入|resolvedDefects`。
  *      ★ 项目习惯是「保留原句 + 加历史标记 + **补现值**」——**只加标记不补现值 = 把闸门永久豁免**（项目踩过）。
+ *      ★★ **2026-10-07 收紧（`CUR` 反向守卫）**：整行豁免本身留了个洞 —— 一行完全可能**既有历史叙述、
+ *        又有当前结论**（「原先只走 `BorderStyle=1`，**现已切到** `BorderStyle=3`」），整行豁免会把行内的
+ *        **当前读数**一起放过。现加：`HIST.test(line) && !CUR.test(line)` 才豁免，其中
+ *        `CUR = 现状|当前结论|目前|仍然|依旧|仍是只|仍只`（机制与 `check-aspect-prose.mjs` 的 **`CUR` 常量**同源
+ *        —— ★ 这里刻意用**符号锚**而不是行号：那个文件同一轮也在改，行号会漂）。
+ *        **实测（2026-10-07，43 份正文）**：走到 ⑤ 的**量纲 token 350 个**（dBTP 191 / dBFS 54 / dur 34 /
+ *        LUFS 23 / bytes 19 / frame 9 / LRA 8 / WxH 6 / MB 6；另 **297** 处是「物理约束」扫描的**行级**
+ *        命中，合计 647），其中所在行同时命中 `CUR` 的 **26** 行（全部落在「物理约束」那一段扫描里，
+ *        **不含**任何 dBTP/LUFS/LRA 等量纲 token）⇒
+ *        收紧后真实语料 **FAIL 0 / 参考 279 / 静音 11 / 实验行 1 / 交叉引用 6 逐字节不变（误报 0）**。
+ *        ★ 反向验证（`LEMO_DISTILL_ROOT` 夹具，非破坏）：一行 `已修：真峰值原为 −1.2 dBTP，现状 −0.5 dBTP（本片成片实测）`
+ *        在**改前 exit 0 / 陈旧读数 0**，**改后 exit 1 / 陈旧读数 1（dBTP 1）**；同一夹具里
+ *        「只有 `HIST`、没有 `CUR`」的那一行**仍被豁免**（计数只能是 1，不能是 2）。
  *   ⑥ **实验 / 扫描行排除**（看**整行**）：整行出现 **≥2 处「箭头 → 数值 + 单位」**
  *      ⇒ 这是「**多个目标 → 多个实测值**」的对照串（逐档扫描波峰因子的实验记录），**不是单一交付声称**
  *      ⇒ **该行上的所有量纲 token 都不计 FAIL**，单列「实验行」供参考。
@@ -331,6 +344,15 @@ const TP_MEASURED_JSON = process.env.LEMO_TP_MEASURED_JSON
 // ── 共享机制（**一套**，所有量纲复用） ────────────────────────────────────────
 /** ⑤ 历史语境标记（整行判定；这些行很长，`已修` 子句常在行尾） */
 const HIST = /已修|原为|原记|原先|曾是|曾为|历史|修复前|修复后|校正|拆分|移入|resolvedDefects/;
+/** ★ 2026-10-07 加：**当前结论标记** —— 一行里同时出现它 + 历史标记 ⇒ **不豁免**（防「一刀切豁免」）。
+ *  机制与 `check-aspect-prose.mjs` 的 **`CUR` 常量**同源（那边是「引旧句 + 把负/正向重申为当前状态」的残留）。
+ *  依据：本项目的写法是「保留原句 + 加历史标记 + **补现值**」，所以一行里完全可能**既有历史叙述、
+ *  又有当前结论**（如「原先只走 `BorderStyle=1`，**现已切到** `BorderStyle=3`」）⇒ 整行豁免会把行内的
+ *  **当前读数**一起放过。实测（2026-10-07，43 份正文）：走到 ⑤ 的**量纲 token 350 个**（dBTP 191 /
+ *  dBFS 54 / dur 34 / LUFS 23 / bytes 19 / frame 9 / LRA 8 / WxH 6 / MB 6；另 **297** 处是「物理约束」
+ *  扫描的**行级**命中，合计 647），其中所在行同时命中 `CUR` 的 **26** 行；加本守卫后真实语料
+ *  **FAIL / 参考 / 静音 / 实验行 / 交叉引用计数逐字节不变**（误报 0）。 */
+const CUR = /现状|当前结论|目前|仍然|依旧|仍是只|仍只/;
 /** ⑦ 非本片产物（该数值**所在句**判定；上游 / 中间产物 / 素材的读数不是对成片的声称） */
 const NONFILM = /(?:mix(?:\.wav)?|score\.wav|母带|中间产物|上游|样片|素材|源文件|\.mp3|\.wav|\.flac|\.m4a)/;
 /** ④ 成片语境（默认整行） */
@@ -629,8 +651,8 @@ for (const slug of slugs) {
         const lraNoTruth = D.key === 'LRA' && cal !== 'ebur128' && !bandWhy;
         // ④ 成片语境（整行）
         if (!(D.ctx || CTX).test(line)) continue;
-        // ⑤ 历史语境（整行）
-        if (HIST.test(line)) continue;
+        // ⑤ 历史语境（整行；★ 但若同时含「当前结论」标记 ⇒ **不豁免**，见 `CUR` 定义）
+        if (HIST.test(line) && !CUR.test(line)) continue;
         // ⑥ 实验 / 扫描行 ⇒ 该行所有量纲都不计 FAIL
         if (isScan) {
           if (!scanLines.some((s) => s.slug === slug && s.ln === i + 1)) {
@@ -691,7 +713,7 @@ for (const slug of slugs) {
   const lines = fs.readFileSync(path.join(DIR, slug, 'SKILL.md'), 'utf8').split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (HIST.test(line)) continue;                        // ⑤ 历史句
+    if (HIST.test(line) && !CUR.test(line)) continue;     // ⑤ 历史句（★ 含当前结论标记 ⇒ 不豁免）
     if ([...line.matchAll(SCAN)].length >= 2) continue;   // ⑥ 实验行
     for (const sent of splitSentences(line)) {
       if (NONFILM.test(sent)) continue;                   // ⑦ 非本片产物
