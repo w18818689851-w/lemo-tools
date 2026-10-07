@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 79 条用例 / 覆盖全部 34 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 81 条用例 / 覆盖全部 34 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -36,6 +36,16 @@
  *          ② **已登记的覆盖点被删**（把 `lib/voices.mjs` 的 `LEMO_VOICE_TEST_TMP` 删成裸标识符）⇒ FAIL 并报「被删了 / 改名了」。
  *          它守的是「夹具会**静默跑在真实仓上**」这件事 —— 覆盖点一丢，**没有任何断言会响**（见闸门头注释 ① 的三处实证）。
  *          ★ 夹具**整棵拷真实语料**（判据② 要求登记表里 100 个「(覆盖点, 读者文件)」对逐个仍在 ⇒ 手写最小树等于抄第二遍登记表）。
+ *        · `check-env-overrides` **库仓侧扩展**（2026-10-07，补掉它自己登记的那条盲区；**闸门数不变**）：
+ *          **判据⑤ 表↔代码一致性** —— 库仓 `core/**` 里**代码真在读**的环境变量必须出现在
+ *          `core/README.md` 的 `## Environment variables` 表里（本项目铁律「文档声称值 vs 实测值」在 env 这一维）；
+ *          用例：**变异A**（合成库仓的 `core/README.md` 删掉 `LEMO_BBB` 行）⇒ FAIL 并点名；
+ *          **变异B**（`core/a.mjs` 加 `process.env.LEMO_ZZZ_PROBE`）⇒ FAIL 并点名；
+ *          **阴性对照**（表与代码一致）⇒ exit 0 且判据⑤ 打 ✓、判据⑥⑦ 逐条列出「表里多列」/「tools 侧」；
+ *          **判据⑧ 失明守卫**（库仓可达但 `core/**` 0 个 env 读取点）⇒ FAIL +「本闸门已失明（库仓侧）」；
+ *          **不可达**（`LEMO_OPUSCAR` 指空目录）⇒ **只 ℹ、exit 0**（与失明成对，证明守卫不是「永远 exit 1」）。
+ *          ★ 夹具用**手写的合成库仓**（库仓是**另一个仓**，不能假设它在别人机器上存在）；
+ *          它**不碰** 12b 那张 100 对登记表 ⇒ 不会退化成「抄第二遍」。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -2815,6 +2825,137 @@ test('★自证 check-env-overrides：短路判据① / 判据② 后，各自�
     const rb = await run(NODE, [gb]);
     assert.throws(() => expectBlind(rb, N_GONE, 'mut'),
       undefined, '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测那条判据');
+  } finally { rm(dir); }
+});
+
+// ── 12b-2. check-env-overrides.mjs · **库仓侧「表 ↔ 代码」一致性**（2026-10-07 扩展）──
+// ★ 为什么这里用**手写的合成库仓**、而 12b 用「整棵拷真实语料」：库仓是**另一个仓**
+//   （`D:/lemo-opuscar`），本套件**不能假设它存在**（别人的机器 / CI 上可能没有）；
+//   而库仓侧的四条判据（⑤⑥⑦⑧）只依赖「一棵有 `core/**` + `tools/**` + `core/README.md` 表的树」，
+//   手写最小树**不碰** 12b 那张 100 对的登记表 ⇒ 不会退化成「把登记表抄第二遍」。
+const LIB_OK = '✓ 判据⑤·';
+const LIB_MISS = '判据⑤·库仓 core/** 有';
+const LIB_BLIND = '本闸门已失明（库仓侧）';
+/**
+ * 合成最小库仓：`core/**` 用**三种抽取器各读一个**（`.mjs` / shell / python），
+ * `tools/**` 读一个（判据⑦ 只列不判），表里另有一个「列了但代码不读」的（判据⑥ 只列不判）。
+ */
+const miniLib = (root) => {
+  wf(path.join(root, 'core', 'README.md'),
+    '# 合成库仓\n\n## Environment variables\n\n| Variable | Meaning |\n|---|---|\n'
+    + '| `LEMO_AAA` | a |\n| `LEMO_BBB` | b |\n| `LEMO_CCC` | c |\n'
+    + '| `LEMO_UNREAD` | 表里列了但代码不读（⇒ 判据⑥ 只列 ℹ） |\n');
+  wf(path.join(root, 'core', 'a.mjs'), 'export const a = process.env.LEMO_AAA;\n');
+  wf(path.join(root, 'core', 'render', 'mux.sh'), 'B="${LEMO_BBB:-x}"\n');
+  wf(path.join(root, 'core', 'tts', 't.py'), "import os\nC = os.environ.get('LEMO_CCC')\n");
+  wf(path.join(root, 'tools', 'x.sh'), 'T="${LEMO_TOOLONLY:-y}"\n');
+  return root;
+};
+/** 把 `core/README.md` 里某一行变量行删掉（变异A）。 */
+const dropLibTableRow = (libRoot, name) => {
+  const p = path.join(libRoot, 'core', 'README.md');
+  const re = new RegExp(`^\\|\\s*\`${name}\`\\s*\\|`);
+  const kept = fs.readFileSync(p, 'utf8').split('\n').filter((l) => !re.test(l));
+  wf(p, kept.join('\n'));
+};
+
+test('check-env-overrides·库仓侧：表↔代码一致 ⇒ 绿；删表行 / 加新变量 / 失明 ⇒ 红；不可达 ⇒ 只 ℹ', async () => {
+  const dir = path.join(TMP, 'envreg-lib');
+  try {
+    // ① 阴性对照：合成库仓的**表与代码一致** ⇒ exit 0，判据⑤ 打 ✓，
+    //    且判据⑥⑦ 把「表里多列」与「tools 侧」**逐条列出**（否则这两条 ℹ 是空转的）。
+    const neg = path.join(dir, 'neg');
+    const gateNeg = copyEnvregCorpus(neg);
+    const r0 = await run(NODE, [gateNeg], { env: { LEMO_OPUSCAR: miniLib(path.join(dir, 'lib-neg')) } });
+    expectClean(r0, LIB_MISS, '库仓侧 阴性对照');
+    assert.ok(r0.out.includes(LIB_OK), `阴性对照应真的跑过判据⑤\n${r0.out.slice(-1600)}`);
+    assert.ok(r0.out.includes('LEMO_UNREAD') && r0.out.includes('LEMO_TOOLONLY'),
+      `判据⑥⑦ 应逐条列出「表里多列」与「tools 侧」\n${r0.out.slice(-1600)}`);
+
+    // ② 变异 A（表里删一个**真在用**的变量行）⇒ 判据⑤ 必须报出、并点名那个变量 + 读它的文件。
+    const a = path.join(dir, 'a');
+    const gateA = copyEnvregCorpus(a);
+    const libA = miniLib(path.join(dir, 'lib-a'));
+    dropLibTableRow(libA, 'LEMO_BBB');
+    const r1 = await run(NODE, [gateA], { env: { LEMO_OPUSCAR: libA } });
+    expectBlind(r1, LIB_MISS, '库仓侧 变异A（删表行）');
+    assert.ok(r1.out.includes('LEMO_BBB') && r1.out.includes('core/render/mux.sh'),
+      `判据⑤ 应点名变量 + 读它的文件\n${r1.out.slice(-1600)}`);
+
+    // ③ 变异 B（`core/*.mjs` 里加一个新变量）⇒ 判据⑤ 必须报出。
+    const b = path.join(dir, 'b');
+    const gateB = copyEnvregCorpus(b);
+    const libB = miniLib(path.join(dir, 'lib-b'));
+    fs.appendFileSync(path.join(libB, 'core', 'a.mjs'), '\nconst PROBE = process.env.LEMO_ZZZ_PROBE;\n');
+    const r2 = await run(NODE, [gateB], { env: { LEMO_OPUSCAR: libB } });
+    expectBlind(r2, LIB_MISS, '库仓侧 变异B（加新变量）');
+    assert.ok(r2.out.includes('LEMO_ZZZ_PROBE'), `判据⑤ 应点名新变量\n${r2.out.slice(-1600)}`);
+
+    // ④ 失明守卫：库仓**可达**、表也在，但 `core/**` 一个 env 读取点都没有 ⇒
+    //    **必须 FAIL 并明说「本闸门已失明（库仓侧）」**（否则「0 个未登记进表」会被读成「表全对」）。
+    const bl = path.join(dir, 'blind');
+    const gateBl = copyEnvregCorpus(bl);
+    const libBl = path.join(dir, 'lib-blind');
+    wf(path.join(libBl, 'core', 'README.md'),
+      '# 合成库仓\n\n## Environment variables\n\n| Variable | Meaning |\n|---|---|\n| `LEMO_X` | x |\n');
+    wf(path.join(libBl, 'core', 'a.mjs'), 'export const x = 1;\n');
+    const r3 = await run(NODE, [gateBl], { env: { LEMO_OPUSCAR: libBl } });
+    expectBlind(r3, LIB_BLIND, '库仓侧 失明守卫');
+    assert.ok(r3.out.includes('已失明（库仓侧）** ✘'),
+      `失明时汇总行必须带 ✘（不能只留一句「未登记进表 0 个」像绿灯）\n${r3.out.slice(-1600)}`);
+
+    // ⑤ 库仓**不可达**（`LEMO_OPUSCAR` 指空目录）⇒ **只打一行 ℹ、不判 FAIL**（exit 0）。
+    //    ★ 这条与 ④ 是一对：不可达 = ℹ，可达却扫不到 = FAIL。两条都测才说明守卫不是「永远 exit 1」。
+    const na = path.join(dir, 'na');
+    const gateNa = copyEnvregCorpus(na);
+    const r4 = await run(NODE, [gateNa], { env: { LEMO_OPUSCAR: path.join(dir, 'no-such-library') } });
+    expectClean(r4, LIB_BLIND, '库仓侧 不可达');
+    assert.ok(r4.out.includes('**不检查**：库仓不可达'),
+      `不可达应打一行 ℹ 说明不检查\n${r4.out.slice(-1600)}`);
+  } finally { rm(dir); }
+});
+
+test('★自证 check-env-overrides·库仓侧：把判据⑤⑥⑦⑧ 整段摘掉后，变异 A/B 与失明夹具必须重新变绿', async () => {
+  const dir = path.join(TMP, 'mut-envreg-lib');
+  // 整段替换成空壳（`reachable:false` ⇒ 走「不可达 ⇒ 只 ℹ」那条支）。
+  const CUT = /\/\/ ── ★★ 判据 ⑤⑥⑦⑧[\s\S]*?const libFail = lib\.missing\.length > 0 \|\| lib\.blind\.length > 0;/;
+  const SHELL = 'const lib = { reachable: false, root: "X", table: { vars: new Map(), section: false, exists: false, file: "X" },'
+    + ' missing: [], tableOnly: [], toolsOnly: [], internal: [], blind: [], coreVars: new Map(),'
+    + ' coreFiles: [], coreHits: [], toolsHits: [], toolsVars: new Map() };\nconst libFail = false;';
+  /** 建「真实语料副本 + 摘掉库仓判据的闸门」。
+   *  ★ `patchGate(gateName, outDir, subs)` 的 `outDir` 就是 `scripts/` 目录本身（它自己拼 `<outDir>/<name>`）。 */
+  const mkMut = (name, libRoot) => {
+    const root = path.join(dir, name);
+    copyEnvregCorpus(root);
+    const gate = patchGate('check-env-overrides.mjs', path.join(root, 'scripts'), [[CUT, SHELL]]);
+    return { gate, lib: libRoot };
+  };
+  try {
+    // ① 变异 A 的夹具 + 摘掉判据的闸门 ⇒ 必须 exit 0（判据没了 ⇒ 缺口不再可见）
+    const libA = miniLib(path.join(dir, 'lib-a'));
+    dropLibTableRow(libA, 'LEMO_BBB');
+    const m1 = mkMut('a', libA);
+    const ra = await run(NODE, [m1.gate], { env: { LEMO_OPUSCAR: m1.lib } });
+    assert.throws(() => expectBlind(ra, LIB_MISS, 'mut'),
+      undefined, '摘掉判据⑤⑥⑦⑧ 后变异A 竟然还报 ⇒ 那条正向断言没在测判据⑤');
+
+    // ② 变异 B 的夹具 + 摘掉判据的闸门 ⇒ 必须 exit 0
+    const libB = miniLib(path.join(dir, 'lib-b'));
+    fs.appendFileSync(path.join(libB, 'core', 'a.mjs'), '\nconst PROBE = process.env.LEMO_ZZZ_PROBE;\n');
+    const m2 = mkMut('b', libB);
+    const rb = await run(NODE, [m2.gate], { env: { LEMO_OPUSCAR: m2.lib } });
+    assert.throws(() => expectBlind(rb, LIB_MISS, 'mut'),
+      undefined, '摘掉判据⑤⑥⑦⑧ 后变异B 竟然还报 ⇒ 那条正向断言没在测判据⑤');
+
+    // ③ 失明夹具 + 摘掉判据的闸门 ⇒ 必须 exit 0（否则「失明守卫」可能是别的东西在报）
+    const libBl = path.join(dir, 'lib-blind');
+    wf(path.join(libBl, 'core', 'README.md'),
+      '# 合成库仓\n\n## Environment variables\n\n| Variable | Meaning |\n|---|---|\n| `LEMO_X` | x |\n');
+    wf(path.join(libBl, 'core', 'a.mjs'), 'export const x = 1;\n');
+    const m3 = mkMut('blind', libBl);
+    const rbl = await run(NODE, [m3.gate], { env: { LEMO_OPUSCAR: m3.lib } });
+    assert.throws(() => expectBlind(rbl, LIB_BLIND, 'mut'),
+      undefined, '摘掉判据⑤⑥⑦⑧ 后失明夹具竟然还报 ⇒ 失明断言没在测判据⑧');
   } finally { rm(dir); }
 });
 
