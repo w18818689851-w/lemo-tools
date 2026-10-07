@@ -134,10 +134,17 @@
  *     读 `RENDER_MIN_FREE`、`core/tts/tts_indextts.py:96` 的 `_env_int('INDEXTTS_MIN_FREE_MIB')`
  *     把变量名当**参数**传 —— 两处都是**动态取值**，本闸门看不见（**假阴**，不是误报）。
  *     实测这正是判据 ⑥ 里那 4 条 ℹ 中的 2 条 ⇒ **它们不是「表里多写了」，而是「闸门看不见」**。
- *   · **shell 侧是启发式**：只认「**全大写**（`^[A-Z][A-Z0-9_]*$`）+ 本文件内**无赋值** +
+ *   · **shell 侧是启发式**：只认「**全大写**（`^[A-Z][A-Z0-9_]*$`）+ 本文件内**无「定义」形式的赋值** +
  *     非 shell 内建」的 `${NAME:-…}` / `${NAME:=…}` / `${NAME:?…}` / `${NAME:+…}` / 裸 `$NAME`。
  *     实测库仓 shell 里 `${CONT:-0}` / `${DEC:-0}` / `${tgt:-}` 这类**文件内局部变量**会被
  *     「本文件内无赋值 / 全大写」两条滤掉（逐条人读确认）。★ 代价：**小写**的 env 输入会被漏。
+ *     ★★ 2026-10-07 收窄：「有赋值」原先只认「**行内出现 `NAME=`**」⇒ 把**命令前缀赋值**
+ *     （`NAME=值 命令 …`，**不持久**、只传给那个子进程）误当成了定义 ⇒ 漏报
+ *     `tools/fetch-fonts.sh:34` 的 `FONT_CACHE`（同文件 `:379` 有 `FONT_CACHE="$CACHE" bash …`）。
+ *     现在改为**逐简单命令**判「赋值是不是该命令的唯一内容」（`export`/`local`/`declare`/`readonly`
+ *     前缀、多前缀、`2>/dev/null` 等形态都覆盖）—— 详见 `shDefinedNames()` 与 ③④ 的说明。
+ *     ★ 局限：**逐行判、不跨行** ⇒ `NAME=值 \` + 下一行命令的**续行**形态判不出来（本项目 6 个
+ *     `.sh` 里无此形态）。
  *   · **python 侧只看三种标准形态**（`os.environ.get('X')` / `os.environ['X']` / `os.getenv('X')`）
  *     ⇒ 经**辅助函数 / 表**间接读的看不见（即上面 `_env_int` 那类）。
  *   · **`_` 前缀 = 进程内自设，不是外部输入**（实测库仓 `_LEMO_INDEXTTS_INNER`：`tts_indextts.py`
@@ -266,30 +273,145 @@ function shStripComment(l) {
  *      或裸 `$NAME` / `${NAME}`；
  *   ② 名字**全大写**（`^[A-Z][A-Z0-9_]*$`）—— shell 里小写名按惯例是**文件内局部变量**
  *      （实测 `tools/fonts/fetch-extra-fonts.sh:51` 的 `[ -z "${tgt:-}" ]` 就是这么滤掉的）；
- *   ③ 该名字在**同一文件里没有任何赋值**（`NAME=` / `export NAME=` / `local NAME=` / `declare NAME=`）
- *      —— 否则它是**文件内局部变量**（实测 `core/render/mux.sh` 的 `CONT` / `DEC` 就是这么滤掉的）。
- *      ★ 例外：**自引用的默认值写法** `NAME="${NAME:-…}"` **不算赋值** —— 那正是「读环境变量、
- *        给了个默认值」的惯用法（实测 `tools/fonts/fetch-extra-fonts.sh:14` 的
+ *   ③ 该名字在**同一文件里没有「定义」形式的赋值** —— 否则它是**文件内局部变量**
+ *      （实测 `core/render/mux.sh` 的 `CONT` / `DEC` 就是这么滤掉的）。
+ *      ★★ **2026-10-07 收窄（修一处漏报）**：原先的判法是「**行内出现 `NAME=`**」就算有赋值 ——
+ *        这条**太宽**，把**命令前缀赋值**也当成了定义。shell 语义：`NAME=值 命令 …`（后面还跟着
+ *        **命令词**）**只把变量传给那个子进程**、**不持久**，所以它**不是**「本文件内的定义」。
+ *        实测反例：`tools/fetch-fonts.sh:379`
+ *          `LEMO_LIB="$LIB" FONT_CACHE="$CACHE" ONLY_SLUGS="$ONLY" bash /tmp/fetch-extra-fonts.sh`
+ *        ⇒ 老判法把 `FONT_CACHE` 当局部变量滤掉 ⇒ **漏报** `tools/fetch-fonts.sh:34` 那处真读
+ *        （`CACHE="${FONT_CACHE:-/opt/fontsrc-cache}"`）。
+ *        ★ 现在的判法（`shDefinedNames()`，逐简单命令判）：**赋值必须是这条简单命令的唯一内容**
+ *        —— `NAME=值`（唯一内容）/ `export NAME=值` / `declare -x NAME=值` / `local NAME=值` /
+ *        `readonly NAME=值` / `NAME=值 2>/dev/null` ⇒ **定义**；
+ *        `NAME=值 命令 …` / `A=1 B=2 命令 …`（后面还有**词**）⇒ **不是**定义（命令前缀）。
+ *      ★ 例外（两条，都保留）：**自引用的默认值写法** `NAME="${NAME:-…}"` **不算定义** —— 那正是
+ *        「读环境变量、给了个默认值」的惯用法（实测 `tools/fonts/fetch-extra-fonts.sh:14` 的
  *        `ONLY_SLUGS="${ONLY_SLUGS:-}"`，该文件头部明确写着 `ONLY_SLUGS` 是**入参（环境变量）**）。
  *        判法：只看**赋值值的开头**（`=` 之后、可选的引号之后）是不是 `$NAME` / `${NAME…`。
  *        ★ **必须只看「值开头」、不能看「整行」**：实测 `core/render/mux.sh:112` 的
  *        `M=$(ffmpeg …) || die "… $(echo "$M" | tail -2)"` —— 行尾**另一条命令**里引用了 `$M`
  *        ⇒ 「看整行」会把 `M` 误判成自引用、进而把 `$M` 当成**外部输入**（实测出 2 个假阳：
  *        `M` / `OUT`）。`export PATH=/usr/local/bin:$PATH` 同型（但 `PATH` 已被 ② 的内建清单挡住）。
+ *   ④ **已知局限（如实写）**：判法**逐行**做，**不跨行** ⇒ 「`NAME=值 \` + 下一行 `命令 …`」这种
+ *      **续行**形态判不出来（会把 `NAME=值` 当定义；实测本仓 `core/**` + `tools/**` 的 6 个
+ *      `.sh` 里**没有**这种形态 —— 所有行尾 `\` 的续行都以**命令词**开头）。同理，一行里
+ *      `A=1` 与另一条命令用**换行**而非 `;`/`&&` 分隔时不受影响（本闸门本就逐行扫）。
  */
 const SH_ENV_RE = /^[A-Z][A-Z0-9_]*$/;
-const SH_ASSIGN_RE = /(?:^|\s)(?:export\s+|local\s+|declare\s+(?:-\w+\s+)?|readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\+?=/g;
+/** shell 保留字 / 组合前缀：出现在简单命令**开头**时不构成「命令词」（见头注释 ⑧ ③）。 */
+const SH_RESERVED = new Set(['if', 'then', 'else', 'elif', 'fi', 'while', 'until', 'do', 'done', 'for',
+  'in', 'case', 'esac', 'select', 'function', 'time', 'coproc', '!', '{', '}']);
+/** shell 声明内建：其后的 `NAME=…` **一律是定义**（后面还能跟裸名字，如 `local a=1 b c`）。 */
+const SH_DECL_KW = new Set(['export', 'local', 'readonly', 'declare', 'typeset']);
+/**
+ * 把**一行**（已剥注释）按 shell 词法切成 token —— 只服务于「这个 `NAME=` 是不是定义」，不是完整词法：
+ *   { t:'assign', name, val } —— `NAME=…` / `NAME+=…`（`=` 紧跟在**词首**的标识符后、未加引号）
+ *   { t:'word',   text }      —— 其它词（引号 / `$(…)` / `${…}` 原样收进同一个词）
+ *   { t:'op',     text }      —— 顶层操作符（`;` `&` `|` `(` `)` `<` `>` …）
+ * ★ 只把**顶层**（不在引号 / `$(…)` / `${…}` / 反引号里）的元字符当操作符 —— 否则
+ *   `_size=$(wc -c < "$1" | tr -d ' ')` 里的 `<` / `|` 会被当操作符、把赋值切碎。
+ */
+function shTokens(l) {
+  const toks = [];
+  const n = l.length;
+  let i = 0;
+  while (i < n) {
+    const c = l[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === ';' || c === '&' || c === '|' || c === '(' || c === ')' || c === '<' || c === '>') {
+      const s = i;
+      while (i < n && /[;&|<>]/.test(l[i])) i++;
+      if (i === s) i++;                                   // 单个 `(` / `)`
+      toks.push({ t: 'op', text: l.slice(s, i) });
+      continue;
+    }
+    const s = i;
+    let name = null, valAt = -1, depth = 0, q = null, bt = false;
+    while (i < n) {
+      const ch = l[i], ch2 = l[i + 1];
+      if (q) { if (ch === '\\' && q === '"') { i += 2; continue; } if (ch === q) q = null; i++; continue; }
+      if (bt) { if (ch === '\\') { i += 2; continue; } if (ch === '`') bt = false; i++; continue; }
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === "'" || ch === '"') { q = ch; i++; continue; }
+      if (ch === '`') { bt = true; i++; continue; }
+      if (depth > 0) { if (ch === '(' || ch === '{') depth++; else if (ch === ')' || ch === '}') depth--; i++; continue; }
+      if (ch === '$' && ch2 === '(') { depth++; i += 2; continue; }
+      if (ch === '$' && ch2 === '{') { depth++; i += 2; continue; }
+      if (/\s/.test(ch) || ch === ';' || ch === '&' || ch === '|' || ch === '(' || ch === ')' || ch === '<' || ch === '>') break;
+      if (name === null) {
+        const m = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/.exec(l.slice(i));
+        if (m) { name = m[1]; i += m[0].length; valAt = i; continue; }
+        name = '';                                        // 词首不是赋值 ⇒ 整词都是「词」
+      }
+      i++;
+    }
+    if (name) toks.push({ t: 'assign', name, val: valAt >= 0 ? l.slice(valAt, i) : '' });
+    else toks.push({ t: 'word', text: l.slice(s, i) });
+  }
+  return toks;
+}
+/**
+ * 从**一行**里抽出「**定义**」形式的赋值名（见头注释 ⑧ ③④）。判法：
+ *   ① 按**顶层操作符**切成**简单命令**（`;` `&&` `||` `|` `&` `(` `)`；重定向不算分隔）；
+ *   ② 跳过开头的保留字 / 声明内建（`if` / `then` / `export` / `local` …，含 `declare -x` 的 flag）；
+ *   ③ 收下紧跟的连续赋值；**这条简单命令以声明内建开头 ⇒ 全是定义**；
+ *   ④ 否则看赋值**之后**：只剩操作符 / 重定向 ⇒ 「只含赋值的简单命令」⇒ 定义；
+ *      **还剩「词」（命令名 / 参数）⇒ 命令前缀赋值**（只对该子进程生效、**不持久**）⇒ **不算定义**。
+ *   ⑤ 自引用的默认值写法 `NAME="${NAME:-…}"` **不算定义**（那是「读环境变量 + 给默认值」，见 ⑧ ③）。
+ */
+function shDefinedNames(l) {
+  const defs = [];
+  let seg = [];
+  const flush = () => {
+    if (seg.length) {
+      let i = 0, decl = false;
+      while (i < seg.length && seg[i].t === 'word' && (SH_RESERVED.has(seg[i].text) || SH_DECL_KW.has(seg[i].text))) {
+        if (SH_DECL_KW.has(seg[i].text)) decl = true;
+        i++;
+      }
+      while (decl && i < seg.length && seg[i].t === 'word' && /^-\w+$/.test(seg[i].text)) i++;   // `declare -x` / `local -r`
+      const picked = [];
+      while (i < seg.length && seg[i].t === 'assign') { picked.push(seg[i]); i++; }
+      if (picked.length) {
+        let ok = decl;
+        if (!ok) {                                        // ④：赋值之后还有「词」吗？
+          ok = true;
+          let j = i;
+          while (j < seg.length) {
+            const tk = seg[j];
+            if (tk.t === 'op') {
+              if (/^([<>]|&>)/.test(tk.text)) { j++; if (j < seg.length && seg[j].t === 'word') j++; continue; }   // 重定向 + 它的目标
+              j++; continue;
+            }
+            if (/^\d+$/.test(tk.text) && seg[j + 1] && seg[j + 1].t === 'op' && /^[<>]/.test(seg[j + 1].text)) {   // `2>` 的 fd
+              j += 2; if (j < seg.length && seg[j].t === 'word') j++; continue;
+            }
+            ok = false; break;
+          }
+        }
+        if (ok) for (const a of picked) {
+          // ★ 只看**值的开头**是不是 `$NAME` / `${NAME…`（自引用的默认值写法，见头注释 ⑧ ③）。
+          if (new RegExp(`^\\s*['"]?\\$\\{?${a.name}\\b`).test(a.val)) continue;
+          defs.push(a.name);
+        }
+      }
+    }
+    seg = [];
+  };
+  for (const tk of shTokens(l)) {
+    if (tk.t === 'op' && !/^([<>]|&>)/.test(tk.text)) flush();
+    else seg.push(tk);
+  }
+  flush();
+  return defs;
+}
 function extractSh(text) {
   const lines = text.split('\n');
   const assigned = new Set();
   for (const raw of lines) {
-    const l = shStripComment(raw);
-    for (const m of l.matchAll(SH_ASSIGN_RE)) {
-      const name = m[1], rest = l.slice(m.index + m[0].length);
-      // ★ 只看**值的开头**是不是 `$NAME` / `${NAME…`（自引用的默认值写法，见头注释 ⑧ ③）。
-      if (new RegExp(`^\\s*['"]?\\$\\{?${name}\\b`).test(rest)) continue;
-      assigned.add(name);
-    }
+    for (const name of shDefinedNames(shStripComment(raw))) assigned.add(name);
   }
   const rows = [];
   lines.forEach((raw, i) => {
