@@ -5,13 +5,13 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 60 条用例 / 覆盖全部 30 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 69 条用例 / 覆盖全部 31 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
  *      **每次都是人工发现**。这些守卫的**证据只写在闸门的头注释里**（那是档案，不是测试）
  *      —— 没有任何**自动化**手段防止它们被改回去。
- *   ② **核心判据**（8 条，2026-10-07 补/扩）：**不是**空转，而是「闸门真的判了、但判错/判漏」的
+ *   ② **核心判据**（11 条，2026-10-07 补/扩）：**不是**空转，而是「闸门真的判了、但判错/判漏」的
  *      那几条主判据 —— 它们同样是「读起来像已完成」的缺陷，只有夹具级回归能钉住：
  *        · `check-lra-caliber`：文档里的 LRA 看起来是 **loudnorm** 口径 ⇒ 判**不符**；
  *        · `check-loudness-targets`：响度目标**偏离 −14 交付线** ⇒ FAIL；
@@ -24,6 +24,13 @@
  *          成片那半句（b83-a 收窄：证据词须同句、且读数未被 `成片/全片/本片` 显式归因）；
  *        · `check-tp-prose` ⑨：别的风格名**不在同一子句** ⇒ 不算交叉引用 ⇒ 照判（b83-a 收窄：
  *          由「整行」收到「同一子句」，分隔符 `。！？；;`）。
+ *        · `check-skill-film-fields` ⑨：同型（b84-a 收窄：由「整行」收到「同一子句」，分隔符与
+ *          `check-tp-prose` 同一套）—— 读数在前子句、别的风格名在后子句 ⇒ 照判；
+ *        · `check-skill-film-fields` WxH 朝向守卫（b84-a 补）：9:16 变体（竖画幅）⇒ **参考桶**、不判 FAIL，
+ *          而同朝向的变体（如 1600×900）仍照判 —— ⑨ 收窄后暴露的 ⑧ 缺口，与 `check-tp-prose` b83-a 同源。
+ *        · `check-mux-parity`（b84-c 建 / b84-a 并入）：**自带 `demo/mux.sh` 的 `LN_TP` 漂移** ⇒ 点名 slug 与那个值；
+ *          **编码器守卫被拆**（未设支改成 CPU）⇒ 报 `VENC_GUARD`（用户头号硬规则「渲染一律 GPU」的落地口）；
+ *          另有**本闸门独有**的一条守卫：`styles/` 有风格但**一个自带 `demo/mux.sh` 都没有** ⇒ 报「一个都枚举不到」。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -105,15 +112,20 @@ const copyGate = (name, root) => {
 };
 
 /**
- * 把闸门源码拷到临时目录，并做**若干处精确字符串替换**（用于「扫描根写死在源码里、
+ * 把闸门源码拷到临时目录，并做**若干处精确替换**（用于「扫描根写死在源码里、
  * 没有覆盖点环境变量」的闸门：把那个常量重定向到夹具根）。
  * ★ 两道防空转守卫与 `mutate()` 同源：**先断言待替换片段确实存在**、**再断言替换真的生效** ——
  *   否则闸门改了写法时，夹具会静默地继续跑在**真实仓**上，用例就变成了假绿。
+ * ★ `subs` 每项是 `[from, to]`：`from` 可为**字符串**（既有用法）或 **RegExp**（2026-10-07 b84-a 扩：
+ *   要删/清空「多行对象字面量」这类片段时只能靠正则）。两条守卫对两种形态一视同仁。
  */
 const patchGate = (gateName, outDir, subs) => {
   let src = fs.readFileSync(path.join(SCRIPTS, gateName), 'utf8');
   for (const [from, to] of subs) {
-    assert.ok(src.includes(from),
+    // ★ RegExp 形态：`includes` 不接受正则（会抛 TypeError），故分派；带 `g` 的正则先复位 lastIndex。
+    if (from instanceof RegExp) from.lastIndex = 0;
+    const found = from instanceof RegExp ? from.test(src) : src.includes(from);
+    assert.ok(found,
       `夹具自身失效：${gateName} 里找不到待重定向的片段（源码已变？）\n---\n${from}\n---`);
     const next = src.replace(from, to);
     assert.notEqual(next, src, `夹具自身失效：${gateName} 的替换没有生效\n---\n${from}\n---`);
@@ -352,6 +364,49 @@ test('check-skill-film-fields：CUR 反向守卫（帧数 HIST+CUR ⇒ 陈旧帧
     const r2 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: neg });
     expectClean(r2, '陈旧帧数 1 处', 'check-skill-film-fields 阴性对照');
     assert.ok(!r2.out.includes('已失明'), `阴性对照不应失明\n${r2.out.slice(0, 600)}`);
+  } finally { rm(dir); }
+});
+
+// ── 2a. check-skill-film-fields 的 ⑨ / ⑧（2026-10-07 b84-a） ────────────────
+test('check-skill-film-fields：⑨ 交叉引用（别的风格名必须与读数同子句）', async () => {
+  const dir = path.join(TMP, 'ff-xref');
+  try {
+    const gv = { generatedVideo: { frames: 100, width: 1920, height: 1080, durSec: 60 } };
+    // 正向：陈旧帧数在**前一子句**、别的风格名在**后一子句** ⇒ ⑨ 不豁免 ⇒ 陈旧帧数 1。
+    const pos = path.join(dir, 'pos');
+    skillTree(pos, 'gb-ff', '# gb-ff\n\n本片成片帧数 999 帧。队里 gb-other 曾到 100 帧。\n', gv);
+    skillTree(pos, 'gb-other', '# gb-other\n', gv);
+    const r1 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: pos });
+    expectBlind(r1, '陈旧帧数 1 处', 'check-skill-film-fields ⑨ 正向');
+
+    // 真阴性：把别的风格名挪进**同一子句** ⇒ ⑨ 豁免（交叉引用单列）⇒ exit 0。
+    const neg = path.join(dir, 'neg');
+    skillTree(neg, 'gb-ff', '# gb-ff\n\n本片成片帧数 999 帧（对比 gb-other 的 100 帧）。\n', gv);
+    skillTree(neg, 'gb-other', '# gb-other\n', gv);
+    const r2 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r2, '陈旧帧数 1 处', 'check-skill-film-fields ⑨ 真阴性');
+    assert.ok(r2.out.includes('交叉引用 1 处'),
+      `⑨ 真阴性：应把该 token 单列「交叉引用 1 处」\n${r2.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+test('check-skill-film-fields：WxH 朝向守卫（9:16 变体 ⇒ 参考桶；同朝向变体仍判 FAIL）', async () => {
+  const dir = path.join(TMP, 'ff-orient');
+  try {
+    const gv = { generatedVideo: { frames: 100, width: 1920, height: 1080, durSec: 60 } };
+    // 正向（守卫生效）：竖画幅 1080×1920 与本片 1920×1080 横竖相反 ⇒ 推「参考」桶、不判 FAIL ⇒ exit 0。
+    const pos = path.join(dir, 'pos');
+    skillTree(pos, 'gb-ff', '# gb-ff\n\n本片成片分辨率 1080×1920。\n', gv);
+    const r1 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: pos });
+    expectClean(r1, '陈旧分辨率 1 处', 'check-skill-film-fields 朝向守卫正向');
+    assert.ok(r1.out.includes('参考画幅朝向 1 处'),
+      `朝向守卫：应把该 token 单列「参考画幅朝向 1 处」（不静默丢弃）\n${r1.out.slice(0, 700)}`);
+
+    // 阴性对照（守卫不越权）：同朝向的变体 1600×900 ⇒ **照判** FAIL ⇒ 陈旧分辨率 1。
+    const neg = path.join(dir, 'neg');
+    skillTree(neg, 'gb-ff', '# gb-ff\n\n本片成片分辨率 1600×900。\n', gv);
+    const r2 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectBlind(r2, '陈旧分辨率 1 处', 'check-skill-film-fields 朝向守卫阴性对照');
   } finally { rm(dir); }
 });
 
@@ -827,6 +882,148 @@ test('check-mux-selection：失明守卫（styles 下扫到 0 个风格目录）
     expectClean(r2, '本闸门已失明', 'check-mux-selection 阴性对照');
     assert.ok(r2.out.includes('走自带 mux 的 1 个'),
       `阴性对照应真的挑中这个自带脚本\n${r2.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+// ── 19b. check-mux-parity.mjs（自带 demo/mux.sh ↔ core 的口径 parity；2026-10-07 b84-c 新建 / b84-a 并入）──
+test('check-mux-parity：失明守卫（无 styles / 有 styles 但一个自带 demo/mux.sh 都没有）', async () => {
+  const dir = path.join(TMP, 'muxpar');
+  try {
+    // 正向 A：`styles/` 读不到（只有 core）⇒ 一个风格都没扫到 ⇒ 失明。
+    const pos = path.join(dir, 'pos');
+    wf(path.join(pos, 'core', 'render', 'mux.sh'),
+      '#!/bin/sh\nLN_TP="${LEMO_LN_TP:--1.7}"\nLN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\nLN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n');
+    const r1 = await runGate('check-mux-parity.mjs', { LEMO_OPUSCAR: pos });
+    expectBlind(r1, '本闸门已失明', 'check-mux-parity 正向 A');
+
+    // 正向 B：`styles/` 有风格、但**一个自带 demo/mux.sh 都没有** ⇒ 一个自带脚本都没检查过 ⇒ 失明。
+    //   ★ 这条是本闸门**独有**的守卫（别的闸门没有「0 个自带 mux.sh」这一态），必须单独钉住。
+    const pos2 = path.join(dir, 'pos2');
+    wf(path.join(pos2, 'core', 'render', 'mux.sh'),
+      '#!/bin/sh\nLN_TP="${LEMO_LN_TP:--1.7}"\nLN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\nLN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n');
+    mk(path.join(pos2, 'styles', 'gb-a'));
+    mk(path.join(pos2, 'styles', 'gb-b'));
+    const r2 = await runGate('check-mux-parity.mjs', { LEMO_OPUSCAR: pos2 });
+    expectBlind(r2, '一个都枚举不到', 'check-mux-parity 正向 B');
+
+    // 阴性对照：core + 一个自带 demo/mux.sh、口径与 core 逐项一致 ⇒ exit 0 且**真的**印出「与 core 同口径」。
+    //   （只断言 exit 0 会被「永远 exit 1」的坏断言满足 ⇒ 必须钉那句 ✓ 文案。）
+    const neg = path.join(dir, 'neg');
+    const CORE_OK = '#!/bin/sh\n'
+      + 'LN_TP="${LEMO_LN_TP:--1.7}"\n'
+      + 'LN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\n'
+      + 'LN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n';
+    const OWN_OK = CORE_OK
+      + 'J=$(ffmpeg -i "$A" -af loudnorm=I=-14:TP=$LN_TP:print_format=json -f null - 2>&1)\n'
+      + 'case "${LEMO_VENC:-}" in\n'
+      + '  \'\'|h264_nvenc) VARG="-c:v h264_nvenc" ;;\n'
+      + '  libx264) VARG="-c:v libx264" ;;\n'
+      + '  *) echo bad; exit 1 ;;\n'
+      + 'esac\n'
+      + 'TP_TRY="$LN_TP"; ATTEMPT=0\n'
+      + 'while [ "$ATTEMPT" -lt "$LN_TP_TRIES" ]; do\n'
+      + '  ATTEMPT=$((ATTEMPT + 1))\n'
+      + '  awk -v p="$OP" \'BEGIN { exit !(p + 0 <= -1.2) }\' && break\n'
+      + '  TP_TRY=$(awk -v t="$TP_TRY" -v s="$LN_TP_STEP" \'BEGIN { printf "%.3f", t - s }\')\n'
+      + 'done\n';
+    wf(path.join(neg, 'core', 'render', 'mux.sh'), CORE_OK);
+    wf(path.join(neg, 'styles', 'gb-parity', 'demo', 'mux.sh'), OWN_OK);
+    const r3 = await runGate('check-mux-parity.mjs', { LEMO_OPUSCAR: neg });
+    expectClean(r3, '本闸门已失明', 'check-mux-parity 阴性对照');
+    assert.ok(r3.out.includes('✓ 与 core 同口径'),
+      `阴性对照应真的判它同口径（而不是只 exit 0）\n${r3.out.slice(0, 700)}`);
+  } finally { rm(dir); }
+});
+
+test('check-mux-parity：核心判据（LN_TP 漂移 / 编码器守卫被拆 ⇒ 未登记分叉）', async () => {
+  const dir = path.join(TMP, 'muxpar2');
+  try {
+    const CORE_OK = '#!/bin/sh\nLN_TP="${LEMO_LN_TP:--1.7}"\nLN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\nLN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n';
+
+    // 正向 A：自带 mux 的 `LN_TP` 默认值改成 −2.5（core 仍是 −1.7）⇒ 未登记分叉 ⇒ exit 1 且点名该 slug 与那个值。
+    const pos = path.join(dir, 'pos');
+    const OWN_DRIFT = CORE_OK.replace('LN_TP="${LEMO_LN_TP:--1.7}"', 'LN_TP="${LEMO_LN_TP:--2.5}"')
+      + 'loudnorm=I=-14\n'
+      + 'case "${LEMO_VENC:-}" in\n  \'\'|h264_nvenc) ;; ;;\n  libx264) ;; ;;\n  *) exit 1 ;;\nesac\n'
+      + 'TP_TRY="$LN_TP"; ATTEMPT=0\nwhile [ "$ATTEMPT" -lt "$LN_TP_TRIES" ]; do :; done\n'
+      + 'awk \'BEGIN { exit !(0 <= -1.2) }\'\n';
+    wf(path.join(pos, 'core', 'render', 'mux.sh'), CORE_OK);
+    wf(path.join(pos, 'styles', 'gb-parity', 'demo', 'mux.sh'), OWN_DRIFT);
+    const r1 = await runGate('check-mux-parity.mjs', { LEMO_OPUSCAR: pos });
+    assert.notEqual(r1.code, 0, `LN_TP 漂移应 exit≠0\n${r1.out.slice(0, 700)}`);
+    assert.ok(r1.out.includes('gb-parity') && r1.out.includes('-2.5'),
+      `应点名 gb-parity 与 -2.5（而不只是「退出码非 0」）\n${r1.out.slice(0, 700)}`);
+
+    // 正向 B：编码器守卫被拆（未设支改成 CPU）⇒ `VENC_GUARD` 未登记分叉 ⇒ exit 1。
+    //   ★ 这条钉的是用户**最高优先级硬规则「渲染一律 GPU」**的落地判据，必须能单独变红。
+    const pos2 = path.join(dir, 'pos2');
+    const OWN_BADVENC = CORE_OK
+      + 'loudnorm=I=-14\n'
+      + 'case "${LEMO_VENC:-}" in\n  \'\'|libx264) VARG="-c:v h264_nvenc" ;;\n  libx264) VARG="-c:v libx264" ;;\n  libx264x) exit 1 ;;\nesac\n'
+      + 'TP_TRY="$LN_TP"; ATTEMPT=0\nwhile [ "$ATTEMPT" -lt "$LN_TP_TRIES" ]; do :; done\n'
+      + 'awk \'BEGIN { exit !(0 <= -1.2) }\'\n';
+    wf(path.join(pos2, 'core', 'render', 'mux.sh'), CORE_OK);
+    wf(path.join(pos2, 'styles', 'gb-parity', 'demo', 'mux.sh'), OWN_BADVENC);
+    const r2 = await runGate('check-mux-parity.mjs', { LEMO_OPUSCAR: pos2 });
+    assert.notEqual(r2.code, 0, `编码器守卫被拆应 exit≠0\n${r2.out.slice(0, 700)}`);
+    assert.ok(r2.out.includes('VENC_GUARD') || r2.out.includes('编码器守卫'),
+      `应报编码器守卫（而不只是「退出码非 0」）\n${r2.out.slice(0, 700)}`);
+
+    // 阴性对照：与 core 逐项一致 ⇒ exit 0。
+    const neg = path.join(dir, 'neg');
+    const OWN_OK = CORE_OK
+      + 'loudnorm=I=-14\n'
+      + 'case "${LEMO_VENC:-}" in\n  \'\'|h264_nvenc) VARG="-c:v h264_nvenc" ;;\n  libx264) VARG="-c:v libx264" ;;\n  *) exit 1 ;;\nesac\n'
+      + 'TP_TRY="$LN_TP"; ATTEMPT=0\nwhile [ "$ATTEMPT" -lt "$LN_TP_TRIES" ]; do :; done\n'
+      + 'awk \'BEGIN { exit !(0 <= -1.2) }\'\n';
+    wf(path.join(neg, 'core', 'render', 'mux.sh'), CORE_OK);
+    wf(path.join(neg, 'styles', 'gb-parity', 'demo', 'mux.sh'), OWN_OK);
+    const r3 = await runGate('check-mux-parity.mjs', { LEMO_OPUSCAR: neg });
+    expectClean(r3, '本闸门已失明', 'check-mux-parity 核心判据阴性对照');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-mux-parity：清空「已记录分叉」清单 ⇒ pictogram-motion 必须翻红', async () => {
+  const dir = path.join(TMP, 'muxpar3');
+  try {
+    // ★ 封闭证明（不依赖真库当前状态）：**同一棵夹具树**，只换「清单被清空的副本」⇒ 绿→红。
+    //   夹具的 `styles/pictogram-motion/demo/mux.sh` 按**真脚本的形状**造（有编码器守卫、无 LN_TP / 无 loudnorm / 无闭环）
+    //   ⇒ 命中真清单里 pictogram-motion 登记的那 5 项。
+    const fixture = path.join(dir, 'hermetic');
+    const CORE_OK = '#!/bin/sh\nLN_TP="${LEMO_LN_TP:--1.7}"\nLN_TP_STEP="${LEMO_LN_TP_STEP:-0.25}"\nLN_TP_TRIES="${LEMO_LN_TP_TRIES:-8}"\n';
+    const PICTO_SHAPE = '#!/bin/sh\n'
+      + 'case "${LEMO_VENC:-}" in\n  \'\'|h264_nvenc) VARG="-c:v h264_nvenc" ;;\n  libx264) VARG="-c:v libx264" ;;\n  *) exit 1 ;;\nesac\n';
+    wf(path.join(fixture, 'core', 'render', 'mux.sh'), CORE_OK);
+    wf(path.join(fixture, 'styles', 'pictogram-motion', 'demo', 'mux.sh'), PICTO_SHAPE);
+    const CLEAR = [[/const KNOWN_DIVERGENCES = \{[\s\S]*?\n\};/, 'const KNOWN_DIVERGENCES = {};']];
+
+    // 前提（阴性对照）：真清单**原样** ⇒ 那 5 项全走「已登记积压」⇒ exit 0。
+    const gKeep = patchGate('check-mux-parity.mjs', path.join(dir, 'keep'), []);
+    const rk = await run(NODE, [gKeep], { env: { LEMO_OPUSCAR: fixture } });
+    assert.equal(rk.code, 0,
+      `★自证前提不成立：真清单下 pictogram-motion 形状的脚本应走「已登记积压」⇒ exit 0\n${rk.out.slice(0, 900)}`);
+    assert.ok(rk.out.includes('已登记积压 5 项'),
+      `真清单下应记 5 项积压\n${rk.out.slice(0, 900)}`);
+
+    // 把真实闸门拷到临时目录，用**正则**精确清空 `KNOWN_DIVERGENCES` 的清单体。
+    //   ★ `patchGate` 的两道防空转守卫（先断言片段存在、再断言替换生效）对 RegExp 形态同样适用
+    //     ⇒ 闸门改了写法时这条自证会**当场报错**，而不是静默空转成假绿。
+    const g = patchGate('check-mux-parity.mjs', path.join(dir, 'cleared'), CLEAR);
+    assert.ok(fs.existsSync(g), '★自证夹具：清空清单的闸门副本应已落盘');
+    assert.ok(!fs.readFileSync(g, 'utf8').includes("'pictogram-motion': {"),
+      '★自证夹具：清单体应真的被清空（防空转）');
+    const r1 = await run(NODE, [g], { env: { LEMO_OPUSCAR: fixture } });
+    assert.notEqual(r1.code, 0,
+      `清空清单后 pictogram-motion 应翻成 FAIL ⇒ 清单是判据的一半\n${r1.out.slice(0, 900)}`);
+    assert.ok(r1.out.includes('pictogram-motion') && r1.out.includes('未登记分叉'),
+      `应点名 pictogram-motion 的未登记分叉（而不只是「退出码非 0」）\n${r1.out.slice(0, 900)}`);
+
+    // ★ 集成复核（真库）：真实树 + **未改**清单 ⇒ exit 0（那份积压是「只列不判」的）。
+    //   ★ 这条**依赖真库当前状态**（`pictogram-motion` 的 mux.sh 仍是另一套架构）——
+    //     若哪天它被修好并删掉登记，这里会**大声报错**（不是静默假绿），届时按新事实更新。
+    const r0 = await runGate('check-mux-parity.mjs', {});
+    assert.equal(r0.code, 0,
+      `集成复核：真实树 + 未改清单应 exit 0（pictogram-motion 的积压登记已失效？）\n${r0.out.slice(0, 900)}`);
   } finally { rm(dir); }
 });
 
@@ -1659,6 +1856,42 @@ test('★自证 check-tp-prose：把 `修复后` 塞回 HIST 后，正向断言�
   } finally { rm(dir); }
 });
 
+test('★自证 check-skill-film-fields：把 ⑨ 由「同子句」退回「整行」后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-ff-xref');
+  try {
+    // 把 ⑨ 的「别的风格名必须与读数同子句」退回旧版「整行提到即豁免」。
+    // ★ 该串在源码里出现**两次**（帧数 / 分辨率各一），`replace` 只换第一处 = 帧数那处 ⇒ 与夹具同维度。
+    const gate = mutate('check-skill-film-fields.mjs', dir,
+      'const isXref = others.some((o) => clauseOf(line, m.index).includes(o));',
+      'const isXref = others.some((o) => line.includes(o));');
+    const root = path.join(dir, 'styles');
+    const gv = { generatedVideo: { frames: 100, width: 1920, height: 1080, durSec: 60 } };
+    skillTree(root, 'gb-ff', '# gb-ff\n\n本片成片帧数 999 帧。队里 gb-other 曾到 100 帧。\n', gv);
+    skillTree(root, 'gb-other', '# gb-other\n', gv);
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
+    // 退回整行后：整行提到 gb-other ⇒ 交叉引用豁免 ⇒ exit 0、无「陈旧帧数 1 处」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '陈旧帧数 1 处', 'mut'),
+      undefined, '把 ⑨ 退回整行后正向断言竟然还通过 ⇒ 断言没在测该收窄');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-skill-film-fields：删掉 WxH 朝向守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-ff-orient');
+  try {
+    // 把朝向守卫短路成恒 false（= 删掉该守卫）。
+    const gate = mutate('check-skill-film-fields.mjs', dir,
+      'if (Number.isFinite(gv.width) && Number.isFinite(gv.height) && (w > h) !== (gv.width > gv.height)) {',
+      'if (false) {');
+    const root = path.join(dir, 'styles');
+    const gv = { generatedVideo: { frames: 100, width: 1920, height: 1080, durSec: 60 } };
+    skillTree(root, 'gb-ff', '# gb-ff\n\n本片成片分辨率 1080×1920。\n', gv);
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
+    // 守卫被删后：竖画幅 1080×1920 不再进参考桶 ⇒ 判 FAIL ⇒ 原阴性断言（exit 0 + 参考画幅朝向 1 处）必须**抛**。
+    assert.throws(() => expectClean(res, '陈旧分辨率 1 处', 'mut'),
+      undefined, '删掉朝向守卫后阴性断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
 test('★自证 check-render-venc：删掉 A 类失明守卫后，正向断言必须变红', async () => {
   const dir = path.join(TMP, 'mut-venc');
   try {
@@ -2015,6 +2248,94 @@ test('★自证 check-cli-docs：短路 notImpl 判据后，正向断言必须�
     const res = await run(NODE, [g2]);
     assert.throws(() => expectBlind(res, '但代码里**没有任何处理分支**（文档先于实现）', 'mut'),
       undefined, '短路 notImpl 判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
+  } finally { rm(dir); }
+});
+
+// ── 21. check-ref-lines.mjs（裸引用判据 + 数据文件覆盖守卫，2026-10-07 b84-b）─────
+test('check-ref-lines：裸引用真的判 (b) / 合计口径覆盖守卫 / 合法改写不假红', async () => {
+  const dir = path.join(TMP, 'reflines');
+  const BT = '`';
+  const DUB = (notes) => '{\n  "version": 1,\n  "styles": [\n    {\n      "id": "gb-bare",\n'
+    + `      "notes": "${notes}",\n      "palette": {}\n    }\n  ]\n}\n`;
+  // ★ 夹具里**必须同时**放一条反引号引用 + 一条裸引用（且都能解析）：
+  //   否则「覆盖守卫（反引号+裸 合计为 0 ⇒ 失明）」会先命中 ⇒ 阴性对照会假红。
+  const DUB_OK = DUB(`见 ${BT}test/target.mjs:1${BT} 与 test/target.mjs:1。`);
+  const DIRS = ['test', '_distill', 'lib', 'scripts', 'opuscar/styles'];
+  const envFor = (root) => ({
+    LEMO_TOOLS_ROOT: root,
+    LEMO_OPUSCAR: path.join(root, 'opuscar'),
+    LEMO_STYLES_ROOT: path.join(root, 'opuscar', 'styles'),
+    LEMO_DISTILL_ROOT: path.join(root, 'lib', 'style-skills'),
+  });
+  const tree = (root, dub) => {
+    for (const d of DIRS) mk(path.join(root, d));
+    wf(path.join(root, 'test', 'target.mjs'), 'line1\nline2\n');
+    wf(path.join(root, 'test', 'README.md'), '# 测试\n\n见 `target.mjs:1`。\n');
+    wf(path.join(root, 'lib', 'dub-styles.json'), dub);
+  };
+  try {
+    // 正向 A：裸引用写 `:99`（target.mjs 只有 2 行）⇒ 判 (b) 行号超范围，且**点明它是裸引用**。
+    const pos = path.join(dir, 'pos');
+    tree(pos, DUB(`见 ${BT}test/target.mjs:1${BT} 与 test/target.mjs:99。`));
+    const r1 = await runGate('check-ref-lines.mjs', envFor(pos));
+    assert.notEqual(r1.code, 0, `裸引用超范围应 exit≠0\n${r1.out.slice(0, 900)}`);
+    assert.ok(r1.out.includes('(b) 行号超范围'), `应报 (b) 行号超范围\n${r1.out.slice(0, 900)}`);
+    assert.ok(r1.out.includes('这是**裸引用**'), `应点明这是裸引用\n${r1.out.slice(0, 900)}`);
+
+    // 正向 B：数据文件存在但**一处引用都没有** ⇒ 覆盖守卫①（合计口径）判失明。
+    const pos2 = path.join(dir, 'pos2');
+    tree(pos2, '{\n  "version": 1,\n  "styles": []\n}\n');
+    const r2 = await runGate('check-ref-lines.mjs', envFor(pos2));
+    assert.notEqual(r2.code, 0, `空数据文件应 exit≠0\n${r2.out.slice(0, 900)}`);
+    assert.ok(r2.out.includes('本闸门已失明'), `应判失明\n${r2.out.slice(0, 900)}`);
+
+    // 阴性 A：反引号 + 裸 各一条、都能解析 ⇒ exit 0，且裸引用**真的被核过**。
+    const neg = path.join(dir, 'neg');
+    tree(neg, DUB_OK);
+    const r3 = await runGate('check-ref-lines.mjs', envFor(neg));
+    expectClean(r3, '已失明', 'check-ref-lines 阴性 A');
+    assert.ok(/裸引用 1 处[^\n]*已核 1/.test(r3.out), `裸引用应被核过\n${r3.out.slice(0, 900)}`);
+
+    // 阴性 B（守卫脆弱点回归）：**只有裸引用、0 反引号引用** ⇒ 不许判失明、exit 0。
+    //   ★ 由来：「把反引号引用也改成裸引用」正是本仓推荐的写作方向 ⇒ 覆盖守卫必须用「合计」口径，
+    //     否则会假红；而后人为了让它绿就会删掉守卫 ⇒ **裸引用判据静默丢失**。
+    const n28 = path.join(dir, 'bareonly');
+    tree(n28, DUB('见 test/target.mjs:1。'));
+    const r4 = await runGate('check-ref-lines.mjs', envFor(n28));
+    assert.ok(!r4.out.includes('已失明'), `只有裸引用不应判失明\n${r4.out.slice(0, 900)}`);
+    assert.strictEqual(r4.code, 0, `只有裸引用应 exit 0\n${r4.out.slice(0, 900)}`);
+
+    // 阴性 C（另一个合法改写方向）：**只有反引号引用、0 裸引用** ⇒ exit 0 + 一行 ℹ（不假红）。
+    const n29 = path.join(dir, 'tickonly');
+    tree(n29, DUB(`见 ${BT}test/target.mjs:1${BT}。`));
+    const r5 = await runGate('check-ref-lines.mjs', envFor(n29));
+    expectClean(r5, '已失明', 'check-ref-lines 阴性 C');
+    assert.ok(r5.out.includes('本次 **0 处裸引用**'), `应打「0 处裸引用」的 ℹ\n${r5.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+test('★自证 check-ref-lines：摘掉裸引用判据整段 ⇒ 源码标记守卫必须变红', async () => {
+  // ★ 为什么是「自证式」而不是 env 夹具：这条守卫读的是**闸门自己的源码**
+  //   （源码标记存在性 + 内联探针行为自证），夹具树驱动不了它 ⇒ 只能改源码副本。
+  const dir = path.join(TMP, 'reflines-self');
+  try {
+    const src = fs.readFileSync(path.join(SCRIPTS, 'check-ref-lines.mjs'), 'utf8');
+    // 两道锚点：定位「裸引用判定」那一段的起止。
+    // ★ 锚点若被重排/改名，下面两条 assert 会**先**失败，**不会退化成「空变异」**（否则这条自证会静默变绿）。
+    const a = src.indexOf('    for (const bm of masked.matchAll(BARE_REF)) {');
+    const b = src.indexOf('    for (const m of codeSpans(line)) {', a);
+    assert.ok(a >= 0, '自证夹具失效：找不到裸引用判定的起点锚点（源码已变？）');
+    assert.ok(b > a, '自证夹具失效：找不到裸引用判定的终点锚点（源码已变？）');
+    const mutated = src.slice(0, a) + src.slice(b);
+    assert.notEqual(mutated, src, '自证夹具失效：摘除没有生效');
+    assert.ok(!mutated.includes('for (const bm of masked.matchAll(BARE_REF)) {'),
+      '自证夹具失效：摘除后仍含该片段');
+    const f = path.join(dir, 'mut-bare-removed.mjs');
+    wf(f, mutated);
+    const r = await run(NODE, [f], { env: {} });
+    assert.notEqual(r.code, 0, `摘掉裸引用判据后应 exit≠0\n${r.out.slice(0, 900)}`);
+    assert.ok(r.out.includes('裸引用判据的关键代码标记不见了'),
+      `应报「关键代码标记不见了」\n${r.out.slice(0, 900)}`);
   } finally { rm(dir); }
 });
 

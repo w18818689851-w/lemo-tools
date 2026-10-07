@@ -29,8 +29,8 @@
  *   ★ 分辨率再加「**非假设语境**」排除：近邻 60 字内含
  *     `硬渲/渲成/裁/塞在/竖屏/内部/内含/超采样/世界/场景/片门/模板/画布/渲染/若/如果`
  *     ⇒ 不判（那是「若硬渲成 1080×1920 会怎样」这类推导，不是成片分辨率）。
- *   ★ 单列「**交叉引用**」：行内出现**别的风格名**的，说明是在引用他片的值当先例，
- *     不计 FAIL，供人工判断（与 `check-tp-prose.mjs` 同）。
+ *   ★ 单列「**交叉引用**」：**别的风格名**与读数落在**同一子句**的，说明是在引用他片的值当先例，
+ *     不计 FAIL，供人工判断（与 `check-tp-prose.mjs` 的 ⑨ **逐字同义**，分隔符同一套 `。！？；;`）。
  *
  *   ★★ 误报率实测与收窄动作（2026-10-04，43 份正文）：
  *     · **最宽判据**（只认 ① 值 ≥100 + ② 与实测不符）→ 帧数报 **26** 条。
@@ -69,6 +69,50 @@
  *       （与 `check-tp-prose.mjs:325` **同名同义**）：环境变量不设时逐字等价于原硬编码路径，
  *       已自证改前改后输出 md5 不变。**绝不**为此改真实语料。
  *
+ *   ★★ ⑨ 交叉引用**作用域收窄**（2026-10-07 b84-a；修的是「整行豁免过宽」这个缺陷）：
+ *     · **缺陷**：⑨ 原按**整行**判 —— 一行里**任意位置**出现别的风格名，就把**整行**的读数一起放掉。
+ *       本库的长表格行常「前一句报本片读数、后一句引用他片当先例」⇒ 本片的陈旧读数被顺带豁免（**假绿**）。
+ *       同型缺陷 `check-tp-prose.mjs` 已于 b83-a 修掉（它的 ⑨ 收到**同一子句**）——本闸门当时未同步 ⇒ 分叉。
+ *     · **修法**：`others.some((o) => clauseOf(line, m.index).includes(o))`，
+ *       `CLAUSE_SEP = /[。！？；;]/g` 与 `check-tp-prose.mjs` **逐字一致**（不引入第二套）。
+ *     · **误报率实测（真实 43 份正文；逐级，命中 = 真阳性 + 误报）**：
+ *       | 作用域 | 走到 ⑨ 的 token | 命中 | 真阳性 | 误报 | 交叉引用桶 |
+ *       |---|---|---|---|---|---|
+ *       | **整行（改前）** | 0 | 0 | 0 | 0 | 0 |
+ *       | **同一子句（改后）** | 0 | 0 | 0 | 0 | 0 |
+ *       ⇒ 真实语料上 ⑨ **当前排除 0 个 token**（帧数 / 分辨率都到不了 ⑨：③ 成片语境 / ⑧ NATIVE / ④ HIST 先挡下，
+ *         逐级计数：帧数 154 token → 疑 23 → 有 ③ 语境 17 → 过 ⑧ NATIVE 7 → ④ HIST 7 → **过 ④ 0**；
+ *         分辨率 448 → 疑 176 → 有 ③ 语境 8 → 过 ⑧ HYPO 4 → ④ HIST 4 → **过 ④ 0**）
+ *         ⇒ 收窄**在真实语料上零影响**：改前改后输出**逐字节一致**
+ *         （`陈旧帧数 0 / 陈旧分辨率 0 / 参考时长 39 / 失明 1`，exit 0；仅汇总行按本批新增
+ *         `参考画幅朝向 0 处 / 交叉引用 0 处` 两列 —— ★ 上一条 CUR 节的快照写的是「参考时长 **40**」，
+ *         与本次实测的 **39** 差 1，属**上一批的快照漂移**，如实登记、未改那句历史快照）。
+ *         ★ 因此本条的实测依据**不能只看真实语料**（那是退化的「0 → 0」）⇒ 另造**合成夹具**（下条）。
+ *     · **合成夹具**（真实 44 风格树拷贝 + 追加注入行；`D:/lemo-tmp/b84-a/tree-inj`，**不动真实文档**）：
+ *       `hd-2d`（实测 1836 帧 / 1920×1080）追加 3 行：
+ *         `本片成片帧数 9999 帧。队里 pictogram-motion 曾到 3926 帧。`（读数在前子句、风格名在后子句）
+ *         `本片成片帧数 8888 帧（对比 pictogram-motion 的 3926 帧）。`（同子句 ⇒ 合法交叉引用）
+ *         `本片成片分辨率 1600×900。队里 pictogram-motion 曾到 1080×1920。`
+ *       `pictogram-motion` 追加 `本片成片帧数 7777 帧（对比 hd-2d 的 1836 帧）。`
+ *       实测：**改前**（整行 ⑨）`陈旧帧数 0 / 陈旧分辨率 0 / 交叉引用 8`，**exit 0**（4 处真陈旧全被放掉）；
+ *             **改后**（同子句 ⑨）`陈旧帧数 1 / 陈旧分辨率 1 / 交叉引用 5`，**exit 1**（点名 `hd-2d:9999`、`hd-2d:1600×900`）。
+ *       ⇒ 命中 2 = 真阳性 2 / **误报 0**（另 5 处确为合法交叉引用、2 处走朝向守卫）。
+ *       ★ **反向证明（隔离）**：只把 ⑨ 改回整行（保留朝向守卫）⇒ 同一夹具**变绿**（`陈旧 0/0`，exit 0）；
+ *         即「收窄承重」。另一路只去掉朝向守卫（保留同子句 ⑨）⇒ `陈旧分辨率 2`（多出 9:16 变体）⇒ 朝向守卫也承重。
+ *     · **与 `check-tp-prose.mjs` 的一致性**：同一注入夹具上，`check-tp-prose` 报
+ *       `陈旧读数 2 处（WxH 1 / frame 1）/ 交叉引用 5`、exit 1 —— **与本闸门逐项一致**（frame 1 + WxH 1 + xref 5）。
+ *     · ★ **⑨ 收窄暴露的 ⑧ 缺口（已补）**：`art-deco:43` 的 9:16 变体 `1080×1920`（本片 1920×1080）这类 token，
+ *       旧版 ⑨ 按整行判时常因同行提到别的风格被顺带豁免；⑨ 收到子句后它会露出来 ⇒ 补 **WxH 朝向守卫**
+ *       （token 横竖与成片相反 ⇒ 不是本片画幅；**推「参考」桶、不静默丢弃**，与 `check-tp-prose.mjs` b83-a 同源）。
+ *       实测：本库真实语料该桶 **0 处**（`art-deco:43` 在 ③ 就被挡下）；合成夹具该桶 **2 处**。
+ *     · ★ **本闸门是否应「退化为 `check-tp-prose` 的登记项」（收敛重复实现）—— 本轮结论：暂不**。
+ *       依据（实测）：① 该做法会改动「闸门总数」（现 **31**），而该数字**写死在 5 个文件**里，其中
+ *       `_distill/RETRO-2026-10-07-b81.md`、`RETRO-2026-10-07-b82.md`、`总进度复盘与剩余任务计划-2026-10-07.md`
+ *       **不在本批可改范围**（前两个是**带日期的历史复盘**，改了就是伪造历史）⇒ 强行删除会留下**文档撒谎**。
+ *       ② 删/薄封装**不影响任何判据结论**（两闸门在本库与合成夹具上结论逐项一致）⇒ 收益是「去重复」，
+ *       成本是「跨 5 文件同步 + 一处漏改即假绿」。⇒ 建议留给**能同时改这 5 个文件**的一批，
+ *       并**先**把两闸门在同一合成夹具上跑出「结论逐项一致」的证据（本轮已备好该夹具与口径）。
+ *
  * ③ 已知局限：
  *   · 只认**字面量**：正文若写「约两分钟」「一帧不差」，闸门看不见（假阴）。
  *   · 帧数的「成片语境」用**整行**判定（这些表格行很长，行首的「成片 |」「帧数 |」离数字常 > 60 字）——
@@ -76,6 +120,11 @@
  *     若两者挨得太近，会漏（如 `hd-2d:138` 的「本次已按此实渲」因同行 `DEMO.md` 被排除）。
  *   · 分辨率只看 `W×H` 这一种写法（`1080p` / `1920 by 1080` 看不见）。
  *   · 时长永远是「参考」，不进退出码（依据见上）。
+ *   · **⑨ 交叉引用按「同一子句」判**（2026-10-07 收窄）⇒ 若一行里「别的风格名」与「本片读数」
+ *     被 `，` 隔开但**同属一个子句**，仍算交叉引用、不判 FAIL（与 `check-tp-prose.mjs` 同口径；
+ *     实测：把分隔符扩到 `，` 会放进上游读数误报 ⇒ 两边都**只到 `；`**）。
+ *   · **WxH 朝向守卫**只认「横竖相反」这一种非本片画幅；同朝向的变体尺寸（如 1280×720 的 16:9 版）
+ *     仍会走到 FAIL 判定 —— 实测本库无此例（该桶 0 处）。
  *   · 只比对 `generatedVideo`；**不判断 json 自己的 `selfCheck` 正文是否也陈旧**
  *     （实测 `hd-2d` 的 json 内部就不自洽：`generatedVideo` 已 24 fps，`selfCheck.warnings` 仍写 60 fps）。
  *
@@ -101,9 +150,24 @@ const RES_CTX = /成片|全片|本片|交付|输出/;                    // 分�
 const NATIVE = /原生|样片|demo|DEMO|入库前|未渲|设计稿|风格声明|on ones/;  // 非本片来源 ⇒ 排除
 const HYPO = /硬渲|渲成|裁|塞在|竖屏|内部|内含|超采样|世界|场景|片门|模板|画布|渲染|若|如果|原生|帧缓冲|索引|缓冲/;
 const NEAR = 60;
+/** ⑨ 交叉引用判定的作用域 = **同一子句**（2026-10-07 收窄）。
+ *  ★ 分隔符与 `check-tp-prose.mjs` 的 `CLAUSE_SEP = /[。！？；;]/g` **逐字一致**，不引入第二套。
+ *  ★ 旧版按**整行**判：一行里**任意位置**出现别的风格名，就把**整行**的读数一起放掉 ——
+ *    本库大量「引用他片当先例」的长表格行里，风格名与读数常不在同一子句，于是**本片**的陈旧读数被顺带豁免。
+ *  ★ 实测（43 份真实正文）：该路径**当前排除 0 个 token**（帧数 / 分辨率都到不了 ⑨，全被 ③ 成片语境 /
+ *    ⑧ NATIVE / ④ HIST 先挡下）⇒ 收窄前后**真实语料输出逐字节一致**（详见头注释「⑨ 收窄」一节）。 */
+const CLAUSE_SEP = new RegExp('[。！？；;]', 'g');
+const clauseOf = (line, idx) => {
+  const marks = [...line.matchAll(CLAUSE_SEP)].map((x) => x.index);
+  let a = 0;
+  for (const k of marks) { if (k < idx) a = k + 1; else break; }
+  const tail = line.slice(a);
+  const e = tail.search(CLAUSE_SEP);
+  return e === -1 ? tail : tail.slice(0, e + 1);
+};
 
 const dirs = fs.readdirSync(DIR).filter((s) => fs.existsSync(path.join(DIR, s, 'SKILL.md'))).sort();
-const blind = [], staleFrame = [], staleRes = [], refDur = [], xref = [];
+const blind = [], staleFrame = [], staleRes = [], refDur = [], xref = [], resOrient = [];
 
 for (const slug of dirs) {
   const jsonPath = path.join(DIR, slug, '_distill.json');
@@ -127,7 +191,7 @@ for (const slug of dirs) {
       if (!FRAME_CTX.test(line)) continue;         // ③ 整行不是关于成片
       if (NATIVE.test(near(m.index, m[0].length))) continue;  // 设计期 / 他版来源
       if (HIST.test(line) && !CUR.test(line)) continue;       // ④ 整行有历史语境（但同行有当前结论 ⇒ 不豁免）
-      const isXref = others.some((o) => line.includes(o));
+      const isXref = others.some((o) => clauseOf(line, m.index).includes(o));   // ⑨ 同一子句（2026-10-07 收窄）
       (isXref ? xref : staleFrame).push({ slug, ln: i + 1, v, measured: gv.frames, line });
     }
 
@@ -140,7 +204,15 @@ for (const slug of dirs) {
       if (!RES_CTX.test(n)) continue;              // ③ 只认「关于成片」的断言（近邻）
       if (HYPO.test(n)) continue;                  // 非假设语境（硬渲 / 裁切 / 内部尺寸…）
       if (HIST.test(line) && !CUR.test(line)) continue;       // ④ 整行有历史语境（但同行有当前结论 ⇒ 不豁免）
-      const isXref = others.some((o) => line.includes(o));
+      // ★ WxH「朝向守卫」（⑨ 收窄后**暴露**出来的既有 ⑧ 缺口，与 `check-tp-prose.mjs` b83-a 的处理**同源**）：
+      //   token 的横竖与成片**相反** ⇒ 不是本片画幅（如 9:16 变体 `1080×1920`，本片 1920×1080）。
+      //   ★ 旧版 ⑨ 按整行判时，这类 token 常因同行提到别的风格被顺带豁免；⑨ 收到子句后它会露出来。
+      //   ★ **不静默丢弃** —— 推「参考」桶（本项目踩过「静默丢弃 = 假绿」的病，本库有大量 9:16 变体）。
+      if (Number.isFinite(gv.width) && Number.isFinite(gv.height) && (w > h) !== (gv.width > gv.height)) {
+        resOrient.push({ slug, ln: i + 1, v: `${w}×${h}`, measured: `${gv.width}×${gv.height}`, line });
+        continue;
+      }
+      const isXref = others.some((o) => clauseOf(line, m.index).includes(o));   // ⑨ 同一子句（2026-10-07 收窄）
       (isXref ? xref : staleRes).push({ slug, ln: i + 1, v: `${w}×${h}`, measured: `${gv.width}×${gv.height}`, line });
     }
 
@@ -177,9 +249,15 @@ if (refDur.length) {
   for (const [k, v] of Object.entries(bySlug)) console.log(`  ${k.padEnd(20)} ${v} 处`);
 }
 if (xref.length) {
-  console.log(`\nℹ 交叉引用（行内提到别的风格，引用其值当先例）${xref.length} 处 —— 不计 FAIL，供人工判断：`);
+  console.log(`\nℹ 交叉引用（**同一子句**内提到别的风格，引用其值当先例）${xref.length} 处 —— 不计 FAIL，供人工判断：`);
   const bySlug = {};
   for (const x of xref) bySlug[x.slug] = (bySlug[x.slug] || 0) + 1;
+  for (const [k, v] of Object.entries(bySlug)) console.log(`  ${k.padEnd(20)} ${v} 处`);
+}
+if (resOrient.length) {
+  console.log(`\nℹ 参考：正文**分辨率**画幅朝向与成片相反（如 9:16 变体 1080×1920，本片 1920×1080）的 ${resOrient.length} 处 —— 不是本片画幅，不计 FAIL，供人工判断：`);
+  const bySlug = {};
+  for (const r of resOrient) bySlug[r.slug] = (bySlug[r.slug] || 0) + 1;
   for (const [k, v] of Object.entries(bySlug)) console.log(`  ${k.padEnd(20)} ${v} 处`);
 }
 if (blind.length) {
@@ -197,5 +275,5 @@ if (allBlind) {
 
 const fail = staleFrame.length + staleRes.length + (allBlind ? 1 : 0);
 if (!staleFrame.length && !staleRes.length && !allBlind) console.log('✓ 未发现「陈旧且非历史语境」的正文成片帧数 / 分辨率声称。');
-console.log(`\n[闸门] 陈旧帧数 ${staleFrame.length} 处 / 陈旧分辨率 ${staleRes.length} 处 / 参考时长 ${refDur.length} 处 / 失明 ${blind.length} 个 ${fail ? '✘' : 'OK'}`);
+console.log(`\n[闸门] 陈旧帧数 ${staleFrame.length} 处 / 陈旧分辨率 ${staleRes.length} 处 / 参考时长 ${refDur.length} 处 / 参考画幅朝向 ${resOrient.length} 处 / 交叉引用 ${xref.length} 处 / 失明 ${blind.length} 个 ${fail ? '✘' : 'OK'}`);
 process.exitCode = fail ? 1 : 0;

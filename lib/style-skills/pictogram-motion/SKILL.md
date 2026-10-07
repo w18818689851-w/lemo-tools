@@ -142,8 +142,8 @@ film: Aichi-Nagoya 2026 — All 43 Sports
 | 渲染入口 | `node render.mjs video 12`（12 workers；共用机器用 2–3）→ `out_ej/seg_*.mp4` + `list.txt` |
 | 帧率 | 风格原生 **60 fps**（demo：9696 帧 / 9816 帧含尾）；**本次编排器出片 24 fps** |
 | 分辨率 / 比例 | 设计帧 **1920×1080（16:9）**；`render.mjs:19` 固定 1920×1080 视口（demo 自带 build 链，影片本体一字未改）；**★ 2026-10-04 已支持多比例**：`demo/film.js` 的 `FILM_META.aspects = ['16:9','9:16','3:4','4:3','1:1']`，靠 `demo/index.html` 的页面外壳等比装入（留边 `#fbf6ec`） |
-| 混流 | `sh mux.sh`（demo 自带）或回退 `core/render/mux.sh`；demo 版 = `tpad=stop_duration=2:stop_mode=clone,noise=c0s=4:c0f=t+u` + `libx264 -preset slow -crf 14 -r 60 -g 120` + `aac 320k -ar 48000 -shortest -movflags +faststart`（**颗粒声明值 = 4**）；**本次成片实际** = 3878 帧无声视频（**原记** 2026-10-03 交付版带 2s 克隆尾垫 → 3926 帧 / 163.58s；2026-10-04 全量重渲后为 3878 帧 / 161.58s）+ `mix.wav`(163.6s) + loudnorm → `−14.0 LUFS`（**原记**；当前入库成片实测 `−14.5 LUFS`、真峰值 `−1.63 dBTP`、LRA 4.3 LU），AAC 48kHz 立体声，**颗粒取回退脚本默认 2（≠ 声明 4，见第 11 节）** |
-| 编码器 | demo `mux.sh` 用 `libx264`；**本次编排器用 `h264_nvenc`** |
+| 混流 | `sh mux.sh`（demo 自带）或回退 `core/render/mux.sh`；demo 版 = `tpad=stop_duration=2:stop_mode=clone,noise=c0s=4:c0f=t+u` + `-r 60 -g 120` + `aac 320k -ar 48000 -shortest -movflags +faststart`（**颗粒声明值 = 4**；编码器走 `LEMO_VENC` 守卫、未设即 GPU —— **原记**：本行曾写死 `libx264 -preset slow -crf 14`，已过期）；**本次成片实际** = 3878 帧无声视频（**原记** 2026-10-03 交付版带 2s 克隆尾垫 → 3926 帧 / 163.58s；2026-10-04 全量重渲后为 3878 帧 / 161.58s）+ `mix.wav`(163.6s) + loudnorm → `−14.0 LUFS`（**原记**；当前入库成片实测 `−14.5 LUFS`、真峰值 `−1.63 dBTP`、LRA 4.3 LU），AAC 48kHz 立体声，**颗粒取回退脚本默认 2（≠ 声明 4，见第 11 节）** |
+| 编码器 | demo `mux.sh` 也认 **`LEMO_VENC` 守卫**（未设 ⇒ `h264_nvenc -preset p5 -profile high -rc vbr -cq 19 -b:v 0`；显式 `libx264` 才走 CPU；其它值报错退出、绝不静默回落 CPU）；**本次编排器用 `h264_nvenc`**（**原记**：本行曾写「demo `mux.sh` 用 `libx264`」—— 该说法已过期，实测 `styles/pictogram-motion/demo/mux.sh:13-17`） |
 | 音频入口 | `../../../.venv/bin/python music/music.py`（先 `node music/export_timeline.cjs` 生成 `music/timeline.json`） |
 | 字幕入口 | `node srt.cjs`（从 EDL 生成标题卡 `.srt`） |
 | 事件导出 | `node core/render/events.mjs styles/pictogram-motion/demo`（→ `events.json`，本次输出 `dur 161.6`） |
