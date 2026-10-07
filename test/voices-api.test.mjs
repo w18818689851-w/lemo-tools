@@ -20,12 +20,18 @@
  *   node test/voices-api.test.mjs                 全部用例
  *   node test/voices-api.test.mjs --filter 404    只跑名字里含「404」的用例
  *   node test/voices-api.test.mjs --keep-server   跑完不杀测试服务（调试用，自己记得收）
+ *   LEMO_VOICE_TEST_TMP=<dir>                     试听**临时**目录（默认 `<CFG.tmpDir>/voicetest-<pid>`）。
+ *                                                 与 lib/voices.mjs 同名同义；显式设了就用它（夹具树隔离）。
  *
  * 纪律（全部沿用 dub-api.test.mjs 踩出来的那套）：
  *   - 测试自己用内核分配的空闲端口起服务，**绝不碰用户那个实例**。
  *   - 测试服务会覆写 `.console-port` / `打开控制台.url` —— 跑前按字节备份、跑后逐字节还原。
  *   - 不用 curl（本机走代理，打 localhost 得到 502）；不用 spawnSync（本环境一律 EBUSY）。
- *   - 临时/产物目录（试听产物、试听临时文件）跑前快照、跑后按**确切路径**删除新增项。
+ *   - 临时/产物目录（试听产物、试听临时文件）跑前快照，跑后**先记差集、再**按**确切路径**删除新增项。
+ *     ★ 差集必须**删除之前**取 —— 先删后读会让 ⑨ 恒过、成为**假绿**（2026-10-07 修掉的真缺陷）。
+ *   - ★ 试听**临时**目录是**应用目录**（lib/voices.mjs 的 `prepareVoiceTest` 真往它写盘），
+ *     不是本套件的私有目录 ⇒ 靠覆盖点 `LEMO_VOICE_TEST_TMP` 隔离：显式设了用它，未设时用
+ *     `voicetest-<pid>`（下面把最终值写回 env，**在 spawn server 之前** ⇒ server 继承它、真的写到这里）。
  *   - ★ 断言**增量**（不断言绝对数量）：任务历史是落盘持久化的。
  *
  * 退出码：全绿 0 / 有用例失败 1 / 自身异常 2。
@@ -50,8 +56,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 // 被测对象的关键常量（从实现里取，**不硬编码**）
-const VOICE_TEST_DIR = voices.VOICE_TEST_DIR;                       // D:\lemo-films\_voicetest
-const TEST_TMP_DIR = path.join(CFG.tmpDir, 'voicetest');            // D:\WSL\voicetest
+const VOICE_TEST_DIR = voices.VOICE_TEST_DIR;                       // D:\lemo-films\_voicetest（认 LEMO_FILM_DIR）
+// ★ 试听**临时**目录：应用侧定义在 lib/voices.mjs 的 `TEST_TMP_DIR`（`prepareVoiceTest` 真写盘），
+//   是**应用目录**、不是本套件私有的 ⇒ 覆盖点 `LEMO_VOICE_TEST_TMP` 与它同名同义：
+//   显式设了就用它（夹具树里可隔离）；未设时退回**按进程唯一**的默认 ⇒ 并发跑两个实例不互删在途文件。
+//   ★ 下面把最终值**写回 env**，位置在 `main()` 之前 ⇒ 一定早于 `startServer()` 的 spawn
+//   ⇒ 测试服务（继承 env）写的就是这里。若只在测试里换目录而不写回 env，快照目录会与应用
+//   真写的目录**分叉**，⑨ 就成了恒真的空断言。
+const TEST_TMP_DIR = process.env.LEMO_VOICE_TEST_TMP
+  ? path.resolve(process.env.LEMO_VOICE_TEST_TMP)
+  : path.join(CFG.tmpDir, `voicetest-${process.pid}`);
+process.env.LEMO_VOICE_TEST_TMP = TEST_TMP_DIR;
 const DEFAULT_TEST_TEXT = voices.DEFAULT_TEST_TEXT;
 const DEFAULT_TEST_SPEED = voices.DEFAULT_TEST_SPEED;
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
@@ -165,6 +180,10 @@ function stopServer(child) {
 
 // ── 产物登记与清理（**只动登记过的东西**）────────────────────
 const EXTRA_PATHS = new Set();   // 跑后新出现的确切路径（兜底删除）
+// ★ 兜底删除**之前**记下的差集（dir → 跑后新增的名字），供 ⑨ 当判据用。
+//   为什么非要单独存一份：⑨ 原先是在删除**之后**重新 readdir 再算差集的 ⇒ 被删掉的东西
+//   一个都报不出来，⑨ 恒过 = **假绿**（2026-10-07 实测：跑期间往目录写一个文件，删掉后仍全绿）。
+const RESIDUE = new Map();
 
 const listDir = (dir) => { try { return fs.readdirSync(dir).sort(); } catch { return []; } };
 
@@ -439,38 +458,44 @@ async function main() {
     }
     log(C.dim(`  固定入口已还原：${ENTRY_FILES.map((f) => path.basename(f)).join(' · ')}`));
 
-    // 产物/临时目录：删除跑后**新增**的确切路径（正常情况下本套件什么都不该产生）
+    // 产物/临时目录：★ **先取差集 → 断言（⑨）→ 再删**。顺序不能反 —— 先删后断言 ⇒ 被删掉的
+    //   东西一个都报不出来 = **假绿**（2026-10-07 实测：跑期间往目录写一个文件，删掉后仍全绿）。
+    //   正常情况下本套件什么都不该产生（它只打失败路径，写盘入口 `prepareVoiceTest` 在成功路径上），
+    //   所以「跑后新增」只可能来自**别的进程**（并发测试 / 正在跑的控制台）⇒ 必须报出来。
     await sleep(300);
-    for (const [dir, before] of [[VOICE_TEST_DIR, testDirBefore], [TEST_TMP_DIR, tmpDirBefore]]) {
-      const now = listDir(dir);
-      for (const n of now) if (!before.includes(n)) EXTRA_PATHS.add(path.join(dir, n));
-    }
-    const delErr = cleanupExtra();
-    if (delErr.length) log(C.bad(`  ⚠️ 产物清理失败：${delErr.join('；')}`));
-  }
-
-  // ── 最后一道闸：产物/临时目录 + 任务数必须与跑前一致（不留垃圾）──
-  {
-    const problems = [];
     const tAfter = listDir(VOICE_TEST_DIR);
     const tmpAfter = listDir(TEST_TMP_DIR);
-    const tAdded = tAfter.filter((n) => !testDirBefore.includes(n));
-    const tmpAdded = tmpAfter.filter((n) => !tmpDirBefore.includes(n));
-    if (tAdded.length) problems.push(`试听产物目录新增 ${JSON.stringify(tAdded)}`);
-    if (tmpAdded.length) problems.push(`试听临时目录新增 ${JSON.stringify(tmpAdded)}`);
-    if (!testDirExisted && fs.existsSync(VOICE_TEST_DIR) && tAfter.length === 0) {
-      try { fs.rmdirSync(VOICE_TEST_DIR); } catch { /* ignore */ }
+    RESIDUE.set(VOICE_TEST_DIR, tAfter.filter((n) => !testDirBefore.includes(n)));
+    RESIDUE.set(TEST_TMP_DIR, tmpAfter.filter((n) => !tmpDirBefore.includes(n)));
+
+    // ── ⑨ 断言：★ 跑在删除**之前**，所以「跑期间多了文件」真的报得出来 ──
+    {
+      const problems = [];
+      const tAdded = RESIDUE.get(VOICE_TEST_DIR);
+      const tmpAdded = RESIDUE.get(TEST_TMP_DIR);
+      if (tAdded.length) problems.push(`试听产物目录新增 ${JSON.stringify(tAdded)}`);
+      if (tmpAdded.length) problems.push(`试听临时目录新增 ${JSON.stringify(tmpAdded)}`);
+
+      const name = '⑨ 无残留：试听产物/临时目录跑前跑后一致（本套件不产生任何文件）';
+      if (problems.length) {
+        results.push({ name, ok: false, ms: 0, err: new Error(problems.join('；')) });
+        log(`  ${C.bad('FAIL')}  ${name}`);
+        for (const p of problems) log(`        ${p}`);
+      } else {
+        results.push({ name, ok: true, ms: 0 });
+        log(`  ${C.ok('PASS')}  ${name} ${C.dim(`(产物 ${tAfter.length} 项 / 临时 ${tmpAfter.length} 项，与跑前一致)`)}`);
+        notes.push(`⑨ 试听产物 ${tAfter.length} 项、试听临时 ${tmpAfter.length} 项，跑前跑后一致（未产生任何文件）`);
+      }
     }
 
-    const name = '⑨ 无残留：试听产物/临时目录跑前跑后一致（本套件不产生任何文件）';
-    if (problems.length) {
-      results.push({ name, ok: false, ms: 0, err: new Error(problems.join('；')) });
-      log(`  ${C.bad('FAIL')}  ${name}`);
-      for (const p of problems) log(`        ${p}`);
-    } else {
-      results.push({ name, ok: true, ms: 0 });
-      log(`  ${C.ok('PASS')}  ${name} ${C.dim(`(产物 ${tAfter.length} 项 / 临时 ${tmpAfter.length} 项，与跑前一致)`)}`);
-      notes.push(`⑨ 试听产物 ${tAfter.length} 项、试听临时 ${tmpAfter.length} 项，跑前跑后一致（未产生任何文件）`);
+    // ── 再删：跑后新增的确切路径（正常为空；有值 = 上面 ⑨ 已报出的「不是自己的文件」）──
+    for (const [dir, added] of RESIDUE) for (const n of added) EXTRA_PATHS.add(path.join(dir, n));
+    const delErr = cleanupExtra();
+    if (delErr.length) log(C.bad(`  ⚠️ 产物清理失败：${delErr.join('；')}`));
+
+    // 产物目录若本不存在、删完仍为空 ⇒ 顺手移除空目录（不留垃圾）
+    if (!testDirExisted && fs.existsSync(VOICE_TEST_DIR) && listDir(VOICE_TEST_DIR).length === 0) {
+      try { fs.rmdirSync(VOICE_TEST_DIR); } catch { /* ignore */ }
     }
   }
 
