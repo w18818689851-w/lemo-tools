@@ -601,6 +601,7 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    `LEMO_VRAM_DEBUG=1`（够用时也打读数）。★ 你**自己不要去起渲染或 TTS**（见第 4 条），
    所以正常情况下看不到这些日志；看到 `显存不足，拒绝继续…` 就说明**真的缺显存**，
    按它给的「两条出路」办（别设 `LEMO_NO_VRAM_FREE=1` 绕过 —— 那只会把静默挂死还回来）。
+   ★ **2026-10-07 更新：不足文案里多一段 `GPU 占用者:` best-effort 诊断**（`gpuOccupants()`，跑 `nvidia-smi --query-compute-apps=pid,process_name,used_memory`，按**进程名**聚合成「名字 × 个数」，最多 6 行、附一个示例 pid）。**由来**：原先只说「差多少 MiB」+「LM Studio 没有常驻模型可卸」，运维必须**手工**跑 `nvidia-smi` + `tasklist` 才知道真相 —— 当天实测是**另一个项目**的 3 个 `chrome-headless-shell` + 桌面浏览器占着，而原文案里「最常占的是浏览器」只是**猜**的。★ **只报名字与个数、绝不报 MiB**：本机是 **WDDM**，`used_memory` 一律 `[N/A]`（实测），报 MiB 就是编；文案里也印了这句说明，免得读者以为这是完整信息。★ 并明确提示「若其中有**别的项目**的进程（不是 lemo 的）**不要杀** —— 要么等它跑完、要么用 ② 显式放行」。★ **纯诊断、零判据改动**：门槛 / `relax` / `onShort` / 通过-拒绝判定 / 函数签名**全部未动**；**够用时输出逐字节不变**（实测 md5 相同，带不带 `LEMO_VRAM_DEBUG` 都比过）；`nvidia-smi` 查询失败 / 超时（5s）/ 退出码非 0 / 解析不了 ⇒ 这一段**整段消失、逐字退回原文案**，**不抛异常、不改退出码**。★ 这是**有意给编排器通路加可运维性**，`lemo-make.mjs` 本身**未动**。
 9. ★ **Index-TTS 的四个「内层读」配置走 argv，不是环境变量**（2026-10-05 实测）。
    `core/tts/tts_indextts.py` 是两层结构（外层 + 内层 Windows venv python），而
    **WSL→Windows interop 完全不传环境变量** ⇒ 外层把 `INDEXTTS_ENGINE` / `INDEXTTS_QUANT` /

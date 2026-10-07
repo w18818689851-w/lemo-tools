@@ -168,6 +168,28 @@ try {
 } catch (e) { console.log('THREW ' + (e && e.code)); }
 `;
 
+/**
+ * 子进程：占一个槽 → 打印 ACQUIRED → 等 GO 文件 → release() → 打印 RELEASED。
+ * ★ 为什么必须另起进程：release() 修②之后会去抢互斥锁，锁被占住时它用 Atomics.wait 同步自旋 ——
+ *   放在主进程里测会把测试自己钉死；而且我们需要「release 还没返回」这个中间态可观测。
+ */
+const RELEASE_SRC = `// 由 test/slot.test.mjs 生成：占槽 → 等 GO → release() → 打印 RELEASED（并回报耗时）
+const fs = await import('node:fs');
+const mod = await import(process.env.SLOT_MODULE_URL);
+const release = await mod.acquire({ slots: 1, minFree: 0 });
+console.log('ACQUIRED');
+const go = process.env.GO_FILE;
+const t = setInterval(() => {
+  if (go && fs.existsSync(go)) {
+    clearInterval(t);
+    const t0 = Date.now();
+    release();
+    console.log('RELEASED ' + (Date.now() - t0));
+    process.exit(0);
+  }
+}, 50);
+`;
+
 // ── 用例 ──────────────────────────────────────────────────────
 const cases = [];
 const test = (name, fn) => cases.push({ name, fn });
@@ -291,13 +313,19 @@ test('过期槽接管：槽位目录存在但 pid 缺失/损坏 ⇒ 超过 GRACE
   assert.equal(got, s0, '★ pid 损坏 + 目录早已建好 ⇒ 必须能接管，不能把坏槽位永久占死');
 });
 
-test('tryTake 的前置条件：DIR 不存在时直接抛 ENOENT（导出 API 的隐性约束）', async () => {
+test('③ tryTake 自建 DIR：DIR 不存在时不得抛 ENOENT，且必须真拿到槽位', async () => {
   const dir = caseDir('nodir');
   const m = await loadSlot(dir);                      // loadSlot 会 mkdir(dir)，模拟 acquire() 的先行步骤
   assert.ok(typeof m.tryTake === 'function', 'tryTake 应导出（源码注明"仅供测试"）');
-  rmrf(dir);                                          // 现在把 DIR 抽掉：acquire() 之外的调用者不会得到这个 mkdir
-  assert.throws(() => m.tryTake(1, 100, 30), /ENOENT/,
-    '记录：tryTake 假设 DIR 已存在（只有 acquire() 会 mkdir），单独调它会 ENOENT');
+  rmrf(dir);                                          // 把 DIR 整个抽掉：acquire() 之外的调用者不会替它 mkdir
+  assert.ok(!fs.existsSync(dir), '前置：DIR 必须确实不存在');
+
+  let d;
+  assert.doesNotThrow(() => { d = m.tryTake(1, 100, 30); },
+    '★ 修复③：tryTake 必须自己 fs.mkdirSync(DIR,{recursive:true})，不能假设 DIR 已存在（改前这里抛 ENOENT）');
+  assert.equal(d, path.join(dir, 'slot0'), '★ 且必须真的拿到槽位（不是"没抛错但返回 null"）');
+  assert.equal(fs.readFileSync(path.join(d, 'pid'), 'utf8').trim(), String(process.pid),
+    '槽位的 pid 文件应已写出、且是本进程');
 });
 
 test('互斥锁：残留的 .mutex 超过 GRACE ⇒ 必须能清掉继续，不能永久自旋', async () => {
@@ -440,6 +468,130 @@ test('非法 env 回落：RENDER_MIN_FREE=999 ⇒ 有警告 + 回落 30（不因
   assert.ok(fs.existsSync(path.join(dir, 'slot1')),
     '★ 只有回落成 30（< 本机空闲内存）才拿得到 slot1');
   r();
+});
+
+// ── 8. 修复回归：② release 与 tryTake 共用一把锁 / ④ exit 监听器不累积 ──
+test('② release 与 tryTake 共用同一把锁：.mutex 被占用时 release 必须等锁，不得抢先把槽位删掉', async () => {
+  const dir = caseDir('release-mutex');
+  fs.mkdirSync(dir, { recursive: true });
+  const script = path.join(dir, 'child.mjs');
+  fs.writeFileSync(script, RELEASE_SRC);
+  const go = path.join(dir, 'go');
+
+  const kid = startChild(script, {
+    RENDER_SLOT_DIR: dir,
+    RENDER_SLOT_HELD: '',
+    SLOT_MODULE_URL: pathToFileURL(SLOT).href,
+    GO_FILE: go,
+  });
+  try {
+    await waitFor(() => kid.out.includes('ACQUIRED'), 10000, '子进程应拿到槽并打印 ACQUIRED');
+    const s0 = path.join(dir, 'slot0');
+    assert.ok(fs.existsSync(s0), '前置：子进程应持有 slot0');
+
+    // 手工占住互斥锁（mtime 新鲜 ⇒ 不会被 withMutex 当成"崩在锁里的残留"清掉）
+    const mx = path.join(dir, '.mutex');
+    fs.mkdirSync(mx);
+    fs.writeFileSync(go, '');                        // 放行子进程去 release
+
+    await new Promise(r => setTimeout(r, 600));      // 给 release 足够时间"本该删完"
+    assert.ok(!kid.out.includes('RELEASED'),
+      '★ 锁被占用期间 release 不得完成（说明它真的在等同一把锁）');
+    assert.ok(fs.existsSync(s0),
+      '★ 修复②：release 的判断+rename+rmrf 必须在 withMutex 里；锁被占住时它绝不能抢先删掉槽位');
+
+    fs.rmdirSync(mx);                                // 放锁
+    await waitFor(() => kid.out.includes('RELEASED'), 10000, '放锁后 release 必须完成');
+    assert.ok(!fs.existsSync(s0), '放锁后 release 必须照常清掉自己的槽位');
+  } finally {
+    try { kid.child.kill(); } catch {}
+    await new Promise(r => setTimeout(r, 200));
+  }
+});
+
+test('② release 只删自己的槽：槽位 pid 已被别人改写 ⇒ release 后该槽位必须还在', async () => {
+  const dir = caseDir('release-not-mine');
+  const m = await loadSlot(dir);
+  const r = await withTimeout(m.acquire({ slots: 1, minFree: 0 }), 5000, '先拿到槽');
+  const s0 = path.join(dir, 'slot0');
+  assert.equal(fs.readFileSync(path.join(s0, 'pid'), 'utf8').trim(), String(process.pid),
+    '前置：槽位里应是本进程的 pid');
+
+  // 模拟「我们已经被别人接管」：接管者往同一个槽位写了自己的 pid
+  fs.writeFileSync(path.join(s0, 'pid'), String(deadPid()));
+  r();
+  assert.ok(fs.existsSync(s0),
+    '★ 槽位里的 pid 不是本进程 ⇒ release() 绝不能删掉别人的槽位（否则新持有者以为自己有槽、其实槽没了）');
+});
+
+test('④ 反复 acquire/release 不累积 exit 监听器（改前：第 11 个起 MaxListenersExceededWarning）', async () => {
+  const dir = caseDir('exit-listeners');
+  const m = await loadSlot(dir);
+  const base = process.listenerCount('exit');
+  const warns = [];
+  const onWarn = w => warns.push(String((w && w.name) || w));
+  process.on('warning', onWarn);
+  try {
+    for (let i = 0; i < 14; i++) {
+      const r = await withTimeout(m.acquire({ slots: 14, minFree: 0 }), 5000, `第 ${i + 1} 次 acquire`);
+      r();                                           // 立刻还槽，否则槽位有限会卡住
+    }
+    await new Promise(r => setTimeout(r, 300));      // process.emitWarning 走 nextTick：等一拍再收警告
+    assert.equal(process.listenerCount('exit'), base,
+      `★ 每次 release() 都必须 process.off("exit", release)：监听器数不得随 acquire 次数增长（base=${base}）`);
+    assert.ok(!warns.includes('MaxListenersExceededWarning'),
+      `★ 不得出现 MaxListenersExceededWarning（收到：${JSON.stringify(warns)}）`);
+  } finally { process.off('warning', onWarn); }
+});
+
+test('② release 绝不抛：DIR 被外部整体删掉后调 release() ⇒ 必须静默返回（改前抛 ENOENT）', async () => {
+  const dir = caseDir('release-dir-gone');
+  const m = await loadSlot(dir);
+  const r = await withTimeout(m.acquire({ slots: 1, minFree: 0 }), 5000, '先拿到槽');
+  assert.ok(fs.existsSync(path.join(dir, 'slot0')), '前置：应持有 slot0');
+
+  // 模拟「DIR 被外部删掉」：系统清 tmp / 测试收尾 / 用户手删 RENDER_SLOT_DIR
+  rmrf(dir);
+  assert.ok(!fs.existsSync(dir), '前置：DIR 确实不存在了');
+
+  // 改前：release 走 withMutex ⇒ fs.mkdirSync(DIR/.mutex) 直接 ENOENT；而 release 会被
+  // process.on('exit', release) 在**退出处理器**里调用 ⇒ 在那里抛异常是最坏的形态。
+  assert.doesNotThrow(() => r(),
+    '★ release 是尽力而为的收尾路径，DIR 不存在时必须静默返回，绝不能抛');
+  assert.doesNotThrow(() => r(), '重复 release 也必须无害（done 守卫）');
+});
+
+test('② release 失败留痕：非 ENOENT 喊一次（warnOnce）、ENOENT 保持静默', async () => {
+  const dir = caseDir('release-warn');
+  const m = await loadSlot(dir);
+  const errs = [];
+  const origErr = console.error; console.error = (...a) => errs.push(a.join(' '));
+  const realMkdir = fs.mkdirSync;
+  const hitCount = () => errs.filter(s => s.includes('release 失败')).length;
+  try {
+    // 阶段一：ENOENT（DIR 被外部删掉）⇒ 预期内，必须**静默**（不许因为预期内的失败刷屏）
+    const r1 = await withTimeout(m.acquire({ slots: 1, minFree: 0 }), 5000, '阶段一 acquire');
+    rmrf(dir);
+    assert.doesNotThrow(() => r1(), 'ENOENT 也必须 best-effort 不抛');
+    assert.equal(hitCount(), 0, `★ ENOENT 是预期内的，必须静默、不许喊：${JSON.stringify(errs)}`);
+
+    // 阶段二：非 ENOENT（注入 EACCES）⇒ 意外，必须**留一条痕**
+    const r2 = await withTimeout(m.acquire({ slots: 1, minFree: 0 }), 5000, '阶段二 acquire');
+    // ★ 本机（Windows）没有干净的文件系统办法造出非 ENOENT —— 实测：DIR 是文件 ⇒ ENOENT（正是要静默的那种）；
+    //   `.mutex` 是文件 ⇒ EEXIST，被 withMutex 的重试循环吃掉；只读目录在 Windows 上不拦子目录创建。
+    //   ⇒ 用**故障注入**：只把 release 路径上对 `.mutex` 的 mkdirSync 打成 EACCES。
+    //   （探针已验证：slot.mjs 的 `import fs from 'fs'` 与测试的 `node:fs` 是同一个对象，打补丁对模块可见。）
+    fs.mkdirSync = (p, ...a) => {
+      if (String(p).endsWith('.mutex')) { const e = new Error('injected EACCES'); e.code = 'EACCES'; throw e; }
+      return realMkdir.call(fs, p, ...a);
+    };
+    assert.doesNotThrow(() => r2(), '非 ENOENT 也必须 best-effort：绝不抛');
+    assert.doesNotThrow(() => r2(), '重复 release 无害（done 守卫，不会重复喊）');
+
+    assert.equal(hitCount(), 1,
+      `★ 非 ENOENT 失败必须留一条痕、且只一条（warnOnce 去重）：${JSON.stringify(errs)}`);
+    assert.match(errs.find(s => s.includes('release 失败')), /EACCES/, '痕迹里应带错误码');
+  } finally { fs.mkdirSync = realMkdir; console.error = origErr; }
 });
 
 // ── 跑 ──────────────────────────────────────────────────────
