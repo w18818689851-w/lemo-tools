@@ -48,7 +48,10 @@
  *
  * ★ 技术纪律（本项目踩过的坑）：
  *   · `spawnSync` / `execFileSync` 在本机一律 EBUSY ⇒ **只能用异步 `spawn`**；
- *   · 所有临时文件放 **非 C 盘**（`D:/lemo-tmp/gb-blind/`），跑完按**确切路径**清理，不留垃圾；
+ *   · 所有临时文件放 **非 C 盘**（`D:/lemo-tmp/gb-blind-<pid>/`），跑完按**确切路径**清理，不留垃圾；
+ *     ★ 根目录**按进程唯一**（带 `process.pid`）—— 曾用写死的 `D:/lemo-tmp/gb-blind`，
+ *       而套件开头 `rm(TMP); mk(TMP)`、末尾 `rm(TMP)` ⇒ **两个进程同时跑会互删对方夹具**
+ *       （实测并发：一次 18~23 failed，单独跑 77 passed）。WSL 侧同理（`/tmp/gb-blind-neg-<pid>`）。
  *   · **绝不改真实数据**（`lib/dub-styles.json` / `lib/style-skills/` / 真实 `_distill.json` 一律只读）；
  *   · 独立入口、不用外部测试框架（项目零依赖）。
  *
@@ -63,7 +66,10 @@ import { spawn } from 'node:child_process';
 // ── 常量 ────────────────────────────────────────────────────────────────────
 const TOOLS = 'D:/lemo-tools';
 const SCRIPTS = path.join(TOOLS, 'scripts');
-const TMP = 'D:/lemo-tmp/gb-blind';          // ★ 非 C 盘；跑完整棵删掉
+// ★ 临时根**按进程唯一**（带 `process.pid`）：套件开头 `rm(TMP); mk(TMP)`、末尾 `rm(TMP)`，
+//   若用写死的共享路径，两个进程同时跑就会互删对方夹具（实测并发 18~23 failed / 单独 77 passed）。
+//   非 C 盘（本项目纪律）；父目录由 `mk()` 的 recursive 建出，跑完整棵按确切路径删掉。
+const TMP = path.join('D:/lemo-tmp', `gb-blind-${process.pid}`);
 const NODE = process.execPath;               // 本测试就是被目标 node 跑的 ⇒ 自洽
 
 const TTY = process.stdout.isTTY;
@@ -1320,7 +1326,7 @@ test('check-film-aspect：C 类失明守卫（实际成片扫到 0 部）', asyn
 // ── 22. check-dual-copy-sync.mjs（WIN ↔ WSL 两份副本）───────────────────────
 test('check-dual-copy-sync：WIN 侧失明守卫（副本扫到 0 个文本文件）', async () => {
   const dir = path.join(TMP, 'dual');
-  const WSL_TMP = '/tmp/gb-blind-neg';
+  const WSL_TMP = `/tmp/gb-blind-neg-${process.pid}`;   // ★ 按进程唯一（同 TMP 的并发理由）
   try {
     // 正向：WIN 副本根存在但是空的 ⇒ winMap.size 0 ⇒ 失明。
     //   ★ 加 `--no-wsl`：本闸门的 WSL 侧失明守卫另有其人（这里只钉 WIN 侧那条），且能省一次 wsl 启动。
@@ -1590,7 +1596,7 @@ test('check-lra-caliber：失明守卫（0 部成片被检查 ⇒ 明说「本�
     //   ★ 比「目录为空」强：它证明的是**循环里的 continue 这条守卫**，不是「枚举不到」。
     const gatePos = setup(path.join(dir, 'pos'));
     rj(path.join(dir, 'pos', 'distill', 'gb-lra', '_distill.json'),
-      { generatedVideo: { path: 'D:/lemo-tmp/gb-blind/lra/pos/不存在的成片.mp4' }, selfCheck: { loudness: { lra: 5 } } });
+      { generatedVideo: { path: fwd(path.join(dir, 'pos', '不存在的成片.mp4')) }, selfCheck: { loudness: { lra: 5 } } });
     const r1 = await run(NODE, [gatePos]);
     expectBlind(r1, '失明：0 部成片被检查', 'check-lra-caliber 正向');
 

@@ -27,7 +27,7 @@ node test/style-scan.test.mjs     # 风格源码指纹机制（约定一「自�
 node test/triple-check-flow.test.mjs  # verifyTriple 主流程端到端测试（11 条，★ 用桩 LM Studio，绝不碰真实模型）
 node test/dub-align.test.mjs      # 功能2「口播 cue ↔ 文案句」时间轴对齐纯逻辑测试（7 条，★ 无空档 / 最短可读时长）
 node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 条，★ 硬切不切在词/记号内部 + 切片 trim + 拼回不丢字）
-node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套件（73 条：**全部 32 个闸门**的失明/反向守卫 + **12 条核心判据**，每条都含「正向命中 + 阴性对照」，另含 26 个「改坏守卫或判据必须变红」自证）
+node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套件（77 条：**全部 33 个闸门**的失明/反向守卫 + **12 条核心判据**，每条都含「正向命中 + 阴性对照」，另含 26 个「改坏守卫或判据必须变红」自证）
 node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs 的行为测试（21 条，★ 槽位上限用子进程并发验排队 + 过期槽接管 + .mutex 清理 + CLI 退出码透传 + release 绝不抛）
 ```
 
@@ -300,8 +300,8 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
    - `node --check lemo-make.mjs` / `video_png.mjs` **exit 0**；五个改动文件 CR 计数全为 **0**（纯 LF）。
    - **30 个闸门全 `exit 0`**（逐个跑 `scripts/check-*.mjs`，含 `check-film-delivery` / `check-dual-copy-sync`
      / `check-render-venc` / `check-ref-lines`）。★ **原记**：本行的「30」是**那一次（risograph 批）当时的实测值**，
-     保留不改（改了就是伪造历史）；**闸门总数现为 32**（2026-10-07 新增 `check-mux-parity.mjs`、
-     `check-redline-md5.mjs`），
+     保留不改（改了就是伪造历史）；**闸门总数现为 33**（2026-10-07 新增 `check-mux-parity.mjs`、
+     `check-redline-md5.mjs`、`check-selfcheck-claims.mjs`），
      现值以本文件开头的「闸门」表与 `test/gate-blindness.test.mjs` 头注释为准。
      ★ 顺带一条：`check-render-venc.mjs` 的 **B 类 backlog 清单**
      仍把 `styles/risograph/demo/tools/video_png.mjs` 列作「**不在出片路径上的**手工脚本」——
