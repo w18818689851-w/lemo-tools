@@ -135,7 +135,10 @@ const KNOWN_DIVERGENCES = {
  *
  * ★ **哨兵（`appliedMark`）与补丁体（`body`）的权威来源** = `scripts/patch-style-mux.mjs`：
  *   · 补丁脚本自己的幂等标记 = 它的 `const MARK` 常量（`── 本地补丁（2026-10-03 回灌 core/render/mux.sh）──`），
- *     `applyPatch` 开头 `if (text.includes(MARK)) return 已打过补丁`，而 `--revert` 走的 `normalize()`
+ *     ★ 2026-10-07 订正：**原写**「`applyPatch` 开头 `if (text.includes(MARK)) return 已打过补丁`」——
+ *     该判定当日已改为**容忍写法**（`MARK_RE` / `hasMark`），且主循环改在 `normalize()` **之前**判哨兵
+ *     （原写法在**主流程里不可达**：拿到的永远是 normalize 后的文本、块已被删）⇒ 现在 8 个手工插过
+ *     「保留，」的文件**能被正确识别并跳过**。而 `--revert` 走的 `normalize()`
  *     会把这个 MARK 块**整块删掉** ⇒ **标记消失正是「被回退」的机械特征**。
  *   · ★★ 但**不能**拿 `MARK` 去对被补丁文件做**逐字**比对 —— 实测（2026-10-07）踩到：
  *     `backrooms/demo/tools/mux.sh:40` 现状是 `# ── 本地补丁（保留，2026-10-03 回灌 core/render/mux.sh）──`
@@ -353,17 +356,24 @@ for (const { slug, file, claim } of mpRows) {
           if (!m.re.test(t)) bad.push({ id: m.id, msg: `\`${patched}\` **有补丁标记、但补丁体缺项**：找不到 ${m.re} —— ${m.why}` });
         }
         // ★ **只列不判**：文件里的标记 vs 补丁脚本的 `MARK` 字面量是否**逐字**一致。
-        //   不一致 ⇒ 补丁脚本自己的幂等判定（`text.includes(MARK)`）在该文件上失效（再跑一次会认不出「已打过补丁」）。
-        //   ★ 这是**补丁脚本的幂等性**问题，不是 `muxPatch` 声称的内容 ⇒ 不判 FAIL（实测 2026-10-07 真语料就有这条）。
+        //   ★★ 2026-10-07 订正（**本段原文已过期**）：原写「不一致 ⇒ 脚本的 `text.includes(MARK)` 在该文件上失效、
+        //     再跑会认不出『已打过补丁』」。**不成立** —— 同日 `patch-style-mux.mjs` 已把判定改成**容忍写法**
+        //     （`MARK_RE` / `hasMark`：认「本地补丁（…回灌 core/render/mux.sh）──」骨架、括号内允许多插字），
+        //     且主循环改在 `normalize()` **之前**判哨兵 ⇒ 那 8 个手工插过「保留，」的文件**已能被正确识别并跳过**
+        //     （实测真库 `--dry`：改动 0 / 跳过 13）。
+        //   ⇒ 本 note 现在只作**信息**保留：提醒「文件标记 ≠ 脚本 MARK 字面量」这一事实（那是**有意**的标注，
+        //     示意「这条补丁已回灌 core，别删」）；**不再意味着幂等失效**。若将来脚本又改回逐字比对，这里要变回告警。
         if (typeof exp.scriptMark === 'string' && !t.includes(exp.scriptMark)) {
           const markLine = (t.split('\n').find((l) => exp.appliedMark.test(l)) || '').trim();
           const scriptKeepsMark = scriptPath && fs.existsSync(scriptPath)
             && fs.readFileSync(scriptPath, 'utf8').includes(exp.scriptMark);
           note.push('★ **只列不判**：文件里的补丁标记与补丁脚本的 `MARK` 字面量**不完全一致**'
             + `（文件：\`${markLine}\` ／ 脚本 MARK：\`${exp.scriptMark}\`）`
-            + '⇒ 补丁脚本的幂等判定（`applyPatch` 的 `text.includes(MARK)`）在该文件上**已失效**'
-            + `（再跑一次会认不出「已打过补丁」）${scriptKeepsMark ? '；★ 脚本自身仍用这个字面量 ⇒ 本闸门期望值未过期' : '；★ 脚本里也已找不到该字面量 ⇒ 期望值可能已过期，请同步 `appliedMark`'}`
-            + '。这是**补丁脚本的幂等性**问题、不是 `muxPatch` 声称的内容 ⇒ 不判 FAIL，**只报不改**。');
+            + '。★★ **2026-10-07 订正**：这**不再意味着幂等失效** —— 补丁脚本已改为**容忍写法**'
+            + '（`MARK_RE` / `hasMark`，括号内允许多插字），且主循环在 `normalize()` **之前**判哨兵'
+            + ' ⇒ 这类文件**能被正确识别并跳过**（实测真库 `--dry`：改动 0 / 跳过 13）。'
+            + `${scriptKeepsMark ? '脚本自身仍保留该字面量（供 `prelude()` 生成用）' : '★ 脚本里已找不到该字面量 ⇒ 期望值可能已过期，请同步 `appliedMark`'}`
+            + '。这条现在只作**信息**保留（标记措辞差异是**有意**的标注，示意「已回灌 core，勿删」）⇒ 不判 FAIL。');
         }
       }
     }
