@@ -16,9 +16,9 @@ import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { verdict, voiceWindowCheck, renderReport, ANCHOR_KINDS } from './lib/consistency.mjs';
+import { CFG } from './lib/env.mjs';   // ★ 成片根唯一来源（认 LEMO_FILM_DIR）；本文件原先硬编码 'D:/lemo-films/_consistency'（第二份来源）
 
-const LIB = process.env.LEMO_LIB_WIN || 'D:/lemo-opuscar';
-
+const LIB = process.env.LEMO_LIB_WIN || 'D:/lemo-opuscar';   // ★ 库根：保留独立口径（认 LEMO_LIB_WIN，与 lemo-make.mjs 的 winLib 同名同义）；**不是**风格源码根（那个认 LEMO_STYLES_ROOT）—— 已知残留，如实登记
 function usage(msg) {
   if (msg) console.error('错误：' + msg);
   console.error('用法：node consistency-check.mjs <demoRel> [--q "k=v&k=v"] [--out <dir>] [--samples N] [--no-frames]');
@@ -40,7 +40,7 @@ for (let i = 0; i < argv.length; i++) {
 if (!demoRel) usage('缺少 <demoRel>');
 if (!fs.existsSync(path.join(LIB, demoRel, 'index.html'))) usage(`找不到 ${path.join(LIB, demoRel, 'index.html')}`);
 
-outDir = path.resolve(outDir || path.join('D:/lemo-films/_consistency', demoRel.split('/')[1] || 'film'));
+outDir = path.resolve(outDir || path.join(CFG.exportDir, '_consistency', demoRel.split('/')[1] || 'film'));   // ★ 成片根从唯一来源派生；不设 LEMO_FILM_DIR 时与旧字面量 'D:/lemo-films/_consistency' 解析结果逐字节相同
 fs.mkdirSync(outDir, { recursive: true });
 const framesDir = path.join(outDir, 'frames');
 if (frames) fs.mkdirSync(framesDir, { recursive: true });

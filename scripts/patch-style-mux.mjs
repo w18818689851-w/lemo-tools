@@ -38,10 +38,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+// ★ 库根（WIN / WSL）+ 发行版：**默认值**取自 `lib/env.mjs` 的 `CFG`（= 编排器 `CFG` 的镜像，
+//   唯一真相来源），同时认全仓同名同义的覆盖点（与 `check-dual-copy-sync.mjs` **完全一致**：
+//   `LEMO_OPUSCAR` / `LEMO_WSL_ROOT` / `LEMO_WSL_DISTRO`）—— 补覆盖点的目的**不是**改判据，
+//   而是让本脚本**能**用临时树做非破坏变异验证，而不是只能动真库。
+//   本脚本原先硬编码 `'D:/lemo-opuscar'` / `'/home/lemo/lemo-opuscar'` / `'Ubuntu-24.04'`，
+//   另加下面那次 `sh -n` 校验里的 `/mnt/d/lemo-opuscar` —— 同一个「库根」共**四处**来源。
+//   ★ 不设任何覆盖点时，解析结果与旧字面量**逐字节相同**（见 b83-c2 报告）。
+import { CFG } from '../lib/env.mjs';
 
-const WIN = 'D:/lemo-opuscar';
-const WSL = '/home/lemo/lemo-opuscar';
-const DISTRO = 'Ubuntu-24.04';
+const WIN = path.resolve(process.env.LEMO_OPUSCAR || CFG.winLib);
+const WSL = process.env.LEMO_WSL_ROOT || CFG.wslLib;
+const DISTRO = process.env.LEMO_WSL_DISTRO || CFG.wslDistro;
+// ★ Windows 绝对路径 → WSL 的 `/mnt/<盘符>/…` 形态（正斜杠）。
+//   原先下面那次 `sh -n` 校验里硬编码了 `/mnt/d/lemo-opuscar`（第五处来源）。
+const winToMnt = (p) => `/mnt/${p[0].toLowerCase()}${p.slice(2).replace(/\\/g, '/')}`;
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry');
@@ -289,7 +300,7 @@ for (const t of list) {
   const r = await sh('wsl.exe', ['-d', DISTRO, '-u', 'root', '-e', 'bash', '-c',
     `printf %s '${b64}' | base64 -d > ${WSL}/${rel} && tr -d "\\r" < ${WSL}/${rel} > ${WSL}/${rel}.tmp && mv ${WSL}/${rel}.tmp ${WSL}/${rel} && sh -n ${WSL}/${rel} && echo WSL_OK`]);
   const rc = await sh('wsl.exe', ['-d', DISTRO, '-u', 'root', '-e', 'bash', '-c',
-    `sh -n /mnt/d/lemo-opuscar/${rel} && echo WIN_OK`]);
+    `sh -n ${winToMnt(WIN)}/${rel} && echo WIN_OK`]);
   const wslOk = String(r.o).includes('WSL_OK');
   const winOk = String(rc.o).includes('WIN_OK');
   console.log(`  ${wslOk && winOk ? '✔' : '✘'} ${t.slug}  ${why}  WSL=${wslOk ? 'ok' : 'FAIL'} WIN=${winOk ? 'ok' : 'FAIL'}${wasPatched ? '  （已先归一化）' : ''}`);

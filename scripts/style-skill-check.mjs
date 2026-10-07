@@ -14,11 +14,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// ★ 风格源码根**唯一**来源（`lib/styles-root.mjs`，认 `LEMO_STYLES_ROOT`）；库根取
+//   `lib/env.mjs` 的 `CFG.winLib`（唯一来源）。本文件原先硬编码 `'D:/lemo-opuscar/styles'`；
+//   不设覆盖点时解析结果与旧字面量**逐字节相同**。
+import { CFG } from '../lib/env.mjs';
+import { resolveStylesRoot } from '../lib/styles-root.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const SKILLS = path.join(ROOT, 'lib', 'style-skills');
-const STYLES_DIR = 'D:/lemo-opuscar/styles';
+const STYLES_DIR = resolveStylesRoot(CFG.winLib);
 
 const argv = process.argv.slice(2);
 const argOf = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };

@@ -28,17 +28,17 @@
  *     真要重跑，按各自 CREDITS 里记的**官方直链**取源即可（2026-10-03 实测直链均 HTTP 200）。
  * 用法：node scripts/unblock-placeholder-audio.mjs [--dry] [--only a,b]
  */
-
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-
-const WIN = 'D:/lemo-opuscar';
-const WSL = '/home/lemo/lemo-opuscar';
+import { CFG } from '../lib/env.mjs';                        // ★ 成片根唯一来源（认 LEMO_FILM_DIR）；不设时解析结果 === 旧字面量 'D:/lemo-films'
+import { resolveStylesRoot } from '../lib/styles-root.mjs';  // ★ 风格源码根唯一来源（认 LEMO_STYLES_ROOT）；不设时 === 'D:/lemo-opuscar/styles'
+const WSL = CFG.wslLib;                                      // 库根（WSL 侧）
 const DISTRO = 'Ubuntu-24.04';
 const FFMPEG = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe';
 const FFPROBE = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffprobe.exe';
-const FILM_DIR = 'D:/lemo-films';
+const FILM_DIR = CFG.exportDir;                              // 成片根（唯一来源）
+const STYLES_ROOT = resolveStylesRoot(CFG.winLib);           // 风格源码根（唯一来源）
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry');
@@ -56,6 +56,18 @@ const TARGETS = [
   { slug: 'pictogram-motion', placeholder: true, missing: '无 mix.py/sound.py —— 该 demo 用「自己拼段 + 混音」的另一套音频架构，编排器不支持（编排器注释里已登记为已知缺口）' },
   { slug: 'watercolor', placeholder: true, missing: 'Wildflowers.mp3（Scott Buckley，**CC BY 4.0**；直链在 demo/CREDITS）+ 派生的 wf48.wav（仓库不含）' },
 ];
+
+/** Windows 绝对路径 → WSL 的 `/mnt/<盘符>/…` 形态（正斜杠）。
+ *  ★ 故意放在 TARGETS 表**之后**：本文件第 42 / 52 行被全仓 6 处引用
+ *    （`scripts/check-ref-lines.mjs` / `_distill/AGENT-BRIEF.md` / `lib/style-skills/hd-2d/SKILL.md`），
+ *    把新代码放表格之前会整体推移行号、让那些引用失效。 */
+const winToMnt = (p) => `/mnt/${p[0].toLowerCase()}${p.slice(2).replace(/\\/g, '/')}`;
+
+// ★ WSL 侧**目标**风格根的覆盖点 `LEMO_STYLES_ROOT_WSL`（命名与 `check-dual-copy-sync.mjs` 的
+//   `LEMO_WSL_ROOT` 同一风格）。★ 必须与 Win 侧 `LEMO_STYLES_ROOT` **成对设置** ——
+//   只设一边时源/目标会分叉（Win 侧读假树、WSL 侧写真树，或反过来）。
+//   不设时 === 旧字面量 `/home/lemo/lemo-opuscar/styles`（逐字节相同）。
+const STYLES_ROOT_WSL = process.env.LEMO_STYLES_ROOT_WSL || `${WSL}/styles`;
 
 function sh(cmd, args, opts = {}) {
   return new Promise((r) => {
@@ -81,12 +93,18 @@ function dur(mp4) {
 /** 把 Windows 侧文件推到 WSL 侧同名路径。
  *  ★ 用 WSL 侧的 `cp /mnt/d/...`（**不要**用 `printf <base64> | base64 -d > ...`）：
  *    后者在本机沙箱里会被拦（实测 `spawn wsl.exe` 返回 EPERM），且长 base64 走 argv 也不稳。
- *    同一棵树在 WSL 里就是 /mnt/d/...，直接 cp 最稳。 */
+ *    同一棵树在 WSL 里就是 /mnt/d/...，直接 cp 最稳。
+ *  ★ 相对段按**风格源码根**算（原先按库根算，等价：不设 `LEMO_STYLES_ROOT` 时
+ *    `rel` 由 `styles/<slug>/…` 变成 `<slug>/…`，而 `src`/目标两侧同时减去 `styles/` ⇒ 拼出的绝对路径逐字节不变）。
+ *  ★ WSL 侧目标根**已有**覆盖点 `LEMO_STYLES_ROOT_WSL`（默认 `${WSL}/styles`）。
+ *    ★ 纪律：它与 Win 侧 `LEMO_STYLES_ROOT` **必须成对设置**，否则源/目标分叉
+ *    （只设 Win 侧 ⇒ 从假树读、往真树写；只设 WSL 侧 ⇒ 从真树读、往假树写）。 */
 async function pushToWsl(winPath) {
-  const rel = path.relative(WIN, winPath).replace(/\\/g, '/');
-  const src = `/mnt/${WIN[0].toLowerCase()}${WIN.slice(2)}/${rel}`;
+  const rel = path.relative(STYLES_ROOT, winPath).replace(/\\/g, '/');
+  const src = `${winToMnt(STYLES_ROOT)}/${rel}`;
+  const dst = `${STYLES_ROOT_WSL}/${rel}`;
   const r = await sh('wsl.exe', ['-d', DISTRO, '-u', 'root', '-e', 'bash', '-c',
-    `mkdir -p "$(dirname ${WSL}/${rel})" && cp -f "${src}" "${WSL}/${rel}" && ls -la "${WSL}/${rel}"`]);
+    `mkdir -p "$(dirname ${dst})" && cp -f "${src}" "${dst}" && ls -la "${dst}"`]);
   return { ok: r.code === 0, rel, out: String(r.o) };
 }
 
@@ -94,21 +112,21 @@ const list = TARGETS.filter((t) => !only.length || only.includes(t.slug));
 console.log(`\n占位/自合成解阻 ${list.length} 个风格${DRY ? '（--dry）' : ''}\n`);
 
 for (const t of list) {
-  const demoWin = path.join(WIN, 'styles', t.slug, 'demo');
+  const demoWin = path.join(STYLES_ROOT, t.slug, 'demo');
   const mixWin = path.join(demoWin, 'mix.wav');
   const mp4 = path.join(FILM_DIR, t.slug, `${t.slug}.mp4`);
   if (!fs.existsSync(demoWin)) { console.log(`  ✘ ${t.slug}：找不到 ${demoWin}`); continue; }
 
   if (t.selfSynth) {
     // ── ① 跑 demo 自带的合成脚本 ──
-    const scriptWsl = `${WSL}/styles/${t.slug}/demo/${t.selfSynth}`;
+    const scriptWsl = `${STYLES_ROOT_WSL}/${t.slug}/demo/${t.selfSynth}`;
     if (DRY) { console.log(`  ~ ${t.slug}：将跑自带 ${t.selfSynth}（${t.note}）`); continue; }
     const r = await sh('wsl.exe', ['-d', DISTRO, '-u', 'root', '-e', 'bash', '-c',
-      `cd ${WSL} && .venv/bin/python ${scriptWsl} ${WSL}/styles/${t.slug}/demo/mix.wav 2>&1 | tail -3; echo "EXIT=$?"; ls -la ${WSL}/styles/${t.slug}/demo/mix.wav`]);
+      `cd ${WSL} && .venv/bin/python ${scriptWsl} ${STYLES_ROOT_WSL}/${t.slug}/demo/mix.wav 2>&1 | tail -3; echo "EXIT=$?"; ls -la ${STYLES_ROOT_WSL}/${t.slug}/demo/mix.wav`]);
     const okRun = /mix\.wav/.test(String(r.o)) && !/No such|Traceback/.test(String(r.o));
-    // 回传 Windows 侧
+    // 回传 Windows 侧（目标 = 风格源码根的 /mnt 镜像；不设覆盖点时与旧写法逐字节相同）
     const back = await sh('wsl.exe', ['-d', DISTRO, '-u', 'root', '-e', 'bash', '-c',
-      `cp -f ${WSL}/styles/${t.slug}/demo/mix.wav ${WIN.replace('D:', '/mnt/d')}/styles/${t.slug}/demo/mix.wav && echo CP_OK`]);
+      `cp -f ${STYLES_ROOT_WSL}/${t.slug}/demo/mix.wav ${winToMnt(STYLES_ROOT)}/${t.slug}/demo/mix.wav && echo CP_OK`]);
     console.log(`  ${okRun && String(back.o).includes('CP_OK') ? '✔' : '✘'} ${t.slug}  自带 ${t.selfSynth} → mix.wav`);
     if (!okRun) console.log(`      ${String(r.o).slice(-300)}`);
     continue;

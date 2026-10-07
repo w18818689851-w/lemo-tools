@@ -5,19 +5,25 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 53 条用例 / 覆盖全部 30 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-07 扩批后共 60 条用例 / 覆盖全部 30 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
  *      **每次都是人工发现**。这些守卫的**证据只写在闸门的头注释里**（那是档案，不是测试）
  *      —— 没有任何**自动化**手段防止它们被改回去。
- *   ② **核心判据**（5 条，2026-10-07 补）：**不是**空转，而是「闸门真的判了、但判错/判漏」的
+ *   ② **核心判据**（8 条，2026-10-07 补/扩）：**不是**空转，而是「闸门真的判了、但判错/判漏」的
  *      那几条主判据 —— 它们同样是「读起来像已完成」的缺陷，只有夹具级回归能钉住：
  *        · `check-lra-caliber`：文档里的 LRA 看起来是 **loudnorm** 口径 ⇒ 判**不符**；
  *        · `check-loudness-targets`：响度目标**偏离 −14 交付线** ⇒ FAIL；
  *        · `check-plate-pixel`：**品红标记测试失败**（底衬色写错字段）⇒ 判**真缺陷**；
  *        · `check-shell-structure`：**② 判定块结尾缺 `exit 0`** ⇒ FAIL；
- *        · `check-cli-docs`：**notImpl**（文档写了但没实现）/ **notDoc**（实现了但没写文档）⇒ FAIL。
+ *        · `check-cli-docs`：**notImpl**（文档写了但没实现）/ **notDoc**（实现了但没写文档）⇒ FAIL；
+ *        · `check-tp-prose` ⑤：一行**只含 `修复后`** 不算历史语境 ⇒ 该行的成片读数**照判**
+ *          （b83-a2：`修复后` 移出 HIST —— 旧版靠它豁免整行，`pictogram-motion:107` 四处陈旧读数就这么被吞）；
+ *        · `check-tp-prose` ⑦：**同一句**里既有上游证据词（`mix.wav`）**又有**成片读数 ⇒ 只判
+ *          成片那半句（b83-a 收窄：证据词须同句、且读数未被 `成片/全片/本片` 显式归因）；
+ *        · `check-tp-prose` ⑨：别的风格名**不在同一子句** ⇒ 不算交叉引用 ⇒ 照判（b83-a 收窄：
+ *          由「整行」收到「同一子句」，分隔符 `。！？；;`）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -155,6 +161,26 @@ const tpDistill = (over = {}) => ({
 });
 
 /**
+ * 把 `lib/dub-core.mjs` 及其**传递闭包**拷进夹具根（2026-10-07 补）。
+ *   · `dub-core.mjs` → `./env.mjs` → `./styles-root.mjs`（**无环**；核法 `grep -n "^import" lib/dub-core.mjs lib/env.mjs lib/styles-root.mjs`）。
+ *   · ★ 只拷 `dub-core.mjs` 会让夹具子进程 `ERR_MODULE_NOT_FOUND` **崩掉** ⇒ 闸门**特有的**文案不出现，
+ *     断言就会以「闸门崩在路径上」的形式失败（本项目最忌讳的「匹配判据可被无关代码满足」的同源病：
+ *     崩掉的闸门既不报特有文案、也不报判据）。故**按闭包逐个拷 + 断言都到了**，
+ *     以后 `env.mjs` 再加依赖时，这里会**当场报错**而不是静默退化。
+ *   · `mutate` 形如 `[from, to]` ⇒ 只在 `dub-core.mjs` 上做该替换（`mutateFile`），其余原样拷。
+ */
+const DUB_CORE_CLOSURE = ['dub-core.mjs', 'env.mjs', 'styles-root.mjs'];
+const copyDubCoreLib = (root, mutate) => {
+  mk(path.join(root, 'lib'));
+  for (const f of DUB_CORE_CLOSURE) {
+    const dst = path.join(root, 'lib', f);
+    if (f === 'dub-core.mjs' && mutate) mutateFile(path.join(TOOLS, 'lib', f), dst, mutate[0], mutate[1]);
+    else fs.copyFileSync(path.join(TOOLS, 'lib', f), dst);
+    assert.ok(fs.existsSync(dst), `夹具缺 lib/${f}（dub-core 的传递闭包）⇒ 子进程会 ERR_MODULE_NOT_FOUND`);
+  }
+};
+
+/**
  * 造一段**「两个 LRA 口径本来就不同」**的测试音频，并**分别量出两个口径的真值**。
  *   · 信号 = 前 6 s 满幅正弦 + 后 6 s 压低 30 dB 的正弦（8 kHz / 12 s / 约 192 KB，纯 CPU，无 GPU）；
  *   · 实测本机：`ebur128` LRA 7.6 / `loudnorm.input_lra` 4.7 —— 差 2.9 ≫ 容差 0.6，
@@ -221,6 +247,90 @@ test('check-tp-prose：CUR 反向守卫（HIST+CUR 同行 ⇒ 不豁免 ⇒ 陈�
     const r2 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: neg });
     expectClean(r2, '陈旧读数 1 处', 'check-tp-prose 阴性对照');
     assert.ok(!r2.out.includes('已失明'), `check-tp-prose 阴性对照：不应失明\n${r2.out.slice(0, 600)}`);
+  } finally { rm(dir); }
+});
+
+// ── 1a-2. check-tp-prose 的 ⑤：`修复后` 不再算历史标记（2026-10-07 b83-a2）────
+test('check-tp-prose：⑤ `修复后` 不再豁免（只含 `修复后` 的行照判；含 `原记` 的行仍豁免）', async () => {
+  const dir = path.join(TMP, 'tp-fixafter');
+  try {
+    // 正向：整行**只有 `修复后` 一个**「历史」词 ⇒ 不再豁免 ⇒ 成片读数照判。
+    //   （旧版 `修复后` 在 HIST 里 ⇒ 整行豁免 ⇒ 假绿 —— 这正是 `pictogram-motion:107` 的病。）
+    const pos = skillTree(path.join(dir, 'pos'), 'gb-tp',
+      '# gb-tp\n\n本次成片实际状态（音频链修复后）：成片实测真峰值 input_tp = −0.50 dBTP（本片成片实测）。\n',
+      tpDistill());
+    const r1 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: pos });
+    expectBlind(r1, '陈旧读数 1 处', 'check-tp-prose ⑤ 正向');
+
+    // 阴性对照：同一行**再加一个真历史标记** `原记` ⇒ 整行仍被 ⑤ 豁免 ⇒ exit 0。
+    //   （证明「删 `修复后`」没有把「修复后 + 原记」的合法历史行一起判红 —— 即**没造误报**。）
+    const neg = skillTree(path.join(dir, 'neg'), 'gb-tp',
+      '# gb-tp\n\n本次成片实际状态（音频链修复后）：成片实测真峰值 input_tp = −0.50 dBTP（**原记** 旧版读数，本片成片实测）。\n',
+      tpDistill());
+    const r2 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r2, '陈旧读数 1 处', 'check-tp-prose ⑤ 阴性对照');
+    assert.ok(!r2.out.includes('已失明'), `check-tp-prose ⑤ 阴性对照：不应失明\n${r2.out.slice(0, 600)}`);
+  } finally { rm(dir); }
+});
+
+// ── 1b. check-tp-prose 的 ⑦ / ⑨ 收窄（2026-10-07） ───────────────────────────
+test('check-tp-prose：⑦ 非本片产物（同句证据词 + 成片归因例外 ⇒ 只判成片半句）', async () => {
+  const dir = path.join(TMP, 'tp-nonfilm');
+  try {
+    // 真值 truePeakDbtp=-1.2。行内两半：上游 `mix.wav` 半句（应被 ⑦ 排除）+ 成片半句（应被判定）。
+    //   ★ 2026-10-07 收窄：⑦ 从「整句」收到「同句证据词 + 读数未被显式归因于成片」。
+    const pos = skillTree(path.join(dir, 'pos'), 'gb-tp',
+      '# gb-tp\n\n`demo/mix.wav` 真峰值 −1.00 dBTP（上游素材）；经 `core/render/mux.sh` 归一后的成片实测真峰值 input_tp = −0.50 dBTP（本片成片实测）。\n',
+      tpDistill());
+    const r1 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: pos });
+    expectBlind(r1, '陈旧读数 1 处', 'check-tp-prose ⑦ 正向');
+    // ★ 必须恰是 1 处：上游 −1.00（与实测 −1.2 差 0.2）被 ⑦ 排除；若 ⑦ 退化成整句，成片半句也被放掉 ⇒ 0 处。
+    assert.ok(!r1.out.includes('陈旧读数 2 处'),
+      `⑦ 应只判成片半句（1 处），实得 2 处 ⇒ 上游半句没被排除\n${r1.out.slice(0, 700)}`);
+
+    // 真阴性：同一行、成片半句写正确值（−1.30 与实测 −1.2 差 0.1 ≤ 容差 0.15）⇒ exit 0。
+    const neg = skillTree(path.join(dir, 'neg'), 'gb-tp',
+      '# gb-tp\n\n`demo/mix.wav` 真峰值 −1.00 dBTP（上游素材）；经 `core/render/mux.sh` 归一后的成片实测真峰值 input_tp = −1.30 dBTP（本片成片实测）。\n',
+      tpDistill());
+    const r2 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r2, '陈旧读数 1 处', 'check-tp-prose ⑦ 真阴性');
+    assert.ok(!r2.out.includes('已失明'), `check-tp-prose ⑦ 真阴性：不应失明\n${r2.out.slice(0, 600)}`);
+  } finally { rm(dir); }
+});
+
+test('check-tp-prose：⑨ 交叉引用（别的风格名必须与读数同子句）', async () => {
+  const dir = path.join(TMP, 'tp-xref');
+  try {
+    // 两个风格：gb-tp（被测）+ gb-other（被引用）。
+    //   正向：本片读数在**前一子句**、别的风格名在**后一子句** ⇒ ⑨ 不豁免 ⇒ 陈旧读数 1。
+    const root = path.join(dir, 'pos');
+    skillTree(root, 'gb-tp',
+      '# gb-tp\n\n本片成片真峰值 −0.50 dBTP（本片成片实测）。队里 gb-other 曾到 +0.28 dBTP。\n', tpDistill());
+    skillTree(root, 'gb-other', '# gb-other\n', tpDistill());
+    const r1 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: root });
+    expectBlind(r1, '陈旧读数 1 处', 'check-tp-prose ⑨ 正向');
+
+    // 真阴性：把别的风格名挪进**同一子句** ⇒ ⑨ 豁免（交叉引用单列）⇒ exit 0。
+    const root2 = path.join(dir, 'neg');
+    skillTree(root2, 'gb-tp',
+      '# gb-tp\n\n本片成片真峰值 −0.50 dBTP（对比 gb-other 的 +0.28 dBTP）。\n', tpDistill());
+    skillTree(root2, 'gb-other', '# gb-other\n', tpDistill());
+    const r2 = await runGate('check-tp-prose.mjs', { LEMO_DISTILL_ROOT: root2 });
+    expectClean(r2, '陈旧读数 1 处', 'check-tp-prose ⑨ 真阴性');
+  } finally { rm(dir); }
+});
+
+test('check-tp-prose：失明（真值来源 = {} ⇒ 逐量纲「已失明」exit 1）', async () => {
+  const dir = path.join(TMP, 'tp-blind');
+  try {
+    const root = skillTree(path.join(dir, 'styles'), 'gb-tp',
+      '# gb-tp\n\n本片成片真峰值 −1.30 dBTP。\n', tpDistill());
+    const ov = path.join(dir, 'empty.json');
+    rj(ov, {});
+    const res = await runGate('check-tp-prose.mjs', {
+      LEMO_DISTILL_ROOT: root, LEMO_READINGS_MEASURED_JSON: ov,
+    });
+    expectBlind(res, '本闸门已失明', 'check-tp-prose 失明');
   } finally { rm(dir); }
 });
 
@@ -965,8 +1075,9 @@ test('check-cli-docs：失明守卫（任一侧解析出 0 个 flag ⇒ 明说�
 // ── 27. check-shell-structure.mjs（WIN 侧失明守卫 + ① 续行被注释吃掉）────────
 test('check-shell-structure：WIN 侧失明守卫 + ①「续行被注释吃掉」', async () => {
   const dir = path.join(TMP, 'sh');
-  // `WIN_ROOTS` 写死 `['D:/lemo-opuscar', 'D:/lemo-tools']`（**无**覆盖点环境变量）⇒ 重定向到夹具根。
-  const WIN_ROOTS_SRC = "const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];";
+  // `WIN_ROOTS = [OPUSCAR, TOOLS]`（由 `LEMO_OPUSCAR`/`LEMO_TOOLS_ROOT` 覆盖点派生，无覆盖点时落真实仓）
+  //   ⇒ patchGate 把这行整体重定向到夹具根，避免扫到真实仓。
+  const WIN_ROOTS_SRC = "const WIN_ROOTS = [OPUSCAR, TOOLS];";
   const setup = (root) => ({
     gate: patchGate('check-shell-structure.mjs', path.join(root, 'scripts'),
       [[WIN_ROOTS_SRC, `const WIN_ROOTS = ['${fwd(root)}'];`]]),
@@ -1203,8 +1314,7 @@ test('check-plate-pixel：计数式失明守卫（全部风格底衬差分 0 像
   mk(OS_TMP);
   const envPP = { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) };
   const setup = (root, styles) => {
-    mk(path.join(root, 'lib'));
-    fs.copyFileSync(path.join(TOOLS, 'lib', 'dub-core.mjs'), path.join(root, 'lib', 'dub-core.mjs'));
+    copyDubCoreLib(root);
     rj(path.join(root, 'lib', 'dub-styles.json'), { styles });
     return copyGate('check-plate-pixel.mjs', root);
   };
@@ -1333,7 +1443,6 @@ test('check-plate-pixel：品红标记判据（底衬色写错字段 ⇒ 标记�
   const OS_TMP = path.join(dir, 'os-tmp');    // 非 C 盘（闸门自己用 os.tmpdir() 建中间目录）
   mk(OS_TMP);
   const envPP = { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) };
-  const CORE = path.join(TOOLS, 'lib', 'dub-core.mjs');
   // ★★ 这个风格在「字段映射正确」时是**完全合法**的：底衬色与 `palette.subtitleOutline` 同值，
   //   于是绝对色差 Δ=1（≤20 粗筛）、对比度 16.5（≥4.5）**全部达标** ⇒ 唯一能解释 FAIL 的
   //   只有**品红标记测试**（「底衬色确实取自 plateColor 字段」）。⇒ 断言不会被别的判据顶替。
@@ -1347,14 +1456,10 @@ test('check-plate-pixel：品红标记判据（底衬色写错字段 ⇒ 标记�
   //   改道后盒色变成 `palette.subtitleOutline`，品红标记测试当场抓住。
   //   只改**拷贝到夹具根的 dub-core**，真实 `lib/dub-core.mjs` 一个字节都不动。
   const setup = (root, breakCore) => {
-    mk(path.join(root, 'lib'));
     rj(path.join(root, 'lib', 'dub-styles.json'), { styles: [style] });
-    const coreOut = path.join(root, 'lib', 'dub-core.mjs');
-    if (breakCore) {
-      mutateFile(CORE, coreOut,
-        'const subOutlineCol = plateOn ? cPlate : cOut;',
-        'const subOutlineCol = plateOn ? cOut : cOut;');
-    } else fs.copyFileSync(CORE, coreOut);
+    copyDubCoreLib(root, breakCore
+      ? ['const subOutlineCol = plateOn ? cPlate : cOut;', 'const subOutlineCol = plateOn ? cOut : cOut;']
+      : undefined);
     return copyGate('check-plate-pixel.mjs', root);
   };
   try {
@@ -1378,9 +1483,9 @@ test('check-plate-pixel：品红标记判据（底衬色写错字段 ⇒ 标记�
 // ── 35. check-shell-structure.mjs：② 判据（判定块结尾缺 exit 0）─────────────
 test('check-shell-structure：② 判据（判定块以 fi 结尾、后面没有 exit 0 ⇒ FAIL）', async () => {
   const dir = path.join(TMP, 'sh2');
-  // `WIN_ROOTS` 写死（无覆盖点）⇒ patchGate 重定向到夹具根。
+  // `WIN_ROOTS = [OPUSCAR, TOOLS]` ⇒ patchGate 把这行整体重定向到夹具根。
   const setup = (root) => patchGate('check-shell-structure.mjs', path.join(root, 'scripts'),
-    [["const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];", `const WIN_ROOTS = ['${fwd(root)}'];`]]);
+    [["const WIN_ROOTS = [OPUSCAR, TOOLS];", `const WIN_ROOTS = ['${fwd(root)}'];`]]);
   // 一个**真的**判定块：抽 input_tp → 判超线 → 报「missed the target」，但**以 fi 结尾**。
   //   ★ 这类缺陷 `sh -n` 报 OK（不是语法错）—— 退出码与判定结果**正好相反**，正是本闸门存在的理由。
   const BLOCK = '#!/bin/sh\n'
@@ -1501,6 +1606,59 @@ test('★自证 check-tp-prose：删掉 CUR 反向守卫后，正向断言必须
   } finally { rm(dir); }
 });
 
+test('★自证 check-tp-prose：删掉 ⑦ 成片归因例外后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-tp-nonfilm');
+  try {
+    // 把 ⑦ 的「成片归因例外」删掉（退回纯「整句含 NONFILM 即排除」）。
+    const gate = mutate('check-tp-prose.mjs', dir,
+      'if (NONFILM.test(sentenceOf(line, m.index)) && !filmAttr(line, m.index)) continue;',
+      'if (NONFILM.test(sentenceOf(line, m.index))) continue;');
+    const pos = skillTree(path.join(dir, 'styles'), 'gb-tp',
+      '# gb-tp\n\n`demo/mix.wav` 真峰值 −1.00 dBTP（上游素材）；经 `core/render/mux.sh` 归一后的成片实测真峰值 input_tp = −0.50 dBTP（本片成片实测）。\n',
+      tpDistill());
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: pos } });
+    // 例外被删后：整句因 `mix.wav` 被排除 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
+      undefined, '删掉 ⑦ 归因例外后正向断言竟然还通过 ⇒ 断言没在测该例外');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-tp-prose：把 ⑨ 由「同子句」退回「整行」后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-tp-xref');
+  try {
+    // 把 ⑨ 的「别的风格名必须与读数同子句」退回旧版「整行提到即豁免」。
+    const gate = mutate('check-tp-prose.mjs', dir,
+      'const isXref = others.some((o) => clauseOf(line, m.index).includes(o));',
+      'const isXref = others.some((o) => line.includes(o));');
+    const root = path.join(dir, 'styles');
+    skillTree(root, 'gb-tp',
+      '# gb-tp\n\n本片成片真峰值 −0.50 dBTP（本片成片实测）。队里 gb-other 曾到 +0.28 dBTP。\n', tpDistill());
+    skillTree(root, 'gb-other', '# gb-other\n', tpDistill());
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
+    // 退回整行后：整行提到 gb-other ⇒ 交叉引用豁免 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
+      undefined, '把 ⑨ 退回整行后正向断言竟然还通过 ⇒ 断言没在测该收窄');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-tp-prose：把 `修复后` 塞回 HIST 后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-tp-fixafter');
+  try {
+    // 把 b83-a2 的「删掉 `修复后`」退回旧版词表（`修复后` 重新算历史标记）。
+    const gate = mutate('check-tp-prose.mjs', dir,
+      "const HIST = /已修|原为|原记|原先|曾是|曾为|历史|修复前|校正|拆分|移入|resolvedDefects/;",
+      "const HIST = /已修|原为|原记|原先|曾是|曾为|历史|修复前|修复后|校正|拆分|移入|resolvedDefects/;");
+    const root = path.join(dir, 'styles');
+    skillTree(root, 'gb-tp',
+      '# gb-tp\n\n本次成片实际状态（音频链修复后）：成片实测真峰值 input_tp = −0.50 dBTP（本片成片实测）。\n',
+      tpDistill());
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
+    // 把 `修复后` 塞回 HIST 后：整行被 ⑤ 豁免 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
+      undefined, '把 `修复后` 塞回 HIST 后正向断言竟然还通过 ⇒ 断言没在测该收窄');
+  } finally { rm(dir); }
+});
+
 test('★自证 check-render-venc：删掉 A 类失明守卫后，正向断言必须变红', async () => {
   const dir = path.join(TMP, 'mut-venc');
   try {
@@ -1578,7 +1736,7 @@ test('★自证 check-shell-structure：删掉 WIN 侧失明守卫后，正向�
     const root = path.join(dir, 'root');
     mk(root);
     const src = fs.readFileSync(gate, 'utf8');
-    const broken = src.replace("const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];", `const WIN_ROOTS = ['${fwd(root)}'];`);
+    const broken = src.replace("const WIN_ROOTS = [OPUSCAR, TOOLS];", `const WIN_ROOTS = ['${fwd(root)}'];`);
     assert.notEqual(broken, src, '自证夹具失效：WIN_ROOTS 重定向没生效');
     wf(gate, broken);
     const res = await run(NODE, [gate]);
@@ -1710,8 +1868,7 @@ test('★自证 check-plate-pixel：删掉「全部差分 0」计数式守卫后
     // 守卫（`:227`）的落点是 `if (allZero) console.log(...)`。
     const gate = mutate('check-plate-pixel.mjs', dir, 'if (allZero) console.log(', 'if (false) console.log(');
     const root = path.join(dir, 'root');
-    mk(path.join(root, 'lib'));
-    fs.copyFileSync(path.join(TOOLS, 'lib', 'dub-core.mjs'), path.join(root, 'lib', 'dub-core.mjs'));
+    copyDubCoreLib(root);
     rj(path.join(root, 'lib', 'dub-styles.json'), { styles: [{
       slug: 'gb-pp',
       palette: { bg: '000000', subtitle: 'FFFFFF', subtitleOutline: 'FF101010' },
@@ -1796,12 +1953,10 @@ test('★自证 check-plate-pixel：把品红标记测试改成恒通过后，�
     const root = path.join(dir, 'root');
     const OS_TMP = path.join(dir, 'os-tmp');
     mk(OS_TMP);
-    mk(path.join(root, 'lib'));
     // 同一套正向夹具：底衬色被改道到别的字段（盒色 = palette.subtitleOutline），
     //   但绝对色差 Δ=1、对比度 16.5 都达标 ⇒ 标记测试一被架空，这一条就会变成 exit 0。
-    mutateFile(path.join(TOOLS, 'lib', 'dub-core.mjs'), path.join(root, 'lib', 'dub-core.mjs'),
-      'const subOutlineCol = plateOn ? cPlate : cOut;',
-      'const subOutlineCol = plateOn ? cOut : cOut;');
+    copyDubCoreLib(root, ['const subOutlineCol = plateOn ? cPlate : cOut;',
+      'const subOutlineCol = plateOn ? cOut : cOut;']);
     rj(path.join(root, 'lib', 'dub-styles.json'), { styles: [{
       slug: 'gb-ppm',
       palette: { bg: '000000', subtitle: 'FFFFFF', subtitleOutline: '202020' },
@@ -1824,7 +1979,7 @@ test('★自证 check-shell-structure：短路 ② 判据后，正向断言必�
     const root = path.join(dir, 'root');
     mk(root);
     const broken = fs.readFileSync(gate, 'utf8')
-      .replace("const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];", `const WIN_ROOTS = ['${fwd(root)}'];`);
+      .replace("const WIN_ROOTS = [OPUSCAR, TOOLS];", `const WIN_ROOTS = ['${fwd(root)}'];`);
     assert.ok(broken.includes(`['${fwd(root)}']`), '自证夹具失效：WIN_ROOTS 重定向没生效');
     wf(gate, broken);
     wf(path.join(root, 'gb.sh'),

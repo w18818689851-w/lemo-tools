@@ -18,7 +18,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-
 import { checkEnv, CFG } from './lib/env.mjs';
 import * as jobs from './lib/jobs.mjs';
 import * as store from './lib/store.mjs';
@@ -32,6 +31,7 @@ import * as dub from './lib/dub.mjs';
 //   给 GET /api/dub/source-meta 用，见 apiDubSourceMeta 的说明。不引入任何 GPU 相关能力。
 import { probe, winToWsl } from './lib/dub-core.mjs';
 import { readStyleIndex, renderMarkdown } from './lib/styles.mjs';
+import { resolveStylesRoot } from './lib/styles-root.mjs';   // ★ 风格源码根唯一来源（认 LEMO_STYLES_ROOT）；不设时 === path.join(CFG.winLib,'styles')，逐字节相同
 import { scanPort, MAX_SCAN } from './lib/portscan.mjs';
 import {
   planActions, serializeAction, knownActionIds, actionSatisfied, simulateEnv, FIXTURES,
@@ -495,7 +495,7 @@ function firstParagraph(mdPath) {
  * ★ 读不到风格目录 → 500；每个风格的简介取 STYLE.md（没有则 DEMO.md）的首段。
  */
 function apiDemos(req, res) {
-  const stylesDir = path.join(CFG.winLib, 'styles');
+  const stylesDir = resolveStylesRoot(CFG.winLib);   // ★ 风格源码根唯一来源；不设 LEMO_STYLES_ROOT 时 === path.join(CFG.winLib,'styles')
   let names = [];
   try {
     names = fs.readdirSync(stylesDir, { withFileTypes: true })
@@ -564,7 +564,7 @@ function apiDemos(req, res) {
 function apiStyle(req, res, slug) {
   if (!/^[A-Za-z0-9._-]+$/.test(slug)) return sendJson(res, 400, { error: `slug 含非法字符：${slug}` });
 
-  const root = path.resolve(CFG.winLib, 'styles');
+  const root = path.resolve(resolveStylesRoot(CFG.winLib));   // ★ 风格源码根唯一来源；外层 resolve 保留（下面那道越界守卫要绝对路径，结果与改动前同一表达式一致）
   const dir = path.resolve(root, slug);
   if (dir !== root && !dir.startsWith(root + path.sep)) return sendJson(res, 403, { error: '路径越界' });
 
@@ -2027,7 +2027,7 @@ async function start() {
     ARGV.port = port; // 让后续日志与实际端口一致
     console.log(`\n  lemo 控制台已启动 → http://${ARGV.host}:${port}`);
     console.log(`  成片目录 ${CFG.exportDir}`);
-    console.log(`  风格目录 ${path.join(CFG.winLib, 'styles')}`);
+    console.log(`  风格目录 ${resolveStylesRoot(CFG.winLib)}`);
     const st = store.storeStatus();
     console.log(st.ready
       ? `  历史落盘 ${st.root}（单任务日志 ≤ ${(st.caps.perJobLogBytes / 1048576).toFixed(0)}MB，总计 ≤ ${(st.caps.totalLogBytes / 1048576).toFixed(0)}MB，最多 ${st.caps.maxPersistJobs} 条）`

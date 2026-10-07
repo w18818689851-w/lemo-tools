@@ -54,13 +54,13 @@ const CONSOLE_INDEX = path.join(CONSOLE_ROOT, 'index.json');
 //     另一个实例的 ⑥ 就会因「锁存在且 PID 存活、年龄 <6h」被编排器**直接 fail(exit 1)** 而假红。
 //     实测：造一张占位锁（`pid=4`，System，必活）⇒ ⑥ **确定性**变红（不是随机崩）。
 //     现叠一层 `<pid>` 子目录 ⇒ **每个实例各用各的锁目录**，互不影响；断言一个字没改。
-//   ★★ 但**仍未完全隔离**（2026-10-07 实测，如实记）：本套件还共享 `D:\lemo-films\.briefs`（工单目录）
-//     与 `.console`，而 `⑪ 容量上限` 会真触发一次容量裁剪 ⇒ **并发的两个实例仍会互撞**
-//     （实测并行跑两个：一个 `15/1 · ⑪`、另一个 `13/3 · ①/⑨`）。根因：`BRIEFS_DIR` 取自
-//     `lib/env.mjs` 的 `CFG.exportDir`（**硬编码 `D:\lemo-films`，无覆盖点**），而 `lib/store.mjs`
-//     的 `.console` 却认 `LEMO_FILM_DIR` —— 同一个「成片根」有两套口径。
-//     ⇒ **本套件请单独跑，不要与另一个实例并发**。要彻底隔离，得让 `CFG.exportDir` 也认
-//     `LEMO_FILM_DIR`（属配置层改动、影响面大，留给单独一批）。
+//   ★★ 2026-10-07 起**已可隔离**（本条原写「无覆盖点 / 未完全隔离」，已过期）：`lib/env.mjs`
+//     的 `CFG.exportDir` **已认** `LEMO_FILM_DIR` ⇒ 本套件共享的 `D:\lemo-films\.briefs` 与 `.console`
+//     都跟着覆盖点走。⇒ **并发跑多个实例时，给每个实例设独立的 `LEMO_FILM_DIR`**：
+//       `LEMO_FILM_DIR=<每实例临时目录> node test/briefs.test.mjs`（不再需要「请单独跑」的硬约束）。
+//     ★ 已知残留：编排器 `lemo-make.mjs` 的 `exportDir` **不认** `LEMO_FILM_DIR`（红线）⇒
+//       本套件若走到**真出片**那一段，产物仍落真成片根 —— 那种场景下仍不要与用户实例并发。
+//     ⇒ 断言一个字没改，只订正本条说明。
 const TEST_LOCK_DIR = path.join(CFG.exportDir, '.locks-test', String(process.pid));
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
 

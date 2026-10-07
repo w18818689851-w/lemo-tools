@@ -27,7 +27,7 @@ node test/style-scan.test.mjs     # 风格源码指纹机制（约定一「自�
 node test/triple-check-flow.test.mjs  # verifyTriple 主流程端到端测试（11 条，★ 用桩 LM Studio，绝不碰真实模型）
 node test/dub-align.test.mjs      # 功能2「口播 cue ↔ 文案句」时间轴对齐纯逻辑测试（7 条，★ 无空档 / 最短可读时长）
 node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 条，★ 硬切不切在词/记号内部 + 切片 trim + 拼回不丢字）
-node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套件（53 条：**全部 30 个闸门**的失明/反向守卫 + **5 条核心判据**，每条都含「正向命中 + 阴性对照」，另含 17 个「改坏守卫或判据必须变红」自证）
+node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套件（60 条：**全部 30 个闸门**的失明/反向守卫 + **8 条核心判据**，每条都含「正向命中 + 阴性对照」，另含 20 个「改坏守卫或判据必须变红」自证）
 node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs 的行为测试（21 条，★ 槽位上限用子进程并发验排队 + 过期槽接管 + .mutex 清理 + CLI 退出码透传 + release 绝不抛）
 ```
 
@@ -41,7 +41,7 @@ node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs �
 
 ---
 
-## 覆盖了什么（40 条，`--full` 时 47 条）
+## 覆盖了什么（41 条，`--full` 时 50 条）
 
 ### ① 编排器未被改坏（红线）
 

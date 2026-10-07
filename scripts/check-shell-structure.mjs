@@ -22,6 +22,13 @@
  * 用法：node scripts/check-shell-structure.mjs [--wsl]
  *   --wsl：额外扫 WSL 侧 /home/lemo/lemo-opuscar（慢，需要 wsl 可用）
  *
+ * ★ 覆盖点（2026-10-07 补，供**非破坏性变异验证** —— 原先三个根全写死，想验证闸门
+ *   真的抓得住就只能动真库）：`LEMO_OPUSCAR`（WIN 库根，默认 `D:/lemo-opuscar`）、
+ *   `LEMO_TOOLS_ROOT`（工具仓根，默认本文件所在仓）、`LEMO_WSL_ROOT`（WSL 副本根，
+ *   默认 `/home/lemo/lemo-opuscar`）、`LEMO_WSL_DISTRO`（默认 `Ubuntu-24.04`）。
+ *   命名与 `check-dual-copy-sync.mjs` / `check-ref-lines.mjs` 的同名同义覆盖点一致。
+ *   ★ 只补覆盖点，**判据一个字没改**（续行被注释吃掉 / 判定块缺 `exit 0` / 两侧失明守卫）。
+ *
  * ★ WIN 侧失明守卫（2026-10-04 补）：WSL 侧早已有「扫描为空 ⇒ FAIL」的守卫（见下方 wslCount），
  *   但 **WIN 侧没有** —— `WIN_ROOTS` 全部不存在时 `files` 为空、`fails` 空 ⇒ 静默绿。
  *   判据：WIN 侧收集到 0 个 shell 脚本 ⇒ 判 FAIL 并明说「失明」。
@@ -30,6 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // ★ 本机 `spawnSync`/`execFileSync` 对**任何**可执行文件一律返回 EBUSY ⇒ 一律用异步 spawn。
 const runAsync = (bin, args, opts = {}) =>
@@ -42,7 +50,25 @@ const runAsync = (bin, args, opts = {}) =>
     p.on('close', (c) => res({ o, e, c }));
   });
 
-const WIN_ROOTS = ['D:/lemo-opuscar', 'D:/lemo-tools'];
+// ★ 扫描根 + 覆盖点。本闸门**不 import 被检代码**（否则成环 + 自证），故保留**字面量默认值**，
+//   只补 `LEMO_*` 覆盖点 —— 补覆盖点的目的**不是**改判据，而是让本闸门能用**临时树**做
+//   非破坏性变异验证（原先三个根全写死 ⇒ 想验证「闸门真的抓得住」就只能动真库）。
+//   变量名与全仓同名同义的既有覆盖点保持一致（见 `check-dual-copy-sync.mjs` 的 `LEMO_OPUSCAR`
+//   / `LEMO_WSL_ROOT` / `LEMO_WSL_DISTRO`，以及 `check-ref-lines.mjs` 的 `LEMO_TOOLS_ROOT`）。
+//   ★ 判据逻辑（(a) 续行被注释吃掉 / (b) 判定块缺 exit 0 / WIN 失明守卫 / WSL 失明守卫）一个字没改。
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const OPUSCAR = path.resolve(process.env.LEMO_OPUSCAR || path.join(HERE, '..', '..', 'lemo-opuscar'));
+const TOOLS = path.resolve(process.env.LEMO_TOOLS_ROOT || path.join(HERE, '..'));
+const WSL_ROOT = process.env.LEMO_WSL_ROOT || '/home/lemo/lemo-opuscar';
+const DISTRO = process.env.LEMO_WSL_DISTRO || 'Ubuntu-24.04';
+const WIN_ROOTS = [OPUSCAR, TOOLS];
+// 收集到的路径一律是**正斜杠**形态（collect 里 replace 过）⇒ 比对/切相对段也用正斜杠。
+const OPUSCAR_FWD = OPUSCAR.replace(/\\/g, '/');
+// Windows 绝对路径 → WSL 的 `/mnt/<盘符>/…`（原先 `--wsl` 那次扫描写死 `/mnt/d/lemo-tools/…`）。
+const toMnt = (p) => {
+  const m = /^([A-Za-z]):[\\/](.*)$/.exec(p);
+  return m ? `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}` : p.replace(/\\/g, '/');
+};
 const SKIP = /node_modules|\.git\/|_distill\/logs|\.orig-|\.bak/;
 const fails = [];
 
@@ -98,17 +124,17 @@ for (const f of files) checkOne(f, fs.readFileSync(f, 'utf8'));
 // ── WSL 侧（可选）：同名文件与 Windows 侧比对 md5，顺便查结构 ──
 let wslCount = 0;
 if (process.argv.includes('--wsl')) {
-  const rel = files.filter((f) => f.startsWith('D:/lemo-opuscar/')).map((f) => f.replace('D:/lemo-opuscar/', ''));
-  const script = rel.map((r) => `if [ -f "/home/lemo/lemo-opuscar/${r}" ]; then echo "=== ${r}"; cat "/home/lemo/lemo-opuscar/${r}"; fi`).join('\n');
-  const tmp = 'D:/lemo-tools/.tmp-wsl-scan.sh';
+  const rel = files.filter((f) => f.startsWith(OPUSCAR_FWD + '/')).map((f) => f.replace(OPUSCAR_FWD + '/', ''));
+  const script = rel.map((r) => `if [ -f "${WSL_ROOT}/${r}" ]; then echo "=== ${r}"; cat "${WSL_ROOT}/${r}"; fi`).join('\n');
+  const tmp = path.join(TOOLS, '.tmp-wsl-scan.sh');
   fs.writeFileSync(tmp, script, 'utf8');
-  const r = await runAsync('wsl', ['-d', 'Ubuntu-24.04', '-u', 'root', '--', 'bash', '-c',
-    `tr -d '\\r' < /mnt/d/lemo-tools/.tmp-wsl-scan.sh > /tmp/wslscan.sh && bash /tmp/wslscan.sh`],
+  const r = await runAsync('wsl', ['-d', DISTRO, '-u', 'root', '--', 'bash', '-c',
+    `tr -d '\\r' < ${toMnt(tmp)} > /tmp/wslscan.sh && bash /tmp/wslscan.sh`],
     { env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
   try { fs.unlinkSync(tmp); } catch { /* ignore */ }
   const out = r.o || '';
   let cur = null, buf = [];
-  const flush = () => { if (cur) { checkOne('WSL:/home/lemo/lemo-opuscar/' + cur, buf.join('\n')); wslCount++; } };
+  const flush = () => { if (cur) { checkOne(`WSL:${WSL_ROOT}/` + cur, buf.join('\n')); wslCount++; } };
   for (const line of out.split('\n')) {
     const m = line.match(/^=== (.+)$/);
     if (m) { flush(); cur = m[1]; buf = []; }
@@ -117,7 +143,7 @@ if (process.argv.includes('--wsl')) {
   flush();
   // ★ 防「假通过」：WSL 侧一个文件都没读到，说明 wsl 调用失败或路径不对 —— 必须报出来，不能静默当通过
   if (wslCount === 0) {
-    fails.push({ file: 'WSL:/home/lemo/lemo-opuscar', kind: '✘ WSL 扫描为空', ln: 0, detail: `期望 ${rel.length} 个文件，实际读到 0 个（wsl 调用失败？退出码 ${r.c}）` });
+    fails.push({ file: `WSL:${WSL_ROOT}`, kind: '✘ WSL 扫描为空', ln: 0, detail: `期望 ${rel.length} 个文件，实际读到 0 个（wsl 调用失败？退出码 ${r.c}）` });
   }
 }
 

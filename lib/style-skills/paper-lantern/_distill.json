@@ -121,7 +121,7 @@
       "peakDbtpTarget": -1.2,
       "peakTargetMet": true,
       "truePeakMethod": "ffmpeg -i <film> -af loudnorm=I=-14:TP=-1.7:LRA=11:print_format=json -f null - 的 input_tp（4× 过采样）",
-      "peakNote": "真峰值口径更正：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= -1.68 dBTP，见 selfCheck.loudness.truePeakDbtp。（★ 2026-10-07 重渲后成片：59,348,253 B / 2923 帧 / 121.791667 s；原记 -3.37 属重渲前版本，已按实测更正。）",
+      "peakNote": "真峰值口径更正：本文件散文里若出现 1 位小数的 Peak/TPK 读数，那是 ebur128 的近似值、口径不同；权威真峰值 = loudnorm 的 input_tp（4× 过采样）= -1.68 dBTP，见 selfCheck.loudness.truePeakDbtp。（★ 2026-10-07 重渲后成片：59,348,253 B / 2923 帧 / 121.791667 s；原记 -3.37 属 2026-10-04 那一版成片，已按实测更正。）★★ 根因（2026-10-07 查实）：成片真峰值跟的是 core/render/mux.sh 的 LN_TP 默认值，而该默认值 2026-10-03 由 -1.7 收紧到 -3.5、2026-10-05 又改回「-1.7 起步 + 编码后复核闭环」⇒ 落在 -3.5 窗口内渲的那一版读数整条平移约 1.7 dB（-3.4/-3.37/-3.385）。paper-lantern 没有自带 demo/mux.sh，永远走 core，所以该默认值一变、本片读数必变。",
       "lra": 3.3,
       "lraMethod": "ebur128=peak=true 的 LRA（项目口径；loudnorm 的 input_lra 系统性偏大）",
       "samplePeakDbfs": -1.675971
@@ -158,13 +158,13 @@
       "md5": "a7781d36a5c6f579fa70025bb543c8bd",
       "meanVolumeDb": -18.6,
       "maxVolumeDb": -1.7,
-      "note": "demo/mix.wav 与 demo/out/mix.wav 为同一份（md5 一致，均为 23,475,884 B）"
+      "note": "2026-10-03 修复后 demo/mix.wav 与 demo/out/mix.wav 为同一份（md5 一致，均为 23,475,884 B）。★ 2026-10-07 重渲时 mix.py 在 WSL 侧重跑，把 /home/lemo/lemo-opuscar/styles/paper-lantern/demo/out/mix.wav 重生成为 23,480,300 B（md5 42ed92b6d10aa938c2698b4216a81381、122.293 s、peak −1.449 dB）⇒ 两侧 out/ 已不同（out/ 是构建产物、不参与双副本同步）；WIN 侧 demo/mix.wav 与 demo/out/mix.wav 仍是本条的 23,475,884 B / md5 a7781d36（2026-10-07 实测复核）"
     },
     "mux": {
       "script": "core/render/mux.sh",
       "encoder": "h264_nvenc (GPU)",
       "loudnorm": "两遍 loudnorm I=-14 TP=-1.7",
-      "videoUnchanged": "1920x1080 / 24 fps / 2922 帧 / 121.750000 s 与首版逐项一致（只换音轨）"
+      "videoUnchanged": "（2026-10-03 重混时）1920x1080 / 24 fps / 2922 帧 / 121.750000 s 与首版逐项一致（只换音轨）；当前入库成片为 2026-10-07 重渲版：1920x1080 / 24 fps / 2923 帧 / 121.791667 s"
     },
     "measuredInFilm": {
       "integratedLufs": -14.01,
@@ -176,8 +176,8 @@
         -1.675971
       ],
       "overshootVsLnTpDb": 0.02,
-      "clippingCriterion": "`core/render/mux.sh:277` 判据 p ≤ −1.2 dBTP，实测 −1.676（astats 采样峰值）/ −1.68（loudnorm input_tp 真峰值）均在判据内，不削波（2026-10-07 重渲后成片；原记 −3.385 / −3.37）",
-      "note": "★ 2026-10-07 重渲后成片实测（59,348,253 B / 2923 帧 / 121.791667 s）。原记（integratedLufs −14.03 / lra 3.2 / truePeakDbfs −3.4 / astatsPeak6dp −3.384677 / astatsPeakPerChannel [−3.428516,−3.384677] / overshootVsLnTpDb −1.68）属重渲前版本，已按实测更正。"
+      "clippingCriterion": "`core/render/mux.sh:277` 判据 p ≤ −1.2 dBTP，实测 −1.676（astats 采样峰值）/ −1.68（loudnorm input_tp 真峰值）均在判据内，不削波（2026-10-07 重渲后成片；原记 −3.385 / −3.37 属 2026-10-04 那一版，当时 mux.sh 的 LN_TP 默认值被收紧到 −3.5）",
+      "note": "★ 2026-10-07 重渲后成片实测（59,348,253 B / 2923 帧 / 121.791667 s）。原记（integratedLufs −14.03 / lra 3.2 / truePeakDbfs −3.4 / astatsPeak6dp −3.384677 / astatsPeakPerChannel [−3.428516,−3.384677] / overshootVsLnTpDb −1.68）属 2026-10-04 那一版成片（当时 core/render/mux.sh 的 LN_TP 默认值被收紧到 −3.5，2026-10-05 已改回 −1.7 + 闭环），已按实测更正。★ 本字段 truePeakDbfs 沿用既有口径：存 ebur128 的 1 位小数 Peak（round(truePeakDbtp,1)），权威真峰值见 selfCheck.loudness.truePeakDbtp = −1.68 dBTP。"
     },
     "alignment": {
       "reference": "vo/dur.json 对 out/timeline.json 的 C 表（已提交时间线）",

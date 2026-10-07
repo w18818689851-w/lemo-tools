@@ -25,24 +25,24 @@
  *   D:/lemo-tools/_distill/state.json        —— 逐风格状态（可断点续跑的唯一依据）
  *   D:/lemo-tools/_distill/logs/<slug>.log   —— 每个风格的完整 stdout/stderr
  *   D:/lemo-tools/_distill/frames/<slug>/    —— 逐帧抽取 + 接触印样（contact sheet）
- *
+ * ★ 两条根的**唯一**来源：成片根 = `lib/env.mjs` 的 `CFG.exportDir`（认 `LEMO_FILM_DIR`）；风格源码根 = `lib/styles-root.mjs` 的 `resolveStylesRoot()`（认 `LEMO_STYLES_ROOT`）。不设覆盖点时与原字面量 `'D:/lemo-films'` / `'D:/lemo-opuscar/styles'` 解析结果逐字节相同。
  * ★ 纪律：
  *   · **顺序执行**，绝不并发（GPU 与 Index-TTS 都是独占资源）。
  *   · **一个失败不阻断后面的**：记 status=failed + 原因，继续跑下一个。
  *   · **可重入**：已成功的默认跳过（--force 才重跑）。
- *   · 本脚本**不改** lemo-make.mjs（红线：编排器不能被包装层改）。
+ *   · 本脚本**不改** lemo-make.mjs（红线：编排器不能被包装层改）。★ 已知残留：编排器的 `exportDir` **不认** `LEMO_FILM_DIR` ⇒ 设该覆盖点时本脚本按 `<覆盖点>/<slug>/<slug>.mp4` 找成片、它 spawn 的编排器却仍写 `D:\lemo-films\…`，二者分叉；不设覆盖点（生产）时恒一致。
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-
+import { CFG } from '../lib/env.mjs';                        // ★ 成片根唯一来源（认 LEMO_FILM_DIR）
+import { resolveStylesRoot } from '../lib/styles-root.mjs';  // ★ 风格源码根唯一来源（认 LEMO_STYLES_ROOT）
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const LIB = 'D:/lemo-opuscar';
-const STYLES_DIR = path.join(LIB, 'styles');
-const FILM_DIR = 'D:/lemo-films';
+const STYLES_DIR = resolveStylesRoot(CFG.winLib);
+const FILM_DIR = CFG.exportDir;
 const WORK = path.join(ROOT, '_distill');
 const STATE = path.join(WORK, 'state.json');
 const LOGS = path.join(WORK, 'logs');

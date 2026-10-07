@@ -682,6 +682,103 @@ export const STATIC_CASES = [
         + ' —— 六条分支全过（用假 binder，不碰系统保留段）');
     },
   },
+  {
+    name: '③+ 两条「根」已收敛到唯一真相来源（成片根 / 风格源码根）',
+    run: async (ctx) => {
+      // ★ 钉住本次收敛：① 成片根的唯一口径 = lib/env.mjs 的 CFG.exportDir（认 LEMO_FILM_DIR）；
+      //   ② 风格源码根的唯一口径 = lib/styles-root.mjs 的 resolveStylesRoot(winLib)（认 LEMO_STYLES_ROOT）。
+      //   判据分四层：派生关系 / 默认值逐字节等价 / 覆盖点真的跟随 / 应用运行时+运维脚本里无残留字面量。
+      const { resolveStylesRoot } = await import('../lib/styles-root.mjs');
+      const dc = await import('../lib/dub-core.mjs');
+
+      // ① 派生关系：dub-core 的 outRoot 必须**派生**自 CFG.exportDir（不再是第二份字面量）
+      assert.strictEqual(
+        dc.CFG.outRoot, path.join(CFG.exportDir, 'dub'),
+        `lib/dub-core.mjs 的 CFG.outRoot 没有从 CFG.exportDir 派生：`
+        + ` outRoot=${dc.CFG.outRoot}，期望 ${path.join(CFG.exportDir, 'dub')}`,
+      );
+
+      // ② 不设覆盖点 ⇒ 与旧硬编码字面量**逐字节相同**（生产零行为变化）
+      if (!process.env.LEMO_FILM_DIR) {
+        assert.strictEqual(CFG.exportDir, 'D:\\lemo-films', 'CFG.exportDir 的默认值被改了');
+        assert.strictEqual(dc.CFG.outRoot, 'D:\\lemo-films\\dub', 'dub-core 的 outRoot 默认值被改了');
+      }
+      if (!process.env.LEMO_STYLES_ROOT) {
+        assert.strictEqual(
+          resolveStylesRoot(CFG.winLib), path.join(CFG.winLib, 'styles'),
+          '不设 LEMO_STYLES_ROOT 时 resolveStylesRoot 不等于 path.join(winLib,"styles")',
+        );
+      }
+
+      // ③ 覆盖点必须真的让「风格源码根」跟着走（纯函数，读的是**调用时**的 env）
+      const prevStyles = process.env.LEMO_STYLES_ROOT;
+      const probeRoot = 'D:/lemo-tmp/__styles_probe__';
+      try {
+        process.env.LEMO_STYLES_ROOT = probeRoot;
+        assert.strictEqual(
+          resolveStylesRoot(CFG.winLib), path.resolve(probeRoot),
+          '设了 LEMO_STYLES_ROOT 后 resolveStylesRoot 没跟着走',
+        );
+      } finally {
+        if (prevStyles === undefined) delete process.env.LEMO_STYLES_ROOT;
+        else process.env.LEMO_STYLES_ROOT = prevStyles;
+      }
+
+      // ④ 应用运行时（lib/dub-core.mjs / server.mjs / consistency-check.mjs）与运维脚本
+      //    （style-distill / unblock-placeholder-audio / fix-truepeak / patch-style-mux /
+      //      style-skill-check）里**不许再有**这两条根的独立字面量 ——
+      //    只许经 CFG.exportDir / CFG.winLib / resolveStylesRoot 取。（注释行不算。）
+      const stripComments = (src) => src
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((l) => !/^\s*(\/\/|\*)/.test(l))
+        .map((l) => l.replace(/\/\/.*$/, ''))
+        .join('\n');
+      const BANNED = {
+        'lib/dub-core.mjs': [/lemo-films/],
+        'server.mjs': [/winLib,\s*['"]styles['"]/],
+        'consistency-check.mjs': [/lemo-films/],
+        'scripts/style-distill.mjs': [/lemo-films/, /lemo-opuscar/],
+        'scripts/unblock-placeholder-audio.mjs': [/lemo-films/, /lemo-opuscar/],
+        'scripts/fix-truepeak.mjs': [/lemo-films/],
+        // ★ b83-c2 新增收敛：这两个脚本原先各有一处库根 / 风格源码根字面量
+        'scripts/patch-style-mux.mjs': [/lemo-films/, /lemo-opuscar/],
+        'scripts/style-skill-check.mjs': [/lemo-films/, /lemo-opuscar/],
+      };
+      const bad = [];
+      for (const [rel, pats] of Object.entries(BANNED)) {
+        const code = stripComments(fs.readFileSync(path.join(ctx.root, rel), 'utf8'));
+        for (const p of pats) if (p.test(code)) bad.push(`${rel} 仍含硬编码 ${p}`);
+      }
+      assert.strictEqual(
+        bad.length, 0,
+        `以下文件仍留着两条「根」的独立硬编码（应收敛到 CFG.exportDir / resolveStylesRoot）：\n  ${bad.join('\n  ')}`,
+      );
+
+      // ⑤ 闸门/脚本的 `LEMO_*` 覆盖点必须**真的存在** —— 只有覆盖点存在，才能用临时树做
+      //    非破坏性变异验证（不设覆盖点时必须逐字节等价于旧字面量默认值，见 ② 与 b83-c2 报告）。
+      //    ★ 注意：`scripts/check-shell-structure.mjs` 是**闸门**，按纪律**允许保留**字面量默认值
+      //      （不 import 被检代码 ⇒ 避免环 + 自证），故这里只钉「覆盖点存在」，不钉「无字面量」。
+      const OVERRIDES = {
+        'scripts/check-shell-structure.mjs': ['LEMO_OPUSCAR', 'LEMO_TOOLS_ROOT', 'LEMO_WSL_ROOT', 'LEMO_WSL_DISTRO'],
+        'scripts/patch-style-mux.mjs': ['LEMO_OPUSCAR', 'LEMO_WSL_ROOT', 'LEMO_WSL_DISTRO'],
+        'scripts/unblock-placeholder-audio.mjs': ['LEMO_STYLES_ROOT_WSL'],
+      };
+      const missing = [];
+      for (const [rel, vars] of Object.entries(OVERRIDES)) {
+        const code = fs.readFileSync(path.join(ctx.root, rel), 'utf8');
+        for (const v of vars) if (!code.includes(`process.env.${v}`)) missing.push(`${rel} 缺覆盖点 ${v}`);
+      }
+      assert.strictEqual(
+        missing.length, 0,
+        `以下覆盖点缺失（无法用临时树做非破坏变异验证）：\n  ${missing.join('\n  ')}`,
+      );
+
+      ctx.note('③+ 两条根已收敛：dub-core.outRoot 派生自 exportDir；server / consistency-check / '
+        + 'style-distill / unblock-placeholder-audio / fix-truepeak / patch-style-mux / style-skill-check '
+        + '去注释后无残留字面量；check-shell-structure 与 unblock 的 WSL 侧覆盖点齐备');
+    },
+  },
 ];
 
 // ── 服务端用例（需要控制台在跑）─────────────────────────────

@@ -52,6 +52,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+// ★ 成片根的**唯一**来源（认 `LEMO_FILM_DIR`）。本脚本原先在两处硬编码 `'D:/lemo-films/…'`
+//   （备份目录 + 暂存目录）⇒ 设了覆盖点后与 `CFG.exportDir` 分叉。不设覆盖点时
+//   `path.join(CFG.exportDir, '_tpfix…')` 与旧字面量**解析结果逐字节相同**。
+import { CFG } from '../lib/env.mjs';
 
 const ROOT = 'D:/lemo-tools';
 const DIR = path.join(ROOT, 'lib', 'style-skills');
@@ -66,7 +70,7 @@ const ONLY = onlyIdx >= 0 ? new Set(ARGV[onlyIdx + 1].split(',').map((s) => s.tr
 const abrIdx = ARGV.indexOf('--abr');
 const ABR = abrIdx >= 0 ? ARGV[abrIdx + 1] : '256k';
 const bakIdx = ARGV.indexOf('--backup-dir');
-const BAK = bakIdx >= 0 ? ARGV[bakIdx + 1] : 'D:/lemo-films/_tpfix-backup';
+const BAK = bakIdx >= 0 ? ARGV[bakIdx + 1] : path.join(CFG.exportDir, '_tpfix-backup');
 
 // 交付口径：真峰值不高于 −1.2 dBTP。
 //   · **已达标的（≤ TP_SPEC）一律不动** —— 对合规音频施压限是无谓的质量损失；
@@ -186,9 +190,9 @@ if (RESTORE) {
   process.exit(0);
 }
 
+const TMP = path.join(CFG.exportDir, '_tpfix');
 fs.mkdirSync(BAK, { recursive: true });
-fs.mkdirSync('D:/lemo-films/_tpfix', { recursive: true });
-const TMP = 'D:/lemo-films/_tpfix';
+fs.mkdirSync(TMP, { recursive: true });
 
 let needFix = 0, fixed = 0, failed = 0, skipped = 0, synced = 0, syncPlan = 0;
 const report = [];
