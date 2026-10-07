@@ -164,7 +164,8 @@ film: Follow the Rain
 ## 11. 当前短板与避坑要点
 
 ### 已知缺陷
-- **【已修复】成片音轨曾是数字静音**。首版成片实测 **−70.0 LUFS / Peak −inf / RMS −inf**（aac 48 kHz 立体声流存在，但内容是纯零）。根因是一次**误判**：出片走 `--skip-audio`，音频链未执行，而 `scripts/unblock-placeholder-audio.mjs` 的 `TARGETS` 把 watercolor 登记为 `placeholder: true`、把缺的东西写成 `wf48.wav`（记为「相对路径引用的音源，仓库不含」）——实际那首曲子是 **CC BY 4.0，直链就写在 `music/prep.sh:8`**，从来不是版权障碍。修复后成片 **I = −14.0 LUFS / 真峰值 −1.72 dBTP**（`loudnorm` `input_tp`，4× 过采样；此前记的「−1.716 dBFS」是 `astats` 采样峰值、口径不同）（详见下方「踩过的坑（本机实测）」）。★ **原记**：上述 −1.72 dBTP 是当次重混后的读数；当前入库成片实测真峰值 **−3.34 dBTP**（`loudnorm` `input_tp`，4× 过采样）、达标。**教训：判定「素材缺」之前，先读 demo 自带的下载 / 准备脚本。**
+- **【已修复】成片音轨曾是数字静音**。首版成片实测 **−70.0 LUFS / Peak −inf / RMS −inf**（aac 48 kHz 立体声流存在，但内容是纯零）。根因是一次**误判**：出片走 `--skip-audio`，音频链未执行，而 `scripts/unblock-placeholder-audio.mjs` 的 `TARGETS` 把 watercolor 登记为 `placeholder: true`、把缺的东西写成 `wf48.wav`（记为「相对路径引用的音源，仓库不含」）——实际那首曲子是 **CC BY 4.0，直链就写在 `music/prep.sh:8`**，从来不是版权障碍。修复后成片 **I = −14.0 LUFS / 真峰值 −1.72 dBTP**（`loudnorm` `input_tp`，4× 过采样；此前记的「−1.716 dBFS」是 `astats` 采样峰值、口径不同）（详见下方「踩过的坑（本机实测）」）。★ **原记**：上述 −1.72 dBTP 是当次重混后的读数；
+  当前入库成片实测真峰值 **−3.34 dBTP**（`loudnorm` `input_tp`，4× 过采样）、达标。**教训：判定「素材缺」之前，先读 demo 自带的下载 / 准备脚本。**
 - **声明的「静默」特质没有实现**。`STYLE.md:71` 把「把笔抬起来——音乐退场，只剩纸与房间」列为声音调色板的一条，但 `mix.py` 从不把音乐归零（`mus *= (1 - .38·duck)` 只做约 −4 dB 闪避），全片 113.6 s 音乐不停；70.3 s 的雾擦除段只叠了一层 `airy` 纸声。要复现这条特质必须自己加一段总线静默。
 - **mux 用了脚本默认 `grain 2`**（`noise=c0s=2:allf=t`），在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分，纸纹类风格应显式传 `grain 0`。
 - **顶部 HUD 安全边距只有 76 px（3.96% 画面宽）**，窄于常见的 5% 安全区；一旦要裁切或加边就会先吃掉区块卡。

@@ -176,7 +176,8 @@ film: The Honeybee, Plate VII
 ### ★ 本次最大教训：WSL 副本长期过期 ⇒ 成片来自旧源
 - 2026-10-02 WIN 侧给本风格做了较大更新（新增 `subjects/chart.js`、`coffee.js`、`details_coffee.js`；`engine/plate.js` 加 `setFonts`/`fontSpec` + CJK 断行；`film.js`/`film_coffee.js`/`main.js`/`index.html`/`engine/burin.js`/`tools/events.mjs` 更新；含 `layout()` 多比例重排），**但从未同步到 WSL**。
 - 而**渲染读 WSL、源码指纹读 WIN** ⇒ 2026-10-03 那次成片**实际来自旧源**，`_distill.json` / `SKILL.md` 也全按旧源写（于是有了上面三处错误声称）。
-- 2026-10-04 已把 9 个源文件 + `core/README.md` + `MAINTAINING.md` 同步到 WSL（两侧逐字节一致），并用新源**重渲**（成片真峰值 −3.27 dBTP，已核验）。★ **2026-10-07 更正**：上面这句里的 `−3.27 dBTP` 是那次**重渲前版本**的读数（**原记**）；本片已于 2026-10-07 重渲，当前入库成片的真峰值 = `loudnorm` 的 `input_tp`（4× 过采样）**−1.54 dBTP**（见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
+- 2026-10-04 已把 9 个源文件 + `core/README.md` + `MAINTAINING.md` 同步到 WSL（两侧逐字节一致），并用新源**重渲**（成片真峰值 −3.27 dBTP，已核验）。★ **2026-10-07 更正**：上面这句里的 `−3.27 dBTP` 是那次**重渲前版本**的读数（**原记**）；
+  本片已于 2026-10-07 重渲，当前入库成片的真峰值 = `loudnorm` 的 `input_tp`（4× 过采样）**−1.54 dBTP**（见 `_distill.json` 的 `selfCheck.loudness.truePeakDbtp`）。
 - **记住的规则**：给这个风格（以及任何「WIN 写码 / WSL 渲染」的风格）改源码后，**先同步双副本再出片**，否则出片、抽帧、文档会一起建立在旧源上；核验时不要只看源码指纹，要**把两侧文件逐字节比一遍**。
 
 ### 已知缺陷

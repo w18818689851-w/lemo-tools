@@ -183,7 +183,8 @@ film: Case File: Chubby
 
 ### 踩过的坑（本机实测）
 - 本次出片走 `--skip-sync`（`_distill/logs/halftone-dossier.log:1,21`）。~~lemo-make 的步骤 [4] 是 `--skip-audio`，但 `demo/mix.wav`（由 `music.py` 产出、30.0s）仍被 mux.sh 采用，所以成片有真实配乐（`_distill/logs/halftone-dossier.log:56-61`）。~~ **★ 2026-10-05 起不再需要 `--skip-audio`**：新增 `demo/mix.py` 薄壳后，编排器会自己跑「配乐 → 混音」（`music.py` → `demo/mix.wav`，30.0s / 5,292,044 B），成片音轨仍是有真实配乐的那一轨。
-- 混流走 WSL 的 `mux.sh` + nvenc（GPU）。★ 2026-10-05 复跑：`core/render/mux.sh` 的「编码后复核闭环」从 `LN_TP = −1.7` 起步、逐档下调 TP 目标重编（本片用到第 8 档 `−3.45`），最终成片真峰值 −2.79 dBTP、响度 −14.24 LUFS，**不再出现**「missed the target」告警（旧记录里那条告警对应的是固定 `LN_TP` 时代）。（★ **原记**：上述 −2.79 dBTP / −14.24 LUFS 是该次复跑输出的读数；当前入库成片（1920×1080 / 39,613,063 B）实测真峰值 **−3.26 dBTP** / **−14.26 LUFS**（`loudnorm` `input_tp`，4× 过采样）、达标。）
+- 混流走 WSL 的 `mux.sh` + nvenc（GPU）。★ 2026-10-05 复跑：`core/render/mux.sh` 的「编码后复核闭环」从 `LN_TP = −1.7` 起步、逐档下调 TP 目标重编（本片用到第 8 档 `−3.45`），最终成片真峰值 −2.79 dBTP、响度 −14.24 LUFS，**不再出现**「missed the target」告警（旧记录里那条告警对应的是固定 `LN_TP` 时代）。（★ **原记**：上述 −2.79 dBTP / −14.24 LUFS 是该次复跑输出的读数；
+  当前入库成片（1920×1080 / 39,590,919 B）实测真峰值 **−2.79 dBTP** / **−14.26 LUFS**（`loudnorm` `input_tp`，4× 过采样）、达标。）
 
 ### 下次迭代优先补什么
 - 把 `music.py` 的母带峰值归一从 ×1.6 下调（或在 mux 前再降 1–2 dB），使集成响度回到 −14 LUFS、真峰 ≤ −1.2 dBTP。
