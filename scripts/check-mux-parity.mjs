@@ -14,7 +14,7 @@
  *   · `LN_TP` 默认值 = loudnorm 的 TP 起点。它一变，**成片真峰值整条读数平移** ——
  *     实测 `paper-lantern` 就吃过这个：它没有自带 mux.sh ⇒ 永远走 core ⇒
  *     core 默认值 2026-10-03 被收紧到 −3.5、2026-10-05 改回「−1.7 起步 + 闭环」，
- *     它那一版成片的真峰值就从 −1.68 摆到 −3.37 dBTP（`lib/style-skills/paper-lantern/SKILL.md:112/:117`）。
+ *     它那一版成片的真峰值就从 −1.68 摆到 −3.37 dBTP（`lib/style-skills/paper-lantern/SKILL.md:220/:267`）。
  *   · `LN_TP_STEP` / `LN_TP_TRIES` = 闭环的步长与档数（步长为什么是 0.25 而不是 0.5：AAC 过冲对
  *     TP 目标**非单调**，粗步长会漏掉可行中间档，见 `core/render/mux.sh:89`）。
  *   · 闭环结构 = 「编一次 → 量成片真峰值 → 不达标就按步长下调 TP 目标**只重编音频** → 取最好的一档」。
@@ -82,7 +82,7 @@ const KNOWN_DIVERGENCES = {
       + '（24 fps / `h264_nvenc` / `I −14.0 LUFS`，都不是本 demo 脚本的产物），'
       + '当时 core 自己也**还没有**闭环（闭环是 2026-10-05 加的），'
       + '根因是**素材波峰因子过高**（PLR 12.99 dB）+ AAC 过冲 1.98 dB（−1.7 + 1.98 = +0.28）。'
-      + '见 `lib/style-skills/pictogram-motion/SKILL.md:174`、`lib/style-skills/paper-lantern/SKILL.md:185`。'
+      + '见 `lib/style-skills/pictogram-motion/SKILL.md:174`、`lib/style-skills/paper-lantern/SKILL.md:186`。'
       + '**待办**：同 `LN_TP` 条。',
     LOUDNORM_I: '同上 —— 响度收口不在 mux 阶段，而在 `music.py` 母带 + 新增的 `demo/mix.py` 第 ③ 步'
       + '（`alimiter` 4× 过采样真峰值收口）。见 `lib/style-skills/pictogram-motion/SKILL.md:173-174`。',

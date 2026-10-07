@@ -191,10 +191,13 @@ film: TRANQUILITY.LOG
 | 项 | 值 |
 |---|---|
 | 蒸馏日期 | 2026-10-03 |
-| 成片 | `D:/lemo-films/ascii-crt/ascii-crt.mp4`（59.79s / 28.3MB / **29,710,467 B**，2026-10-03 重渲；原记 29,712,494 B） |
+| 成片 | `D:/lemo-films/ascii-crt/ascii-crt.mp4`（59.79s / 28.3MB / **29,709,732 B**，2026-10-03 重渲；★ 2026-10-07 复核实测） |
 | 抽帧 | `D:/lemo-tools/_distill/frames/ascii-crt/`（24 帧 + 接触印样） |
 | 风格匹配度自评 | **98/100**（2026-10-05 校正：原 96，9:16 画幅缺陷已修并回补 composition +2）（2026-10-03 校正：原 92，两条已修缺陷回补 palette +1、audio +3） |
 | 详细资料 | 有（`STYLE.md` · `DEMO.md` · `style.json` · `demo/build.sh` · `style-dna/ascii-crt.md` · `dub-styles.json#ascii-crt` · `_distill/logs/ascii-crt.log` · `term.js`/`crt.js` 源码） |
+
+> **原记**：本片体积先后记过 `29,712,494 B`（更早一版）与 `29,710,467 B`（2026-10-03 重渲时记的值）；★ 2026-10-07 复核实测为 **29,709,732 B**（`_distill.json` 的 `generatedVideo.bytes` 也是这个值；此前同文件的 `bytesNote` 与它不一致，已一并改正）。
+> ★ **为什么把「原记」单独一行**：当前值与历史值写在同一行时，`check-tp-prose.mjs` 的整行历史豁免（`HIST && !CUR`）会把**当前值一起放过** ⇒ 当前值陈旧也不会响。拆开后当前值那行可被核。
 
 **逐帧拆解要点**：`_contact.jpg` 一眼可见全片是**琥珀单色 + 黑玻璃 + 扫描线**的稳定体系，节奏前慢后快、末段出现唯一一次冷色（地球蓝）。f01 开机瞬间——全黑屏上只有一个琥珀色**方块光标**（点→线→整幅的开机第一步，对应 `STYLE.md:44`「只有三样东西连续运动」）。f05 是 80 列启动日志：`TRANQUILITY.LOG / UNIT 7 / LUNAR RELAY 7 / MAINTENANCE` 表头 + 左右两栏（左 `RELAY-7 MONITOR ROM 4.11` 各项状态，右 `LINK / CARRIER NONE / SIGNAL [........]`），底部 LOG 条反白标签。f09 推近后的大字 `IS ANYONE THERE?` 居中、末尾带块状光标，顶部一条 `INCOMING ORIGIN: EARTH CARRIER 300 BAUD`，底部 LOG 条——这是「推进=亲密」的示范。f13 `I AM STI▮` 正在**逐字打出**回信（打字节奏=表演）。f17 是全片最关键的变换时刻：网格缩小、字形坠落，画面被**密集的 M/R/H/A/S/E 字母**填满（这些字母全部来自 `I AM STILL HERE.` 的字母集）——正是「画面由词构成」。f21 高潮成果：字符拼出的**地球**（非洲+欧洲剪影清晰可读）在蓝白 `#B8E0FF`（唯一非琥珀色）+ 下方琥珀色月面与环形山 + 左上角一个琥珀小方块光标，LOG 条显示 `SENT 2091.06.14 03:14:07 AWAITING REPLY`。f24 片尾：**拉出玻璃**——画面缩进一台字符画的终端里，右侧一个大圆形舷窗里是真实地球（`ASCII / CRT TERMINAL` / `LemoLab × Claude Opus 5.5`），全片**唯一屏幕之外的镜头**，随后关机收成一点。**色走**：全程琥珀单色，仅在 37.2s 变色重拍引入一次地球蓝，之后不再收回；无彩色装饰、无 RGB 荫罩。**字幕**：底部 LOG 条全程固定、反白 `LOG` 标签 + `> ` 提示符、大写、逐词打出、单行不超 80 列。**转场**：全部是清屏/硬重绘/缩放/开机/关机，**无一次交叉溶解**。
 

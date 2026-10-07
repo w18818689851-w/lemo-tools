@@ -14,8 +14,9 @@ film: A Mooncake's Longing
 > **资料源**：`styles/paper-lantern/STYLE.md` · `styles/paper-lantern/DEMO.md` · `lib/style-dna/paper-lantern.md` ·
 > `lib/style-dna/paper-lantern.json` · `lib/dub-styles.json#paper-lantern` · `styles/paper-lantern/style.json` ·
 > `styles/paper-lantern/demo/` 源码 · `_distill/logs/paper-lantern.log` · **成片逐帧拆解**（见文末「蒸馏证据」）。
-> **注意**：本风格**没有** `demo/build.sh`（demo 目录里只有 `sheet.sh` 与 `tile.sh`）——
-> 所以第 9 节的命令以 `DEMO.md` 的 Build notes 为准，并附上本次编排器实测用的命令行。
+> **注意**：本风格**有** `demo/build.sh`（★ 2026-10-07 复核订正：本行原写「**没有** `demo/build.sh`，demo 目录里只有 `sheet.sh` 与 `tile.sh`」—— 那是 **2026-10-03 蒸馏时**的状态；该脚本于 **2026-10-06** 补上，现为 1968 B）——
+> 它有一处**对编排器的声明作用**（务必保留）：渲染行 `node core/render/video.mjs $D … --q "content=script.json"`；编排器只从 `build.sh` 读这一行的 `--q`（`qIntent`），而 `content=` 是它唯一会「整条链同源」的值 ⇒ 据此把**配音前置**到渲染之前跑，避免 Index-TTS 与 6-worker GPU 渲染抢显存把 TTS 卡死（脚本头注释 `:4-11`）。
+> 所以第 9 节的命令以 `build.sh` 与 `DEMO.md` 的 Build notes 为准，并附上本次编排器实测用的命令行。
 
 ---
 
@@ -146,7 +147,7 @@ film: A Mooncake's Longing
 
 ## 9. 制作参数清单
 
-> 本风格**没有 `demo/build.sh`**，所以下表以 `DEMO.md` 的 Build notes（`DEMO.md:129-151`）为准，并标注**本次编排器实测**的值。
+> 本风格**有 `demo/build.sh`**（2026-10-06 补上；★ 原记：本行原写「没有 `demo/build.sh`」），下表同时以它与 `DEMO.md` 的 Build notes（`DEMO.md:129-151`）为准，并标注**本次编排器实测**的值。
 
 | 项 | 值 |
 |---|---|
@@ -155,14 +156,14 @@ film: A Mooncake's Longing
 | 帧率 | **成片实测 24 fps**（ffprobe `r_frame_rate=24/1`、`avg_frame_rate=24/1`；`_distill.json#generatedVideo.fps=24`）。★ **本行以实测为准，不再把 30 fps 当成本风格的成片帧率**：`STYLE.md:49` 的硬规则写「Render on ones at 30 fps」、`DEMO.md:150` 的 mux 示例也传 `30`，但**成片与编排器实际都是 24 fps**（不符记录见第 11 节「帧率与文档硬规则不符」） |
 | 分辨率 / 比例 | 设计帧 **1920×1080**（16:9），`main.js:31,34` 硬写（影片本体一字未改）；**★ 2026-10-04 已支持多比例**：`demo/film.js` 的 `FILM_META.aspects = ['16:9','9:16','3:4','4:3','1:1']`，靠 `demo/index.html` 的页面外壳等比装入（留边 `#0a1330`） |
 | 帧数 | **2923 帧**（121.79 s × 24；ffprobe `nb_frames=2923`） |
-| 混流 | **本次成片实际生效 = fps 24 / grain 2（脚本默认）；本风格声明的是 fps 30 / grain 0**——两对数字是「声明 vs 实落」，不是矛盾。编排器生成的调用是 `sh core/render/mux.sh video.mp4 mix.wav out.mp4 24 grain`（`lemo-make.mjs` 生成的调用）；本次日志第 8 行打的是 `混流   core/render/mux.sh    grain (脚本默认)`，而 `lemo-make.mjs` 里打 `(脚本默认)` 的那行只在 `grain === null` 时才打「(脚本默认)」⇒ 第 5 参为空 ⇒ 落到 `core/render/mux.sh:36` 的默认值 `GR="${5:-2}"` = **2** ⇒ 第 173 行给滤镜链加上 `noise=c0s=2:allf=t`。**demo 自己的写法是**：`sh core/render/mux.sh $D/out/video.mp4 $D/out/mix.wav styles/paper-lantern/paper-lantern.mp4 30 0`（第 4 参 `30` = 30 fps、第 5 参 `0` = **无 grain**，`DEMO.md:150`）——这两个是**声明值，本次未生效**。为什么落到默认：本风格**没有 `demo/build.sh`**（`intent.grain` 取不到），本次也没传 `--grain`，而 `style-dna/paper-lantern.json` 的 `sound_palette.mix_rules` 里**没有**显式 `grain N` / `颗粒 N`（`dnaGrainFromMixRules` 只认显式写法，见 `lemo-make.mjs`）——三级优先 `--grain > build.sh > 档案 > mux 默认 2`（`lemo-make.mjs` 的 `const grain = o.grain ?? intent.grain ?? dnaGrain`）全部落空 |
+| 混流 | **本次成片实际生效 = fps 24 / grain 2（脚本默认）；本风格声明的是 fps 30 / grain 0**——两对数字是「声明 vs 实落」，不是矛盾。编排器生成的调用是 `sh core/render/mux.sh video.mp4 mix.wav out.mp4 24 grain`（`lemo-make.mjs` 生成的调用）；本次日志第 8 行打的是 `混流   core/render/mux.sh    grain (脚本默认)`，而 `lemo-make.mjs` 里打 `(脚本默认)` 的那行只在 `grain === null` 时才打「(脚本默认)」⇒ 第 5 参为空 ⇒ 落到 `core/render/mux.sh:36` 的默认值 `GR="${5:-2}"` = **2** ⇒ 第 173 行给滤镜链加上 `noise=c0s=2:allf=t`。**demo 自己的写法是**：`sh core/render/mux.sh $D/out/video.mp4 $D/out/mix.wav styles/paper-lantern/paper-lantern.mp4 30 0`（第 4 参 `30` = 30 fps、第 5 参 `0` = **无 grain**，`DEMO.md:150`）——这两个是**声明值，本次未生效**。为什么落到默认：本风格**当时没有 `demo/build.sh`**（★ 2026-10-03 当时还没有它 ⇒ `intent.grain` 取不到；2026-10-06 补上后其 mux 行传 grain `0`），本次也没传 `--grain`，而 `style-dna/paper-lantern.json` 的 `sound_palette.mix_rules` 里**没有**显式 `grain N` / `颗粒 N`（`dnaGrainFromMixRules` 只认显式写法，见 `lemo-make.mjs`）——三级优先 `--grain > build.sh > 档案 > mux 默认 2`（`lemo-make.mjs` 的 `const grain = o.grain ?? intent.grain ?? dnaGrain`）全部落空 |
 | 编码器 | `h264_nvenc`（本地 GPU）——日志 `[5]` 标题即「渲染（Windows GPU · 24fps · 6 workers）」，`[6]` 标题「混流（WSL mux.sh · nvenc）」 |
 | 音频入口 | **实际（2026-10-03 修复后）**：`.venv/bin/python styles/paper-lantern/demo/tts_local.py --voice voice_09 --target <旧 vo/dur.json>`（**本地 Index-TTS**，底层 `core/tts/tts_indextts.py`；产出 `vo/<id>.wav` 48 kHz 单声道 + `vo/dur.json` + `demo/lines.json`）→ whisper 校对（`demo/asr.py`）→ `.venv/bin/python $D/words.py L01 … L25` → `vo/words.json` → `.venv/bin/python $D/mix.py` → `out/mix.wav`；配乐在 `demo/music/`（`km_Ripples.mp3` + `km_Nu_Flute.mp3`）。**demo 原写法**：`python3 $D/tts.py`（云端 edge-tts，与本库「音频一律本地」规则冲突，已弃用） |
 | 字幕入口 | **本 demo 没有受编排器支持的字幕生成器**——日志 `[3]` 与 `[6]` 两次告警「该 demo 没有本编排器支持的字幕生成器 —— 字幕源不重新生成，`.srt` 将沿用仓库里已提交的旧文件」。实际 `.srt` 是仓库里提交的静态文件 `styles/paper-lantern/paper-lantern.srt`（25 行，含 2 行 `sub:false` 的画面内文字） ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立 |
 | 事件导出 | `node core/render/events.mjs styles/paper-lantern/demo` → `events 0 dur 121.77000000000001`（日志 `[3]`；`events 0` 表示这个 demo 的 `s.sfx` 事件数组为空，foley 全靠 `mix.py` 从 `out/timeline.json` + `vo/words.json` 排） |
 | 时间线导出 | `node $D/render/cues.mjs` → `out/timeline.json`（`DUR 121.77000000000001`；含 `C` 台词 cue 表、`P` 镜头表） |
 | 本风格专属参数 | 米制单位（`PPM = 5200` px/m）；层 z 从 −.14 到 0；相机 z .3–.56、fov 26°；满幅纸层 `.558 × .328`（≤ 腔体 `.56 × .33`）；`trans` 阶梯 .9 → .05；灯闪烁 `1 + .06·sin(7.3t)·sin(3.1t)`；开灯错开 .42 s；手持微动 .0006 m；`aper 12–26`、`maxCoc 14`、`bloom {strength .35, radius .6, threshold 1.15}`；`GRADE0` 冷夜默认 lift `[0, .005, .018]` / gain `[1.03, 1, .95]`；纸张收尾偏移 3 px |
-| 一键复现 | **无 `build.sh`**。按 `DEMO.md:129-151` 的顺序手工跑 5 步（voice → cues/stills → mix → video → mux）；或用上表的编排器一行命令 |
+| 一键复现 | `sh styles/paper-lantern/demo/build.sh`（2026-10-06 起可用；★ 原记：本行原写「**无 `build.sh`**，按 `DEMO.md:129-151` 的顺序手工跑 5 步」）。也可按 `DEMO.md:129-151` 手工跑 5 步（voice → cues/stills → mix → video → mux）；或用上表的编排器一行命令 |
 
 ---
 
@@ -189,13 +190,13 @@ film: A Mooncake's Longing
 - **换台词时字幕不会自动重算（typography −1）**。日志 `[3]` 与 `[6]` 两次告警：该 demo **没有本编排器支持的字幕生成器**（探测过 `tools/subs.mjs` / `subs.mjs` / `tools/export.mjs` / `tools/subs.py` / `subs.py` / `tools/cues.py` / `cues_export.py` 都没有），`.srt` 只能沿用仓库里已提交的旧文件。而本风格的 `subtitle` 断行规则（剥句尾标点后 > 21 字就在最靠近中间的逗号断两行，`main.js:73-76`）与 `.srt` 里的行内容是**同一份文本的两处副本**——改了 `script.json` 就必须**同时手工改 `paper-lantern.srt`**，否则字幕与配音脱钩。 ★ 2026-10-06 更正：编排器第 3 步字幕告警措辞已改（第五十三批，md5 65ddab44→dfa99004）——其中『告警误导 / 两处不一致』部分已消解，其余仍成立
 - ~~**9:16（产品默认）会破坏本风格的构图（composition −1）**~~ **★ 2026-10-04 已修**：改用「页面外壳等比装入」（见第 2 节末段）——`demo/index.html` 把整张设计帧等比装入并居中，留边 `#0a1330`（夜色调，非纯黑），**整幅画面（含居中字幕、片名纸带、两扇窗）都在框内**；`demo/film.js` 声明 `aspects` 含 9:16。原缺陷（母版硬渲成 1080×1920 时右半画面与居中字幕被裁）不再成立。残留代价：竖屏有效画面只占 1080×607、全屏层不铺进留边（见第 2 节）。
 - **dub 通路的背景与强调色跟成片不是一回事（palette −1）**。`bgRecipe` 是两段 `#0a0806 → #22325e` 的渐变 + paper 纹理；成片的夜空是**四段** `#0a1330 → #172a58 → #2e4478 → #43598a`（`DEMO.md:68`）。`accent: #e9b25c` 也与成片实际的两个强调色（印泥红 `#b3302a`、金纸 `#f1dbac`）都不是同一个色。走 dub 通路背景会偏暖黑，而不是成片的深靛夜空。
-- **后期颗粒叠在纸纹之上，违反本风格「无 grain」的声明（palette −1）**。**参数偏离是确定的**：本风格三处写死「无 grain」（`DEMO.md:149` 的 `no grain`、`DEMO.md:150` 的第 5 参 `0`、`style-dna/paper-lantern.md:219` 的 `30 0`），而本次成片落了 `grain 2`——证据链是「日志第 8 行打 `grain (脚本默认)` ⇒ `lemo-make.mjs` 里打 `(脚本默认)` 的那行只在 `grain === null` 时才这样打 ⇒ 第 5 参为空 ⇒ `core/render/mux.sh:36` 的 `GR="${5:-2}"` 取默认 2 ⇒ 第 173 行加上 `noise=c0s=2:allf=t`」，而 `--grain`、`demo/build.sh`（本风格没有）、`style-dna` 的 `mix_rules`（无显式 `grain N`/`颗粒 N`）三级全空，正是它落到脚本默认的原因。**机制上是两层独立噪声**：渲染期的 `paper.js` `GRAIN` 是**每张纸层自己的纤维纹**（512²、α .9、`source-atop`，`DEMO.md:83`），而 mux 的 `noise` 是**对最终合成帧的全画面后处理**（`core/render/mux.sh:173`），后者会连纸层、暗房间底、烧入字幕一起加噪——这正是「双重质感」。**必须诚实说明的一点（我没有粉饰）**：我**无法从成片实证这层颗粒的可见程度**。我做了对照实验——平坦灰图过 `noise=c0s=2:allf=t` 得到 σ=0.858（未编码），但**同一张图再走一遍 h264（`libx264 -crf 19`）后 σ 归零**，说明本片这条编码链会把 grain 2 这个量级的噪声在平坦区**整体吃掉**；而成片的 24 张抽帧里也没有可见的颗粒感。所以**「参数被改动」是铁的，「肉眼损失有多大」是未定的**——在细节区（纸纹、窗光、城市灯）颗粒可能部分存活，在平坦区基本被编码器抹掉。按与 `watercolor` 同一口径（其纸面也是「预生成图 + fine grain」的渲染期质感，`watercolor/STYLE.md:18`）计 **−1**；若将来 `mux.sh` 的默认值或本风格的档案补齐 `grain 0`，这一分可以收回。
+- **后期颗粒叠在纸纹之上，违反本风格「无 grain」的声明（palette −1）**。**参数偏离是确定的**：本风格三处写死「无 grain」（`DEMO.md:149` 的 `no grain`、`DEMO.md:150` 的第 5 参 `0`、`style-dna/paper-lantern.md:219` 的 `30 0`），而本次成片落了 `grain 2`——证据链是「日志第 8 行打 `grain (脚本默认)` ⇒ `lemo-make.mjs` 里打 `(脚本默认)` 的那行只在 `grain === null` 时才这样打 ⇒ 第 5 参为空 ⇒ `core/render/mux.sh:36` 的 `GR="${5:-2}"` 取默认 2 ⇒ 第 173 行加上 `noise=c0s=2:allf=t`」，而 `--grain`、`demo/build.sh`（★ 2026-10-03 当时本风格**还没有**它，2026-10-06 才补上；其 mux 行传 grain `0` ⇒ **此后重渲不会再落到默认 2**）、`style-dna` 的 `mix_rules`（无显式 `grain N`/`颗粒 N`）三级全空，正是它落到脚本默认的原因。**机制上是两层独立噪声**：渲染期的 `paper.js` `GRAIN` 是**每张纸层自己的纤维纹**（512²、α .9、`source-atop`，`DEMO.md:83`），而 mux 的 `noise` 是**对最终合成帧的全画面后处理**（`core/render/mux.sh:173`），后者会连纸层、暗房间底、烧入字幕一起加噪——这正是「双重质感」。**必须诚实说明的一点（我没有粉饰）**：我**无法从成片实证这层颗粒的可见程度**。我做了对照实验——平坦灰图过 `noise=c0s=2:allf=t` 得到 σ=0.858（未编码），但**同一张图再走一遍 h264（`libx264 -crf 19`）后 σ 归零**，说明本片这条编码链会把 grain 2 这个量级的噪声在平坦区**整体吃掉**；而成片的 24 张抽帧里也没有可见的颗粒感。所以**「参数被改动」是铁的，「肉眼损失有多大」是未定的**——在细节区（纸纹、窗光、城市灯）颗粒可能部分存活，在平坦区基本被编码器抹掉。按与 `watercolor` 同一口径（其纸面也是「预生成图 + fine grain」的渲染期质感，`watercolor/STYLE.md:18`）计 **−1**；若将来 `mux.sh` 的默认值或本风格的档案补齐 `grain 0`，这一分可以收回。
 - **源码条数与文档不符（不扣分但必须记录）**。`style-dna/paper-lantern.md:280` 与 `.json` 的 `narrative_rhythm.structure` 都写「demo 的镜头表把这条弧切成 **20 段**」，但 `src/shots/index.js:21-45` 实际列出 **19 条**（S01–S18 + S15b），`out/timeline.json` 的 `P` 表也是 19 条。以源码为准。
 - **云幕转场的出处文档自相矛盾（不扣分但必须记录）**。`DEMO.md:46` 说近景祥云幕在 `s17_sushi.js`，`DEMO.md:105` 又说 `±.035` 偏移在 `s16_mutual.js`。源码实情：`cloudCurtain(S, z)` **定义在 `s17_sushi.js:9`**，被 `s16_mutual.js:67` 与 `s17_sushi.js:63` **各调用一次**。两处文档各说对了一半。
 
 ### 素材缺口
 
-- **没有 `demo/build.sh`**。demo 目录里只有 `sheet.sh` 与 `tile.sh`，所以本风格**没有权威的一键复现脚本**，第 9 节的命令是从 `DEMO.md:129-151` 摘的，未经脚本化验证。
+- **★ 2026-10-07 复核订正**：本风格**有 `demo/build.sh`**（2026-10-06 补上，1968 B）—— 本行原写「**没有 `demo/build.sh`**。demo 目录里只有 `sheet.sh` 与 `tile.sh`，所以本风格**没有权威的一键复现脚本**，第 9 节的命令是从 `DEMO.md:129-151` 摘的，未经脚本化验证」。现**有**权威的一键复现脚本，第 9 节已按它更新；`DEMO.md:129-151` 仍是参数依据。
 - **配乐是外部 CC BY 4.0 曲目**（Kevin MacLeod 的 "Ripples" 与 "Nu Flute"，incompetech.com），**原始素材不在仓库里**——2026-10-03 修复时已把两首拉到 `demo/music/`（`km_Ripples.mp3` 8,220,237 B、`km_Nu_Flute.mp3` 3,314,444 B），但**换机器或断网重跑配乐仍有失败风险**，`demo/music/MUSIC.md` 只记录了候选与 librosa 分析。
 - **真实世界布景依赖 Poly Haven 贴图**（`american_walnut_veneer`、`tea_set_01`，CC0），从 `/core/assets/polyhaven/` 加载。
 - **没有任何可复用的「换主题素材包」**：母题、剪影人物、道具全是 `art.js` / `people.js` / `props.js` 里的程序化函数，**换主题必须重画全部纸层**。
