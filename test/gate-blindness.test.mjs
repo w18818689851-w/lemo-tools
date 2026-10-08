@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 95 条用例 / 覆盖全部 38 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 98 条用例 / 覆盖全部 39 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -109,6 +109,27 @@
  *          ④ **真实语料阴性对照**（只读）：修好后 exit 0；若库仓那处**已登记真阳**（`watercolor/DEMO.md`）
  *            尚未修，则唯一 FAIL 必须是它（**不接受**别的命中）。
  *          ⑤ **★自证**：短路判据 ③（`nearActual` 恒真）⇒ 正向夹具**重新变绿**。
+ *        · `check-repro-form`（2026-10-08 建；守「**编排器能不能复现已发布形态**」这个**已登记的零覆盖区**）：
+ *          ① **判据①**（`DEMO.md` 渲染行的 `--q` 编排器取不到）：**变异 A**（渲染行有 `--q tilt=1`、
+ *            **无 `build.sh`**）⇒ FAIL 并点名 slug；**变异 B**（渲染行 `--q 'a=1&b=2'`、`build.sh` 只给 `a=1`）
+ *            ⇒ FAIL 并点名**缺的那一项 `b=2`**（逐项比、不整串比）；
+ *          ② **判据②**（`build.sh` 的存在性声称 ↔ 实物）：**变异 C**（有 `build.sh`、`assetGaps` 写**裸**的
+ *            「本 demo 目录没有 build.sh」）⇒ FAIL 并点名 `slug + 字段路径`；**变异 D**（**无** `build.sh`、
+ *            `defects` 写「本风格有 demo/build.sh」）⇒ FAIL 并点名（反向）；
+ *          ③ **历史语境豁免承重**（house style「保留原句 + 历史标记 + 补现值」⇒ 只列 ℹ）：
+ *            阴性对照里放一条「★ 已消解（原记录保留作历史）：本条**原写**「没有 build.sh」」⇒ exit 0
+ *            且**显式打印**「历史豁免 1 处」；★ **短路豁免**（`HIST_RE` 恒假）⇒ 它**立刻变 FAIL**
+ *            —— 证明那张豁免不是摆设；
+ *          ④ **失明四态**（空风格树 / 0 条渲染行 / 0 条 `build.sh` / 0 份 `_distill.json`）⇒ FAIL +
+ *            「本闸门已失明」，且失明时**不输出判据①②**；
+ *          ⑤ **真实语料只读**：判据① 必须 0 FAIL；若 FAIL，点名的 slug 只允许是那 3 个已知风格
+ *            （`hd-2d` / `paper-lantern` / `pictogram-motion` —— 它们的 `_distill.json` 正被**并行**修）。
+ *          ★ 主夹具用**合成极小树**（本闸门的事实源是「渲染行 `--q` ↔ `build.sh` 的 `--q` ↔ `build.sh`
+ *            是否存在 ↔ json 的存在性声称」四方关系，最小树即可**精确摆出**每种组合）。
+ *          ★★ **变异 A / D 必须带「非退化锚」**（`RP_ANCHOR`：树里另放一个**有 `build.sh` 的干净风格**）：
+ *            本闸门的失明守卫（判据③）在「扫到风格、却 **0 条** `build.sh`」时报**失明**，而「**某个**风格
+ *            没有 `build.sh`」正是判据① 要抓的 FAIL 形态 —— 不带锚整棵树就退化成失明、判据① 不输出
+ *            （实测：不带锚时变异 A 只报失明、**没有**判据① 文案 ⇒ 那条正向断言根本没被测到）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -3849,6 +3870,221 @@ test('★自证 check-target-as-measured：短路判据 ③（值≠实测）后
     const r = await run(NODE, [g], { env: { LEMO_OPUSCAR: pos.opus, LEMO_DISTILL_ROOT: pos.dist } });
     assert.throws(() => expectBlind(r, N_FAIL, 'mut'), undefined,
       '短路判据 ③ 后正向竟然还报 ⇒ 那条正向断言没在测判据 ③');
+  } finally { rm(dir); }
+});
+
+// ── 12g. check-repro-form.mjs（「编排器能不能复现已发布形态」，2026-10-08 建）──────
+// ★ 主夹具用**合成极小树**：本闸门的事实源是「`DEMO.md` 渲染行的 `--q` ↔ `build.sh` 的 `--q`
+//   ↔ `build.sh` 是否存在 ↔ `_distill.json` 的存在性声称」这**四方关系**，手写最小树就能**精确摆出**
+//   每一种组合（无需整棵拷真实语料）。真实语料另有一条**只读**用例（见下 ⑨）。
+// ★ 覆盖点：**`LEMO_OPUSCAR`**（库仓根：`styles/<slug>/DEMO.md` + `demo/build.sh`）
+//   + **`LEMO_DISTILL_ROOT`**（风格技能树：`_distill.json`），与既有闸门同名同义。
+/** 一份「1 风格」的 `DEMO.md`：Build notes 段里放一条 fenced 渲染行。 */
+const rpMd = (renderLine) => `# Demo\n\nDemo: x\n\n## Build notes\n\n\`\`\`sh\n${renderLine}\n\`\`\`\n`;
+/** 造一棵「N 风格」的极小树：<dir>/{opuscar/styles/<slug>/{DEMO.md,demo/build.sh},distill/<slug>/_distill.json}。 */
+const rpTree = (dir, specs) => {
+  for (const [slug, sp] of Object.entries(specs)) {
+    wf(path.join(dir, 'opuscar', 'styles', slug, 'DEMO.md'), sp.md);
+    if (sp.build !== null && sp.build !== undefined) {
+      wf(path.join(dir, 'opuscar', 'styles', slug, 'demo', 'build.sh'), sp.build);
+    }
+    if (sp.distill) rj(path.join(dir, 'distill', slug, '_distill.json'), sp.distill);
+  }
+  return { opus: path.join(dir, 'opuscar'), dist: path.join(dir, 'distill') };
+};
+/**
+ * ★ **非退化锚**：真实语料有 **37 条** `build.sh`（43 风格），而本闸门的失明守卫（判据③）在
+ * 「扫到风格、却 **0 条** `build.sh`」时会直接报**失明**（编排器侧没有任何可读的 `--q` 来源）。
+ * 可是「**某个**风格没有 `build.sh`」恰恰是判据① 要抓的 FAIL 形态 —— 两者会打架。
+ * ⇒ 凡要测「**某个**风格没有 build.sh」的变异，**必须**在树里再放一个**有 `build.sh` 的干净风格**
+ *   当锚，否则整棵树退化成失明、判据① 根本不输出（= 那条判据**测不到**，是假绿）。
+ */
+const RP_ANCHOR = { md: rpMd('node core/render/video.mjs $D --fps 24'), build: 'node core/render/video.mjs $D\n', distill: {} };
+
+test('check-repro-form：判据① DEMO.md 渲染行 --q 编排器取不到 ⇒ FAIL 并点名；判据② build.sh 存在性声称不符 ⇒ FAIL 并点名；历史豁免承重；失明四态', async () => {
+  const dir = path.join(TMP, 'repro');
+  const N_FAIL = '编排器复现形态不符';
+  const N_BLIND = '本闸门已失明';
+  try {
+    // ① 阴性对照（合成 3 风格）：两边 `--q` 一致 / 无 `build.sh` 且**如实**声称没有 / 有 `build.sh` + **历史豁免**
+    const neg = rpTree(path.join(dir, 'neg'), {
+      'fx-ok': { md: rpMd('node core/render/video.mjs $D --fps 24 --q tilt=1'),
+        build: 'node core/render/video.mjs $D --q tilt=1\n', distill: { sources: ['styles/fx-ok/demo/build.sh'] } },
+      'fx-neg': { md: rpMd('node core/render/video.mjs $D --fps 24'), build: null,
+        distill: { defects: ['本 demo 目录没有 build.sh，一键复现只能照 DEMO.md 手动走'] } },
+      'fx-hist': { md: rpMd('node core/render/video.mjs $D --fps 24'), build: 'node core/render/video.mjs $D\n',
+        distill: { assetGaps: ['★ 2026-10-08 已消解（原记录保留作历史）：本条原写「无 demo/build.sh：本风格没有一键复现脚本」'] } },
+    });
+    const r0 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: neg.opus, LEMO_DISTILL_ROOT: neg.dist });
+    expectClean(r0, N_FAIL, 'check-repro-form 阴性对照');
+    assert.ok(/判据① 比对 1 项（FAIL 0）/.test(r0.out),
+      `阴性对照应打印判据① 的比对计数（证明真的比过、且 0 FAIL）\n${r0.out.slice(0, 1400)}`);
+    assert.ok(/ℹ 历史豁免 1 处/.test(r0.out),
+      `阴性对照应**显式**打印「历史豁免 1 处」（例外不许静默通过）\n${r0.out.slice(0, 1600)}`);
+    assert.ok(r0.out.includes('fx-hist'), `历史豁免那条应点名 fx-hist\n${r0.out.slice(0, 1600)}`);
+
+    // ② 变异 A（判据①）：渲染行有 `--q`、**无 `build.sh`** ⇒ FAIL 并点名 slug
+    //    ★ 带锚：否则整棵树「0 条 build.sh」⇒ 判据③ 报失明、判据① 不输出（那条判据就测不到）。
+    const a = rpTree(path.join(dir, 'a'), {
+      'mut-a': { md: rpMd('node core/render/video.mjs $D --q tilt=1'), build: null, distill: {} },
+      'fx-anchor': RP_ANCHOR,
+    });
+    const r1 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: a.opus, LEMO_DISTILL_ROOT: a.dist });
+    expectBlind(r1, N_FAIL, 'check-repro-form 变异A');
+    assert.ok(r1.out.includes('mut-a') && r1.out.includes('没有 demo/build.sh'),
+      `变异A 应点名 mut-a + 说明「没有 demo/build.sh」\n${r1.out.slice(0, 1400)}`);
+
+    // ③ 变异 B（判据①，**逐项比**）：渲染行 `--q 'a=1&b=2'`、build.sh 只给 `a=1` ⇒ FAIL 并点名**缺的那一项**
+    const b = rpTree(path.join(dir, 'b'), {
+      'mut-b': { md: rpMd('node core/render/video.mjs $D --q "a=1&b=2"'), build: 'node core/render/video.mjs $D --q a=1\n', distill: {} },
+    });
+    const r2 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: b.opus, LEMO_DISTILL_ROOT: b.dist });
+    expectBlind(r2, N_FAIL, 'check-repro-form 变异B');
+    assert.ok(r2.out.includes('mut-b') && /缺：b=2/.test(r2.out),
+      `变异B 应点名 mut-b 与**缺的那一项** b=2（逐项比，不是整串比）\n${r2.out.slice(0, 1400)}`);
+
+    // ④ 变异 C（判据② 正向）：有 `build.sh`、`assetGaps` 写**裸**的「本 demo 目录没有 build.sh」⇒ FAIL 并点名字段路径
+    const c = rpTree(path.join(dir, 'c'), {
+      'mut-c': { md: rpMd('node core/render/video.mjs $D'), build: 'node core/render/video.mjs $D\n',
+        distill: { assetGaps: ['本 demo 目录没有 build.sh，一键复现只能照 DEMO.md 手动五步走'] } },
+    });
+    const r3 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: c.opus, LEMO_DISTILL_ROOT: c.dist });
+    expectBlind(r3, N_FAIL, 'check-repro-form 变异C');
+    assert.ok(r3.out.includes('mut-c') && r3.out.includes('[assetGaps[0]]'),
+      `变异C 应点名 mut-c + 字段路径 assetGaps[0]\n${r3.out.slice(0, 1400)}`);
+
+    // ⑤ 变异 D（判据② 反向）：**无** `build.sh`、`defects` 写「本风格有 demo/build.sh」⇒ FAIL 并点名
+    //    ★ 同样带锚（理由同变异 A：整棵树 0 条 build.sh 会退化成失明）。
+    const d = rpTree(path.join(dir, 'd'), {
+      'mut-d': { md: rpMd('node core/render/video.mjs $D'), build: null,
+        distill: { defects: ['本风格有 demo/build.sh，一键复现走它'] } },
+      'fx-anchor': RP_ANCHOR,
+    });
+    const r4 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: d.opus, LEMO_DISTILL_ROOT: d.dist });
+    expectBlind(r4, N_FAIL, 'check-repro-form 变异D');
+    assert.ok(r4.out.includes('mut-d') && r4.out.includes('[defects[0]]'),
+      `变异D 应点名 mut-d + 字段路径 defects[0]\n${r4.out.slice(0, 1400)}`);
+
+    // ⑥ 失明①（0 风格）：空库仓根 ⇒ FAIL +「本闸门已失明」，且**不输出判据**
+    const e1 = path.join(dir, 'empty'); mk(path.join(e1, 'styles')); mk(path.join(e1, 'distill'));
+    const rb1 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: e1, LEMO_DISTILL_ROOT: path.join(e1, 'distill') });
+    expectBlind(rb1, N_BLIND, 'check-repro-form 失明①（0 风格）');
+    assert.ok(!rb1.out.includes(N_FAIL), `失明时不该输出判据\n${rb1.out.slice(0, 900)}`);
+
+    // ⑦ 失明②（0 条渲染行）：风格在、`DEMO.md` 的 Build notes 里**没有**含 `video.mjs` 的行
+    const e2 = rpTree(path.join(dir, 'norl'), {
+      'fx-norl': { md: rpMd('node core/render/video.mjs $D'), build: 'node core/render/video.mjs $D\n', distill: {} },
+    });
+    for (const s of fs.readdirSync(path.join(e2.opus, 'styles'))) {
+      const f = path.join(e2.opus, 'styles', s, 'DEMO.md');
+      fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/video\.mjs/g, 'vid.mjs'), 'utf8');
+    }
+    const rb2 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: e2.opus, LEMO_DISTILL_ROOT: e2.dist });
+    expectBlind(rb2, N_BLIND, 'check-repro-form 失明②（0 条渲染行）');
+    assert.ok(!rb2.out.includes(N_FAIL), `失明时不该输出判据\n${rb2.out.slice(0, 900)}`);
+
+    // ⑧ 失明③（0 条 `build.sh`）：风格在、渲染行在、**一条 build.sh 都没有**
+    const e3 = rpTree(path.join(dir, 'nobs'), {
+      'fx-nobs': { md: rpMd('node core/render/video.mjs $D'), build: null, distill: {} },
+    });
+    const rb3 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: e3.opus, LEMO_DISTILL_ROOT: e3.dist });
+    expectBlind(rb3, N_BLIND, 'check-repro-form 失明③（0 条 build.sh）');
+
+    // ⑨ 失明④（0 份可读 `_distill.json`）：风格 + 渲染行 + build.sh 都在，但技能树里一份 json 都没有
+    const e4 = rpTree(path.join(dir, 'nodist'), {
+      'fx-nodist': { md: rpMd('node core/render/video.mjs $D --q tilt=1'), build: 'node core/render/video.mjs $D --q tilt=1\n', distill: null },
+    });
+    mk(e4.dist);
+    const rb4 = await runGate('check-repro-form.mjs', { LEMO_OPUSCAR: e4.opus, LEMO_DISTILL_ROOT: e4.dist });
+    expectBlind(rb4, N_BLIND, 'check-repro-form 失明④（0 份 _distill.json）');
+
+    // ⑩ 真实语料**只读**：判据① 必须 0 FAIL；若整体 FAIL，点名的 slug 只允许是那 3 个已知风格
+    //    （`hd-2d` / `paper-lantern` / `pictogram-motion` —— 它们的 `_distill.json` 正被**并行**修 ⇒ 两种结果都接受）
+    const rr = await runGate('check-repro-form.mjs', {});
+    assert.ok(!rr.out.includes(N_BLIND), `真实语料不该失明\n${rr.out.slice(0, 1200)}`);
+    assert.ok(/判据① 比对 \d+ 项（FAIL 0）/.test(rr.out),
+      `真实语料判据① 必须 0 FAIL（两例已修）\n${rr.out.slice(0, 1600)}`);
+    if (rr.code === 0) {
+      expectClean(rr, N_FAIL, 'check-repro-form 真实语料阴性对照');
+    } else {
+      const failBlock = rr.out.split('\nℹ')[0];
+      const slugs = [...failBlock.matchAll(/^ {4}· ([a-z0-9-]+) /gm)].map((m) => m[1]);
+      assert.ok(slugs.length > 0, `真实语料 FAIL 时必须点名 slug\n${rr.out.slice(0, 1600)}`);
+      for (const s of slugs) {
+        assert.ok(['hd-2d', 'paper-lantern', 'pictogram-motion'].includes(s),
+          `真实语料 FAIL 点名的 slug 只允许是那 3 个已知风格，实得「${s}」\n${rr.out.slice(0, 1600)}`);
+      }
+    }
+  } finally { rm(dir); }
+});
+
+test('★自证 check-repro-form：短路判据① 后，变异 A/B 必须重新变绿', async () => {
+  const dir = path.join(TMP, 'mut-repro1');
+  const N_FAIL = '编排器复现形态不符';
+  try {
+    // 短路「无 build.sh ⇒ FAIL」那一支（等价于「**只在有 `build.sh` 时**才判 判据①」）。
+    // ★ 不能只把 `if (!bs.exists) {` 改成 `if (false) {` —— 那样会**掉进**后面的
+    //   `else if (bs.q === null)` / `else` 两支、mut-a 照样 FAIL（实测踩过：夹具带锚后
+    //   「假绿」变成「假红」）。短路**整块**的入口条件才是真正把这一支摘掉。
+    const subsNoBs = [['if (mdQ) {', 'if (mdQ && bs.exists) {']];
+    const a = rpTree(path.join(dir, 'a'), {
+      'mut-a': { md: rpMd('node core/render/video.mjs $D --q tilt=1'), build: null, distill: {} },
+      'fx-anchor': RP_ANCHOR,
+    });
+    const ga = patchGate('check-repro-form.mjs', path.join(dir, 'ga'), subsNoBs);
+    const ra = await run(NODE, [ga], { env: { LEMO_OPUSCAR: a.opus, LEMO_DISTILL_ROOT: a.dist } });
+    // ★ 先钉 exit 0（真变绿）—— 否则「失明」（也 exit≠0）会冒充「变绿」骗过下面的 assert.throws。
+    assert.equal(ra.code, 0,
+      `短路「无 build.sh」支后变异A 应**真变绿**（exit 0），实得 ${ra.code}\n${ra.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(ra, N_FAIL, 'mut'), undefined,
+      '短路「无 build.sh」支后变异A 竟然还报 ⇒ 那条正向断言没在测它');
+
+    // 短路「逐项不符 ⇒ FAIL」那一支
+    const subsParam = [['if (missing.length || mismatch.length) {', 'if (false) {']];
+    const b = rpTree(path.join(dir, 'b'), {
+      'mut-b': { md: rpMd('node core/render/video.mjs $D --q "a=1&b=2"'), build: 'node core/render/video.mjs $D --q a=1\n', distill: {} },
+    });
+    const gb = patchGate('check-repro-form.mjs', path.join(dir, 'gb'), subsParam);
+    const rb = await run(NODE, [gb], { env: { LEMO_OPUSCAR: b.opus, LEMO_DISTILL_ROOT: b.dist } });
+    assert.equal(rb.code, 0,
+      `短路逐项比支后变异B 应**真变绿**（exit 0），实得 ${rb.code}\n${rb.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rb, N_FAIL, 'mut'), undefined,
+      '短路逐项比支后变异B 竟然还报 ⇒ 那条正向断言没在测逐项比');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-repro-form：短路判据② 后变异 C 必须重新变绿；短路历史豁免后「原写」夹具必须变红', async () => {
+  const dir = path.join(TMP, 'mut-repro2');
+  const N_FAIL = '编排器复现形态不符';
+  try {
+    // ① 短路判据② 的 FAIL 支（把「裸声称 ⇒ FAIL」改成同样进 ℹ 桶）⇒ 变异 C 重新变绿
+    const subsNoFail = [[
+      "        else fail2.push({ slug, path: p, why: 'build.sh **存在**，但该字段**断言它不存在**（否定性存在声称）', snippet: s.slice(0, 180) });",
+      '        else histNeg.push({ slug, path: p, snippet: s.slice(0, 140) });']];
+    const c = rpTree(path.join(dir, 'c'), {
+      'mut-c': { md: rpMd('node core/render/video.mjs $D'), build: 'node core/render/video.mjs $D\n',
+        distill: { assetGaps: ['本 demo 目录没有 build.sh，一键复现只能照 DEMO.md 手动五步走'] } },
+    });
+    const gc = patchGate('check-repro-form.mjs', path.join(dir, 'gc'), subsNoFail);
+    const rc = await run(NODE, [gc], { env: { LEMO_OPUSCAR: c.opus, LEMO_DISTILL_ROOT: c.dist } });
+    assert.equal(rc.code, 0,
+      `短路判据② 的 FAIL 支后变异C 应**真变绿**（exit 0），实得 ${rc.code}\n${rc.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rc, N_FAIL, 'mut'), undefined,
+      '短路判据② 的 FAIL 支后变异C 竟然还报 ⇒ 那条正向断言没在测判据②');
+
+    // ② 短路**历史豁免**（`HIST_RE` 恒假）⇒ 阴性对照里那条「原写：没有 build.sh」**必须**变 FAIL
+    //    —— 证明那张豁免是**承重**的（不是摆设），也证明「历史语境 ⇒ ℹ」这条判断真的在起作用。
+    const subsHist = [[
+      '      for (const [p, s] of negs) {\n        if (HIST_RE.test(s)) histNeg.push({ slug, path: p, snippet: s.slice(0, 140) });   // ★ 历史语境 ⇒ ℹ',
+      '      for (const [p, s] of negs) {\n        if (false) histNeg.push({ slug, path: p, snippet: s.slice(0, 140) });']];
+    const h = rpTree(path.join(dir, 'h'), {
+      'fx-hist': { md: rpMd('node core/render/video.mjs $D'), build: 'node core/render/video.mjs $D\n',
+        distill: { assetGaps: ['★ 2026-10-08 已消解（原记录保留作历史）：本条原写「无 demo/build.sh：本风格没有一键复现脚本」'] } },
+    });
+    const gh = patchGate('check-repro-form.mjs', path.join(dir, 'gh'), subsHist);
+    const rh = await run(NODE, [gh], { env: { LEMO_OPUSCAR: h.opus, LEMO_DISTILL_ROOT: h.dist } });
+    expectBlind(rh, N_FAIL, '短路历史豁免后 fx-hist 应变红');
+    assert.ok(rh.out.includes('fx-hist'), `短路豁免后应点名 fx-hist\n${rh.out.slice(0, 1400)}`);
   } finally { rm(dir); }
 });
 

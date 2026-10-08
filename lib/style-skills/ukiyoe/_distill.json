@@ -16,7 +16,7 @@
     "dub-styles.json#ukiyoe 的 motion.chapterTransition 写 cut，但同条 notes 论证 wipe（斜向馬連扫过的印刷揭示），两处口径不一致"
   ],
   "assetGaps": [
-    "Shippori Mincho / Yuji Syuku 字体文件缺失（需装进 demo/fonts/ 才能消除回退）",
+    "Shippori Mincho / Yuji Syuku 字体文件缺失（需装进 demo/fonts/ 才能消除回退） ★ **2026-10-08 澄清（保留原句）**：措辞误导 —— 字体文件**实际存在**：`styles/ukiyoe/demo/fonts/shippori-500.woff2`（3,224,640 B）、`shippori-700.woff2`（3,330,692 B）、`shippori-kanji.woff2`（3,254,636 B）、`yuji-kanji.woff2`（4,067,548 B），并由同目录 `fonts.css` 以 `@font-face` 自托管（demo 渲染侧不缺口）。真正缺的是**「文案 + 风格」dub 通路不使用 demo 自带字体**：`lib/dub-styles.json#ukiyoe.subtitle.fontFamily` 是 `SimSun`，而 `dub.mjs` 的 `prepareFonts()` 只从 Windows 系统字体目录 `CFG.winFontsDir` 拷 `msyh.ttc` / `simsun.ttc` 等候选进 `_fonts/`，**从不读 `demo/fonts/`** ⇒ dub 通路字幕落回系统宋体，与 demo 的 Shippori / Yuji 不同。",
     "新主题需要的颜料组（6-9 平涂色相）与母题资产（山/浪/松/旅人）必须自建，不能沿用《Toward the Mountain》的五景"
   ],
   "limits": [

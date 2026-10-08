@@ -19,7 +19,7 @@
     "【palette −1】细纹理 `textureRaw: pen-wash` 声明了但渲染未实现：`lib/dub-styles.json#urban-sketch.bgRecipe.textureRaw` 是 `pen-wash`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `paper` ⇒ 纸纹噪点（`noise=alls=9:allf=t+u`）），不读 `textureRaw` ⇒ `pen-wash` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `pen-wash` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
-    "Reenie Beanie / Caveat 手写字体文件缺失（需装进 demo/fonts/ 才能消除回退）",
+    "Reenie Beanie / Caveat 手写字体文件缺失（需装进 demo/fonts/ 才能消除回退） ★ **2026-10-08 澄清（保留原句）**：措辞误导 —— 字体文件**实际存在**：`styles/urban-sketch/demo/fonts/ReenieBeanie.ttf`（147,036 B）与 `Caveat.ttf`（403,648 B），并由 `demo/index.html:4-5` 以 `@font-face` 自托管（`demo/film.js:21` 还显式 `document.fonts.load`，demo 渲染侧不缺口）。真正缺的是**「文案 + 风格」dub 通路不使用 demo 自带字体**：`lib/dub-styles.json#urban-sketch.subtitle.fontFamily` 是 `KaiTi`，而 `dub.mjs` 的 `prepareFonts()` 只从 Windows 系统字体目录 `CFG.winFontsDir` 拷 `msyh.ttc` / `simkai.ttf` 等候选进 `_fonts/`，**从不读 `demo/fonts/`** ⇒ dub 通路字幕落回系统楷体，与 demo 的手写体（Reenie Beanie / Caveat）不同。",
     "新主题需要的世界资产（静态页 + 颜色到达源 + 帽子/物件轨迹）必须自建，不能沿用《Where the Wind Went》的公园与草帽"
   ],
   "limits": [

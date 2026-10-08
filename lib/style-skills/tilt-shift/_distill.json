@@ -17,7 +17,7 @@
     "【palette −1】细纹理 `textureRaw: tilt-shift-blur` 声明了但渲染未实现：`lib/dub-styles.json#tilt-shift.bgRecipe.textureRaw` 是 `tilt-shift-blur`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `none` ⇒ 落空（该风格粗粒度没有纹理层）），不读 `textureRaw` ⇒ `tilt-shift-blur` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `tilt-shift-blur` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
   "assetGaps": [
-    "Overpass / Overpass Mono 字体文件缺失（需装进 demo/fonts/ 才能消除回退）",
+    "Overpass / Overpass Mono 字体文件缺失（需装进 demo/fonts/ 才能消除回退） ★ **2026-10-08 澄清（保留原句）**：措辞误导 —— 字体文件**实际存在**：`styles/tilt-shift/demo/fonts/Overpass-var.ttf`（318,700 B）与 `OverpassMono-var.ttf`（258,800 B），并由同目录 `fonts.css` 以 `@font-face` 自托管（demo 渲染侧不缺口）。真正缺的是**「文案 + 风格」dub 通路不使用 demo 自带字体**：`lib/dub-styles.json#tilt-shift.subtitle.fontFamily` 是 `SimHei`，而 `dub.mjs` 的 `prepareFonts()` 只从 Windows 系统字体目录 `CFG.winFontsDir` 拷 `msyh.ttc` / `simhei.ttf` 等候选进 `_fonts/`，**从不读 `demo/fonts/`** ⇒ dub 通路字幕落回系统黑体，与 demo 的 Overpass 等宽/终端字体不同。",
     "新主题需要的程序化城镇资产（布局 / 立面 / 招牌 / 英雄演员）必须自建，不能沿用《Toy Town Rush Hour》"
   ],
   "limits": [

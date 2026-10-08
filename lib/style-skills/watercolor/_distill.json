@@ -2,19 +2,17 @@
   "slug": "watercolor",
   "nameZh": "水彩笔刷",
   "distilledAt": "2026-10-03T07:52:38Z",
-  "matchScore": 93,
+  "matchScore": 95,
   "scoreBreakdown": {
-    "palette": 18,
+    "palette": 19,
     "composition": 19,
     "typography": 18,
-    "rhythm": 19,
+    "rhythm": 20,
     "audio": 19
   },
   "defects": [
-    "palette −1：mux 以脚本默认 grain 2（noise=c0s=2:allf=t）在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分（paper.py 生成 ±3.5% 噪声 + 约 2600 条纤维 + 细颗粒），再加颗粒属双重质感；同类纸纹风格（ink-wash）显式传 grain 0。本次音频修复只重做音频、未改混流参数，该缺陷仍在。",
     "composition −1：顶部 HUD 安全边距只有 76px（约 3.96% 画面宽，scene.js 区块卡从 x=76 起排），窄于常见的 5% 安全区，是本风格构图上最紧的一处，任何裁切或加边都会先吃掉区块卡。",
     "typography −2：dub 通路（dub-styles.json#watercolor）把字幕映射到 SimHei（黑体）+ 白色描边（outlineFactor 0.00278），而 `STYLE.md:36-38` 要求 Cormorant Garamond 衬线斜体 + 纸色光晕、中文用 Noto Serif SC 衬线、ink 78% 无描边。该条目的 notes 自己承认这是派生值 + 字体修正（原等宽字体不含中文字形）。",
-    "rhythm −1：成片以 24 fps 导出（产品导出默认帧率），而 `STYLE.md:48` 声明「60 fps suits the slow, fluid brush」，demo 的 `render.mjs:18` 原生 FPS 默认 60；笔触推进与摆动（sway 的 sin(1.15t+φ)）被降采样。",
     "audio −1：`STYLE.md:71` 把「把笔抬起来——音乐退场，只剩纸与房间」列为声音调色板的一条静默特质，但 mix.py 从不把音乐归零（mus *= (1 - .38·duck) 只做约 −4 dB 闪避），全片 113.6 s 音乐不停；70.3 s 的雾擦除段只叠了一层 airy 纸声，声明的静默没有出现。配乐 / 拟音 / 旁白 / 响度四项均已实测达标，故只扣这 1 分。",
     "【palette −1】细纹理 `textureRaw: watercolor` 声明了但渲染未实现：`lib/dub-styles.json#watercolor.bgRecipe.textureRaw` 是 `watercolor`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）只把粗粒度 `bgRecipe.texture` 当主权威源（本风格是 `rice-paper` ⇒ 宣纸噪点（`noise=alls=6:allf=t+u`）），不读 `textureRaw` ⇒ `watercolor` 这一层质感在「文案 + 风格」通路上从未画出来过。为什么没实现：`bgFilters()` 里没有 `watercolor` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径只如实标注、不猜参数（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里，SKILL.md 第 11 节有对应条目）。★ 扣分依据：纹理/质感类缺陷的历史口径记在 `palette` 维度（先例 paper-lantern、watercolor 的纹理缺陷均为 `palette −1`）；本缺陷是「声明的一层细纹理从未画出」而非「画错了」，取最保守的一档 −1。"
   ],
@@ -26,9 +24,9 @@
   ],
   "limits": [
     "只有 16:9：style.json 无 aspects 声明，产品默认 9:16 下画面会被 1:1 塞在左上角、右侧约 43.75% 丢失、下方整片黑；本风格不应在 9:16 交付。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切）",
-    "帧率上限 24 fps：产品导出默认 24，而风格原生声明 60 fps；本次未能按原生帧率交付。",
+    "帧率上限 24 fps：产品导出默认 24，而风格原生声明 60 fps；本次未能按原生帧率交付。 ★ 2026-10-08 更正：此「上限」只属**编排器通路**（`lemo-make.mjs` 的 `--fps` 产品档默认 24）；**权威 artifact（已发布影片）实测 60 fps / 6816 帧 / 113.600 s**，与风格原生声明一致、不受此限（`MAINTAINING.md:339-350` 明确点名 `watercolor` 属「已发布 60 fps」组）。原记「本次未能按原生帧率交付」只适用于本地重渲副本；据此的 `rhythm −1` 已撤销（见 `resolvedDefects`）。",
     "音频链跑在 WSL 侧 .venv（numpy / scipy / soundfile + kokoro-onnx），Windows 侧没有这套环境；缺 WSL 就只能落静音占位。",
-    "matchScore 上限说明：成片即本风格自身的 demo，理论上限 100。本次五项均有可核验的实测证据，扣掉的 8 分全部来自可复现的具体缺陷（grain 2、9:16 缺陷、HUD 边距、dub 字体、24 fps、静默特质未实现），无「不可达分」。"
+    "matchScore 上限说明：成片即本风格自身的 demo，理论上限 100。本次五项均有可核验的实测证据，扣掉的 **5** 分全部来自可复现的具体缺陷（`textureRaw: watercolor` 细纹理未实现、HUD 边距、dub 字体、静默特质未实现），**无「不可达分」**。★ 2026-10-08 更正：原写「扣掉的 8 分」并把「9:16 缺陷」列入清单——9:16 项已于 2026-10-04 修复（见本数组前文），composition 现只余「HUD 边距」−1；且原清单漏列「`textureRaw` 细纹理未实现」（`defects` 里一条 palette −1）。★ **2026-10-08 二次更正（本批）**：原清单里的「grain 2」与「24 fps」两项**已撤销**（依据：这两条的证据取自**本地副本**，而本风格**本地副本 ≠ 已发布影片**——见 `resolvedDefects`），实际扣分由 100−93=7 变为 **100−95=5**，清单同步为 5 分（palette 只余 `textureRaw` 细纹理 −1、composition 只余 HUD 边距 −1、typography dub 字体 −2、audio 静默特质未实现 −1）。"
   ],
   "evidenceFrames": [
     "_contact.jpg",
@@ -194,6 +192,8 @@
     }
   },
   "resolvedDefects": [
-    "composition −2（原缺陷）：composition −2：本风格无 aspects 声明，只支持 16:9；产品默认 9:16（1080×1920）下 1920×1080 画面会被 1:1 塞在左上角，右侧 840px（43.75%）整条丢失、下方 840px（43.75%）是黑带，右上角的雨量计整块被切。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→19，matchScore 92→94（分数于 2026-10-05 回补）。原记录保留作历史。"
+    "composition −2（原缺陷）：composition −2：本风格无 aspects 声明，只支持 16:9；产品默认 9:16（1080×1920）下 1920×1080 画面会被 1:1 塞在左上角，右侧 840px（43.75%）整条丢失、下方 840px（43.75%）是黑带，右上角的雨量计整块被切。（★ 原记·2026-10-04 前；该风格已于 2026-10-04 改造为支持 9:16 —— FILM_META.aspects 见 demo/film.js，实测不裁切） ★ **2026-10-04 已修**：已改造为支持 9:16（`FILM_META.aspects` 见 `demo/film.js`，9:16 实测不裁切，见 SKILL.md 第 2 / 11 节）。composition 17→19，matchScore 92→94（分数于 2026-10-05 回补）。原记录保留作历史。",
+    "palette −1（grain，★ 2026-10-08 撤销）：原扣分依据 = 「mux 以脚本默认 grain 2（noise=c0s=2:allf=t）在纸纹之上又叠了一层胶片颗粒」。★ 原记录（保留作历史）：palette −1：mux 以脚本默认 grain 2（noise=c0s=2:allf=t）在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分（paper.py 生成 ±3.5% 噪声 + 约 2600 条纤维 + 细颗粒），再加颗粒属双重质感；同类纸纹风格（ink-wash）显式传 grain 0。本次音频修复只重做音频、未改混流参数，该缺陷仍在。 ★ **2026-10-08 复核（与同批两条 grain 扣分对齐口径，结论：保留）**：本风格与 `paper-lantern`、`pictogram-motion` 三条 palette −1（grain）依据完全相同（都写着「按与 … 同一口径扣 1」）。同批两条**已撤销**、本风格**保留**，差别只在**根因（管线参数）是否已修**。逐条核实：① **本风格没有 `demo/build.sh`**（8 个无 build.sh 的风格之一；实测 `styles/watercolor/demo/` 下只有 `mux.sh`）⇒ 编排器 `lemo-make.mjs` 的 `muxIntent()`（读 `styles/<slug>/demo/build.sh` 的 mux 行）返回 `{grain:null, crf:null}`（以真实逻辑实测：`watercolor {\"exists\":false,\"grain\":null,\"crf\":null}`）。② 本风格 `lib/style-dna/watercolor.json` 的 `sound_palette.mix_rules` **没有显式 `grain N` / `颗粒 N`** ⇒ `dnaGrainFromMixRules()` 返回 null。③ 本风格自带 `demo/mux.sh` 确实**不加颗粒**（其文件头第 4 行写「不加颗粒」，全文无 `noise=` 滤镜），但它的接口是「自成一体」（`A=\"mix.wav\"`、只吃一个输出路径），编排器 `lemo-make.mjs` 的 mux 脚本探测（只认含 `A=\"$2\"` 的 `V A O [fps] [grain]` 签名）**认不出它、回退 `core/render/mux.sh`**（`_distill.json#selfCheck.warnings` 第 1 条即此告警）。⇒ 三级优先链 `const grain = o.grain ?? intent.grain ?? dnaGrain` 对**本风格仍然全空**，`core/render/mux.sh` 的 `GR=\"${5:-2}\"` **仍取默认 2**、滤镜链仍加 `noise=c0s=2:allf=t` ⇒ **偏离仍然存在、根因未修**。★ 对照（两条为何撤）：`pictogram-motion` 的 `build.sh` 已补入且其 mux 行写字面量 `60 4`（`muxIntent()` 实测取到 `grain=4` = 声明值）⇒ 根因已修、故撤销；`paper-lantern` 的撤销依据是「权威 artifact（已发布影片）来自其 demo 原生 30 fps 链、非编排器 24 fps 线」（见其 `resolvedDefects`）。★ 本风格若要收回这 1 分，最小改动是在 `lib/style-dna/watercolor.json` 的 `mix_rules` 里显式写「颗粒 0」（让三级链的「档案」这一级钉住它），或给 `demo/build.sh` 补一行带**字面量** grain 0 的 mux 声明。 ★ 2026-10-08 撤销依据（四条）：① **权威 artifact 是「已发布影片」，不是本地副本**——`MAINTAINING.md:339-347`：「A local sample copy can be re-rendered to the wrong length — `dur` follows the *published* film, not the copy.」；本条的实测证据链（`logs/watercolor.log:8` 的 `grain (脚本默认)` ⇒ 第 5 参为空 ⇒ `core/render/mux.sh:36` 的 `GR=\"${5:-2}\"` 取默认 2）取自**编排器那条 24 fps 本地线**，不是发布线。② **本风格「本地副本 ≠ 已发布影片」**（`MAINTAINING.md:347-350` 点名 `watercolor` 属「已发布 60 fps」组、本地副本恒 24 fps）：2026-10-08 用 `ffprobe` HTTP 直读 `films` release 的 moov，实测**已发布影片 = 60/1 fps / 6816 帧 / 113.600 s**，而本地副本 = 24 fps / 2726 帧 / 113.583 s ⇒ 本地读数不能代表发布片；该 release 资产（id `590524138`、`created_at == updated_at` = 2026-09-26T11:20:39Z / 11:21:10Z，**从未重传**）字节 **98,583,460 B**，与本地副本 51,106,197 B 不同 ⇒ 发布片不是编排器那条 24 fps 线产出的。③ **同源扣分**：本条与已撤的 `rhythm −1`（24 fps）**同源**（两条都取自本地副本/本地 run），只撤其一会造成内部不一致。④ **权威 artifact 无证据支持该扣分**：本风格自带 `demo/mux.sh` 文件头第 4 行写「不加颗粒」、全文无 `noise=` 滤镜（发布片走 demo 原生 60 fps 链）⇒ 无证据表明发布片叠过 grain 2。⇒ **该扣分撤销：palette 18→19、matchScore 93→94**（随后 rhythm 亦撤，合计 93→95）。★ **必须如实写明的「未判定」项**：已发布影片**是否叠过 grain 2** 目前**只有血统推断、无字节级证明**（本地无 60 fps 副本可比 sha256）；且审计实测 `core/render/mux.sh` 的 grain 2 在该片编码链（`h264_nvenc -preset p5 -cq 23`）里对平坦区**零残留**（`paper-lantern` 同内容 A/B 实测块 std p05 = 0.000）⇒ **像素上不可观测**，而本风格渲染期**本来就有纸纹**（`paper.py` 生成 ±3.5% 噪声 + 约 2600 条纤维 + 细颗粒），两者无法区分。⇒ **扣分撤销是基于「权威 artifact 无证据支持该扣分」，不是「已证明发布版无 grain」。** ★ 另记（**未撤销的管线卫生项**）：编排器那条 24 fps 线**仍会**落 `grain 2`（无 `build.sh`、`mix_rules` 无显式 grain、自带 `mux.sh` 被回退）——那是管线参数问题，不改变已发布影片的判定。",
+    "rhythm −1（24 fps，★ 2026-10-08 撤销）：原扣分依据 = 「成片以 24 fps 导出（产品导出默认帧率），而 `STYLE.md:48` 声明『60 fps suits the slow, fluid brush』」。★ 原记录（保留作历史）：rhythm −1：成片以 24 fps 导出（产品导出默认帧率），而 `STYLE.md:48` 声明「60 fps suits the slow, fluid brush」，demo 的 `render.mjs:18` 原生 FPS 默认 60；笔触推进与摆动（sway 的 sin(1.15t+φ)）被降采样。 ★ 2026-10-08 撤销依据：该依据的实测读数（24 fps / 2726 帧 / 113.583 s）取自**本地副本** `D:/lemo-films/watercolor/watercolor.mp4`，而权威 artifact 是**已发布影片**（`films` release）——依据 `MAINTAINING.md:339-347`「A local sample copy can be re-rendered to the wrong length — `dur` follows the *published* film, not the copy」。2026-10-08 实测**已发布影片 = 60/1 fps / 6816 帧 / 113.600 s**（`ffprobe` HTTP 直读 release 的 moov），**与 `STYLE.md:48` 的「60 fps suits the slow, fluid brush」声明一致**；24 fps 是编排器 `--fps` 的默认值、不是本风格的错。⇒ **该扣分撤销：rhythm 19→20**（与同批 grain 撤销合并计，**matchScore 93→95** —— grain 先撤 palette 18→19、rhythm 再撤 19→20，两步合计 93→95；SKILL.md 第 11 节与 `limits` 里写的「matchScore 93→95」即此合计数）。"
   ]
 }

@@ -19,7 +19,7 @@
   ],
   "assetGaps": [
     "music/src/sb_precipice.mp3 只落本地、不进 git（lemo-opuscar/.gitignore:75-76 排除 styles/*/demo/**/*.mp3|wav）——这是仓库既有设计，不是遗漏；但新机器上要按 `DEMO.md:107` 的直链重新 curl 才能重跑 edit.py。同样被排除的还有 voices/*.wav、score.wav、mix.wav。",
-    "无 demo/build.sh：本风格没有一键复现脚本，构建链只存在于 DEMO.md 的 Build notes（`DEMO.md:103-131`），需手工按 7 步执行（TTS → ASR 检查 → 配乐剪辑 → 混音 → 字幕 → 渲染移轴版 → 封装）。",
+    "★ **2026-10-08 已消解**（原记录保留作历史）：本条原写「无 demo/build.sh：本风格没有一键复现脚本，构建链只存在于 DEMO.md 的 Build notes（`DEMO.md:103-131`），需手工按 7 步执行（TTS → ASR 检查 → 配乐剪辑 → 混音 → 字幕 → 渲染移轴版 → 封装）。」—— 该缺口已消解：`styles/hd-2d/demo/build.sh` 已于 **2026-10-08（库仓第113批，commit 937fde9）** 补入（实测存在，3417 B），一键复现链路已具备。",
     "每套布景都要为新主题重画：harbor.js（含海面 shader 调用）/ forest.js + forest_art.js / cliff.js 是人力最重的一块；chars.js 的姿势表也要为新角色重写。",
     "字体只有 demo 那一套 woff2 latin 子集（Cinzel 500/700、Cormorant Garamond italic 500/500/600），无第二套字面。"
   ],

@@ -138,9 +138,9 @@ film: Follow the Rain
 | 项 | 值 |
 |---|---|
 | 渲染入口 | `node core/render/video.mjs styles/watercolor/demo --fps 24 --workers 6 --size 1920x1080 --out styles/watercolor/demo/out/video_gpu.mp4`（本次实测） |
-| 帧率 | **24 fps**（产品导出帧率）；demo 的 `render.mjs` 原生 `FPS` 默认 **60**（`render.mjs:27`） |
+| 帧率 | **24 fps**（**编排器**产品导出帧率，即本地重渲副本）；demo 的 `render.mjs` 原生 `FPS` 默认 **60**（`render.mjs:27`）。★ 权威 artifact（**已发布影片**）实测 **60 fps / 6816 帧**（`MAINTAINING.md:339-350`） |
 | 分辨率 / 比例 | 原生 **1920×1080 / 16:9**（本次 `--ratio 16:9`）；**已适配 9:16**（`FILM_META.aspects = ['16:9','9:16']`，字面量在 `demo/film.js:23`）。由 `main.js` 读视口 → `film.js` 的 `setFrame()`（`film.js:10-14`）重排：整幅画经 `fit()` 做「设计帧 → 当前帧等比装入」（`main.js:228-230`、`scene.js` 7 处 `fit(...)`），竖幅上下补纸色 + 纸纹留白；16:9 时 `FX=FY=S=1`、偏移 0，逐字节退化成设计帧 |
-| 混流 | `sh core/render/mux.sh <video_gpu.mp4> <mix.wav> styles/watercolor/watercolor.mp4 24 2`（两遍 `loudnorm I=-14 TP=-1.7`；`grain` 默认 2） |
+| 混流 | `sh core/render/mux.sh <video_gpu.mp4> <mix.wav> styles/watercolor/watercolor.mp4 24 2`（两遍 `loudnorm I=-14 TP=-1.7`；`grain` 默认 2）——★ 此行是**编排器线**；发布片走 demo 原生 60 fps 链（自带 `mux.sh`，不加颗粒） |
 | 编码器 | `h264_nvenc`（本地 GPU，日志实测 `nvenc`） |
 | 音频入口 | `demo/tts/gen.py`（Kokoro `kokoro-onnx`，voice `af_heart`，speed 0.93，lang en-us）→ `demo/asr.py`（faster-whisper `base.en` 校对）→ `demo/music/prep.sh` · `analyze.py` · `jump.py` · `edit.py` → `demo/mix.py` |
 | 字幕入口 | VO 表 → `core/render/srt.py`（demo 自带 srt 生成器，本编排器不支持，故 `.srt` 沿用仓库旧文件） |
@@ -167,9 +167,9 @@ film: Follow the Rain
 - **【已修复】成片音轨曾是数字静音**。首版成片实测 **−70.0 LUFS / Peak −inf / RMS −inf**（aac 48 kHz 立体声流存在，但内容是纯零）。根因是一次**误判**：出片走 `--skip-audio`，音频链未执行，而 `scripts/unblock-placeholder-audio.mjs` 的 `TARGETS` 把 watercolor 登记为 `placeholder: true`、把缺的东西写成 `wf48.wav`（记为「相对路径引用的音源，仓库不含」）——实际那首曲子是 **CC BY 4.0，直链就写在 `music/prep.sh:8`**，从来不是版权障碍。修复后成片 **I = −14.0 LUFS / 真峰值 −1.72 dBTP**（`loudnorm` `input_tp`，4× 过采样；此前记的「−1.716 dBFS」是 `astats` 采样峰值、口径不同）（详见下方「踩过的坑（本机实测）」）。★ **原记**：上述 −1.72 dBTP 是当次重混后的读数；
   当前入库成片实测真峰值 **−3.34 dBTP**（`loudnorm` `input_tp`，4× 过采样）、达标。**教训：判定「素材缺」之前，先读 demo 自带的下载 / 准备脚本。**
 - **声明的「静默」特质没有实现**。`STYLE.md:71` 把「把笔抬起来——音乐退场，只剩纸与房间」列为声音调色板的一条，但 `mix.py` 从不把音乐归零（`mus *= (1 - .38·duck)` 只做约 −4 dB 闪避），全片 113.6 s 音乐不停；70.3 s 的雾擦除段只叠了一层 `airy` 纸声。要复现这条特质必须自己加一段总线静默。
-- **mux 用了脚本默认 `grain 2`**（`noise=c0s=2:allf=t`），在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分，纸纹类风格应显式传 `grain 0`。
+- ~~**mux 用了脚本默认 `grain 2`**（`noise=c0s=2:allf=t`），在纸纹之上又叠了一层胶片颗粒。纸纹本身就是画面的一部分，纸纹类风格应显式传 `grain 0`。~~ **★ 2026-10-08 已撤销（palette 18→19、matchScore 93→95）**——**以下为原复核记录（当时结论「保留」），保留作历史**：本条与 `paper-lantern`、`pictogram-motion` 的 palette −1（grain）**依据完全相同**（三条都写着「按与 … 同一口径扣 1」）；那两条**已撤销**、本条**保留**，差别只在**根因（管线参数）是否已修**。核实：① 本风格**没有 `demo/build.sh`**（8 个无 build.sh 的风格之一，`styles/watercolor/demo/` 下只有 `mux.sh`）⇒ 编排器 `muxIntent()` 实测返回 `{grain:null, crf:null}`；② `lib/style-dna/watercolor.json` 的 `sound_palette.mix_rules` 无显式 `grain` / `颗粒` ⇒ `dnaGrainFromMixRules()` 返回 null；③ 本风格自带 `demo/mux.sh` 确实**不加颗粒**（文件头第 4 行「不加颗粒」、全文无 `noise=`），但它的接口自成一体（`A="mix.wav"`、只吃一个输出路径），编排器只认含 `A="$2"` 的 `V A O [fps] [grain]` 签名 ⇒ **认不出它、回退 `core/render/mux.sh`**（见下方「踩过的坑」第 1 条告警）。⇒ 三级链 `const grain = o.grain ?? intent.grain ?? dnaGrain` 对**本风格仍全空**，`core/render/mux.sh` 的 `GR="${5:-2}"` **仍取默认 2** ⇒ **偏离仍在、根因未修，故保留扣分**。对照：`pictogram-motion` 的 `build.sh` 已补入且其 mux 行写字面量 `60 4`（`muxIntent()` 实测取到 `grain=4` = 声明值）⇒ 根因已修、故撤销；`paper-lantern` 的撤销依据是「权威 artifact（已发布影片）来自其 demo 原生 30 fps 链、非编排器 24 fps 线」。★ 若要收回这 1 分：在 `lib/style-dna/watercolor.json` 的 `mix_rules` 里显式写「颗粒 0」，或给 `demo/build.sh` 补一行带**字面量** grain 0 的 mux 声明。 ★ **2026-10-08 最终裁决（撤销）**：早前只问了「根因（管线参数）是否已修」，**漏问了「扣分证据取自哪一条线」**。按 `MAINTAINING.md:339-347`（**权威 artifact 是已发布影片**；本地 `D:/lemo-films/<slug>/<slug>.mp4` 只是**本地重渲副本**）重新裁决：本条证据（`core/render/mux.sh` 默认 `GR="${5:-2}"` ⇒ `noise=c0s=2:allf=t`）**只取自编排器的 24 fps 本地副本**；本风格**已发布影片实测 60 fps / 6816 帧 / 113.600 s**（`DEMO.md:5`「已发布影片（`films` release）实为 60 fps / 6816 frames」、`DEMO.md:140`「6816 frames at 60 fps」、`style.json` 的 `dur: 113.6`），本地副本 24 fps / 2726 帧 ⇒ **本地线 ≠ 发布线**。发布片出自 demo 原生 60 fps 链，而本风格自带 `demo/mux.sh` 文件头明写「**不加颗粒**」、全文无 `noise=` ⇒ 默认 grain 2 **不作用于发布片** ⇒ 撤销。 ★ **保留事实（不因撤销而消失）**：**管线根因仍未修**（无 `demo/build.sh`、`mix_rules` 无显式 grain、自带 `mux.sh` 因签名不符被回退）——任何经 `lemo-make.mjs` 重出的片仍会落默认 2；该事实降级为下方「下次迭代」的一条改进建议，**不再据此扣分**。 ★ **反例（保留）**：`scifi-toon` 的 palette −1——其发布片实测 **24 fps / 1380 帧 / 57.5 s，与本地副本逐项一致** ⇒ 本地线 == 发布线 ⇒ 扣分站得住，**不得**随本批一起撤。详见 `_distill.json#resolvedDefects`。
 - **顶部 HUD 安全边距只有 76 px（3.96% 画面宽）**，窄于常见的 5% 安全区；一旦要裁切或加边就会先吃掉区块卡。
-- **24 fps 导出**，而 `STYLE.md:48` 声明「60 fps suits the slow, fluid brush」；demo 的 `render.mjs:27` 原生默认 `FPS=60`，产品导出默认 24，笔触与摆动的连贯度被降采样。
+- ~~**24 fps 导出**，而 `STYLE.md:48` 声明「60 fps suits the slow, fluid brush」；demo 的 `render.mjs:27` 原生默认 `FPS=60`，产品导出默认 24，笔触与摆动的连贯度被降采样。~~ **★ 2026-10-08 已撤销（rhythm 19→20、matchScore 93→95）**：24 fps / 2726 帧是**编排器本地重渲副本**的读数（`lemo-make.mjs` 的 `--fps` 产品档默认）；权威 artifact（**已发布影片**）实测 **60 fps / 6816 帧**，与 `STYLE.md:48` 的声明、`render.mjs` 的原生 `FPS=60` 一致 ⇒ 对发布片**无帧率偏离**。依据 `MAINTAINING.md:339-347`。详见 `_distill.json#resolvedDefects`。
 - **dub 通路字体与描边不符风格**：`dub-styles.json#watercolor` 把字幕映射到 **SimHei（黑体）+ 白色描边**（`outlineFactor 0.00278`），而 `STYLE.md:36-38` 要求 Cormorant Garamond 衬线斜体 + 纸色光晕、中文用 Noto Serif SC 衬线、ink 78% 无描边。该条目的 `notes` 自己承认这是「派生值 + 字体修正（原等宽字体不含中文字形）」。
 - **细纹理 `textureRaw: watercolor` 声明了但渲染未实现**：`lib/dub-styles.json#watercolor.bgRecipe.textureRaw` 是 `watercolor`，而渲染侧（`lib/dub-core.mjs` 的 `bgFilters()`）**只把粗粒度 `bgRecipe.texture` 当主权威源**（本风格是 `rice-paper` ⇒ 宣纸噪点（`noise=alls=6:allf=t+u`）），**不读** `textureRaw` ⇒ `watercolor` 这一层质感在「文案 + 风格」通路上**从未画出来过**。为什么没实现：`bgFilters()` 里没有 `watercolor` 对应的滤镜分支，按「只复用已有分支、不发明无数据依据的参数」的口径**只如实标注、不猜参数**（已集中登记在 `lib/dub-styles.json` 的 `_notes` 未实现清单里）。
 
@@ -183,7 +183,7 @@ film: Follow the Rain
 - **一镜到底是它的强项也是它的限制**：撑不起需要频繁切换视角或强冲突的内容。
 - 音频链跑在 WSL 侧的 `.venv`（numpy / scipy / soundfile + `kokoro-onnx`），Windows 侧没有这套环境；缺 WSL 就只能落静音占位。
 - **配音文件只在 WSL 侧**：`voices/v01–v13.wav` 被 `.gitignore` 忽略，Windows 副本的 `voices/` 里只有 `dur.json`；跨侧核对音频链时要到 WSL 路径下看。
-- **matchScore 上限说明**：成片即本风格自身的 demo，理论上限 100。本次五项均有可核验的实测证据，扣掉的 8 分全部来自可复现的具体缺陷（grain 2、9:16 缺陷、HUD 边距、dub 字体、24 fps、静默特质未实现），**无「不可达分」**。
+- **matchScore 上限说明**：成片即本风格自身的 demo，理论上限 100。本次各项均有可核验的实测证据，扣掉的 **5** 分全部来自可复现的具体缺陷（`textureRaw: watercolor` 细纹理未实现 −1、HUD 边距 −1、dub 字体 −2、静默特质未实现 −1），**无「不可达分」**。★ 2026-10-08 更正（二）：原写「扣掉的 8 分」并把「9:16 缺陷」列入清单——9:16 项已于 2026-10-04 修复（见上「能力限制」首条），composition 现只余「HUD 边距」−1；且原清单漏列「`textureRaw` 细纹理未实现」（`defects` 里一条 palette −1）；当时实际扣分 100−93=7。★ 2026-10-08 更正（三）：`grain 2`（palette −1）与 `24 fps`（rhythm −1）两条**已按「证据只取自本地重渲副本、本地线≠发布线」撤销**（见上「已知缺陷」与 `_distill.json#resolvedDefects`）⇒ 扣分 7 → **5**、matchScore 93 → **95**（100−95=5，逐项对上）。
 
 ### 踩过的坑（本机实测）
 - **首版**出片命令：`node lemo-make.mjs watercolor --skip-sync --no-preflight --ratio 16:9 --skip-audio`（日志首行，`2026-10-03T06:19:55.948Z`）——跳过了两份库同步、预检**与整条音频链**（音频链后于 15:47 单独补齐并重混，见下）。
@@ -202,7 +202,7 @@ film: Follow the Rain
 - 在 `mix.py` 里补一段**总线静默**（照 `STYLE.md:71` 的「把笔抬起来」，放在雾擦除段），把声明的静默特质真正做出来。
 - 改正 `scripts/unblock-placeholder-audio.mjs` 的 `TARGETS` 条目：watercolor 的曲源是 **CC BY 4.0 且有直链**，应从「缺源 → 静音占位」名单里移出（改成先跑 `sh music/prep.sh`）。
 - ~~给 16:9-only 风格在编排器侧**直接拒绝 9:16 导出**，或补 `aspects` 声明，避免静默产出废片。~~ **★ 2026-10-04 已完成本风格这一半**：已补 `FILM_META.aspects = ['16:9','9:16']`（`demo/film.js:23`）并由 `setFrame()` + `fit()` 重排版面（见第 2 节）；编排器侧的通用拒绝策略仍可另议。
-- 本风格 mux 应显式传 **`grain 0`**（纸纹已在画面里）。
+- 本风格 mux 应显式传 **`grain 0`**（纸纹已在画面里）。★ 2026-10-08：此条**仍未做**（没有 `build.sh`、`mix_rules` 无显式 grain、自带 `mux.sh` 被编排器回退 ⇒ 经 `lemo-make.mjs` 重出片仍会落默认 2）——**但按「权威 artifact = 已发布影片」的口径已不再据此扣分**（见「已知缺陷」的撤销说明），此条现为**纯管线卫生建议**。
 - 给编排器补**字幕生成器适配**，让 `.srt` 能随片重新生成。
 - dub 通路的字体 / 描边应与 demo 对齐（衬线 + 纸色光晕，而非黑体 + 白描边）。
 
@@ -213,10 +213,10 @@ film: Follow the Rain
 | 项 | 值 |
 |---|---|
 | 蒸馏日期 | 2026-10-03（音频修复后回填于 `2026-10-03T07:52:38Z`） |
-| 成片 | `D:/lemo-films/watercolor/watercolor.mp4`（113.583333 s / 51,106,197 字节 / 2726 帧 / 24 fps / 1920×1080；音轨 aac 48 kHz 立体声，`I = −14.0 LUFS`、真峰值 `−3.34 dBTP`（`loudnorm` `input_tp`，4× 过采样；`astats` 采样峰值 −3.350128 是下界）） |
+| 成片 | `D:/lemo-films/watercolor/watercolor.mp4`（**编排器 24 fps 本地重渲副本**：113.583333 s / 51,106,197 字节 / 2726 帧 / 24 fps / 1920×1080；音轨 aac 48 kHz 立体声，`I = −14.0 LUFS`、真峰值 `−3.34 dBTP`（`loudnorm` `input_tp`，4× 过采样；`astats` 采样峰值 −3.350128 是下界））。★ **权威 artifact = 已发布影片**（`films` release）：2026-10-08 `ffprobe` HTTP 直读 moov 实测 **60 fps / 6816 帧 / 113.600 s**（`MAINTAINING.md:339-350`） |
 | 抽帧 | `D:/lemo-tools/_distill/frames/watercolor/`（24 帧 + 接触印样，均为 16:9） |
 | 音频证据 | `music/Wildflowers.mp3` 12,891,141 字节（md5 `132be755238c09853720556bb833e999`）· `music/Wildflowers.wav` 14,207,822 字节 / 322.17 s · `music/wf48.wav` 61,856,534 字节 / 322.17 s · `music/score.wav` 22,615,032 字节 / 117.786 s · `demo/mix.wav` 43,622,488 字节 / `pcm_f32le` / 113.600 s（修前 `I = −13.3 LUFS` / `Peak = −1.0 dBFS`）· `voices/v01–v13.wav` 24 kHz（WSL 侧，时长与 `dur.json` 逐条吻合） |
-| 风格匹配度自评 | **93/100**（2026-10-05 校正：原 94，新增「textureRaw 细纹理未实现」缺陷，palette −1）（2026-10-05 校正：原 92，9:16 画幅缺陷已修并回补 composition +2） |
+| 风格匹配度自评 | **95/100**（2026-10-08 校正：原 93，**撤销两条「证据只取自本地重渲副本、本地线≠发布线」的扣分**——`grain 2`（palette 18→19）与 `24 fps`（rhythm 19→20）；权威 artifact 为已发布影片 60 fps / 6816 帧，见 `_distill.json#resolvedDefects`）（2026-10-05 校正：原 94，新增「textureRaw 细纹理未实现」缺陷，palette −1）（2026-10-05 校正：原 92，9:16 画幅缺陷已修并回补 composition +2） |
 | 详细资料 | 有：`styles/watercolor/STYLE.md`、`DEMO.md`、`style.json`、`lib/style-dna/watercolor.md`、`lib/style-dna/watercolor.json`、`lib/dub-styles.json#watercolor`、demo 源码（`scene.js`/`main.js`/`engine.js`/`plants.js`/`mix.py`/`mux.sh`/`render.mjs`/`paper.py`）、`_distill/logs/watercolor.log` |
 
 **逐帧拆解要点**：
@@ -239,6 +239,6 @@ film: Follow the Rain
 
 **音频链逐项核对**（修复后实测，逐条对上 `STYLE.md:67-73` 的声明）：配乐 = Scott Buckley《Wildflowers》CC BY 4.0，`prep.sh:8` 有直链，`analyze.py` tempo 103.359375 / 502 拍，`edit.py` 跳剪 a=61.231 s → b=265.613 s（chroma 0.915）裁到 117.786 s；`score_beats.json` 的 `cut`/`lag`/`beats[0]` 与 `scene.js:284` 的 `BEAT0=11.865` 逐项吻合。拟音 = `mix.py` 程序合成（笔刷沙沙 / 盖印闷响 / 沙漠风 / 46 声鹦鹉 / 14 声雨滴 plink / 火吼+噼啪 / 渐大的雨 / 2 声鞭鸟 / 雾起 / 地图上的火）。旁白 = Kokoro `af_heart` speed 0.93 / en-us，13 行，24 kHz 且时长与 `dur.json` 逐条吻合。混音 = 5 ms 预读限幅 → 旁白 RMS = 音乐 +8 dB → 音乐闪避 ×0.62 → 峰值归一到 0.89。响度 = 成片实测 `I = −14.0 LUFS`（声明目标 −14 LUFS，精确达标）、真峰值 `−3.34 dBTP`（`loudnorm` `input_tp`，4× 过采样；`astats` 采样峰值 −3.350128 是下界）（低于 −1.2 dBTP 交付上限）。
 
-**自检发现的缺陷**：mux 用了默认 `grain 2`；无 `aspects` 声明导致 9:16 下右侧 43.75% 丢失（★ 2026-10-04 已修：补 `FILM_META.aspects` + `setFrame()`/`fit()` 等比装入，见第 2 / 11 节）；24 fps 导出而非原生 60；dub 通路字幕用黑体 + 白描边，与风格不符；顶部 HUD 安全边距仅 76 px；声明的「静默」特质在 `mix.py` 里没有实现。
+**自检发现的缺陷**：~~mux 用了默认 `grain 2`~~（**★ 2026-10-08 已撤销**：证据只取自编排器 24 fps 本地副本，权威 artifact 为已发布影片 60 fps，见「已知缺陷」）；无 `aspects` 声明导致 9:16 下右侧 43.75% 丢失（★ 2026-10-04 已修：补 `FILM_META.aspects` + `setFrame()`/`fit()` 等比装入，见第 2 / 11 节）；~~24 fps 导出而非原生 60~~（**★ 2026-10-08 已撤销**：发布片实测就是 60 fps / 6816 帧）；dub 通路字幕用黑体 + 白描边，与风格不符；顶部 HUD 安全边距仅 76 px；声明的「静默」特质在 `mix.py` 里没有实现。
 
-**本次为补齐短板做了什么**：**未改动 `lemo-make.mjs`、未改动 `styles/watercolor/` 下任何源码、未起渲染或 TTS**。首轮仅完成 SKILL 文档与 `_distill.json` 的蒸馏。首轮成片的**音轨数字静音**短板随后由音频专项 teammate 修复（补曲源 → 跑 `prep.sh`/`gen.py`/`analyze.py`/`jump.py`/`edit.py`/`mix.py` → 重跑 `core/render/mux.sh`，零源码改动），我据其实测值回填了本文件第 6 / 11 节与 `_distill.json` 的 `audio` 分项（4 → 19，`matchScore` 77 → 92）。其余短板已全部记录在第 11 节，留给下一轮迭代。
+**本次为补齐短板做了什么**：**未改动 `lemo-make.mjs`、未改动 `styles/watercolor/` 下任何源码、未起渲染或 TTS**。首轮仅完成 SKILL 文档与 `_distill.json` 的蒸馏。首轮成片的**音轨数字静音**短板随后由音频专项 teammate 修复（补曲源 → 跑 `prep.sh`/`gen.py`/`analyze.py`/`jump.py`/`edit.py`/`mix.py` → 重跑 `core/render/mux.sh`，零源码改动），我据其实测值回填了本文件第 6 / 11 节与 `_distill.json` 的 `audio` 分项（4 → 19，`matchScore` 77 → 92）。其余短板已全部记录在第 11 节，留给下一轮迭代。**2026-10-08**：按「权威 artifact = 已发布影片」口径二次裁决，**撤销** `grain 2`（palette 18→19）与 `24 fps`（rhythm 19→20）两条扣分（两条证据都只取自编排器 24 fps 本地副本，而发布片实测 60 fps / 6816 帧），matchScore 93 → **95**；管线根因（无 `demo/build.sh`）未修，降级为「下次迭代」建议。

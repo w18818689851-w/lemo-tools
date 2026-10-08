@@ -21,8 +21,8 @@
     "出处矛盾（不扣分但必须记录）：`DEMO.md:46` 说近景祥云幕在 s17_sushi.js，`DEMO.md:105` 又说 ±.035 偏移在 s16_mutual.js。源码实情是 cloudCurtain(S, z) 定义在 `demo/src/shots/s17_sushi.js:9`，被 `s16_mutual.js:67` 与 `s17_sushi.js:63` 各调用一次——两处文档各说对了一半"
   ],
   "assetGaps": [
-    "本风格没有 demo/build.sh：demo 目录里只有 sheet.sh 与 tile.sh，所以没有权威的一键复现脚本；SKILL.md 第 9 节的命令是从 `DEMO.md:129-151` 的 Build notes 摘的，未经脚本化验证",
-    "配乐是外部 CC BY 4.0 曲目（Kevin MacLeod 'Ripples' 与 'Nu Flute'，incompetech.com），不在仓库里，demo/music/ 只有候选与 MUSIC.md；换机器或断网重跑配乐有失败风险",
+    "★ **2026-10-08 已消解**（原记录保留作历史）：本条原写「本风格没有 demo/build.sh：demo 目录里只有 sheet.sh 与 tile.sh，所以没有权威的一键复现脚本；SKILL.md 第 9 节的命令是从 `DEMO.md:129-151` 的 Build notes 摘的，未经脚本化验证」—— 该缺口已消解：`styles/paper-lantern/demo/build.sh` 已于 **2026-10-06（库仓 commit cf8081f「提交核心链与 42 个风格的 demo 代码」一并入库）** 补入（实测存在，2881 B）。",
+    "配乐是外部 CC BY 4.0 曲目（Kevin MacLeod 'Ripples' 与 'Nu Flute'，incompetech.com），不在仓库里，demo/music/ 只有候选与 MUSIC.md；换机器或断网重跑配乐有失败风险 ★ **2026-10-08 澄清（保留原句）**：措辞可收紧 —— 本机 `styles/paper-lantern/demo/music/` 里**实际存在** `km_Ripples.mp3`（8,220,237 B）与 `km_Nu_Flute.mp3`（3,314,444 B），并非「只有候选与 MUSIC.md」。准确说法是**不进版本库**：两首 mp3 被库仓根 `lemo-opuscar/.gitignore:76`（`styles/*/demo/**/*.mp3`）忽略，`git ls-files styles/paper-lantern/demo/music/` 只列 `MUSIC.md` / `analysis.json` ⇒ 新 clone 的 `demo/music/` 里才没有曲源，换机器/断网重跑配乐仍有失败风险（原句的**结论**成立，只是把「本机也没有」改成了「本机有、新 clone 没有」）。",
     "真实世界布景依赖 Poly Haven 贴图（american_walnut_veneer、tea_set_01，CC0），从 /core/assets/polyhaven/ 加载",
     "没有任何可复用的「换主题素材包」：剪纸母题（karst/ridge/xiangyun/waves/waterTop/osmanthus/pine/willow/reeds/jiangnanHouse/pavilion/lantern/mooncake）、带关节的剪影人物（grannyStand/girlStand/childStand/sushi/change/rabbit/arm）、内景道具（cut/roundWindow/steamers/stove/jar/bowl/teapot/pendant/calendar/table/chair/boxFront/label/cake3q）全是 demo/src/art.js、people.js、props.js 里的程序化函数，换主题必须重画全部纸层",
     "demo/mix.wav 曾是静音占位（122.747s / 23.5MB / mean=max=−91.0 dB），与真正的 demo/out/mix.wav（mix.py 落点，`demo/mix.py:7`）同名不同源，被编排器的 -s 探测优先命中，导致首版成片静音；2026-10-03 修复后两处为同一份真实混音（md5 a7781d36a5c6f579fa70025bb543c8bd，23,475,884 B）。换机器重跑必须确认 demo/mix.wav 与 demo/out/mix.wav 都是真实混音",
