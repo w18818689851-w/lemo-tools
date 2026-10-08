@@ -1566,3 +1566,71 @@ html[data-theme="light"] {
   font-size: 12.5px;
   line-height: 1.65;
 }
+
+/* ── LLM API 配置面板 ──────────────────────────────────────────
+   ★ 只用两套主题里已有的颜色变量（--ok / --warn / --err / --bg-2 / --line-2…），
+     浅色 / 深色自动都对，不另写一份配色。
+   ★ 三步校验用「○ 待检 / ⟳ 检测中 / ✓ 通过 / ✗ 未通过」四态，颜色复用 .env-dot 那套语义色。 */
+.llm-intro { font-size: 12.5px; color: var(--fg-dim); margin-bottom: 10px; line-height: 1.6; }
+.llm-intro b { color: var(--fg); }
+.llm-intro code {
+  font-family: var(--mono); font-size: 12px;
+  background: var(--bg-3); border-radius: 4px; padding: 1px 5px;
+}
+.llm-key-state { font-size: 11px; font-weight: 600; }
+.llm-key-state.ok { color: var(--ok); }
+.llm-key-state.missing { color: var(--warn); }
+.llm-headers-field { margin-top: 10px; }
+.llm-headers {
+  font-family: var(--mono); font-size: 12px; line-height: 1.5;
+  resize: vertical; min-height: 62px;
+}
+.llm-actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 12px;
+}
+.llm-actions .hint { margin-left: 2px; }
+
+/* 三步校验结果：逐步点亮 */
+.llm-steps {
+  margin-top: 12px; padding: 10px 11px;
+  border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
+}
+.llm-step {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 3px 0; font-size: 12.5px;
+}
+.llm-step-ico { width: 16px; text-align: center; color: var(--fg-faint); flex: 0 0 auto; }
+.llm-step-name { color: var(--fg-dim); flex: 0 0 auto; min-width: 42px; }
+.llm-step-detail { color: var(--fg-faint); font-size: 11.5px; word-break: break-word; }
+.llm-step.running .llm-step-ico { color: var(--accent); animation: llm-spin 1s linear infinite; }
+.llm-step.ok .llm-step-ico { color: var(--ok); }
+.llm-step.ok .llm-step-name { color: var(--fg); }
+.llm-step.fail .llm-step-ico { color: var(--err); }
+.llm-step.fail .llm-step-name { color: var(--err); }
+.llm-step.skip .llm-step-ico { color: var(--fg-faint); }
+.llm-step-hint {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-2);
+  font-size: 12.5px; line-height: 1.6; color: var(--warn);
+}
+.llm-step-hint:empty { display: none; }
+@keyframes llm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* 试一句 */
+.llm-try {
+  margin-top: 12px; padding: 10px;
+  border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
+}
+.llm-try .llm-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.llm-try .llm-row .input { flex: 1 1 320px; min-width: 0; }
+.llm-try-out { margin-top: 8px; }
+.llm-try-out:empty { display: none; }
+.llm-try-out .llm-out-text {
+  font-size: 12.5px; color: var(--fg); line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 8px 10px; max-height: 220px; overflow: auto;
+}
+.llm-try-out .llm-out-meta { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; font-family: var(--mono); }
+.llm-try-out .llm-out-err { font-size: 12.5px; color: var(--err); line-height: 1.6; word-break: break-word; }
+.llm-try-out .llm-out-err .llm-out-hint { color: var(--warn); display: block; margin-top: 3px; }

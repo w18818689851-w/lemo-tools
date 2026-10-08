@@ -121,9 +121,14 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/briefs/:id` | 读一张工单的当前内容（每次从磁盘读，不缓存） | 同步 |
 | PATCH | `/api/briefs/:id` | 外部 LLM 的推荐回写通道（走状态机校验；直接改文件会绕过它） | 同步 |
 | DELETE | `/api/briefs/:id` | 删除一张工单（running 中的工单不允许删，回 409） | 同步 |
+| GET | `/api/llm/profiles` | 脱敏 profile 列表 + 当前生效 profile | 同步 |
+| GET | `/api/llm/config` | 当前生效配置（key 脱敏，只回 hasKey） | 同步 |
+| POST | `/api/llm/config` | 保存用户覆盖，落盘 `<成片根>/_llm-api.json` | 同步 |
+| POST | `/api/llm/validate` | 跑 validate()（可传临时配置，不必先保存） | 同步 |
+| POST | `/api/llm/chat` | 跑一次 chat()（面板上的「试一句」） | 同步 |
 
-★ 上表共 **43** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
-其余 **41** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
+★ 上表共 **48** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
+其余 **46** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
 `DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
 ★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
 

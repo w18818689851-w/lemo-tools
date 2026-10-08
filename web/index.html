@@ -279,6 +279,109 @@
       </details>
     </section>
 
+    <!-- LLM API 配置：软件内涉及 LLM 推理的任务**默认走 workbuddy**，这里可切到任意
+         OpenAI 兼容 / Anthropic / 厂商私有接口（不限云端 / 本地、不限厂商 / 底层模型）。
+         ★ 接口：GET /api/llm/profiles|config、POST /api/llm/config|validate|chat
+           （契约见 server.mjs 的 /api/llm/* 组说明）。
+         ★ 密钥安全：key **永不回显**（只显示「已配置 / 未配置」），输入框留空 = 不改；
+           自定义头里敏感名（authorization / *api*key* / token…）的值由后端打码成 ••••••，
+           同样「留占位符 = 不改」。
+         ★ 「一键校验」按契约分三步**逐步**显示：可达 → 鉴权 → 返回体；任一步失败都给可操作的中文提示。
+         ★ 落盘 D:\lemo-films\_llm-api.json（仓库之外 ⇒ 不进 git）。 -->
+    <section class="card llm-card" id="llmCard">
+      <div class="card-head">
+        <h2 class="card-title">LLM API 配置 <span class="count" id="llmProfileBadge"></span></h2>
+        <div class="card-tools">
+          <button class="btn ghost" id="btnLlmRefresh" title="重新读 profile 清单与当前生效配置（GET /api/llm/*）">刷新</button>
+        </div>
+      </div>
+      <div class="llm-intro" id="llmIntro">
+        软件内涉及 <b>LLM 推理</b>的任务<b>默认走 <code>workbuddy</code></b>；这里可换成任意
+        <b>OpenAI 兼容</b> / <b>Anthropic</b> / <b>厂商私有</b>接口 —— 不限云端 / 本地、不限厂商。
+        选中的 profile 与覆盖项落盘到 <code>D:\lemo-films\_llm-api.json</code>（<b>不在仓库内</b>，不进 git）。
+      </div>
+
+      <div class="form-grid llm-grid">
+        <label class="field">
+          <span class="lbl">Profile</span>
+          <select id="llmProfile" class="input"></select>
+          <span class="hint" id="llmProfileHint">默认 profile = workbuddy（软件默认走它）</span>
+        </label>
+        <label class="field">
+          <span class="lbl">适配器 kind</span>
+          <select id="llmKind" class="input">
+            <option value="">（用 profile 默认）</option>
+            <option value="openai-compatible">openai-compatible</option>
+            <option value="anthropic">anthropic</option>
+            <option value="custom">custom（厂商私有接口）</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="lbl">Endpoint baseUrl</span>
+          <input id="llmBaseUrl" class="input" placeholder="如 https://api.anthropic.com 或 http://127.0.0.1:1234/v1" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="lbl">模型名 model</span>
+          <input id="llmModel" class="input" list="llmModelList" placeholder="如 gpt-4o-mini / claude-sonnet-4 / qwen2.5" autocomplete="off">
+          <datalist id="llmModelList"></datalist>
+          <span class="hint" id="llmModelHint">可从下拉切换，也可手填任意模型名</span>
+        </label>
+        <label class="field">
+          <span class="lbl">请求超时 timeoutMs</span>
+          <input id="llmTimeout" class="input num" type="number" min="1000" max="600000" step="1000" placeholder="默认 30000（1000–600000）">
+        </label>
+        <label class="field">
+          <span class="lbl">API Key <span class="llm-key-state" id="llmKeyState"></span></span>
+          <input id="llmKey" class="input" type="password" placeholder="留空 = 不改" autocomplete="new-password">
+          <span class="hint">★ 密钥永不回显；留空表示「不改」</span>
+        </label>
+      </div>
+
+      <div class="form-grid llm-custom" id="llmCustomRows" hidden>
+        <label class="field">
+          <span class="lbl">请求路径 path（custom 用）</span>
+          <input id="llmPath" class="input" placeholder="默认 /chat/completions" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="lbl">取文本路径 extract（custom 用）</span>
+          <input id="llmExtract" class="input" placeholder="点分路径，默认 choices.0.message.content" autocomplete="off">
+        </label>
+      </div>
+
+      <label class="field llm-headers-field">
+        <span class="lbl">自定义请求头 headers</span>
+        <textarea id="llmHeaders" class="input llm-headers" rows="3"
+                  placeholder="每行一个：名称: 值（如 anthropic-version: 2023-06-01）&#10;敏感头的值后端打码成 ••••••，留占位符 = 不改"></textarea>
+        <span class="hint" id="llmHeadersHint">每行一条「名称: 值」；留空该行 = 删除该头</span>
+      </label>
+
+      <div class="llm-actions">
+        <button class="btn primary" id="btnLlmSave">保存</button>
+        <button class="btn" id="btnLlmValidate">一键校验</button>
+        <button class="btn ghost" id="btnLlmClearKey" title="清掉已保存的 API Key（下次校验会提示未配置）">清除密钥</button>
+        <span class="hint" id="llmSaveHint"></span>
+      </div>
+
+      <!-- 三步校验结果：可达 / 鉴权 / 返回体，**逐步**显示（不是一次性糊出来）。
+           任一步失败都在最下面给一句可操作的中文提示（来自后端 validate().hint）。 -->
+      <div class="llm-steps" id="llmSteps" hidden>
+        <div class="llm-step" data-step="reachable"><span class="llm-step-ico">○</span><span class="llm-step-name">可达</span><span class="llm-step-detail"></span></div>
+        <div class="llm-step" data-step="auth"><span class="llm-step-ico">○</span><span class="llm-step-name">鉴权</span><span class="llm-step-detail"></span></div>
+        <div class="llm-step" data-step="shape"><span class="llm-step-ico">○</span><span class="llm-step-name">返回体</span><span class="llm-step-detail"></span></div>
+        <div class="llm-step-hint" id="llmStepHint"></div>
+      </div>
+
+      <!-- 试一句：按当前配置真的发一次 chat()，把返回文本 / 错误贴出来。 -->
+      <div class="llm-try">
+        <div class="llm-row">
+          <input id="llmTryText" class="input" maxlength="500" autocomplete="off"
+                 placeholder="试一句：留空用默认示例句（最多 500 字）">
+          <button class="btn primary" id="btnLlmTry" title="按当前配置真的发一次 chat()">试一句</button>
+        </div>
+        <div class="llm-try-out" id="llmTryOut"></div>
+      </div>
+    </section>
+
     <!-- 文案出片：**你给什么文案，就念什么**（与「主题出片」正相反 —— 那边内容由外部 LLM 按风格生成）。
          ★ 两种形态（卡片顶部的二选一，切换会改表单）：
            ① 仅自定义文案 —— 画面用工具生成的背景，配音走本机 Index-TTS；

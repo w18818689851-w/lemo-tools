@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 106 条用例 / 覆盖全部 41 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 108 条用例 / 覆盖全部 42 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -146,6 +146,24 @@
  *          ⑨ **真实语料只读**：必须 exit 0（0 FAIL；判据⑤ 的 1 条 ℹ 不算 FAIL）；
  *          ⑩ **★自证**：分别**短路**判据①②③（含「缺声明」支）⇒ 对应变异**重新变绿**。
  *          ★ 夹具**绝不碰真实闸门**：整棵树建在 `D:/lemo-tmp/…` 下，靠 `LEMO_TOOLS_ROOT` 重定向。
+ *        · `check-llm-api`（2026-10-08 建，第 42 个；守「**LLM 配置契约**」—— 本批新增的开放式
+ *          LLM 配置模块 `lib/llm-api.mjs` 与共享规格 `D:/lemo-tmp/llm-api-spec.md` §一/§二）：
+ *          主夹具 = **在真实 `lib/llm-api.mjs` 源码上做一处精确替换**后整份拷进夹具树（契约要求
+ *          「6 个导出 + 10 个 error kind 字面量 + 6 个覆盖点」**全在**，手写最小树 = 抄第二遍契约），
+ *          变异一律走 `mutateFile()`（带「待替换片段必须在 + 替换必须生效」两道防空转断言）；
+ *          覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 `check-doc-coverage` / `check-env-overrides` /
+ *          `check-gate-self-claims`），被测模块 = `<root>/lib/llm-api.mjs`。
+ *          ① **阴性对照**（真实模块整份拷进去）⇒ exit 0 且打印「满足契约」；
+ *          ② **变异 A（判据①(a)）** 删掉 `chat` 的 `export` ⇒ FAIL 并点名 `chat`；
+ *          ③ **变异 B（判据②）** 在 `chat` 函数体里塞一行裸 `throw` ⇒ FAIL（**剥注释后**判，别被注释骗）；
+ *          ④ **变异 C1（判据③）** `isDefault: true` → `false` ⇒ FAIL「没有默认 profile」；
+ *          ⑤ **变异 C2（判据③）** 把 `isDefault: true` 从 `workbuddy` 挪到 `anthropic` ⇒ FAIL「不在 workbuddy 条目里」；
+ *          ⑥ **变异 D（判据④）** 加一行 `console.log(apiKey)` ⇒ FAIL 并点名密钥类标识符；
+ *          ⑦ **变异 E（判据⑤）** 加一个规格外的 `process.env.LEMO_LLM_ZZZ` ⇒ FAIL 并点名差额；
+ *          ⑧ **变异 F（判据①(c)）** 把 `kind:` 字面量改成枚举外的值 ⇒ FAIL 并点名；
+ *          ⑨ **失明两态**（模块文件缺失 / 0 个 `LEMO_LLM_*`）⇒ FAIL +「本闸门已失明」，且失明时**不输出判据**；
+ *          ⑩ **★自证**：分别**短路**判据②、判据③ 的「workbuddy 条目里」支、判据⑤ ⇒ 对应变异**重新变绿**
+ *            （证明判据**承重**，不是摆设）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -3172,7 +3190,12 @@ test('check-env-overrides：未登记的新覆盖点 ⇒ FAIL；已登记的覆�
     assert.ok(r3.out.includes('✓ 判据①·扫描范围内所有 process.env.<NAME> 都已登记')
       && r3.out.includes('✓ 判据②·'),
       `阴性对照应真的跑过判据①②\n${r3.out.slice(0, 900)}`);
-    assert.ok(/登记 47 条/.test(r3.out) && /\*\*差额 0\*\*/.test(r3.out),
+    // ★ 2026-10-08 订正：原断言把「登记 **47** 条」这个**绝对数**写死 ⇒ 每登记一个新的覆盖点都会翻红
+    //   （本批给 `lib/llm-api.mjs` 登记 6 个 `LEMO_LLM_*` + 6 个外部约定 ⇒ 47 → **59**）。
+    //   本项目对这类「随增删会变」的计数有明确定位（见 `check-redline-md5.mjs` 头注释：
+    //   「★ 含本行自己贡献的 3 处 —— 这个数随文档增删会变，**别把它当判据**」）⇒ 改为断言
+    //   **期望值行的形状**（三个数都在、且「覆盖点 + 非覆盖点」拆分齐全）+ **差额 0**（这才是承重的那半句）。
+    assert.ok(/期望值：登记 \d+ 条（覆盖点 \d+ \+ 非覆盖点 \d+）\s*\/\s*真实语料 \d+ 个变量\s*\/\s*\*\*差额 0\*\*/.test(r3.out),
       `阴性对照应打印「本闸门期望值」且差额 0\n${r3.out.slice(0, 900)}`);
 
     // ④ 失明守卫：一棵**没有任何 `process.env.*`** 的树 ⇒ exit 1 且明说「本闸门已失明」
@@ -4511,6 +4534,147 @@ test('★自证 check-header-counts：短路判据⑤（`c.judge === 5`）后，
       `短路判据⑤ 后变异⑤b 应**真变绿**（exit 0），实得 ${rb.code}\n${rb.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rb, 'no-build.sh·styles：文档写', 'mut'), undefined,
       '短路判据⑤ 后变异⑤b 竟然还报 ⇒ 那条正向断言没在测判据⑤');
+  } finally { rm(dir); }
+});
+
+// ── 12i. check-llm-api.mjs（「LLM 配置契约」，2026-10-08 建，第 42 个）──────────────────
+// ★ 主夹具 = **在真实 `lib/llm-api.mjs` 源码上做一处精确替换**后整份拷进夹具树
+//   （契约要求「6 个导出 + 10 个 error kind 字面量 + 6 个覆盖点」**全在**，手写最小树 = 抄第二遍契约）
+//   ⇒ 变异一律走 `mutateFile()`（带「待替换片段必须在 + 替换必须生效」两道防空转断言）。
+// ★ 覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 `check-doc-coverage` / `check-env-overrides` /
+//   `check-gate-self-claims`）；被测模块 = `<root>/lib/llm-api.mjs`。
+/** 读**真实** `lib/llm-api.mjs`（懒读：文件不在也不在加载期崩，交给用例自己断言）。 */
+const realLlm = () => fs.readFileSync(path.join(TOOLS, 'lib', 'llm-api.mjs'), 'utf8');
+/** 把一份 `lib/llm-api.mjs` 写进夹具树，返回夹具根。 */
+const llmTree = (dir, src) => { wf(path.join(dir, 'lib', 'llm-api.mjs'), src); return dir; };
+/** 在真实模块源码上做一处精确替换后写进夹具树（两道防空转断言，逐字复用 `mutateFile()`）。 */
+const llmMut = (dir, from, to) => {
+  mutateFile(path.join(TOOLS, 'lib', 'llm-api.mjs'), path.join(dir, 'lib', 'llm-api.mjs'), from, to);
+  return dir;
+};
+
+test('check-llm-api：阴性对照 + 判据①~⑤ 六种变异（导出缺失 / chat 里 throw / isDefault 缺或挪走 / 密钥外泄 / 多余环境变量 / 枚举外 kind）⇒ FAIL 并点名；失明两态', async () => {
+  const dir = path.join(TMP, 'cla');
+  const N_BLIND = '本闸门已失明';
+  try {
+    // ① 阴性对照：真实模块整份拷进夹具树 ⇒ exit 0 且不含失明文案
+    const neg = llmTree(path.join(dir, 'neg'), realLlm());
+    const r0 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-llm-api 阴性对照');
+    assert.ok(r0.out.includes('满足契约'), `阴性对照应打印 ✓ 满足契约\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异 A（判据①(a)）：删掉 `chat` 的 `export` ⇒ FAIL 并点名 `chat`
+    const a = llmMut(path.join(dir, 'a'),
+      'export async function chat(messages, opts = {}) {',
+      'async function chat(messages, opts = {}) {');
+    const r1 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: a });
+    expectBlind(r1, '规格 §一 要求的导出缺失', 'check-llm-api 变异A');
+    assert.ok(r1.out.includes('chat'), `变异A 应点名 chat\n${r1.out.slice(0, 1400)}`);
+
+    // ③ 变异 B（判据②）：在 `chat` 函数体里塞一行**裸 `throw`** ⇒ FAIL（判据必须剥注释后判）
+    const b = llmMut(path.join(dir, 'b'),
+      '    meta.profile = cfg.id;',
+      "    throw new Error('boom');\n    meta.profile = cfg.id;");
+    const r2 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: b });
+    expectBlind(r2, 'chat 永不抛', 'check-llm-api 变异B');
+    assert.ok(r2.out.includes('判据②'), `变异B 应点名判据②\n${r2.out.slice(0, 1400)}`);
+
+    // ④ 变异 C1（判据③）：`isDefault: true` → `false` ⇒ 「没有默认 profile」⇒ FAIL
+    const c1 = llmMut(path.join(dir, 'c1'), 'isDefault: true,', 'isDefault: false,');
+    const r3 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: c1 });
+    expectBlind(r3, '没有默认 profile', 'check-llm-api 变异C1');
+
+    // ⑤ 变异 C2（判据③）：把 `isDefault: true` 从 `workbuddy` 挪到 `anthropic` ⇒ FAIL「不在 workbuddy 条目里」
+    let c2src = realLlm().replace('headers: {}, isDefault: true,', 'headers: {},');
+    assert.notEqual(c2src, realLlm(), '夹具自身失效：C2 第一步（摘掉 workbuddy 的 isDefault）没生效');
+    c2src = c2src.replace(
+      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {},",
+      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {}, isDefault: true,");
+    assert.ok(c2src.includes("headers: {}, isDefault: true,") && c2src !== realLlm(),
+      '夹具自身失效：C2 第二步（给 anthropic 加上 isDefault）没生效');
+    const c2 = llmTree(path.join(dir, 'c2'), c2src);
+    const r4 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: c2 });
+    expectBlind(r4, '不在 `workbuddy` 条目里', 'check-llm-api 变异C2');
+
+    // ⑥ 变异 D（判据④）：加一行 `console.log(apiKey)` ⇒ FAIL 并点名密钥类标识符
+    const d = llmMut(path.join(dir, 'd'), 'const warned = new Set();',
+      'const warned = new Set();\nconsole.log(apiKey);');
+    const r5 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: d });
+    expectBlind(r5, '疑似把密钥写进日志', 'check-llm-api 变异D');
+    assert.ok(r5.out.includes('apiKey'), `变异D 应点名 apiKey\n${r5.out.slice(0, 1400)}`);
+
+    // ⑦ 变异 E（判据⑤）：加一个规格外的 `process.env.LEMO_LLM_ZZZ` ⇒ FAIL 并点名差额
+    const e = llmMut(path.join(dir, 'e'), "const OVERRIDE_BASENAME = '_llm-api.json';",
+      "const OVERRIDE_BASENAME = '_llm-api.json';\nconst _probe = process.env.LEMO_LLM_ZZZ;");
+    const r6 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: e });
+    expectBlind(r6, '覆盖点集合 ≠ 规格 §二 那 6 个', 'check-llm-api 变异E');
+    assert.ok(r6.out.includes('LEMO_LLM_ZZZ'), `变异E 应点名 LEMO_LLM_ZZZ\n${r6.out.slice(0, 1400)}`);
+
+    // ⑧ 变异 F（判据①(c)）：把 `kind` 字面量改成枚举外的值 ⇒ FAIL 并点名
+    const f = llmMut(path.join(dir, 'f'),
+      "kind: 'custom', baseUrl: '', model: '', headers: {},",
+      "kind: 'weird-kind', baseUrl: '', model: '', headers: {},");
+    const r7 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: f });
+    expectBlind(r7, '出现了规格外的 kind 字面量', 'check-llm-api 变异F');
+    assert.ok(r7.out.includes('weird-kind'), `变异F 应点名 weird-kind\n${r7.out.slice(0, 1400)}`);
+
+    // ⑨ 失明①（模块文件缺失）：`<root>/lib/` 在、但没有 `llm-api.mjs` ⇒ FAIL +「本闸门已失明」
+    const e1 = path.join(dir, 'nofile'); mk(path.join(e1, 'lib'));
+    const rb1 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: e1 });
+    expectBlind(rb1, N_BLIND, 'check-llm-api 失明①（模块缺失）');
+    assert.ok(!rb1.out.includes('判据①~⑤·契约不符'), `失明时不该输出判据\n${rb1.out.slice(0, 900)}`);
+
+    // ⑩ 失明②（一个 `LEMO_LLM_*` 都没有）：把全部 `LEMO_LLM_` 改成 `LEMO_XLLM_`
+    const noenvSrc = realLlm().replace(/LEMO_LLM_/g, 'LEMO_XLLM_');
+    assert.ok(!noenvSrc.includes('LEMO_LLM_'), '夹具自身失效：失明② 的替换没生效');
+    const e2 = llmTree(path.join(dir, 'noenv'), noenvSrc);
+    const rb2 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: e2 });
+    expectBlind(rb2, N_BLIND, 'check-llm-api 失明②（0 个 LEMO_LLM_*）');
+    assert.ok(!rb2.out.includes('判据①~⑤·契约不符'), `失明时不该输出判据\n${rb2.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目里」支 / 判据⑤ 后，对应变异必须重新变绿', async () => {
+  const dir = path.join(TMP, 'cla-mut');
+  try {
+    // 变异 B 夹具（chat 里有裸 throw）
+    const b = llmMut(path.join(dir, 'b'),
+      '    meta.profile = cfg.id;',
+      "    throw new Error('boom');\n    meta.profile = cfg.id;");
+    // 变异 C2 夹具（isDefault 从 workbuddy 挪到 anthropic）
+    let c2src = realLlm().replace('headers: {}, isDefault: true,', 'headers: {},');
+    assert.notEqual(c2src, realLlm(), '夹具自身失效：C2 第一步没生效');
+    c2src = c2src.replace(
+      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {},",
+      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {}, isDefault: true,");
+    const c2 = llmTree(path.join(dir, 'c2'), c2src);
+    // 变异 E 夹具（规格外的 LEMO_LLM_ZZZ）
+    const e = llmMut(path.join(dir, 'e'), "const OVERRIDE_BASENAME = '_llm-api.json';",
+      "const OVERRIDE_BASENAME = '_llm-api.json';\nconst _probe = process.env.LEMO_LLM_ZZZ;");
+
+    // ★ 短路判据② 的 `else if (/\bthrow\b/.test(chatBody))` ⇒ 变异 B 应**真变绿**（exit 0）
+    const gB = patchGate('check-llm-api.mjs', path.join(dir, 'gB'),
+      [['else if (/\\bthrow\\b/.test(chatBody)) {', 'else if (false) {']]);
+    const rB = await run(NODE, [gB], { env: { LEMO_TOOLS_ROOT: b } });
+    assert.equal(rB.code, 0, `短路判据② 后变异 B 应变绿（exit 0），实得 ${rB.code}\n${rB.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rB, 'chat 永不抛', 'mut'), undefined,
+      '短路判据② 后变异 B 竟然还报 ⇒ 那条正向断言没在测判据②');
+
+    // ★ 短路判据③ 的「isDefault 不在 workbuddy 条目里」支 ⇒ 变异 C2 应**真变绿**（exit 0）
+    const gC = patchGate('check-llm-api.mjs', path.join(dir, 'gC'),
+      [['} else if (!/isDefault\\s*:\\s*true\\b/.test(withWorkbuddy[0])) {', '} else if (false) {']]);
+    const rC = await run(NODE, [gC], { env: { LEMO_TOOLS_ROOT: c2 } });
+    assert.equal(rC.code, 0, `短路判据③ workbuddy 支后变异 C2 应变绿（exit 0），实得 ${rC.code}\n${rC.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rC, '不在 `workbuddy` 条目里', 'mut'), undefined,
+      '短路判据③ workbuddy 支后变异 C2 竟然还报 ⇒ 那条正向断言没在测判据③');
+
+    // ★ 短路判据⑤ 的 `else if (extra.length || miss.length)` ⇒ 变异 E 应**真变绿**（exit 0）
+    const gE = patchGate('check-llm-api.mjs', path.join(dir, 'gE'),
+      [['else if (extra.length || miss.length) {', 'else if (false) {']]);
+    const rE = await run(NODE, [gE], { env: { LEMO_TOOLS_ROOT: e } });
+    assert.equal(rE.code, 0, `短路判据⑤ 后变异 E 应变绿（exit 0），实得 ${rE.code}\n${rE.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rE, '覆盖点集合 ≠ 规格 §二 那 6 个', 'mut'), undefined,
+      '短路判据⑤ 后变异 E 竟然还报 ⇒ 那条正向断言没在测判据⑤');
   } finally { rm(dir); }
 });
 

@@ -642,6 +642,37 @@ const OVERRIDES = {
     readers: ['lib/triple-check.mjs'],
     what: 'LM Studio 服务端点（夹具可指向假服务）',
   },
+  // —— 开放式 LLM API 配置（`lib/llm-api.mjs`，2026-10-08 新增）——
+  //   ★ 规格 §二 的 6 个覆盖点（`D:/lemo-tmp/llm-api-spec.md`）；唯一读者是 `lib/llm-api.mjs` 的
+  //     `resolveConfig()`。
+  //   ★ 2026-10-08 订正：**不要**把 `server.mjs` 登记成读者 —— `/api/llm/*` 的 handler 是**委托**给
+  //     `lib/llm-api.mjs` 的（`server.mjs` 自己不再读 `process.env.LEMO_LLM_PROFILE`）⇒ 登记它会立刻
+  //     触发判据②「登记了但没了」的**假 FAIL**（实测踩过）。
+  //   ★ 与 `LEMO_LMSTUDIO_BASE` 同类：夹具可指向假服务 / 假 key，**不落盘、不改真实配置**。
+  LEMO_LLM_PROFILE: {
+    readers: ['lib/llm-api.mjs'],
+    what: '选哪个 LLM profile（默认 workbuddy）',
+  },
+  LEMO_LLM_BASE: {
+    readers: ['lib/llm-api.mjs'],
+    what: '覆盖 LLM baseUrl（夹具可指向假服务）',
+  },
+  LEMO_LLM_KEY: {
+    readers: ['lib/llm-api.mjs'],
+    what: '覆盖 LLM apiKey（★ 绝不可写进日志/文件；脱敏只显示前 4 位）',
+  },
+  LEMO_LLM_MODEL: {
+    readers: ['lib/llm-api.mjs'],
+    what: '覆盖 LLM model',
+  },
+  LEMO_LLM_HEADERS: {
+    readers: ['lib/llm-api.mjs'],
+    what: 'JSON 字符串，合并进 LLM 请求头',
+  },
+  LEMO_LLM_TIMEOUT_MS: {
+    readers: ['lib/llm-api.mjs'],
+    what: 'LLM 请求超时（默认 30000；范围 1000–600000）',
+  },
   // —— WSL 侧 ——
   LEMO_WSL_ROOT: {
     readers: ['scripts/check-dual-copy-sync.mjs', 'scripts/check-shell-structure.mjs', 'scripts/patch-style-mux.mjs'],
@@ -666,7 +697,10 @@ const OVERRIDES = {
   },
   LEMO_TOOLS_ROOT: {
     readers: ['scripts/check-doc-coverage.mjs', 'scripts/check-line-endings.mjs', 'scripts/check-redline-md5.mjs',
-      'scripts/check-ref-lines.mjs', 'scripts/check-shell-structure.mjs'],
+      'scripts/check-ref-lines.mjs', 'scripts/check-shell-structure.mjs',
+      // ★ 2026-10-08：`check-llm-api.mjs`（守 `lib/llm-api.mjs` 契约）也读它 —— 被测模块 =
+      //   `<LEMO_TOOLS_ROOT>/lib/llm-api.mjs`，供非破坏变异（指向临时夹具树）。
+      'scripts/check-llm-api.mjs'],
     what: 'lemo-tools 仓根（本仓自身）',
   },
   LEMO_VOICE_TEST_TMP: {
@@ -724,6 +758,37 @@ const EXTERNAL = {
   LEMO_CONSOLE_NO_ENTRY_FILES: {
     readers: ['server.mjs'],
     why: '控制台**不列出入口文件**开关（行为开关）',
+  },
+  // —— 开放式 LLM API 的「运行时线索」环境变量（`lib/llm-api.mjs`，2026-10-08）——
+  //   ★ 规格 §二.3：`kind==='anthropic'` / `'openai-compatible'` 且未显式给 key/baseUrl/model 时，
+  //     取官方约定环境变量。**外部约定**（不是「把夹具重定向到临时树」的覆盖点）⇒ 归档 B：
+  //     只登记、只列，**不判 FAIL**（同 `WHISPER_MODEL`）。
+  //   ★ 2026-10-08 补：`ANTHROPIC_MODEL` / `OPENAI_MODEL` —— team-lead 裁定「否则『环境里有可用模型、
+  //     面板却报缺 model』」，模块在 `resolveConfig()` 里也读了这两个（见 `lib/llm-api.mjs` 的
+  //     「运行时线索补 model」注释）⇒ 与 key/baseUrl 同类，一并登记为外部约定。
+  ANTHROPIC_API_KEY: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：Anthropic 官方密钥环境变量（LLM 模块只**透传/读取**，不重定向任何路径）',
+  },
+  ANTHROPIC_BASE_URL: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：Anthropic 官方端点覆盖环境变量',
+  },
+  ANTHROPIC_MODEL: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：Anthropic 官方模型名环境变量（未显式给 model 时的运行时线索）',
+  },
+  OPENAI_API_KEY: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：OpenAI（兼容）官方密钥环境变量',
+  },
+  OPENAI_BASE_URL: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：OpenAI（兼容）官方端点覆盖环境变量',
+  },
+  OPENAI_MODEL: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：OpenAI（兼容）官方模型名环境变量（未显式给 model 时的运行时线索）',
   },
 };
 

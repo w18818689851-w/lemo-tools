@@ -1845,6 +1845,275 @@ function watchBriefJob(jobId, briefId) {
   });
 }
 
+// ── LLM API 配置（/api/llm/*）────────────────────────────────
+//
+// 面板「LLM API 配置」的后端。★ 契约：D:/lemo-tmp/llm-api-spec.md §七（接口）/ §八（落盘）。
+//
+// 分工（本批）：
+//   · 适配器 / 配置解析 / **落盘** / 脱敏**全在 lib/llm-api.mjs**（见 §一~§六）—— 本文件只调它的导出：
+//     listProfiles / resolveConfig / readOverride / saveOverride / validate / chat。
+//     ★ 不自己实现适配器，也**不再自己读写** `_llm-api.json`（避免两份落盘实现各自漂移）。
+//   · 本文件只负责：HTTP 信封（§七）、面板需要的「自定义头占位符回填」、以及把请求体拼成 opts。
+//
+// ★ 三条铁律：
+//   ① **key 永不回显**：GET 只回 `hasKey`；自定义头里凡敏感名（authorization / *api*key* / token…）
+//      的值一律打码成**固定**占位符 `••••••`；POST 时收到该占位符 ⇒ 保留原值（= 前端「留空=不改」）。
+//      ★ 为什么用固定占位符、而不是模块 maskKey 的 `abcd…`：面板要把头**回填**到输入框，
+//        只有固定串才能被**无歧义**识别成「未改动」—— 否则用户一保存就把密钥替换成了它自己的掩码。
+//   ② **HTTP 一律 200**，错误放 body（`{ok:false,error:{kind,message,hint?}}`）—— 免得前端把 4xx/5xx
+//      当网络故障（本项目 web/app.js 的既有 `api()` 就是按 `!r.ok` 抛错的）。
+//   ③ **模块没就绪 / 抛异常都不崩服务**：动态 import + try/catch 兜底（模块缺失 ⇒ 一句中文提示）。
+//
+// 响应信封（§七）：`{ok:true,data}` / `{ok:false,error}`。★ `validate`/`chat` 的**模块结果**整体放在
+// `data` 里（模块自己的 ok/steps/errors 原样保留，前端读 `data.ok` / `data.steps`）——
+// 这样「请求是否被处理」与「校验是否通过」两件事不会混在一个 `ok` 上。
+
+const LLM_KEY_MASK = '••••••';   // 固定占位符（见上文①）
+const LLM_SECRET_HEADER_RE = /authorization|api[-_]?key|token|secret|bearer|cookie/i;
+
+// 动态 import：模块尚未落地时这里会抛，调用方兜住（服务照常起；下次请求会重试）。
+let _llmMod = null;
+async function loadLlmApi() {
+  if (_llmMod) return _llmMod;
+  _llmMod = await import('./lib/llm-api.mjs');   // 相对本文件解析
+  return _llmMod;
+}
+
+/** 敏感头的值打码（★ key 永不出现在响应里）。 */
+function redactLlmHeaders(h) {
+  if (!h || typeof h !== 'object') return {};
+  const out = {};
+  for (const [k, v] of Object.entries(h)) out[k] = LLM_SECRET_HEADER_RE.test(k) ? LLM_KEY_MASK : v;
+  return out;
+}
+
+/** 合并自定义头：占位符 ⇒ 保留 prev 原值（= 不改）；空串 ⇒ 删掉该头；其余照收。 */
+function mergeLlmHeaders(prev, incoming) {
+  const out = {};
+  const src = (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) ? incoming : {};
+  for (const [k, v] of Object.entries(src)) {
+    const val = String(v);
+    if (val === LLM_KEY_MASK) { if (prev && prev[k] !== undefined) out[k] = prev[k]; }
+    else if (val !== '') out[k] = val;
+  }
+  return out;
+}
+
+/** 把「存储的覆盖」脱敏成可安全回给前端的形状（★ 不含 key 明文）。 */
+function sanitizeLlmOverride(o) {
+  const out = {};
+  for (const [k, v] of Object.entries(o || {})) {
+    if (k === 'apiKey') continue;                                  // ★ 永不回显
+    if (k === 'headers') { out.headers = redactLlmHeaders(v); continue; }
+    out[k] = v;
+  }
+  out.hasKey = !!(o && o.apiKey);
+  return out;
+}
+
+/**
+ * 请求体 → 传给模块的 opts（§二 优先级 #1 = **显式**传参）。
+ * ★ 只放「用户明确给了」的字段（空串一律视为「没给」）—— 其余交给模块按 §二 逐级回落（env / 覆盖文件 / 默认）。
+ * @param {object} body 请求体
+ * @param {object} [prevHeaders] 覆盖文件里的自定义头（用于把打码占位符还原成原值）
+ */
+function buildLlmOpts(body, prevHeaders) {
+  const b = (body && typeof body === 'object') ? body : {};
+  const o = {};
+  for (const k of ['profile', 'baseUrl', 'kind', 'model', 'path', 'extract']) {
+    if (typeof b[k] === 'string' && b[k].trim() !== '') o[k] = b[k].trim();
+  }
+  if (b.timeoutMs !== undefined && b.timeoutMs !== '' && b.timeoutMs !== null) {
+    const n = Number(b.timeoutMs);
+    if (Number.isFinite(n)) o.timeoutMs = n;
+  }
+  if (typeof b.apiKey === 'string' && b.apiKey !== '') o.apiKey = b.apiKey;
+  if (b.headers && typeof b.headers === 'object' && !Array.isArray(b.headers)) {
+    const h = mergeLlmHeaders(prevHeaders, b.headers);
+    if (Object.keys(h).length) o.headers = h;
+  }
+  return o;
+}
+
+/**
+ * 面板用的配置视图（★ key 脱敏）。
+ * @param {object} mod lib/llm-api.mjs
+ * @param {object} cfg resolveConfig() 或 previewProfile() 的结果（★ 前者含 apiKey，**只在本函数内用**）
+ * @param {object} ov  要在「覆盖」里回显的对象（预览别的 profile 时传 {}）
+ * @param {{hasKey:boolean,keyMask:string}} [keyInfo] 已脱敏的 key 信息（previewProfile 路径直接给；
+ *        不给则从 cfg.apiKey 现算）—— 免得为「已脱敏的输入」再造一条分支。
+ */
+function llmConfigPayload(mod, cfg, ov, keyInfo) {
+  const override = ov || {};
+  const hasKey = keyInfo ? !!keyInfo.hasKey : !!cfg.apiKey;
+  const keyMask = keyInfo
+    ? String(keyInfo.keyMask || '')
+    : (() => { try { return mod.maskKey ? mod.maskKey(cfg.apiKey) : ''; } catch { return ''; } })();
+  return {
+    profile: cfg.id,
+    label: cfg.label || '',
+    kind: cfg.kind || '',
+    baseUrl: cfg.baseUrl || '',
+    model: cfg.model || '',
+    models: Array.isArray(cfg.models) ? cfg.models : [],
+    // 输入框只放**用户覆盖**的头（不把 profile 默认头混进来 ⇒ 保存不会把它们意外固化成覆盖）
+    headers: redactLlmHeaders(override.headers || {}),
+    effectiveHeaders: Object.keys(cfg.headers || {}),   // 生效头的**名字**（给提示用，不含值）
+    timeoutMs: cfg.timeoutMs,
+    path: cfg.path,
+    extract: cfg.extract,
+    hasKey,
+    // ★ keyMask（如 `sk-K…`）：**掩码不是明文**（模块 maskKey，契约 §四 同口径），
+    //   给面板当「当前已配 key」的提示用（team-lead 2026-10-08 裁定保留）。★ 绝不回 key 本身。
+    keyMask,
+    unknownProfile: !!cfg.unknownProfile,
+    overrideFile: mod.overrideFilePath(),
+    override: sanitizeLlmOverride(override),
+  };
+}
+
+/** 模块缺失 / 抛异常的统一兜底：HTTP 200 + 可操作中文提示（★ 不含任何密钥）。 */
+function llmFail(res, e) {
+  const notReady = !!(e && (e.code === 'ERR_MODULE_NOT_FOUND' || /llm-api\.mjs/.test(String(e.message || ''))));
+  const kind = notReady ? 'config' : 'unknown';
+  sendJson(res, 200, {
+    ok: false,
+    error: {
+      kind,
+      message: String((e && e.message) || e),
+      ...(notReady ? { hint: 'lib/llm-api.mjs 还没落地（另一个智能体在实现）。落地后重开控制台即可。' } : {}),
+    },
+  });
+}
+
+/**
+ * GET /api/llm/profiles —— 脱敏 profile 列表 + 当前生效 profile（§七）。
+ */
+async function apiLlmProfiles(req, res) {
+  try {
+    const mod = await loadLlmApi();
+    sendJson(res, 200, { ok: true, data: { profiles: mod.listProfiles(), current: mod.resolveConfig({}).id } });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * GET /api/llm/config —— 当前**生效**配置（key 脱敏，只回 hasKey；§七）。
+ * `?profile=<id>` 可**预览**另一个 profile：只给它的内置默认（+env），不带上一 profile 的字段覆盖
+ * （否则用户切下拉时会看到「上一个 profile 的 baseUrl 挂在下一个 profile 名下」）。
+ * ★ 预览走模块的**正式导出** `previewProfile(id)`（= 该 profile 的默认值 + 不读覆盖文件，已脱敏）——
+ *   不再依赖 `resolveConfig(opts, _file)` 的第二个内部形参（team-lead 2026-10-08 批准的契约补充）。
+ */
+async function apiLlmConfigGet(req, res, url) {
+  try {
+    const mod = await loadLlmApi();
+    const qp = ((url && url.searchParams.get('profile')) || '').trim();
+    if (qp) {
+      const p = mod.previewProfile(qp);
+      return sendJson(res, 200, {
+        ok: true,
+        data: llmConfigPayload(mod, p, {}, { hasKey: p.hasKey, keyMask: p.keyMask }),
+      });
+    }
+    sendJson(res, 200, { ok: true, data: llmConfigPayload(mod, mod.resolveConfig({}), mod.readOverride()) });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * POST /api/llm/config —— 保存用户覆盖，落盘 `<成片根>/_llm-api.json`（§八；由模块的 saveOverride 落）。
+ *
+ * 语义（与前端「留空=不改」对齐）：
+ *   · `apiKey` 空串/缺省 ⇒ **不改**；`clearKey:true` ⇒ 清掉已存密钥；
+ *   · `baseUrl` / `model` / `kind` / `path` / `extract` 空串 ⇒ **删掉该项覆盖**（回落到默认）；
+ *   · `headers` 值 = 占位符 `••••••` ⇒ 保留原值，空串 ⇒ 删该头；空对象 ⇒ 删 headers 覆盖；
+ *   · `timeoutMs` 空 ⇒ 删；否则须在 1000–600000。
+ * ★ 删除靠「把值置成 undefined」：模块 saveOverride 是浅合并，JSON 序列化会丢弃 undefined 键。
+ * ★ 落盘用模块的 saveOverride（原子写 + 与现有覆盖合并），本文件**不自己读写**那个文件。
+ */
+async function apiLlmConfigSave(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
+  try {
+    const mod = await loadLlmApi();
+    const prev = mod.readOverride();
+    const partial = {};
+    if (typeof body.profile === 'string' && body.profile.trim()) partial.profile = body.profile.trim();
+    for (const k of ['baseUrl', 'model', 'kind', 'path', 'extract']) {
+      if (body[k] === undefined) continue;
+      const v = String(body[k]).trim();
+      partial[k] = v === '' ? undefined : v;
+    }
+    if (body.timeoutMs !== undefined) {
+      if (body.timeoutMs === '' || body.timeoutMs === null) partial.timeoutMs = undefined;
+      else {
+        const n = Number(body.timeoutMs);
+        if (!Number.isFinite(n) || n < 1000 || n > 600000) {
+          return sendJson(res, 200, {
+            ok: false,
+            error: { kind: 'config', message: `请求超时需在 1000–600000 毫秒之间（收到 ${body.timeoutMs}）` },
+          });
+        }
+        partial.timeoutMs = Math.round(n);
+      }
+    }
+    if (body.clearKey === true) partial.apiKey = undefined;
+    else if (typeof body.apiKey === 'string' && body.apiKey !== '') partial.apiKey = body.apiKey;
+    if (body.headers !== undefined) {
+      if (body.headers === null) partial.headers = undefined;
+      else if (typeof body.headers === 'object' && !Array.isArray(body.headers)) {
+        const h = mergeLlmHeaders(prev.headers, body.headers);
+        partial.headers = Object.keys(h).length ? h : undefined;
+      } else {
+        return sendJson(res, 200, { ok: false, error: { kind: 'config', message: 'headers 必须是对象' } });
+      }
+    }
+
+    const saved = mod.saveOverride(partial);
+    if (!saved || saved.ok !== true) {
+      const e = (saved && saved.error) || {};
+      return sendJson(res, 200, { ok: false, error: { kind: e.kind || 'config', message: e.message || '保存失败' } });
+    }
+    sendJson(res, 200, { ok: true, data: llmConfigPayload(mod, mod.resolveConfig({}), mod.readOverride()) });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * POST /api/llm/validate —— 跑 validate()（可传**临时配置**，不必先保存；§七）。
+ * 返回 `{ok:true, data:{ok,profile,steps:{reachable,auth,shape},errors,hint,masked}}`。
+ */
+async function apiLlmValidate(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
+  try {
+    const mod = await loadLlmApi();
+    const r = await mod.validate(buildLlmOpts(body, mod.readOverride().headers));
+    sendJson(res, 200, { ok: true, data: r });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * POST /api/llm/chat —— 跑一次 chat()（面板上的「试一句」；§七）。
+ * body 可给 `prompt`（字符串）或 `messages`（数组）；可带临时配置。
+ * 返回 `{ok:true, data:{ok:true,text,usage,meta} | {ok:false,error,meta}}`。
+ */
+async function apiLlmChat(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
+  try {
+    const mod = await loadLlmApi();
+    const msgs = (Array.isArray(body.messages) && body.messages.length)
+      ? body.messages
+      : [{ role: 'user', content: String(body.prompt || '你好，请用一句话回复「pong」。') }];
+    const r = await mod.chat(msgs, buildLlmOpts(body, mod.readOverride().headers));
+    sendJson(res, 200, { ok: true, data: r });
+  } catch (e) { llmFail(res, e); }
+}
+
 // ── 路由 ────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
@@ -1933,6 +2202,13 @@ const server = http.createServer(async (req, res) => {
     if (mm && m === 'GET') return apiBriefGet(req, res, mm[1]);
     if (mm && m === 'PATCH') return await apiBriefPatch(req, res, mm[1]);
     if (mm && m === 'DELETE') return apiBriefDelete(req, res, mm[1]);
+
+    // ── LLM API 配置（/api/llm/*）—— 面板 + 「试一句」（契约与铁律见文件头说明）──
+    if (p === '/api/llm/profiles' && m === 'GET') return await apiLlmProfiles(req, res);
+    if (p === '/api/llm/config' && m === 'GET') return await apiLlmConfigGet(req, res, url);
+    if (p === '/api/llm/config' && m === 'POST') return await apiLlmConfigSave(req, res);
+    if (p === '/api/llm/validate' && m === 'POST') return await apiLlmValidate(req, res);
+    if (p === '/api/llm/chat' && m === 'POST') return await apiLlmChat(req, res);
 
     if (p.startsWith('/api/')) return sendJson(res, 404, { error: `未知接口 ${m} ${p}` });
 

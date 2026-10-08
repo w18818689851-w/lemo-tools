@@ -4258,6 +4258,321 @@ function focusSearch() {
   s.select?.();
 }
 
+// ── LLM API 配置（/api/llm/*）─────────────────────────────────
+//
+// 面板逻辑。★ 契约：D:/lemo-tmp/llm-api-spec.md §七（接口）/ §八（落盘）；后端见 server.mjs 的
+// /api/llm/* 组说明。
+//
+// ★ 三条纪律（本项目铁律）：
+//   ① **后端异常不得搞崩前端**：所有请求走 llmReq()，它把「网络失败 / 非 JSON / 结构异常」
+//      统统兜成 `{ok:false,error}`（本项目既有坑：异常返回把前端搞崩）。
+//   ② **key 永不回显**：界面只显示「已配置 / 未配置」；key 输入框留空 = 不改。
+//   ③ 三步校验**逐步**点亮（可达 → 鉴权 → 返回体），失败给可操作中文提示。
+
+const LLM_STEP_ORDER = ['reachable', 'auth', 'shape'];
+const LLM_STEP_ICO = { pending: '○', running: '⟳', ok: '✓', fail: '✗', skip: '–' };
+const llmState = { profiles: [], current: 'workbuddy', cfg: null, busy: false };
+
+function llmSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
+function llmSafeStr(o) { try { return JSON.stringify(o).slice(0, 200); } catch { return String(o); } }
+
+/** 统一请求：把一切异常兜成 {ok,data|error}，**绝不抛**。 */
+async function llmReq(path, opts) {
+  let res;
+  try { res = await api(path, opts); }
+  catch (e) {
+    const raw = e && e.data && (typeof e.data.raw === 'string' ? e.data.raw : e.data.error);
+    const message = (typeof raw === 'string' && raw) ? raw.slice(0, 300) : ((e && e.message) || '请求失败');
+    return { ok: false, error: { kind: 'network', message, hint: '控制台服务是否还在跑？' } };
+  }
+  if (res && res.ok === true) return { ok: true, data: res.data };
+  if (res && res.ok === false && res.error) return { ok: false, error: res.error };
+  return { ok: false, error: { kind: 'bad-json', message: '后端返回结构异常（可能不是 JSON）', detail: llmSafeStr(res) } };
+}
+function llmErrText(err) {
+  if (!err) return '未知错误';
+  return `[${err.kind || 'unknown'}] ${err.message || ''}`.trim();
+}
+function setLlmHint(node, text, isErr) {
+  if (!node) return;
+  node.textContent = text || '';
+  node.style.color = isErr ? 'var(--err)' : '';
+}
+function parseLlmHeaders(txt) {
+  const out = {};
+  for (const line of String(txt || '').split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s || s.startsWith('#')) continue;
+    const i = s.indexOf(':');
+    if (i < 0) continue;
+    const k = s.slice(0, i).trim();
+    const v = s.slice(i + 1).trim();
+    if (k) out[k] = v;
+  }
+  return out;
+}
+
+/** 画 profile 下拉（清单来自 GET /api/llm/profiles；★ 不写死一份 profile 表）。 */
+function renderLlmProfileOptions() {
+  const sel = $('llmProfile');
+  if (!sel) return;
+  const cur = llmState.current;
+  const list = llmState.profiles.length
+    ? llmState.profiles
+    : [{ id: cur, label: cur, isDefault: cur === 'workbuddy' }];
+  sel.textContent = '';
+  for (const p of list) {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = `${p.label || p.id}${p.isDefault ? '（默认）' : ''}${p.hasKey ? ' · 已配 Key' : ''}`;
+    if (p.id === cur) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+/** 把生效配置填进表单（★ 不回显 key；headers 用打码后的值）。 */
+function renderLlmForm(cfg) {
+  if (!cfg) return;
+  $('llmKind').value = cfg.kind || '';
+  $('llmBaseUrl').value = cfg.baseUrl || '';
+  $('llmModel').value = cfg.model || '';
+  $('llmTimeout').value = (cfg.timeoutMs !== undefined && cfg.timeoutMs !== null) ? String(cfg.timeoutMs) : '';
+  $('llmPath').value = cfg.path || '';
+  $('llmExtract').value = cfg.extract || '';
+  // 输入框只放**用户覆盖**的头（后端已把敏感值打码成 ••••••；留占位符 = 不改）
+  $('llmHeaders').value = Object.entries(cfg.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const eff = Array.isArray(cfg.effectiveHeaders) ? cfg.effectiveHeaders : [];
+  setLlmHint($('llmHeadersHint'),
+    eff.length
+      ? `每行一条「名称: 值」；留空该行 = 删除该头。当前生效头（profile 默认 + 覆盖）：${eff.join(', ')}`
+      : '每行一条「名称: 值」；留空该行 = 删除该头', false);
+
+  const dl = $('llmModelList');
+  dl.textContent = '';
+  for (const m of (cfg.models || [])) { const o = document.createElement('option'); o.value = m; dl.appendChild(o); }
+
+  const st = $('llmKeyState');
+  st.textContent = cfg.hasKey ? '已配置' : '未配置';
+  st.className = 'llm-key-state ' + (cfg.hasKey ? 'ok' : 'missing');
+  const keyInp = $('llmKey');
+  keyInp.value = '';
+  // ★ 提示用 keyMask（如 `sk-K…`）—— 掩码不是明文，只是让用户知道「当前已配哪个 key」
+  const km = cfg.keyMask ? `（已配置 ${cfg.keyMask}）` : '（已配置）';
+  keyInp.placeholder = cfg.hasKey ? `留空 = 不改${km}` : '留空 = 不设置';
+
+  const pid = cfg.profile || llmState.current;
+  $('llmProfileBadge').textContent = pid;
+  $('llmProfile').value = pid;
+  const p = llmState.profiles.find((x) => x.id === pid);
+  $('llmProfileHint').textContent = p
+    ? `默认 profile = workbuddy；当前 ${p.label || p.id}${p.isDefault ? '（默认）' : ''}${p.note ? ' · ' + p.note : ''}`
+    : '默认 profile = workbuddy（软件默认走它）';
+  setLlmHint($('llmSaveHint'), `落盘：${cfg.overrideFile || 'D:\\lemo-films\\_llm-api.json'}`, false);
+  syncLlmCustomRows();
+}
+
+/** custom 适配器才显示 path / extract（其余 kind 用不到，藏起来免得误导）。 */
+function syncLlmCustomRows() {
+  const box = $('llmCustomRows');
+  if (box) box.hidden = ($('llmKind').value !== 'custom');
+}
+
+/** 表单 → 请求体（includeKey=false 时不带 key，用于校验 / 试一句的临时配置）。 */
+function llmFormPayload(includeKey) {
+  const p = {
+    profile: $('llmProfile').value || undefined,
+    kind: $('llmKind').value || '',
+    baseUrl: $('llmBaseUrl').value.trim(),
+    model: $('llmModel').value.trim(),
+    timeoutMs: $('llmTimeout').value.trim(),
+    path: $('llmPath').value.trim(),
+    extract: $('llmExtract').value.trim(),
+    headers: parseLlmHeaders($('llmHeaders').value),
+  };
+  if (includeKey) { const k = $('llmKey').value; if (k) p.apiKey = k; }
+  return p;
+}
+
+async function loadLlmProfiles() {
+  const r = await llmReq('/api/llm/profiles');
+  if (r.ok) {
+    llmState.profiles = (r.data && r.data.profiles) || [];
+    llmState.current = (r.data && r.data.current) || 'workbuddy';
+  } else {
+    setLlmHint($('llmProfileHint'), '读 profile 清单失败：' + llmErrText(r.error)
+      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
+  }
+  renderLlmProfileOptions();
+}
+
+async function loadLlmConfig(profileId) {
+  const q = profileId ? `?profile=${encodeURIComponent(profileId)}` : '';
+  const r = await llmReq('/api/llm/config' + q);
+  if (!r.ok) {
+    llmState.cfg = null;
+    setLlmHint($('llmSaveHint'), '读配置失败：' + llmErrText(r.error)
+      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
+    return;
+  }
+  llmState.cfg = r.data;
+  renderLlmForm(r.data);
+}
+
+async function loadLlm() {
+  await loadLlmProfiles();
+  // ★ 初次加载 / 点「刷新」：读**生效**配置（不带 ?profile=，才会把已保存的覆盖算进去）。
+  //   只有用户**手动切**下拉时才走 loadLlmConfig(id) 的「预览该 profile 默认值」分支。
+  await loadLlmConfig(null);
+}
+
+async function saveLlmConfig() {
+  if (llmState.busy) return;
+  llmState.busy = true;
+  setLlmHint($('llmSaveHint'), '保存中…', false);
+  const r = await llmReq('/api/llm/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(llmFormPayload(true)),
+  });
+  llmState.busy = false;
+  if (!r.ok) {
+    setLlmHint($('llmSaveHint'), '保存失败：' + llmErrText(r.error)
+      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
+    toast('保存失败', true);
+    return;
+  }
+  llmState.cfg = r.data;
+  renderLlmForm(r.data);
+  setLlmHint($('llmSaveHint'), `已保存 → ${(r.data && r.data.overrideFile) || 'D:\\lemo-films\\_llm-api.json'}`, false);
+  toast('LLM 配置已保存');
+}
+
+async function clearLlmKey() {
+  if (llmState.busy) return;
+  const r = await llmReq('/api/llm/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile: $('llmProfile').value || undefined, clearKey: true }),
+  });
+  if (!r.ok) { toast('清除密钥失败：' + llmErrText(r.error), true); return; }
+  llmState.cfg = r.data;
+  renderLlmForm(r.data);
+  toast('已清除已保存的密钥');
+}
+
+// ── 三步校验：逐步点亮 ───────────────────────────────────────
+function setLlmStepState(step, state, detail) {
+  const node = document.querySelector(`.llm-step[data-step="${step}"]`);
+  if (!node) return;
+  node.className = 'llm-step ' + state;
+  node.querySelector('.llm-step-ico').textContent = LLM_STEP_ICO[state] || '○';
+  node.querySelector('.llm-step-detail').textContent = detail || '';
+}
+
+/** 后端一步的结果形状可能是 true/false / 字符串 / {ok,kind,detail…} —— 一律归一。 */
+function normLlmStep(v) {
+  if (v === true) return { state: 'ok', detail: '通过' };
+  if (v === false) return { state: 'fail', detail: '未通过' };
+  if (v === undefined || v === null) return { state: 'skip', detail: '—（未执行）' };
+  if (typeof v === 'string') return { state: (v === 'ok' ? 'ok' : 'fail'), detail: v };
+  if (typeof v === 'object') {
+    const ok = v.ok === true || v.pass === true || v.status === 'ok';
+    // ★ 后端 validate() 里「还没跑到」的步骤是 `{ok:false, kind:null, detail:null}`（初始值）——
+    //   与「真的失败」（必带 kind+detail）区分开，显示成「未执行」而不是「未通过」。
+    if (v.ok === false && !v.kind && !v.detail) return { state: 'skip', detail: '—（未执行）' };
+    const detail = v.detail || v.message || v.hint || v.note || (v.kind ? `(${v.kind})` : '');
+    return { state: ok ? 'ok' : 'fail', detail: String(detail || (ok ? '通过' : '未通过')) };
+  }
+  return { state: 'skip', detail: String(v) };
+}
+
+async function revealLlmSteps(data) {
+  const steps = (data && data.steps) || {};
+  for (const k of LLM_STEP_ORDER) setLlmStepState(k, 'pending', '');
+  for (const k of LLM_STEP_ORDER) {
+    const s = normLlmStep(steps[k]);
+    setLlmStepState(k, s.state, s.detail);
+    await llmSleep(140);   // 按契约顺序**逐步**点亮，而不是一次性糊出来
+  }
+  const allOk = !!(data && data.ok === true);
+  const hint = (data && data.hint) || '';
+  // ★ 顺手用后端 validate() 的 masked.keyMask 刷新「已配 key」提示（key 输入框为空时才刷，
+  //   免得把用户刚输入、还没保存的新 key 的掩码显示成「已保存的」）。
+  const km = data && data.masked && data.masked.keyMask;
+  if (km && $('llmKey').value === '') $('llmKey').placeholder = `留空 = 不改（已配置 ${km}）`;
+  const h = $('llmStepHint');
+  h.textContent = allOk ? '' : (hint || '校验未通过，请按上面的提示调整。');
+  h.style.color = allOk ? '' : 'var(--warn)';
+  toast(allOk ? '三步校验全部通过' : '校验未通过', !allOk);
+}
+
+async function validateLlm() {
+  if (llmState.busy) return;
+  llmState.busy = true;
+  $('btnLlmValidate').disabled = true;
+  $('llmSteps').hidden = false;
+  $('llmStepHint').textContent = '';
+  for (const k of LLM_STEP_ORDER) setLlmStepState(k, 'running', '检测中…');
+
+  const r = await llmReq('/api/llm/validate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(llmFormPayload(true)),
+  });
+  llmState.busy = false;
+  $('btnLlmValidate').disabled = false;
+
+  if (!r.ok) {
+    setLlmStepState('reachable', 'fail', llmErrText(r.error));
+    setLlmStepState('auth', 'skip', '—（未执行）');
+    setLlmStepState('shape', 'skip', '—（未执行）');
+    const h = $('llmStepHint');
+    h.textContent = (r.error && r.error.hint) || '校验请求没跑起来（后端或 LLM 模块未就绪）。';
+    h.style.color = 'var(--warn)';
+    toast('校验未跑起来', true);
+    return;
+  }
+  await revealLlmSteps(r.data);
+}
+
+// ── 试一句 ───────────────────────────────────────────────────
+async function tryLlmChat() {
+  if (llmState.busy) return;
+  llmState.busy = true;
+  $('btnLlmTry').disabled = true;
+  const out = $('llmTryOut');
+  out.textContent = '请求中…（受配置的超时限制）';
+
+  const r = await llmReq('/api/llm/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...llmFormPayload(true), prompt: $('llmTryText').value.trim() }),
+  });
+  llmState.busy = false;
+  $('btnLlmTry').disabled = false;
+  renderLlmTryOut(r);
+}
+
+function renderLlmTryOut(r) {
+  const box = $('llmTryOut');
+  box.textContent = '';
+  if (!r.ok) {
+    const d = el('div', 'llm-out-err', '请求失败：' + llmErrText(r.error));
+    if (r.error && r.error.hint) d.appendChild(el('span', 'llm-out-hint', r.error.hint));
+    box.appendChild(d);
+    return;
+  }
+  const d = r.data || {};
+  if (d.ok === true) {
+    box.appendChild(el('div', 'llm-out-text', d.text || '(空回复)'));
+    const meta = [];
+    if (d.meta && d.meta.model) meta.push('model=' + d.meta.model);
+    if (d.usage) meta.push('usage=' + llmSafeStr(d.usage));
+    if (meta.length) box.appendChild(el('div', 'llm-out-meta', meta.join('  ')));
+  } else {
+    const e = (d && d.error) || {};
+    const err = el('div', 'llm-out-err', '调用失败：' + `[${e.kind || 'unknown'}] ${e.message || ''}`);
+    if (e.detail) err.appendChild(el('span', 'llm-out-hint', String(e.detail).slice(0, 300)));
+    box.appendChild(err);
+  }
+}
+
 // ── 事件绑定 ────────────────────────────────────────────────
 function bind() {
   // ⚠️ 必须包一层：直接传 startRun 会把 MouseEvent 当成 force 参数（真值）→ 预检被跳过
@@ -4288,6 +4603,21 @@ function bind() {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) createBriefFromForm();
   });
   $('btnRefreshFilms').addEventListener('click', () => { loadFilms(); });
+  // LLM API 配置：刷新 / 保存 / 一键校验 / 试一句 / 清除密钥 / 切 profile / kind 联动
+  if ($('btnLlmRefresh')) $('btnLlmRefresh').addEventListener('click', loadLlm);
+  if ($('btnLlmSave')) $('btnLlmSave').addEventListener('click', saveLlmConfig);
+  if ($('btnLlmValidate')) $('btnLlmValidate').addEventListener('click', validateLlm);
+  if ($('btnLlmClearKey')) $('btnLlmClearKey').addEventListener('click', clearLlmKey);
+  if ($('btnLlmTry')) $('btnLlmTry').addEventListener('click', tryLlmChat);
+  if ($('llmProfile')) $('llmProfile').addEventListener('change', (e) => {
+    // 切 profile ⇒ 拉该 profile 的生效配置（默认值），避免「上一个 profile 的值挂在它名下」
+    llmState.current = e.target.value;
+    loadLlmConfig(e.target.value);
+  });
+  if ($('llmKind')) $('llmKind').addEventListener('change', syncLlmCustomRows);
+  if ($('llmTryText')) $('llmTryText').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); tryLlmChat(); }
+  });
   // 声音（配音音色）：刷新清单 / 语速输入（改了要立刻反映到命令预览上）
   if ($('btnRefreshVoices')) $('btnRefreshVoices').addEventListener('click', () => loadVoices(false));
   if ($('btnVoiceTest')) $('btnVoiceTest').addEventListener('click', startVoiceTest);
@@ -4594,6 +4924,7 @@ async function boot() {
   await Promise.all([
     loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs(),
     loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(),
+    loadLlm(),
   ]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）
   setInterval(() => { loadJobs(); }, 3000);
