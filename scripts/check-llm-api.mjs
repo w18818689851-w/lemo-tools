@@ -9,6 +9,8 @@
  *   本批新增开放式 LLM 配置模块 `lib/llm-api.mjs`（不限厂商 / 部署 / 智能体，只要接口能调用即可接入）。
  *   它的**对外契约**写在**仓内契约** `_distill/llm-api-接口规格-2026-10-08.md`（★ 2026-10-08 订正：原先引用的是 `D:/lemo-tmp/llm-api-spec.md` 那份**临时**规格，已删，避免第二份真相） §一（导出与返回结构）/ §二（环境变量）：
  *     · 必须导出 `PROFILES` / `listProfiles` / `resolveConfig` / `validate` / `chat` / `listModels`；
+ *       ★ 2026-10-09（第 8 轮）**补齐**：契约 §一 还明列 `previewProfile` / `IMAGE_LIMITS`，§十三.1 又加 `invoke`
+ *         ⇒ 本闸门判据①(a) 的 `REQUIRED_EXPORTS` 由 **6** 个补成 **9** 个（= 契约导出**全量**）。
  *     · `chat()` **永不抛异常** —— 一切失败归一为 `{ok:false,error:{kind,...}}`，`kind` 取值固定枚举；
  *     · **默认 profile = `workbuddy`**（恰一个 `isDefault:true` 且其 id 是 `workbuddy`）；
  *     · **密钥绝不外泄**（日志 / 文件 / errors / hint 里不得出现 key 明文）；
@@ -27,8 +29,10 @@
  *
  *   **判据① 契约一致（导出 + 返回结构 + kind 枚举）**
  *     · ①(a) 导出：`PROFILES` / `listProfiles` / `resolveConfig` / `validate` / `chat` / `listModels`
- *       六者**全部**是导出（识别 `export (async) function|const|let|var <name>`、`export { … }`（含 `as`）、
- *       `export default`）⇒ 缺谁点名谁。
+ *       + ★ `previewProfile` / `IMAGE_LIMITS`（契约 §一）+ ★ `invoke`（契约 §十三.1）—— **共 9 个**
+ *       全部是导出（识别 `export (async) function|const|let|var <name>`、`export { … }`（含 `as`）、
+ *       `export default`）⇒ 缺谁点名谁。★ 2026-10-09（第 8 轮）补齐：原先只查 §一 的 6/8（漏
+ *       `previewProfile` / `IMAGE_LIMITS`）⇒ 与失败文案「规格 §一 要求的导出缺失」**名不符实**，现补齐为全量。
  *     · ①(b) `chat()` 返回结构含 `ok` 字段：代码体里出现 `ok: true` / `ok: false`。
  *     · ①(c) `error.kind` 取值在规格 §一 枚举内：代码体里所有 `kind: '<字面量>'` / `.kind = '<字面量>'`
  *       的值必须 ∈ 枚举 ∪ 适配器 kind（`anthropic` / `openai-compatible` / `custom`）；**出现枚举外的
@@ -210,7 +214,10 @@ const CONTRACT_REL = '_distill/llm-api-接口规格-2026-10-08.md';
 const CONTRACT = path.join(ROOT, CONTRACT_REL);
 
 // ── 规格 §一 / §二 的常量（契约真值；改这里 = 改契约，须先改规格）──────────────
-const REQUIRED_EXPORTS = ['PROFILES', 'listProfiles', 'resolveConfig', 'validate', 'chat', 'listModels'];
+// ★ 2026-10-09（第 8 轮）**补齐为契约导出全量 9 个**：§一 明列 8 个（原 6 个 + `previewProfile` + `IMAGE_LIMITS`），
+//   §十三.1 又加 `invoke`。原先只查 6 个 ⇒ 失败文案「规格 §一 要求的导出缺失」名不符实（只守 §一 的 6/8）。
+const REQUIRED_EXPORTS = ['PROFILES', 'listProfiles', 'resolveConfig', 'validate', 'chat', 'listModels',
+  'previewProfile', 'IMAGE_LIMITS', 'invoke'];
 const KIND_ENUM = ['unreachable', 'timeout', 'auth', 'rate-limit', 'http-error', 'bad-json',
   'bad-shape', 'empty-output', 'config', 'unknown'];
 // ★ 2026-10-09 追加：新增适配器 kind `workbuddy-gateway`（本机智能体网关：POST /api/v1/runs → SSE 取结果，
@@ -598,7 +605,7 @@ if (raw !== null && code.trim() !== '') {
   const exported = exportedNames(code);
   const missing = REQUIRED_EXPORTS.filter((n) => !exported.has(n));
   if (missing.length) {
-    fails.push({ crit: '①(a)', detail: `规格 §一 要求的导出缺失：${missing.join(' / ')}（当前导出：${[...exported].join(', ') || '（无）'}）` });
+    fails.push({ crit: '①(a)', detail: `规格 §一 要求的导出缺失：${missing.join(' / ')}（★ 本判据守的导出清单 = 契约 §一 的 8 个 + §十三.1 的 \`invoke\`，共 ${REQUIRED_EXPORTS.length} 个；当前导出：${[...exported].join(', ') || '（无）'}）` });
   }
   // ①(b) ok 字段
   if (!/\bok\s*:\s*(?:true|false)\b/.test(code)) {

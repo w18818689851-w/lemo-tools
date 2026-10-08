@@ -2220,6 +2220,89 @@ export const PROCESS_CASES = [
       }
     },
   },
+  {
+    // ★ 补「`.console/index.json` 整文件重写 ⇒ 丢失更新」这条
+    //   （由 _distill/测试跨污染审计-2026-10-09.md §一 的 ❌ 行 → 复核为真，见 _distill/store丢失更新-2026-10-09.md）。
+    //   控制台**只在启动时读一次**索引（lib/jobs.mjs:loadHistory），之后整个进程生命周期拿内存副本写盘
+    //   ⇒ 两个实例（或一个实例 + `scripts/prune-jobs.mjs --apply`）并发写时，后写者把前写者的改动**整个盖掉**。
+    //   本用例起**两个真进程**、共用一棵**隔离临时根**里的 `.console`，断言两件事：
+    //     (a) 并发「各建一条」⇒ 两条都在（不是只剩一条）；
+    //     (b) 并发「各删自己那条」⇒ 两条都没了（不是残留一条）。
+    //   ★ 隔离：`LEMO_FILM_DIR` 指向本用例自建的 `_smoke-` 临时根，跑完由 ARTIFACTS.dirs 递归删 ——
+    //     绝不碰真 `.console`（用例 id 也不登记进 ARTIFACTS.jobIds，因为它们在隔离根里）。
+    //   ★ 为什么必须加屏障（ready-*/go 文件）：缺陷的本质是「两个进程**都读完**之后才写」；
+    //     不强制这个交错，两个进程可能自然串行 ⇒ 用例会**假绿**（修前也过）。
+    name: '⑩ 索引跨进程写：两个实例并发写 `.console/index.json` ⇒ 不丢更新、不留残渣',
+    run: async (ctx) => {
+      const STORE_HREF = new URL('../lib/store.mjs', import.meta.url).href;
+      const dir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}store-lu-${process.pid}-${Date.now().toString(36)}`);
+      ARTIFACTS.dirs.add(dir);
+      const consoleDir = path.join(dir, '.console');
+      const indexPath = path.join(consoleDir, 'index.json');
+      const childPath = path.join(dir, 'child.mjs');
+      const env = { LEMO_FILM_DIR: dir, LEMO_STORE_HREF: STORE_HREF };
+
+      fs.mkdirSync(path.join(consoleDir, 'logs'), { recursive: true });
+      fs.writeFileSync(childPath, [
+        "import fs from 'node:fs';",
+        "import path from 'node:path';",
+        "const [name, mode] = process.argv.slice(2);",
+        "const ROOT = process.env.LEMO_FILM_DIR;",
+        "const store = await import(process.env.LEMO_STORE_HREF);",
+        "const { jobs } = store.loadIndex();",          // = jobs.mjs 的 loadHistory：启动时读一次
+        "fs.writeFileSync(path.join(ROOT, 'ready-' + name), '1');",
+        "const go = path.join(ROOT, 'go'); const t0 = Date.now();",
+        "while (!fs.existsSync(go)) { if (Date.now() - t0 > 15000) process.exit(2); }",   // 屏障：等两个都读完
+        "const mine = 'job-' + name;",
+        "const next = mode === 'add'",
+        "  ? [...jobs, { id: mine, slug: 's-' + name, status: 'ended', createdAt: 1, ownerPid: process.pid }]",
+        "  : jobs.filter((j) => j.id !== mine);",        // 各进程「摘掉自己登记的 jobId」
+        "store.saveIndex(next);",
+      ].join('\n') + '\n', 'utf8');
+
+      const waitReady = (n) => new Promise((res, rej) => {
+        const t0 = Date.now();
+        const tick = () => {
+          if (fs.existsSync(path.join(dir, `ready-${n}`))) return res();
+          if (Date.now() - t0 > 15000) return rej(new Error(`等 ready-${n} 超时`));
+          setTimeout(tick, 20);
+        };
+        tick();
+      });
+
+      const run = async (mode, seed) => {
+        for (const f of ['go', 'ready-A', 'ready-B']) {
+          try { fs.unlinkSync(path.join(dir, f)); } catch { /* 没有就算了 */ }
+        }
+        fs.writeFileSync(indexPath, JSON.stringify({ version: 1, savedAt: 'seed', jobs: seed }), 'utf8');
+        const kids = ['A', 'B'].map((n) => runNode([childPath, n, mode], { cwd: dir, env, timeoutMs: 30000 }));
+        await Promise.all([waitReady('A'), waitReady('B')]);   // 两个都读完
+        fs.writeFileSync(path.join(dir, 'go'), '1');           // 放行
+        const rs = await Promise.all(kids);
+        for (const r of rs) assert.strictEqual(r.code, 0, `子进程非 0 退出（${mode}）：${r.stderr}`);
+        const written = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+        return (written.jobs || []).map((m) => m.id);
+      };
+
+      const BASE = { id: 'base', slug: 's-base', status: 'ended', createdAt: 0 };
+
+      // (a) 并发「各建一条」⇒ 两条都得在
+      const added = await run('add', [BASE]);
+      assert.deepStrictEqual(added.slice().sort(), ['base', 'job-A', 'job-B'],
+        `并发建任务后索引应是 base+job-A+job-B，实际 ${added.join(',')} —— 后写者把前写者盖掉了（丢失更新）`);
+
+      // (b) 并发「各删自己那条」⇒ 只剩 base
+      const removed = await run('del', [
+        BASE,
+        { id: 'job-A', slug: 's-A', status: 'ended', createdAt: 1 },
+        { id: 'job-B', slug: 's-B', status: 'ended', createdAt: 2 },
+      ]);
+      assert.deepStrictEqual(removed, ['base'],
+        `并发摘除后索引应只剩 base，实际 ${removed.join(',')} —— 被别人的旧副本写回（任务历史残留）`);
+
+      ctx.note('⑩ 跨进程写索引：并发建 2 条都保住、并发摘 2 条都不残留（修复前 (a)(b) 皆红）');
+    },
+  },
 ];
 
 // ── ⑤+++/⑤++++/⑤+++++ 的公共夹具：一个「极小的假口播素材」───────────

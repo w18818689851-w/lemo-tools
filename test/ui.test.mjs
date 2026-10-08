@@ -49,9 +49,19 @@
  *
  * 安全 / 不干扰用户（沿用 smoke.mjs 的纪律）：
  *   - 测试自己用内核分配的空闲端口起服务，绝不碰用户那个 18080 实例。
+ *   - ★★ 落盘隔离（2026-10-09）：**主测试服务**（与 I 组的 LLM 专用服务）都显式注入
+ *     `LEMO_FILM_DIR` = **仓外临时落盘根**（非 C 盘；名字带 pid ⇒ 并发两实例互不相撞）
+ *     ⇒ 服务读写的 `.console/index.json` / `.briefs` / 成片库全在临时树里，**绝不碰真实**
+ *     `D:\lemo-films\.console`（上百条历史任务）/ `.briefs`（两百张工单）。
+ *     ★ 尊重外部显式设置：用户 / CI 已设 `LEMO_FILM_DIR` ⇒ 用它、跑完不删；未设才造 + 删。
+ *     ★ 并发锁（编排器原生支持的 `LEMO_LOCK_DIR`）也指到隔离根 ⇒ 既不碰真实
+ *       `D:\lemo-films\.<slug>.lock`，也不与本机其它 lemo-make 抢锁。
+ *     ★ 边界（别写成「完全隔离」）：编排器 `lemo-make.mjs` 的 `exportDir` 是硬编码字面量、
+ *       **不认** `LEMO_FILM_DIR`（红线文件）⇒ 隔离**只覆盖控制台侧**；本套件只跑 `--dry-run`
+ *       （不渲染/不导出），真正没被覆盖的只剩「非 dry-run 的成片导出」。
  *   - 测试服务会覆写 `.console-port` / `打开控制台.url` —— 跑前按字节备份、跑后逐字节还原。
  *   - 批量入队一律用 `--dry-run --skip-sync`（不渲染、不混流、几秒结束），跑完把测试任务
- *     从 `.console/index.json` 摘掉、日志文件删掉。
+ *     从（隔离根里的）`.console/index.json` 摘掉、日志文件删掉。
  *   - 不用 curl（本机走代理，打 localhost 得到 502）；不用 spawnSync（本环境一律 EBUSY）。
  *   - 临时文件全部在非 C 盘（D:\WSL\b4-ui-*），跑完按**确切路径**递归删除（不用通配符）。
  *
@@ -82,8 +92,25 @@ const EDGE_CANDIDATES = [
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
 ];
 
+// ── ★★ 落盘隔离根（2026-10-09）：主测试服务 + 本进程**所有**直连文件操作都跑在这里 ──
+//   为什么：主测试服务此前**没设** `LEMO_FILM_DIR` ⇒ 它读的是**真实** `D:\lemo-films\.console`
+//   （现有上百条任务）与真实 `.briefs`（现有两百张工单）⇒ 凡「按列表条数 / DOM 行数」判定的
+//   用例都会被历史残留干扰（实测 D4 / B8 / B7 / C3 偶发假红，且**每次挂的用例都不同** ⇒ 环境性假红）。
+//   ★ 尊重外部显式设置：用户 / CI 已设 `LEMO_FILM_DIR` ⇒ **用它**（不硬盖、跑完也**不删**）。
+//   ★ 未设 ⇒ 造一个**仓外**临时根（非 C 盘；名字带 pid + 时间戳 ⇒ 并发两实例各跑各的、互不相撞），
+//     登记进 TMP_ROOTS，跑完递归删，**不留临时目录**。
+//   ★★ 边界（已知且有意，别写成「完全隔离」）：这只覆盖**控制台侧**。编排器 `lemo-make.mjs` 的
+//     `exportDir` 是硬编码字面量、**不认** `LEMO_FILM_DIR`（红线文件）⇒ 真正**出片**（非 dry-run）
+//     仍会往真实 `D:\lemo-films` 写。本套件只跑 `--dry-run --skip-sync`（不渲染/不混流/不导出），
+//     且并发锁已用编排器原生支持的 `LEMO_LOCK_DIR` 也指到隔离根 ⇒ dry-run 路径**不往真实根写任何东西**。
+//     真正**没**被覆盖的只剩「非 dry-run 的成片导出」（本套件不触发）。
+const TEST_FILM_ROOT_EXTERNAL = process.env.LEMO_FILM_DIR ? path.resolve(process.env.LEMO_FILM_DIR) : null;
+const TEST_FILM_ROOT = TEST_FILM_ROOT_EXTERNAL
+  || path.join(CFG.tmpDir, `b4-ui-film-${process.pid}-${Date.now().toString(36)}`);
+const TEST_FILM_ROOT_OWNED = !TEST_FILM_ROOT_EXTERNAL;   // 只有自己造的才建 + 删
+
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
-const CONSOLE_ROOT = path.join(CFG.exportDir, '.console');
+const CONSOLE_ROOT = path.join(TEST_FILM_ROOT, '.console');
 const CONSOLE_LOGS = path.join(CONSOLE_ROOT, 'logs');
 const CONSOLE_INDEX = path.join(CONSOLE_ROOT, 'index.json');
 // E7 要真的上传一个极小的假 mp4（为了拿到一个真实 videoToken 走形态 2）——
@@ -301,6 +328,12 @@ function findEdge() {
 
 let PROFILE_SEQ = 0;
 const TMP_ROOTS = new Set();     // 本次跑出来的临时目录（跑完按确切路径递归删）
+
+// ★ 主测试服务的隔离落盘根：**本进程自己造的才建 + 登记**（外部显式设的 LEMO_FILM_DIR 不动它）。
+if (TEST_FILM_ROOT_OWNED) {
+  fs.mkdirSync(TEST_FILM_ROOT, { recursive: true });
+  TMP_ROOTS.add(TEST_FILM_ROOT);
+}
 
 function freshProfile() {
   const dir = path.join(CFG.tmpDir, `b4-ui-${process.pid}-${Date.now().toString(36)}-${(PROFILE_SEQ += 1)}`);
@@ -580,11 +613,40 @@ function cleanupTmpDirs() {
   return errors;
 }
 
-// ★ F1 若本机成片库为空，会**临时**在 CFG.exportDir 下造一个不以 `_`/`.` 开头的目录放一个极小的假
-//   成片（播放器只 `preload="metadata"`，几字节即可，不需要真能解码）—— 为了触发播放器弹层。
-//   跑完按**确切路径**递归删除（登记在这里；绝不用通配符删）。
-//   G2（成片库）复用同一套：本机成片库为空时也要造假成片，绝不静默跳过。
+// ★ F1/G2 若成片库为空，会**临时**在**隔离落盘根**（TEST_FILM_ROOT）下造若干个不以 `_`/`.` 开头的目录
+//   放极小的假成片（播放器只 `preload="metadata"`，几字节即可，不需要真能解码）—— 为了触发播放器弹层 /
+//   成片库版块。跑完按**确切路径**递归删除（登记在这里；绝不用通配符删）。★ 绝不往真实成片库里写假素材。
 const CREATED_FILM_DIRS = new Set();
+
+/**
+ * 在隔离落盘根里造 **3 个**假成片，返回服务端会看到的 slug 列表。
+ *
+ * ★ 为什么是 3 个而不是 1 个：G5（排序：切 size 后顺序必须**真的变**）与 G6（筛选片段必须是**严格子集**）
+ *   都需要 ≥2 个两两不同的条目才有牙 —— 隔离后成片库恒为空，只造 1 个会让这两条**假红**（实测过）。
+ * ★ 三个条目的 (slug, size, mtime) 两两不同，且**把最大的做成最旧** ⇒ 大小序 ≠ 时间序，
+ *   G5 的「切成大小后顺序没变」判据才成立。
+ */
+function createFakeFilms(prefix) {
+  const t0 = Date.now();
+  const specs = [
+    { tag: 'aa', bytes: 3000, mtime: t0 - 30000 },   // 最大 → 最旧
+    { tag: 'bb', bytes: 2000, mtime: t0 - 20000 },
+    { tag: 'cc', bytes: 1000, mtime: t0 - 10000 },   // 最小 → 最新
+  ];
+  const slugs = [];
+  for (const s of specs) {
+    const slug = `${prefix}-${s.tag}`;
+    const dir = path.join(TEST_FILM_ROOT, slug);
+    fs.mkdirSync(dir, { recursive: true });
+    const full = path.join(dir, 'clip.mp4');
+    fs.writeFileSync(full, Buffer.alloc(s.bytes, 0x41));
+    const secs = s.mtime / 1000;
+    try { fs.utimesSync(full, secs, secs); } catch { /* 设不上就算了（mtime 由写入顺序决定） */ }
+    CREATED_FILM_DIRS.add(dir);
+    slugs.push(slug);
+  }
+  return slugs;
+}
 
 function cleanupFilmDirs() {
   const errors = [];
@@ -776,8 +838,15 @@ async function main() {
   const state = {};
 
   try {
-    server = await startServer();
+    // ★★ 主测试服务也**显式注入隔离落盘根**（尊重外部 LEMO_FILM_DIR；见文件顶部 TEST_FILM_ROOT 说明）——
+    //   否则它读真实 `.console/index.json` / `.briefs`，按条数/行数判定的用例被历史残留干扰（D4/B8/B7/C3）。
+    //   ★ 同时把编排器的**并发锁目录**（`LEMO_LOCK_DIR`，lemo-make.mjs:1568 原生支持）也指到隔离根 ——
+    //     否则 dry-run 任务仍会在**真实** `D:\lemo-films\.<slug>.lock` 上与本机其它 lemo-make 抢锁，
+    //     那正是 C2/C3「art-deco dry-run 跑成 failed/exit=1」这类**环境性假红**的一个来源。
+    //     两个变量都只是「控制台侧」的覆盖点，**没有**改红线文件 `lemo-make.mjs`。
+    server = await startServer(3, { LEMO_FILM_DIR: TEST_FILM_ROOT, LEMO_LOCK_DIR: TEST_FILM_ROOT });
     log(C.dim(`  测试服务已起 → http://127.0.0.1:${server.port}  (pid ${server.child.pid})`));
+    log(C.dim(`  落盘隔离根 → ${TEST_FILM_ROOT}${TEST_FILM_ROOT_OWNED ? '（本进程造的临时树，跑完递归删）' : '（外部 LEMO_FILM_DIR，跑完不动它）'}（含 LEMO_LOCK_DIR）`));
     const base = `http://127.0.0.1:${server.port}`;
     const get = (p) => httpRequest(server.port, 'GET', p);
     const post = (p, b) => httpRequest(server.port, 'POST', p, b);
@@ -1909,15 +1978,13 @@ async function main() {
       `GET /api/films → ${filmsRes0.status}（拿不到成片清单，播放器弹层无法触发）`);
     let filmList = filmsRes0.json.films;
     if (!filmList.length) {
-      // 干净机器：临时造一个极小的假成片（目录名不以 `_`/`.` 开头，否则服务端会跳过）
-      const dir = path.join(CFG.exportDir, `uitest-player-${process.pid}`);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'clip.mp4'), Buffer.from('FAKE-MP4-BYTES-for-ui-f1'));
-      CREATED_FILM_DIRS.add(dir);
+      // 干净机器（隔离后成片库恒为空）：临时造 3 个极小的假成片（目录名不以 `_`/`.` 开头，否则服务端会跳过）
+      // ★ 落在**隔离落盘根**里（服务端只看得到它们）—— 绝不往真实成片库里写假素材。
+      createFakeFilms(`uitest-player-${process.pid}`);
       filmList = ((await get('/api/films')).json.films || []);
     }
     need(filmList.length > 0,
-      `成片库为空（${CFG.exportDir}），临时造假成片后仍拿不到条目 —— 播放器弹层测不了（绝不静默跳过）`);
+      `成片库为空（${TEST_FILM_ROOT}），临时造假成片后仍拿不到条目 —— 播放器弹层测不了（绝不静默跳过）`);
     const FILM = filmList[0];
     const FILM_IS_DUB = !!(FILM.source === 'dub' || !FILM.slug);
     const FILM_KEY = FILM_IS_DUB ? `文案出片 ${FILM.name || ''}`.trim() : String(FILM.slug);
@@ -2242,16 +2309,15 @@ async function main() {
     // ── 成片库：服务端权威清单（G4–G6 的期望值全部从它自算，不硬编码文件名/顺序）──
     let gFilms = ((await get('/api/films')).json || {}).films || [];
     if (!gFilms.length) {
-      // 干净机器：临时造一个极小的假成片（目录名不以 `_`/`.` 开头，否则服务端会跳过）——
+      // 干净机器（隔离后成片库恒为空）：临时造 3 个极小的假成片（目录名不以 `_`/`.` 开头，否则服务端会跳过）——
       // 绝不静默跳过。跑完按**确切路径**递归删（登记在 CREATED_FILM_DIRS）。
-      const dir = path.join(CFG.exportDir, `uitest-films-${process.pid}`);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'clip.mp4'), Buffer.from('FAKE-MP4-BYTES-for-ui-g'));
-      CREATED_FILM_DIRS.add(dir);
+      // ★ 落在**隔离落盘根**里（服务端只看得到它们）—— 绝不往真实成片库里写假素材。
+      // ★ 造 3 个是 G5（排序 size≠time）/ G6（筛选片段严格子集）的硬前提，只造 1 个会让它们假红。
+      createFakeFilms(`uitest-films-${process.pid}`);
       gFilms = ((await get('/api/films')).json || {}).films || [];
     }
     need(gFilms.length > 0,
-      `成片库为空（${CFG.exportDir}），临时造假成片后仍拿不到条目 —— 成片库测不了（绝不静默跳过）`);
+      `成片库为空（${TEST_FILM_ROOT}），临时造假成片后仍拿不到条目 —— 成片库测不了（绝不静默跳过）`);
 
     const gDemos = await get('/api/demos');
     const gNameCn = (slug) => { const s = (gDemos.json.styles || []).find((x) => x.slug === slug); return (s && s.nameCn) || slug; };
@@ -2612,7 +2678,10 @@ async function main() {
 
     await runCase('G11 任务列表·取消：点行内「取消」→ 真发 DELETE /api/jobs/:id，状态转 canceled 且文案中性（无「失败」）', async () => {
       const slug = 'ascii-crt';
-      const lockPath = path.join(CFG.exportDir, `.${slug}.lock`);
+      // ★ 并发锁的落点 = 隔离根（主服务已把编排器的 `LEMO_LOCK_DIR` 也指到 TEST_FILM_ROOT）——
+      //   编排器写锁、控制台 checkLock 读锁（lib/jobs.mjs 的 FILM_DIR）都在这棵临时树上，
+      //   既不碰真实 `D:\lemo-films\.<slug>.lock`，也不会与别的 lemo-make 抢锁。
+      const lockPath = path.join(TEST_FILM_ROOT, `.${slug}.lock`);
       // ① 真入队一条 --dry-run --skip-sync（无害长任务，约几秒；绝不真渲染/混流）
       const r = await post('/api/run', { slug, opts: ['--dry-run', '--skip-sync'] });
       need(r.status === 200 && r.json && r.json.job, `POST /api/run → ${r.status} ${r.text.slice(0, 160)}`);
@@ -3200,6 +3269,11 @@ async function main() {
         const hint = await cdp.evalJs(`(document.getElementById('llmKindHint') || {}).textContent || ''`);
         need(/本机智能体网关/.test(hint), `#llmKindHint 文案「${hint}」应含「本机智能体网关」`);
         need(!/\*\*/.test(hint), `#llmKindHint 含 markdown 星号（用户可见文案不许有）：${hint}`);
+
+        // ★ path / extract 是 `custom` 的字段 ⇒ `workbuddy-gateway` 下应隐藏（沿用 syncLlmCustomRows 的既有判据，
+        //   无需改前端逻辑）。这里钉住它，免得以后误给这个 kind 露出两个用不到的输入框。
+        need(await cdp.evalJs(`document.getElementById('llmCustomRows').hidden === true`),
+          'workbuddy-gateway 下 path/extract 行应隐藏（它们是 custom 的字段）');
 
         // ★ 试跑：端点指向**本地网关桩**（绝不指向真实网关）⇒ 面板按 kind 走两段式（run → SSE）取回文本。
         llmGwStub = await startGwStub(await freePort());
