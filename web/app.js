@@ -1795,9 +1795,9 @@ function renderDubMode() {
   for (const b of document.querySelectorAll('#dubMode .dub-mode-btn')) {
     const on = b.dataset.mode === state.dubMode;
     b.classList.toggle('is-on', on);
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1;   // ★ Tabs 模式：roving tabindex
   }
-  renderDubVideoHint();
+  const panel = $('dubModePanel'); if (panel) panel.setAttribute('aria-labelledby', keep ? 'dubModeKeep' : 'dubModeScript'); renderDubVideoHint();
   renderDubSrtHint();
   renderDubLimitHint();
   syncDubCropWarn();       // 形态决定「素材会不会被缩放/裁切」—— 切形态就要重核提示
@@ -4749,6 +4749,23 @@ function bind() {
     for (const b of document.querySelectorAll('#dubMode .dub-mode-btn')) {
       b.addEventListener('click', () => setDubMode(b.dataset.mode));
     }
+    // ★ ARIA Tabs 模式的键盘模型：←/→（及 ↑/↓）在形态 tab 间移动并选中，Home/End 跳首尾。
+    //   配合 renderDubMode 的 roving tabindex（只有选中的那个 tab 是 Tab 键的落点）。
+    $('dubMode').addEventListener('keydown', (e) => {
+      const tabs = [...document.querySelectorAll('#dubMode .dub-mode-btn')];
+      const i = tabs.indexOf(e.target);
+      if (i < 0) return;
+      const n = tabs.length;
+      let j = -1;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % n;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + n) % n;
+      else if (e.key === 'Home') j = 0;
+      else if (e.key === 'End') j = n - 1;
+      if (j < 0) return;
+      e.preventDefault();
+      setDubMode(tabs[j].dataset.mode);
+      tabs[j].focus();
+    });
   }
   if ($('dubStyle')) {
     $('dubStyle').addEventListener('change', (e) => {

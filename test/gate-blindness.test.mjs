@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 110 条用例 / 覆盖全部 43 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 112 条用例 / 覆盖全部 43 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -28,6 +28,10 @@
  *          `check-tp-prose` 同一套）—— 读数在前子句、别的风格名在后子句 ⇒ 照判；
  *        · `check-skill-film-fields` WxH 朝向守卫（b84-a 补）：9:16 变体（竖画幅）⇒ **参考桶**、不判 FAIL，
  *          而同朝向的变体（如 1600×900）仍照判 —— ⑨ 收窄后暴露的 ⑧ 缺口，与 `check-tp-prose` b83-a 同源。
+ *        · `check-skill-film-fields` **失明守卫**（2026-10-08 补：该守卫此前**无任何用例** —— 三条既有
+ *          用例都只断言核心判据「陈旧帧数 / 陈旧分辨率」，真值源始终可达 ⇒ `allBlind` 从未触发）：
+ *          ① 根下 0 个风格（无 `SKILL.md`）；② 有风格但**全部**读不到 `_distill.json#generatedVideo`
+ *          ⇒ 两态都 FAIL +「本闸门已失明」，配阴性对照（真值齐全 ⇒ exit 0）与 ★自证（短路 `allBlind` ⇒ 正向断言必须变红）。
  *        · `check-mux-parity`（b84-c 建 / b84-a 并入）：**自带 `demo/mux.sh` 的 `LN_TP` 漂移** ⇒ 点名 slug 与那个值；
  *          **编码器守卫被拆**（未设支改成 CPU）⇒ 报 `VENC_GUARD`（用户头号硬规则「渲染一律 GPU」的落地口）；
  *          另有**本闸门独有**的一条守卫：`styles/` 有风格但**一个自带 `demo/mux.sh` 都没有** ⇒ 报「一个都枚举不到」。
@@ -635,6 +639,58 @@ test('check-skill-film-fields：WxH 朝向守卫（9:16 变体 ⇒ 参考桶；�
     skillTree(neg, 'gb-ff', '# gb-ff\n\n本片成片分辨率 1600×900。\n', gv);
     const r2 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: neg });
     expectBlind(r2, '陈旧分辨率 1 处', 'check-skill-film-fields 朝向守卫阴性对照');
+  } finally { rm(dir); }
+});
+
+// ── 2b. check-skill-film-fields 的**失明守卫**（2026-10-08 补）───────────────
+//   ★ 由来：本闸门上面三条用例都只断言**核心判据**（`陈旧帧数 1 处` / `陈旧分辨率 1 处`），
+//     真值源（`<DIR>/<slug>/_distill.json#generatedVideo`）**始终可达** ⇒ 其失明守卫
+//     `const allBlind = dirs.length === 0 || blind.length === dirs.length;`
+//     （`scripts/check-skill-film-fields.mjs:351`）**从未被触发过**。守卫两态：
+//     ① 根下 0 个风格（无 SKILL.md）；② 有风格但**全部**读不到 generatedVideo。
+//     ⇒ 两态都必须 exit≠0 且打印「本闸门已失明」。
+test('check-skill-film-fields：失明守卫（0 风格 / 全部风格读不到 generatedVideo）', async () => {
+  const dir = path.join(TMP, 'ff-blind');
+  try {
+    // 正向①：根存在、但一个风格（SKILL.md）都没有 ⇒ dirs=[] ⇒ 失明。
+    const empty = path.join(dir, 'empty');
+    mk(empty);
+    const r1 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: empty });
+    expectBlind(r1, '本闸门已失明', 'check-skill-film-fields 失明①');
+    assert.ok(r1.out.includes('一个风格（SKILL.md）都找不到'),
+      `失明①：应报「一个风格（SKILL.md）都找不到」\n${r1.out.slice(0, 700)}`);
+
+    // 正向②：1 个风格有 SKILL.md，但其 _distill.json 读不到 generatedVideo
+    //   ⇒ blind.length === dirs.length ⇒ 失明（区别于①的「一个都没枚举到」）。
+    const nogv = path.join(dir, 'nogv');
+    skillTree(nogv, 'gb-ff', '# gb-ff\n\n本片成片帧数 100 帧。\n', { selfCheck: {} });
+    const r2 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: nogv });
+    expectBlind(r2, '本闸门已失明', 'check-skill-film-fields 失明②');
+    assert.ok(r2.out.includes('全部**读不到 generatedVideo'),
+      `失明②：应报「N 个风格**全部**读不到 generatedVideo」\n${r2.out.slice(0, 700)}`);
+
+    // 阴性对照：1 个风格真值齐全 ⇒ exit 0 且不含「本闸门已失明」
+    //   （否则一个「永远 exit 1」的坏断言也能绿）。
+    const neg = path.join(dir, 'neg');
+    skillTree(neg, 'gb-ff', '# gb-ff\n\n本片成片帧数 100 帧。\n',
+      { generatedVideo: { frames: 100, width: 1920, height: 1080, durSec: 60 } });
+    const r3 = await runGate('check-skill-film-fields.mjs', { LEMO_DISTILL_ROOT: neg });
+    expectClean(r3, '本闸门已失明', 'check-skill-film-fields 阴性对照');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-skill-film-fields：短路失明守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'ff-blind-mut');
+  try {
+    // 把 `const allBlind = dirs.length === 0 || blind.length === dirs.length;` 短路成 `false`。
+    const gate = mutate('check-skill-film-fields.mjs', dir,
+      'const allBlind = dirs.length === 0 || blind.length === dirs.length;', 'const allBlind = false;');
+    const empty = path.join(dir, 'empty');
+    mk(empty);
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: empty } });
+    // 守卫被短路后：0 风格夹具 ⇒ exit 0、无「本闸门已失明」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
+      undefined, '短路失明守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
 });
 
@@ -2433,7 +2489,7 @@ test('★自证 check-config-notes：删掉「全无 notes」守卫后，正向�
   const dir = path.join(TMP, 'mut-cfg');
   try {
     const gate = mutate('check-config-notes.mjs', dir,
-      'if (cfg.styles.length > 0 && checkedNotes === 0) {', 'if (false) {');
+      'if (checkedNotes === 0) {', 'if (false) {');
     const cfg = path.join(dir, 'empty.json');
     rj(cfg, { styles: [{ slug: 'a', notes: '' }, { slug: 'b' }] });
     const res = await run(NODE, [gate], { env: { LEMO_DUB_STYLES: cfg } });

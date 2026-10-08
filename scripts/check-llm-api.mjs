@@ -81,11 +81,30 @@
  *       假绿，也防「字符串字面量里的 `pick(...)`」干扰；判据①(c)(d) 仍用 `stripComments`（**保留字符串**）。
  *     · 不一致 ⇒ FAIL，**点名具体的倒置对**（如「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」）。
  *
+ *   **判据⑧ 用户可见文案不得含 markdown `**`**（★ 2026-10-08 追加；★ 同日**扩覆盖面**）
+ *     · 由来：`PROFILES[*]` 里**多个字段会被面板渲染给用户看**，它们一律走 `textContent`
+ *       （下拉项 / 提示行）或直接填进**输入框** `value` ⇒ **纯文本、不认 markdown**；写 `**粗体**`
+ *       会**原样显示成星号**。实测踩过：一次 `note` 改写引入 **5 个 profile** 的 `**`；
+ *       而 `test/ui.test.mjs` 的 **A7** 只扫**一个页面**、且 profile 提示行**只显示当前（默认）那一个**
+ *       ⇒ 非默认 profile 的 `note` **在 UI 用例里没有覆盖**（另 **4 个漏网**）⇒ 判据必须自己**遍历全部 profile**。
+ *     · 覆盖字段（`USER_TEXT_FIELDS`，**遍历全部 profile × 全部用户可见字段**，不只默认项）：
+ *       `label`（profile 下拉项 `o.textContent`） / `note`（`llmProfileHint.textContent`） /
+ *       `models`（模型下拉 / datalist 候选项 `o.textContent`） / `kind` `baseUrl` `model` `path` `extract`
+ *       （面板**填进输入框**，用户读到的是字面文本）。**不覆盖** `id`（只做 `<option>.value`）/
+ *       `isDefault`（布尔）/ `headers`（对象；其值是 textarea 里的技术性「名称: 值」，非**文案**）。
+ *     · 判法：**静态解析**（**不用动态 import** —— 夹具树里模块的相对依赖常缺，import 抛错会被
+ *       当成「失明」而把 `test/gate-blindness.test.mjs` 全打红，上一批踩过）。结构（条目边界 /
+ *       字段值区间）取自**剥注释+字符串**的代码体（文案里的 `{}` `,` 会干扰配平），文案取自
+ *       **剥注释（保留字符串）**的同一区间（两者逐字符同长同下标）；`**X**` 可能**跨字符串拼接行**
+ *       （`'…**甲' + '乙**…'`）⇒ 把该字段区间内的字符串内容**拼接**后再查 `**`。
+ *     · 命中 ⇒ FAIL，**点名 `profile.字段`**（含处数）；一条用户可见字段都抽不到 ⇒ **失明**（防空转绿灯）。
+ *
  *   **判据⑥ 失明守卫（防空转绿灯）**：读不到 `lib/llm-api.mjs` / 代码体为空 / 一个导出都没抽到 /
  *     一个 `LEMO_LLM_*` 都没抽到 / 一条 `kind:` 字面量都没抽到 / 切不出 `chat` 函数体 /
- *     切不出 `PROFILES` 字面量 / **（判据⑦）读不到契约文档 / 切不出顺序声明 / 切不出 `pick(...)`** ⇒
+ *     切不出 `PROFILES` 字面量 / **（判据⑧）`PROFILES` 里一个用户可见字段都抽不到** /
+ *     **（判据⑦）读不到契约文档 / 切不出顺序声明 / 切不出 `pick(...)`** ⇒
  *     **FAIL 并明说「本闸门已失明」**，且**失明时不再输出判据①~⑤、⑦、⑧**（在失明的树上它们只会刷屏，
- *     且会被误读成「模块违约」）。★ 判据⑥ 是**失明守卫本身**，故它不与①~⑤、⑦ 并列编号。
+ *     且会被误读成「模块违约」）。★ 判据⑥ 是**失明守卫本身**，故它不与①~⑤、⑦、⑧ 并列编号。
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ③ 误报率实测（**先在真实模块上跑一遍、逐条人读命中，再定稿**）
@@ -104,6 +123,11 @@
  *     `model`(5 个) 三个 `pick(...)` 的 id 序列**全部严格递增**（⑦(b) 命中 0）⇒ **命中 0 / 误报 0**。
  *     ★ 对照：修正前的**旧序**（`override`/`runtime` 对调）下 ⑦(b) 会**立刻**报「契约声明『覆盖文件』在
  *     『运行时线索』之前，代码里却是反的」—— 这正是本判据要防的那类漂移（详见 ⑤ 的变异 G/H）。
+ *   · **判据⑧**：真实语料上，`PROFILES` 的 **12** 个 profile 逐条抽到用户可见字段 **69** 个
+ *     （= 各家 `label`+`note`+`kind`+`baseUrl`+`model` 必有，7 家另带 `models[]`，`custom` 另带
+ *     `path`+`extract`）⇒ 逐字段查 `**` **命中 0 / 误报 0**；扩覆盖前的旧实现**只扫 `note` 一个字段**
+ *     （共 12 个），且 profile 名取自 `^\s{2}([a-z0-9-]+):\s*\{` ⇒ **带引号的键** `'openai-compatible'`
+ *     会被**错记成上一个 profile 的名字**（`label` / `models` 等字段则**完全不查**）⇒ 本批补齐。
  *   · 真实模块上 **exit 0**（0 FAIL）。
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -124,11 +148,17 @@
  *     `models` 的 `pick(...)` 也**不判**（它们不含运行时线索，验不出本判据要防的那类倒置）；
  *     ⑤ 若有人把 `resolveConfig` 改成**不用 `pick(...)`**（如手写 if/else 链），判据⑦ 切不出实参
  *     ⇒ 报失明（**宁可报失明，不误报**）；⑥ 契约文档的顺序声明锚点（`修正后顺序 = …`）被改写
- *     ⇒ 同样报失明。
+ *     ⇒ 同样报失明；⑦ 判据⑧ 只判**列进 `USER_TEXT_FIELDS` 的字段**，且**只判 `**`** ——
+ *     `id` / `isDefault` / `headers` 不判（理由见 ② 判据⑧）；其它 markdown 形态（`*斜体*` / `# 标题` /
+ *     `[]()` 链接）**不判**（本仓踩过的就是 `**`，收窄到它以免误报）；⑧ 判据⑧ 只认「`PROFILES` 的字面量
+ *     能切出条目」—— 若有人用**工厂函数**在运行期拼表，会切不出用户可见字段 ⇒ 报失明（**宁可报失明，不误报**）。
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★★ ⑤ 验证（**临时副本 + 覆盖点，全程不动真实模块**；同一套断言也写在
- *      `test/gate-blindness.test.mjs` 的 `check-llm-api` 用例里）
+ * ★★ ⑤ 验证（**临时副本 + 覆盖点，全程不动真实模块**）
+ *   ★ 判据①~⑤、⑦ 的那套断言**也写在** `test/gate-blindness.test.mjs` 的 `check-llm-api` 用例里
+ *     （本批**未改** `test/**`）。
+ *   ★ 判据⑧ 扩覆盖面的变异验证由**本批手工**跑（临时夹具树，不进仓；见下 变异 I~L）——
+ *     `test/**` 归别的批次，本批不动。
  * ══════════════════════════════════════════════════════════════════════════════
  *   · **阴性对照**（真实 `lib/llm-api.mjs` 整棵拷进夹具树）⇒ **exit 0** 且不含失明文案。
  *   · **变异 A（判据①）**：删掉 `export` 关键字（`export async function chat` → `async function chat`）
@@ -142,10 +172,19 @@
  *     （= 旧序）⇒ **exit 1** 并点名「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」。
  *   · **变异 H（判据⑦(a)）**：把**契约文档**的顺序声明改成旧序（`覆盖文件` 与 `运行时线索` 对调）
  *     ⇒ **exit 1** 并点名「契约文档的顺序声明与闸门常量不一致」。
+ *   · **变异 I（判据⑧·`label`）**：给**非默认** profile `doubao` 的 `label` 加 `**`
+ *     ⇒ **exit 1** 并点名 `doubao.label`（证明不再只测「默认」那一个 profile）。
+ *   · **变异 J（判据⑧·`note`）**：给 `doubao` 的 `note` 加 `**` ⇒ **exit 1** 并点名 `doubao.note`。
+ *   · **变异 K（判据⑧·跨拼接边界）**：把 `**` 拆到**两段拼接的边界两侧**（`…才能调*' + '*（未开通…`）
+ *     ⇒ **exit 1** 并点名 `doubao.note`（证明「拼接后再查」承重 —— 逐串各查会漏）。
+ *   · **变异 L（判据⑧·另一 profile + 数组项 + 输入框字段）**：给 `siliconflow` 的 `label` 加 `**`
+ *     ⇒ 点名 `siliconflow.label`；给 `doubao` 的 `models[]` 数组项加 `**` ⇒ 点名 `doubao.models`；
+ *     给 `deepseek` 的 `baseUrl` 加 `**` ⇒ 点名 `deepseek.baseUrl`（证明**遍历全部 profile × 全部字段**）。
  *   · **失明三态**（模块文件缺失 / 模块里一条 `LEMO_LLM_*` 都没有 / 契约文档缺失或顺序声明切不出）
  *     ⇒ **exit 1 + 「本闸门已失明」**，且**不输出判据①~⑤、⑦、⑧**。
- *   · **★自证**：分别**短路**判据①/②/③/⑤/⑦ 的比较 ⇒ 对应变异**重新变绿**（证明判据**承重**，
- *     不是摆设）。★ 判据⑦ 的短路点选「代码侧严格递增」那一步（真的能让变异 G 变绿）。
+ *   · **★自证**：分别**短路**判据①/②/③/⑤/⑦/⑧ 的比较 ⇒ 对应变异**重新变绿**（证明判据**承重**，
+ *     不是摆设）。★ 判据⑦ 的短路点选「代码侧严格递增」那一步（真的能让变异 G 变绿）；
+ *     判据⑧ 的短路点选 `if (hits) bad.push(…)`（真的能让变异 I~L 变绿）。
  *
  * 用法：node scripts/check-llm-api.mjs
  * 环境变量：
@@ -180,6 +219,23 @@ const ENV_EXPECTED = ['LEMO_LLM_PROFILE', 'LEMO_LLM_BASE', 'LEMO_LLM_KEY', 'LEMO
 /** 密钥类标识符（**整标识符**匹配；`hasKey` / `monkey` 不算 —— `key` 前还有字母）。 */
 const KEY_IDENT = new Set(['apikey', 'api_key', 'key', 'secret', 'token', 'password', 'passwd',
   'credential', 'accesskey', 'secretkey', 'authkey', 'privatekey']);
+
+// ── 判据⑧ 的覆盖字段（**面板会渲染给用户看**的 `PROFILES[*]` 字段）────────────────
+/**
+ * ★ 判据⑧ 要遍历的「用户可见」字段。定这一组**不是拍脑袋**，是照面板的真实渲染路径（`web/app.js`）：
+ *   · `label`   —— `renderLlmProfileOptions()` 的 `o.textContent`（profile 下拉项的**显示文字**）；
+ *   · `note`    —— `llmProfileHint.textContent`（profile 提示行）；
+ *   · `models`  —— `renderLlmModelOptions()` 的 `o.textContent`（模型下拉 / datalist 候选项文字）；
+ *   · `kind` / `baseUrl` / `model` / `path` / `extract` —— 面板把它们**填进输入框**
+ *     （`$('llmKind').value = …` / `$('llmBaseUrl').value = …` / …）⇒ 用户读到的是**字面文本**。
+ *   ⇒ 这些字段一律**纯文本、不认 markdown**，写 `**粗体**` 会**原样显示成星号**。
+ * ★ **不覆盖**（如实登记，见 ④）：
+ *   · `id` —— 只做 `<option>` 的 `value`，**不当文字显示**；
+ *   · `isDefault` —— 布尔，无文案；
+ *   · `headers` —— 对象；其值进的是 textarea 的「名称: 值」行，属**技术性头值**而非**文案**
+ *     （把技术头值当文案判会误报）⇒ 不判。
+ */
+const USER_TEXT_FIELDS = ['label', 'note', 'kind', 'baseUrl', 'model', 'models', 'path', 'extract'];
 
 // ── 判据⑦ 的顺序真值（契约）────────────────────────────────────────────────────
 /**
@@ -368,18 +424,67 @@ function matchBracket(src, openIdx) {
   }
   return -1;
 }
-/** 把字面量按**顶层逗号**切成条目（追踪 `{}` `[]` `()` 深度）。 */
-function topLevelSegments(literal) {
+/** 把字面量按**顶层逗号**切成 `{ text, start }`（`start` = 该段在字面量里的起点下标）。 */
+function topLevelSegmentsAt(literal) {
   const segs = [];
   let depth = 0, start = 0;
   for (let i = 0; i < literal.length; i++) {
     const c = literal[i];
     if (c === '{' || c === '[' || c === '(') depth++;
     else if (c === '}' || c === ']' || c === ')') depth--;
-    else if (c === ',' && depth === 1) { segs.push(literal.slice(start, i)); start = i + 1; }
+    else if (c === ',' && depth === 1) { segs.push({ text: literal.slice(start, i), start }); start = i + 1; }
   }
-  segs.push(literal.slice(start));
+  segs.push({ text: literal.slice(start), start });
   return segs;
+}
+/** 把字面量按**顶层逗号**切成条目文本（追踪 `{}` `[]` `()` 深度）—— 判据③ 用。 */
+function topLevelSegments(literal) { return topLevelSegmentsAt(literal).map((s) => s.text); }
+
+// ── 判据⑧ 的小工具 ──────────────────────────────────────────────────────────
+/**
+ * 在**剥注释+字符串**的代码体 `code` 里，于 `[from, to)` 内找 `<field>:` 的**值区间** `[start,end)`。
+ * 值 = 从 `:` 后第一个非空白字符起，到**本层**的下一个 `,` / `}` / `]` 止（追踪 `()[]{}` 深度）。
+ * ★ 必须在 `code` 上跑（字符串里的 `{}` `,` 已剥成空格，不会干扰配平）；
+ *   `code` 与 `noComment` 逐字符同长同下标 ⇒ 拿到的区间可直接去 `noComment` 上取**文案**。
+ * 找不到 ⇒ `null`。
+ */
+function fieldSpan(code, field, from, to) {
+  const re = new RegExp(`(?:^|[^A-Za-z0-9_$])${field}\\s*:`, 'g');
+  re.lastIndex = from;
+  const m = re.exec(code);
+  if (!m || m.index >= to) return null;
+  let i = m.index + m[0].length;
+  if (i > to) return null;
+  while (i < to && /\s/.test(code[i])) i++;
+  const start = i;
+  let depth = 0;
+  while (i < to) {
+    const c = code[i];
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') { if (depth === 0) break; depth--; }
+    else if (c === ',' && depth === 0) break;
+    i++;
+  }
+  return { start, end: i };
+}
+/**
+ * 把一段源码里的**字符串字面量内容拼接**返回（`'a' + 'b'` → `ab`）—— 判据⑧ 用。
+ * ★ 为什么拼接而不是逐串各查：`**` 可能**跨拼接边界**（`'…**甲' + '乙**…'`）⇒ 拼接后才查得到。
+ * 入参应是**剥注释（保留字符串）**的片段，这样片段里的引号都是真串定界符。
+ */
+function stringContents(text) {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const q = text[i];
+    if (q !== "'" && q !== '"' && q !== '`') continue;
+    i++;
+    while (i < text.length) {
+      if (text[i] === '\\') { out += text[i + 1] === undefined ? '' : text[i + 1]; i += 2; continue; }
+      if (text[i] === q) break;
+      out += text[i]; i++;
+    }
+  }
+  return out;
 }
 
 /** 从 `console.<m>( … )` 调用里抽参数文本（剥注释+字符串后的代码体）。 */
@@ -632,50 +737,56 @@ if (raw !== null && code.trim() !== '') {
   }
 }
 
-// ── 判据⑧：**用户可见文案不得含 markdown**（★ 2026-10-08 追加）──────────────
-//   ★ 由来：`PROFILES[*].note` 会被**面板用 `textContent` 渲染**（纯文本，不认 markdown）⇒
-//     note 里写 `**粗体**` 会**原样显示成星号**。实测踩过：一次 note 改写引入 5 个 profile 的 `**`
-//     ⇒ `test/ui.test.mjs` 的 A7 变红（但它只覆盖**默认** profile，其余 4 个当时没被抓到）。
-//   ★ 判法：**动态 import 真模块**（比静态切字符串可靠 —— note 可能跨行拼接），
-//     逐个 profile 断言 `note` / `label` 里**不含 `**`**。
-//   ★ 与项目既有修法一致：文案要强调用「」引号，不用 markdown（第五批 app.js/setup.mjs 同型修复）。
+let c8Checked = 0;   // 判据⑧ 实际抽到的「profile × 用户可见字段」数（供汇总行如实报数）
+
+// ── 判据⑧：**用户可见文案不得含 markdown**（★ 2026-10-08 追加；★ 同日**扩覆盖面**）────────
+//   ★ 由来：`PROFILES[*]` 里有**多个字段会被面板渲染给用户看**（见 `USER_TEXT_FIELDS`）——
+//     它们一律走 `textContent`（下拉项 / 提示行）或直接填进**输入框** `value` ⇒ **纯文本、不认 markdown**；
+//     写 `**粗体**` 会**原样显示成星号**。实测踩过：一次 note 改写引入 **5 个 profile** 的 `**`；
+//     而 `test/ui.test.mjs` 的 A7 只扫**一个页面**、且 profile 提示行**只显示当前（默认）那一个**
+//     ⇒ 非默认 profile 的 `note` 在 UI 用例里**没有覆盖**（另 4 个漏网）。
+//   ⇒ 判据必须**遍历全部 profile × 全部用户可见字段**，不能只测默认项。
+//   ★ 判法（**静态解析，不动态 import**）：
+//     · 结构（profile 条目边界 / 字段值区间）取自**剥注释+字符串**的 `code` —— 文案里的 `{}` `,`
+//       会干扰配平，必须先剥掉；`code` 与 `noComment` **逐字符同长同下标** ⇒ 区间可直接复用；
+//     · 文案取自**剥注释（保留字符串）**的 `noComment` 的**同一区间**；
+//     · `**X**` 可能**跨字符串拼接行**（`'…**甲' + '乙**…'`）⇒ 把该字段区间内的字符串内容**拼接**后再查。
+//   ★ 为什么**不用动态 import**（踩过）：动态 import 会去解析模块自己的相对依赖（`./env.mjs` 等），
+//     在**夹具树**里这些依赖往往不存在 ⇒ import 抛错 ⇒ 被当成「失明」⇒ 把 `test/gate-blindness.test.mjs`
+//     的断言全打红。静态解析**零依赖**，且足以读出 `PROFILES` 的字面量文案。
 if (blind.length === 0) {
-  try {
-    // ★★ 用**静态解析**而不是动态 import —— 理由（踩过）：
-    //   动态 import 会去解析模块**自己的相对依赖**（`./env.mjs` 等）；在**夹具树**里这些依赖往往不存在
-    //   ⇒ import 抛错 ⇒ 被当成「失明」⇒ 把 `test/gate-blindness.test.mjs` 的断言全打红。
-    //   ★ 而本判据只需要读 `note:` 的**字面量**，静态足够，且**零依赖**。
-    //   ★ `**X**` 可能**跨字符串拼接行**（`'...**甲' + '乙**...'`）⇒ 用**跨行有状态**的开/闭配对。
-    const src = fs.readFileSync(MODULE, 'utf8');
+  const lit = profilesLiteral(code);
+  if (lit === null) {
+    blind.push(`切不出 \`${MODULE_REL}\` 的 \`PROFILES\` 字面量（写法变了？）⇒ 判据⑧ 空转`);
+  } else {
+    const litStart = code.indexOf(lit);
     const bad = [];
-    let inNote = false;
-    let open = false;       // 是否处于一个未闭合的 `**` 之间
-    let openAt = 0;
-    let curId = '';
-    src.split('\n').forEach((line, idx) => {
-      const idm = /^\s{2}([a-z0-9-]+):\s*\{/.exec(line);   // profile 条目起点（缩进 2 空格的 id: {）
-      if (idm) { curId = idm[1]; inNote = false; open = false; }
-      if (/^\s*note:\s*['"]/.test(line) || /^\s*note:\s*$/.test(line)) { inNote = true; open = false; openAt = idx + 1; }
-      if (!inNote) return;
-      for (let i = 0; i < line.length; i++) {
-        if (line[i] === '*' && line[i + 1] === '*') {
-          if (!open) { bad.push(`${curId || '(未知)'}.note（第 ${openAt} 行起）`); }
-          open = !open;
-          i++;
-        }
+    for (const seg of topLevelSegmentsAt(lit)) {
+      const from = litStart + seg.start;
+      const to = from + seg.text.length;
+      const idSpan = fieldSpan(code, 'id', from, to);
+      // profile 条目 = 有 `id:` 字段（对象 / 数组两种形态都认），或「键: {」写法
+      if (!idSpan && !/^\s*['"]?[A-Za-z0-9_-]+['"]?\s*:\s*\{/.test(noComment.slice(from, to))) continue;
+      const pid = (idSpan && stringContents(noComment.slice(idSpan.start, idSpan.end)))
+        || `(第 ${code.slice(0, from).split('\n').length} 行起)`;
+      for (const f of USER_TEXT_FIELDS) {
+        const sp = fieldSpan(code, f, from, to);
+        if (!sp) continue;
+        c8Checked++;
+        const hits = (stringContents(noComment.slice(sp.start, sp.end)).match(/\*\*/g) || []).length;
+        if (hits) bad.push(`${pid}.${f}（${hits} 处 \`**\`）`);
       }
-      if (/['"]\s*,\s*$/.test(line)) inNote = false;   // 只有以 `',` 收尾才算 note 结束
-    });
-    if (bad.length) {
+    }
+    if (c8Checked === 0) {
+      blind.push('`PROFILES` 里**一个用户可见字段**都没抽到（写法变了？）⇒ 判据⑧ 空转');
+    } else if (bad.length) {
       fails.push({
         crit: '⑧',
-        detail: '`PROFILES[*].note` 是**用户可见纯文本文案**（面板走 `textContent`），'
-          + '含 markdown `**` 会**原样显示成星号** ⇒ 请改用「」引号：\n'
+        detail: `\`PROFILES[*]\` 的**用户可见字段**（${USER_TEXT_FIELDS.join(' / ')}）是**纯文本**`
+          + '（面板走 `textContent` / 填输入框），含 markdown `**` 会**原样显示成星号** ⇒ 请改用「」引号：\n'
           + [...new Set(bad)].map((x) => `     · ${x}`).join('\n'),
       });
     }
-  } catch (e) {
-    blind.push(`读不到 \`${MODULE_REL}\`（${(e && e.message) || e}）⇒ 判据⑧ 空转`);
   }
 }
 
@@ -685,7 +796,8 @@ const blindGuard = blind.length > 0;
 // ── 输出 ─────────────────────────────────────────────────────────────────────
 console.log('LLM 配置契约闸门 —— 守 `lib/llm-api.mjs` 与规格（仓内契约 `_distill/llm-api-接口规格-2026-10-08.md` §一/§二）的契约');
 console.log('  判据: ① 导出契约 + ok 字段 + error.kind 枚举 | ② chat 永不抛 | ③ 默认 profile = workbuddy |');
-console.log('        ④ 密钥不外泄 | ⑤ 环境变量集合 == 6 | ⑦ 解析优先级顺序 == 契约声明 | ⑥ 失明守卫（防空转绿灯）');
+console.log('        ④ 密钥不外泄 | ⑤ 环境变量集合 == 6 | ⑦ 解析优先级顺序 == 契约声明 |');
+console.log('        ⑧ 用户可见文案不含 markdown `**`（全部 profile × 全部用户可见字段） | ⑥ 失明守卫（防空转绿灯）');
 console.log(`  被测: ${MODULE}`);
 console.log(`  契约: ${CONTRACT}`);
 console.log(`  扫描: 剥注释+字符串后 ${code.split('\n').length} 行代码体；剥注释（留字符串）后 ${noComment.split('\n').length} 行`);
@@ -710,9 +822,10 @@ if (fails.length) {
   console.log('     ★ 判据⑦ 的契约侧在**仓内契约文档** `' + CONTRACT_REL + '`（顺序声明）；改契约请先改它。');
 } else {
   console.log('✓ 判据①~⑤、⑦、⑧·`lib/llm-api.mjs` 满足契约（导出齐全、chat 不抛、默认 profile = workbuddy、密钥不外泄、'
-    + '环境变量恰为规格那 6 个、解析优先级顺序与契约声明一致）');
+    + '环境变量恰为规格那 6 个、解析优先级顺序与契约声明一致、用户可见文案不含 markdown `**`）');
 }
 
 console.log(`\n[闸门] LLM 契约：导出 ${REQUIRED_EXPORTS.length} 符号 · kind 枚举 ${KIND_ENUM.length} 个 · `
-  + `环境变量 ${ENV_EXPECTED.length} 个 · 优先级 ${ORDER_DECLARED.length} 段 · 违约 ${fails.length} 处 ${fails.length ? '✘' : 'OK'}`);
+  + `环境变量 ${ENV_EXPECTED.length} 个 · 优先级 ${ORDER_DECLARED.length} 段 · `
+  + `用户可见字段 ${c8Checked} 个（${USER_TEXT_FIELDS.length} 类 × 各 profile） · 违约 ${fails.length} 处 ${fails.length ? '✘' : 'OK'}`);
 process.exitCode = fails.length ? 1 : 0;

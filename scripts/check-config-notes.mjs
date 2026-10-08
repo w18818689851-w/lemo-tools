@@ -110,7 +110,7 @@ for (const e of cfg.styles) {
 //   `continue` 掉。若**所有**条目的 notes 都为空（配置被重新生成、notes 全丢），循环体一次都不
 //   执行 ⇒ `fails=[]` ⇒ 打印「未发现 notes 与字段自相矛盾」并 **exit 0** —— 假绿：它宣称
 //   「检查过了」，实际一条 notes 都没读过。故这里显式统计「真正检查过的条目数」并判 FAIL。
-if (cfg.styles.length > 0 && checkedNotes === 0) {
+if (checkedNotes === 0) {
   console.log(`\n✘ 本闸门已失明：${cfg.styles.length} 条配置里没有一条带 notes，一条都没检查过（notes 全空 ⇒ 主循环把全部条目 continue 掉了）。`);
   console.log(`\n[闸门] notes 自相矛盾 **已失明** ✘`);
   process.exit(1);

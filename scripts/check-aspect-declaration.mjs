@@ -97,8 +97,7 @@ function localJsRefs(html) {
     let ref = m[1].trim();
     if (!ref) continue;
     if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(ref)) continue;      // 有 scheme
-    if (ref.startsWith('//')) continue;                        // 协议相对
-    if (ref.startsWith('/')) continue;                         // 根绝对路径
+    if (ref.startsWith('/')) continue;                         // 根绝对路径（含协议相对 `//…`）
     ref = ref.split(/[?#]/)[0];                                // 去 query / hash
     if (!ref) continue;
     if (ref.split('/').includes('node_modules')) continue;     // 第三方依赖不算风格自己的入口
