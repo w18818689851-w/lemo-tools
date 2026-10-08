@@ -322,6 +322,26 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
        ⇒ 列表里混进一个 `批 1/1`。**本次改动与它无关**：B7 走 `--dry-run --skip-sync`，根本不进渲染段，
        且本次从未起过控制台/批次。★ 这是 `ui.test.mjs` 自身的**用例脆弱性**（API 侧已按 `priorBatchIds` 排除历史、
        DOM 侧没有）—— 修它要改 `test/ui.test.mjs`，**不在允许改动范围内**，如实登记留给下一轮。
+       ★★ **2026-10-09 复核：已隔离到仓外临时根**（本段原记述**保留不改**）。上一轮只隔离了「读 `.console`
+       的路径」（`lib/store.mjs` 认 `LEMO_FILM_DIR`），但 **`test/ui.test.mjs` 的主测试服务本身没设**这个变量
+       ⇒ 它仍读**真实** `D:\lemo-films\.console`（上百条历史任务）与真实 `.briefs`（近两百张工单）
+       ⇒ B7（DOM 全表扫描）、B8（「20s 内任务数有没有变」）、D4（工单行仍 pending）、C3（「换参数必须查不到历史」）
+       都被历史残留绊倒 —— 实测**每次挂的用例都不同** ⇒ **环境性假红**。修法（只改 `test/ui.test.mjs`）：
+       · **主测试服务**显式注入 `LEMO_FILM_DIR` = **仓外临时落盘根**（非 C 盘 `D:\WSL\b4-ui-film-<pid>-<base36时间>`；
+         名字带 pid ⇒ 并发两实例互不相撞；**尊重外部显式设置** —— 用户/CI 已设 `LEMO_FILM_DIR` 就用它、跑完**不删**；
+         未设才造 + `finally` 里递归删，**不留临时目录**）。
+       · 并发锁目录 `LEMO_LOCK_DIR`（编排器 `lemo-make.mjs:1568` **原生支持**、**非**红线改动）也指到同一根 ⇒
+         dry-run 任务不再与真实 `D:\lemo-films\.<slug>.lock` 上别的 lemo-make 抢锁（那是 C2/C3「art-deco dry-run
+         跑成 failed/exit=1」这类假红的来源之一）。
+       · 本进程**直连**文件操作（`CONSOLE_ROOT/LOGS/INDEX`、F1/G2 的假成片）同步改到隔离根；隔离后成片库恒为空 ⇒
+         F1/G2 由「造 **1** 个假成片」改为「造 **3** 个（大小序 ≠ 时间序）」，以保住 G5（排序真的会变）/
+         G6（筛选片段是**严格子集**）的**牙**。★ **用例数不变（仍 65）**。
+       · ★ **边界（不是完全隔离）**：编排器 `lemo-make.mjs` 的 `exportDir` 是硬编码字面量、**不认** `LEMO_FILM_DIR`
+         （红线文件）⇒ 隔离只覆盖**控制台侧**；本套件只跑 `--dry-run --skip-sync`（不渲染/不混流/不导出），
+         真正没被覆盖的只剩「非 dry-run 的成片导出」（本套件不触发）。
+       ★ 实测（2026-10-09）：`node --test test/ui.test.mjs` **连跑 3 次全绿**（各 `65 passed / 0 failed` / `exit 0`）；
+         **并发两实例**亦全绿（各 65/0）；真实 `D:\lemo-films\.console\index.json` md5 与 `.briefs` 全文件聚合 md5
+         跑前/跑后**逐字节一致**（`72f5132b0d587ef2beb89548b825dee4` / `a17f56ce1b289599abead7bd60835fa4`）。
 
 ★ **2026-10-08 更新（纯注释：修一处陈旧计数 35 → 37）**：`lemo-make.mjs` 的 `ORCH_SKIP_STEPS` 登记表头注释写着
 「全库 **35** 个带 `build.sh` 的风格里」，而实测 `ls styles/*/demo/build.sh | wc -l` = **37**
