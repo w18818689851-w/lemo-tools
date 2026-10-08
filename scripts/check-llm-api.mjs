@@ -7,7 +7,7 @@
  * ★★ ① 由来
  * ══════════════════════════════════════════════════════════════════════════════
  *   本批新增开放式 LLM 配置模块 `lib/llm-api.mjs`（不限厂商 / 部署 / 智能体，只要接口能调用即可接入）。
- *   它的**对外契约**写在共享规格 `D:/lemo-tmp/llm-api-spec.md` §一（导出与返回结构）/ §二（环境变量）：
+ *   它的**对外契约**写在**仓内契约** `_distill/llm-api-接口规格-2026-10-08.md`（★ 2026-10-08 订正：原先引用的是 `D:/lemo-tmp/llm-api-spec.md` 那份**临时**规格，已删，避免第二份真相） §一（导出与返回结构）/ §二（环境变量）：
  *     · 必须导出 `PROFILES` / `listProfiles` / `resolveConfig` / `validate` / `chat` / `listModels`；
  *     · `chat()` **永不抛异常** —— 一切失败归一为 `{ok:false,error:{kind,...}}`，`kind` 取值固定枚举；
  *     · **默认 profile = `workbuddy`**（恰一个 `isDefault:true` 且其 id 是 `workbuddy`）；
@@ -84,7 +84,7 @@
  *   **判据⑥ 失明守卫（防空转绿灯）**：读不到 `lib/llm-api.mjs` / 代码体为空 / 一个导出都没抽到 /
  *     一个 `LEMO_LLM_*` 都没抽到 / 一条 `kind:` 字面量都没抽到 / 切不出 `chat` 函数体 /
  *     切不出 `PROFILES` 字面量 / **（判据⑦）读不到契约文档 / 切不出顺序声明 / 切不出 `pick(...)`** ⇒
- *     **FAIL 并明说「本闸门已失明」**，且**失明时不再输出判据①~⑤、⑦**（在失明的树上它们只会刷屏，
+ *     **FAIL 并明说「本闸门已失明」**，且**失明时不再输出判据①~⑤、⑦、⑧**（在失明的树上它们只会刷屏，
  *     且会被误读成「模块违约」）。★ 判据⑥ 是**失明守卫本身**，故它不与①~⑤、⑦ 并列编号。
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -143,7 +143,7 @@
  *   · **变异 H（判据⑦(a)）**：把**契约文档**的顺序声明改成旧序（`覆盖文件` 与 `运行时线索` 对调）
  *     ⇒ **exit 1** 并点名「契约文档的顺序声明与闸门常量不一致」。
  *   · **失明三态**（模块文件缺失 / 模块里一条 `LEMO_LLM_*` 都没有 / 契约文档缺失或顺序声明切不出）
- *     ⇒ **exit 1 + 「本闸门已失明」**，且**不输出判据①~⑤、⑦**。
+ *     ⇒ **exit 1 + 「本闸门已失明」**，且**不输出判据①~⑤、⑦、⑧**。
  *   · **★自证**：分别**短路**判据①/②/③/⑤/⑦ 的比较 ⇒ 对应变异**重新变绿**（证明判据**承重**，
  *     不是摆设）。★ 判据⑦ 的短路点选「代码侧严格递增」那一步（真的能让变异 G 变绿）。
  *
@@ -154,7 +154,7 @@
  *                    ★ 判据⑦ 另读**契约文档** = `<LEMO_TOOLS_ROOT>/_distill/llm-api-接口规格-2026-10-08.md`；
  *                    供**非破坏性变异验证**（指向临时夹具树，绝不动真实模块）—— ★ 夹具树里**也要**有这份
  *                    契约文档（`test/gate-blindness.test.mjs` 的 `llmTree` / `llmMut` 会把它一并拷进去）。
- * 退出码：0 = `lib/llm-api.mjs` 满足契约（判据①~⑤、⑦ 全过）；
+ * 退出码：0 = `lib/llm-api.mjs` 满足契约（判据①~⑤、⑦、⑧ 全过）；
  *         1 = 有 FAIL（契约不符），或**本闸门已失明**。
  */
 import fs from 'node:fs';
@@ -632,11 +632,58 @@ if (raw !== null && code.trim() !== '') {
   }
 }
 
+// ── 判据⑧：**用户可见文案不得含 markdown**（★ 2026-10-08 追加）──────────────
+//   ★ 由来：`PROFILES[*].note` 会被**面板用 `textContent` 渲染**（纯文本，不认 markdown）⇒
+//     note 里写 `**粗体**` 会**原样显示成星号**。实测踩过：一次 note 改写引入 5 个 profile 的 `**`
+//     ⇒ `test/ui.test.mjs` 的 A7 变红（但它只覆盖**默认** profile，其余 4 个当时没被抓到）。
+//   ★ 判法：**动态 import 真模块**（比静态切字符串可靠 —— note 可能跨行拼接），
+//     逐个 profile 断言 `note` / `label` 里**不含 `**`**。
+//   ★ 与项目既有修法一致：文案要强调用「」引号，不用 markdown（第五批 app.js/setup.mjs 同型修复）。
+if (blind.length === 0) {
+  try {
+    // ★★ 用**静态解析**而不是动态 import —— 理由（踩过）：
+    //   动态 import 会去解析模块**自己的相对依赖**（`./env.mjs` 等）；在**夹具树**里这些依赖往往不存在
+    //   ⇒ import 抛错 ⇒ 被当成「失明」⇒ 把 `test/gate-blindness.test.mjs` 的断言全打红。
+    //   ★ 而本判据只需要读 `note:` 的**字面量**，静态足够，且**零依赖**。
+    //   ★ `**X**` 可能**跨字符串拼接行**（`'...**甲' + '乙**...'`）⇒ 用**跨行有状态**的开/闭配对。
+    const src = fs.readFileSync(MODULE, 'utf8');
+    const bad = [];
+    let inNote = false;
+    let open = false;       // 是否处于一个未闭合的 `**` 之间
+    let openAt = 0;
+    let curId = '';
+    src.split('\n').forEach((line, idx) => {
+      const idm = /^\s{2}([a-z0-9-]+):\s*\{/.exec(line);   // profile 条目起点（缩进 2 空格的 id: {）
+      if (idm) { curId = idm[1]; inNote = false; open = false; }
+      if (/^\s*note:\s*['"]/.test(line) || /^\s*note:\s*$/.test(line)) { inNote = true; open = false; openAt = idx + 1; }
+      if (!inNote) return;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] === '*' && line[i + 1] === '*') {
+          if (!open) { bad.push(`${curId || '(未知)'}.note（第 ${openAt} 行起）`); }
+          open = !open;
+          i++;
+        }
+      }
+      if (/['"]\s*,\s*$/.test(line)) inNote = false;   // 只有以 `',` 收尾才算 note 结束
+    });
+    if (bad.length) {
+      fails.push({
+        crit: '⑧',
+        detail: '`PROFILES[*].note` 是**用户可见纯文本文案**（面板走 `textContent`），'
+          + '含 markdown `**` 会**原样显示成星号** ⇒ 请改用「」引号：\n'
+          + [...new Set(bad)].map((x) => `     · ${x}`).join('\n'),
+      });
+    }
+  } catch (e) {
+    blind.push(`读不到 \`${MODULE_REL}\`（${(e && e.message) || e}）⇒ 判据⑧ 空转`);
+  }
+}
+
 // ── 判据⑥：失明守卫 ─────────────────────────────────────────────────────────
 const blindGuard = blind.length > 0;
 
 // ── 输出 ─────────────────────────────────────────────────────────────────────
-console.log('LLM 配置契约闸门 —— 守 `lib/llm-api.mjs` 与规格（`D:/lemo-tmp/llm-api-spec.md` §一/§二）的契约');
+console.log('LLM 配置契约闸门 —— 守 `lib/llm-api.mjs` 与规格（仓内契约 `_distill/llm-api-接口规格-2026-10-08.md` §一/§二）的契约');
 console.log('  判据: ① 导出契约 + ok 字段 + error.kind 枚举 | ② chat 永不抛 | ③ 默认 profile = workbuddy |');
 console.log('        ④ 密钥不外泄 | ⑤ 环境变量集合 == 6 | ⑦ 解析优先级顺序 == 契约声明 | ⑥ 失明守卫（防空转绿灯）');
 console.log(`  被测: ${MODULE}`);
@@ -648,7 +695,7 @@ if (blindGuard) {
   console.log('✘✘ 本闸门已失明：');
   for (const b of blind) console.log(`   ✘ ${b}`);
   console.log('   ⇒ 「0 处违约」是假的，别信这个绿。请先修路径 / 剥注释写法，再信本闸门的结论。');
-  console.log('   ⇒ 已失明 ⇒ 判据①~⑤、⑦ 本次**不输出**（在失明的树上它们只会刷屏；判据⑥ 是失明守卫本身）。');
+  console.log('   ⇒ 已失明 ⇒ 判据①~⑤、⑦、⑧ 本次**不输出**（在失明的树上它们只会刷屏；判据⑥ 是失明守卫本身）。');
   console.log('');
   console.log('[闸门] LLM 契约：已失明 ⇒ 一条判据都没可信地跑过 ✘');
   process.exitCode = 1;
@@ -656,13 +703,13 @@ if (blindGuard) {
 }
 
 if (fails.length) {
-  console.log(`✘ 判据①~⑤、⑦·契约不符 ${fails.length} 处：\n`);
+  console.log(`✘ 判据①~⑤、⑦、⑧·契约不符 ${fails.length} 处：\n`);
   for (const f of fails) console.log(`   ✘ 判据${f.crit}  ${f.detail}`);
-  console.log('\n   ↳ 修法：让 `lib/llm-api.mjs` 满足规格（`D:/lemo-tmp/llm-api-spec.md` §一/§二）；');
+  console.log('\n   ↳ 修法：让 `lib/llm-api.mjs` 满足规格（仓内契约 `_distill/llm-api-接口规格-2026-10-08.md` §一/§二）；');
   console.log('     若**规格本身**要改，请先改规格、再同步改本闸门的常量（改常量 = 改契约）。');
   console.log('     ★ 判据⑦ 的契约侧在**仓内契约文档** `' + CONTRACT_REL + '`（顺序声明）；改契约请先改它。');
 } else {
-  console.log('✓ 判据①~⑤、⑦·`lib/llm-api.mjs` 满足契约（导出齐全、chat 不抛、默认 profile = workbuddy、密钥不外泄、'
+  console.log('✓ 判据①~⑤、⑦、⑧·`lib/llm-api.mjs` 满足契约（导出齐全、chat 不抛、默认 profile = workbuddy、密钥不外泄、'
     + '环境变量恰为规格那 6 个、解析优先级顺序与契约声明一致）');
 }
 

@@ -549,6 +549,11 @@ const OVERRIDES = {
     readers: ['lib/env.mjs', 'scripts/check-selfcheck-claims.mjs', 'scripts/prune-jobs.mjs'],
     what: '成片根（lib/env.mjs 的 exportDir；★ 曾被硬编码过一段时期，见头注释 ①）',
   },
+  LEMO_TMP: {
+    readers: ['scripts/check-plate-pixel.mjs', 'test/originality.test.mjs'],
+    what: '★ 临时根（默认 D:/lemo-tmp；**禁止写 C 盘** ⇒ 读者一律「解析到 C 盘就直接炸」）。'
+      + '2026-10-08 加：`check-plate-pixel` 原先往 C 盘写临时文件、`originality.test.mjs` 原先用 `os.tmpdir()`（= C 盘）',
+  },
   LEMO_FILMS_ROOT: {
     readers: ['scripts/check-film-aspect.mjs', 'scripts/check-selfcheck-claims.mjs'],
     what: '成片根**别名**（与 LEMO_FILM_DIR 同义；留它免得夹具按那个名字重定向时静默仍在读真库）',

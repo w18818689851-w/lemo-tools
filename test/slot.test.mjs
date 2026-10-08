@@ -47,7 +47,7 @@ const SANDBOX = process.env.SLOT_TMP
   : path.join(TMP, `slot-test-${process.pid}`);
 
 // 用户硬规则：禁止写 C 盘。宁可直接炸掉，也不要静默往 C 盘拉屎。
-if (/^[a-zA-Z]:$/.test(path.parse(TMP).root) && /^[cC]:/.test(path.parse(TMP).root)) {
+if (/^[cC]:/.test(path.parse(TMP).root)) {
   throw new Error(`SLOT_TMP 落在 C 盘（${TMP}）——本项目禁止写 C 盘`);
 }
 if (!fs.existsSync(SLOT)) throw new Error(`被测模块不存在：${SLOT}`);

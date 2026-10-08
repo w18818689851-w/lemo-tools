@@ -870,6 +870,92 @@ test('★ 国产厂商内置预设：key 经环境注入 ⇒ 逐家预览都脱�
   });
 });
 
+// ── ⑧ ★★ 2026-10-08 追加：workbuddy 默认 profile 的运行时解析（实测驱动，全部用假 env，不打真实端点）──
+//   规格：「软件内所有涉及 LLM 推理的任务，默认使用 WorkBuddy 及其内置模型执行；用户仍可在 API 配置面板
+//   手动切换为其他 API 服务。」⇒ 默认 profile 必须**从运行时环境解析** baseUrl / model / key，且面板压过它。
+//   ★ 实测裁定（见 lib/llm-api.mjs 内联注释）：`workbuddy` 的 model **只认 `ANTHROPIC_MODEL`** ——
+//     实测 `CODEBUDDY_CURRENT_MODEL_ID` 原值在本机中转上不可直接路由（HTTP 503）⇒ 不接入（不猜、不硬编码）。
+test('★ workbuddy 默认 profile：有运行时 env ⇒ 解析出正确的 baseUrl/model/kind/hasKey', async () => {
+  rmOverride();
+  await withEnv({ ...CLEAN, ANTHROPIC_BASE_URL: 'http://rt-wb.example:3000/',
+    ANTHROPIC_MODEL: 'rt-wb-model', ANTHROPIC_API_KEY: 'sk-WBRUNTIME-abcdefghijklmnop-0123456789' }, () => {
+    const cfg = resolveConfig({});                       // 不传 profile ⇒ 默认 workbuddy
+    assert.equal(cfg.id, 'workbuddy', '默认 profile 必须是 workbuddy');
+    assert.equal(cfg.isDefault, true, 'workbuddy 必须标记 isDefault');
+    assert.equal(cfg.kind, 'anthropic', 'env 名是 ANTHROPIC_* ⇒ kind 应为 anthropic');
+    assert.equal(cfg.baseUrl, 'http://rt-wb.example:3000', 'baseUrl 应取自 ANTHROPIC_BASE_URL（并去尾斜杠）');
+    assert.equal(cfg.model, 'rt-wb-model', 'model 应取自 ANTHROPIC_MODEL');
+    assert.equal(cfg.apiKey, 'sk-WBRUNTIME-abcdefghijklmnop-0123456789', 'key 应取自 ANTHROPIC_API_KEY（供调用）');
+    const m = maskedConfig(cfg);
+    assert.equal(m.hasKey, true, 'maskedConfig 应报 hasKey:true');
+    assert.equal(m.keyMask, 'sk-W…', 'key 应脱敏为前 4 位 + …');
+    assert.ok(!JSON.stringify(m).includes(cfg.apiKey), '★ maskedConfig 输出不得含 key 明文');
+  });
+});
+
+test('★ workbuddy 默认 profile：无运行时 env ⇒ validate() 明确报缺 baseUrl（不静默回退）', async () => {
+  rmOverride();
+  await withEnv(CLEAN, async () => {
+    const v = await validate();                          // ★ 无 env ⇒ 第 0 步配置自检就返回，**不发任何网络请求**
+    assert.equal(v.ok, false, '无 env 时默认 profile 不可用 ⇒ ok:false');
+    assert.equal(v.profile, 'workbuddy', '仍应报 profile=workbuddy（不静默切别的）');
+    assert.equal(v.masked.baseUrl, '', '无 env ⇒ baseUrl 为空（不猜、不硬编码）');
+    assert.ok(v.errors.some((e) => e.kind === 'config' && /baseUrl/.test(e.detail || '')), '应明确报「缺 baseUrl」');
+    assert.ok(/缺\s*baseUrl|缺少\s*baseUrl/.test(v.hint), `hint 应明确说缺 baseUrl，实得：${v.hint}`);
+    assert.ok(v.hint.includes('ANTHROPIC_BASE_URL'),
+      `★ hint 应提示默认 profile 的端点也能从运行时环境取（ANTHROPIC_BASE_URL），实得：${v.hint}`);
+  });
+});
+
+test('★ 优先级回归：覆盖文件（面板）仍压过运行时线索（守上一批的修复）', async () => {
+  rmOverride();
+  await withEnv({ ...CLEAN, ANTHROPIC_BASE_URL: 'http://rt.example', ANTHROPIC_MODEL: 'rt-model',
+    ANTHROPIC_API_KEY: 'sk-rt-abcdefghijklmnop' }, async () => {
+    try {
+      fs.writeFileSync(overrideFilePath(),
+        JSON.stringify({ baseUrl: 'http://panel.example', model: 'panel-model' }), 'utf8');
+      const cfg = resolveConfig({});                     // 面板（覆盖文件）> 运行时线索
+      assert.equal(cfg.baseUrl, 'http://panel.example', '★ 面板 baseUrl 应压过 ANTHROPIC_BASE_URL');
+      assert.equal(cfg.model, 'panel-model', '★ 面板 model 应压过 ANTHROPIC_MODEL');
+      assert.equal(cfg.apiKey, 'sk-rt-abcdefghijklmnop', '未在面板给 key ⇒ 仍取运行时 ANTHROPIC_API_KEY');
+      assert.equal(resolveConfig({ model: 'explicit' }).model, 'explicit', '显式仍压过面板');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ workbuddy 运行时密钥不外泄：listProfiles / validate / 错误 detail 均不含 ANTHROPIC_API_KEY 明文', async () => {
+  rmOverride();
+  const SECRET = 'sk-WBLEAKCANARY-abcdefghijklmnop-0123456789';
+  // 桩：GET /v1/models 与 POST /v1/messages 都把密钥**回显进响应体**（模拟上游回显 ⇒ 模块必须脱敏）
+  const stub = await startStub((req, res) => {
+    if (req.method === 'GET') return status(res, 401, JSON.stringify({ error: `bad key ${SECRET}` }));
+    readBody(req).then(() => status(res, 500, JSON.stringify({ error: { message: `echoed ${SECRET}` } })));
+  });
+  try {
+    await withEnv({ ...CLEAN, ANTHROPIC_BASE_URL: stub.base, ANTHROPIC_MODEL: 'm', ANTHROPIC_API_KEY: SECRET }, async () => {
+      // ① listProfiles()：绝不回 key，且不得含明文
+      const lp = JSON.stringify(listProfiles());
+      assert.ok(!lp.includes(SECRET), '★ listProfiles() 不得含密钥明文');
+      assert.ok(!lp.includes('"apiKey"'), '★ listProfiles() 项里不得有 apiKey 字段');
+      // ② previewProfile()：只回 hasKey/keyMask
+      const pv = JSON.stringify(previewProfile('workbuddy'));
+      assert.ok(!pv.includes(SECRET), '★ previewProfile() 不得含密钥明文');
+      // ③ validate()：错误 detail / hint / masked 都不得含明文
+      const v = await validate();
+      assert.equal(v.ok, false, '桩返回 500 ⇒ validate 应失败');
+      const vBlob = JSON.stringify({ errors: v.errors, warnings: v.warnings, hint: v.hint, masked: v.masked });
+      assert.ok(!vBlob.includes(SECRET), '★★ validate() 输出（含 errors[].detail）不得含密钥明文');
+      assert.ok(v.errors.some((e) => (e.detail || '').includes('sk-W…')),
+        '错误 detail 里回显的密钥应被脱敏成前 4 位 + …');
+      // ④ 走一遍 chat()：错误 detail 也不得含明文
+      const c = await chat([{ role: 'user', content: 'hi' }], { timeoutMs: 3000 });
+      assert.equal(c.ok, false, '桩返回 500 ⇒ chat 应失败');
+      const cBlob = JSON.stringify({ error: c.error, meta: c.meta });
+      assert.ok(!cBlob.includes(SECRET), '★★ chat() 错误 detail / meta 不得含密钥明文');
+    });
+  } finally { await stub.close(); rmOverride(); }
+});
+
 // ── 运行器 ──────────────────────────────────────────────────
 async function main() {
   const t0 = Date.now();

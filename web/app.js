@@ -1355,7 +1355,7 @@ function renderVoiceTest() {
   const a = $('vtAudio');
   const vt = state.vt;
   if (btn) {
-    btn.disabled = !!vt.jobId;
+    btn.disabled = !!vt.jobId || !!state.vtBusy;
     btn.textContent = vt.jobId ? '合成中…' : '试合成一句';
   }
   if (!box) return;
@@ -1376,14 +1376,14 @@ function renderVoiceTest() {
 }
 
 async function startVoiceTest() {
-  if (state.vt.jobId) { toast('已经有一个试合成在跑，等它结束再点', true); return; }
+  if (state.vt.jobId || state.vtBusy) { toast('已经有一个试合成在跑，等它结束再点', true); return; }
   const name = state.voiceSel || voiceTestDefault();
   if (!name) { toast('还没选音色 —— 先在列表里点一条「选用」', true); return; }
 
   const sp = Number($('fVoiceSpeed') ? $('fVoiceSpeed').value : 1.1);
   const text = $('vtText') ? $('vtText').value.trim() : '';
   state.vt = { jobId: '', url: '', status: 'queued', note: '正在提交…', error: '', ticks: 0 };
-  renderVoiceTest();
+  state.vtBusy = true; renderVoiceTest();
 
   try {
     const r = await api('/api/voices/test', {
@@ -1406,7 +1406,7 @@ async function startVoiceTest() {
     state.vt = { jobId: '', url: '', status: 'failed', note: '', error: e.message, ticks: 0 };
     renderVoiceTest();
     toast('试合成失败：' + e.message, true);
-  }
+  } finally { state.vtBusy = false; renderVoiceTest(); }
 }
 
 function pollVoiceTest() {
@@ -1511,7 +1511,7 @@ function renderVoiceImportIntro() {
 /** 单条待导入的源文件。s 的形状见契约：{file, name, ext, size, already, refName} */
 function voiceSourceNode(s) {
   const imp = state.vImport;
-  const busy = !!imp.jobId && imp.file === s.file;
+  const busy = (!!imp.jobId || !!state.vImportBusy) && imp.file === s.file;
   const row = el('div', 'vi-item' + (busy ? ' busy' : ''));
 
   const main = el('div', 'vimain');
@@ -1634,9 +1634,9 @@ async function loadVoiceSources() {
 }
 
 async function startVoiceImport(file, name) {
-  if (state.vImport.jobId) { toast('已经有一个导入在跑，等它结束再点', true); return; }
+  if (state.vImport.jobId || state.vImportBusy) { toast('已经有一个导入在跑，等它结束再点', true); return; }
   state.vImport = { file, name: name || '', jobId: '', status: 'queued', note: '正在提交…', error: '', ticks: 0 };
-  renderVoiceImport();
+  state.vImportBusy = true; renderVoiceImport();
 
   try {
     const r = await api('/api/voices/import', {
@@ -1654,7 +1654,7 @@ async function startVoiceImport(file, name) {
     state.vImport = { file, name: name || '', jobId: '', status: 'failed', note: '', error: e.message, ticks: 0 };
     renderVoiceImport();
     toast('导入失败：' + e.message, true);
-  }
+  } finally { state.vImportBusy = false; renderVoiceImport(); }
 }
 
 function pollVoiceImport() {
@@ -2525,7 +2525,7 @@ function renderDubState() {
   const keep = state.dubMode === 'keep';
 
   if (btn) {
-    btn.disabled = !!d.jobId;
+    btn.disabled = !!d.jobId || !!state.dubBusy;
     btn.textContent = d.jobId ? (keep ? '出片中（叠字幕）…' : '出片中…') : '出片';
   }
   if (hint) {
@@ -2734,7 +2734,7 @@ async function loadDubSources() {
 
 // ── 出片（异步任务）─────────────────────────────────────────
 async function startDubRun() {
-  if (state.dub.jobId) { toast('已经有一条出片任务在跑，等它结束再点', true); return; }
+  if (state.dub.jobId || state.dubBusy) { toast('已经有一条出片任务在跑，等它结束再点', true); return; }
   const ta = $('dubScript');
   const script = ta ? ta.value : '';
   if (!script.trim()) { toast('先粘贴一段文案', true); if (ta) ta.focus(); return; }
@@ -2791,7 +2791,7 @@ async function startDubRun() {
   if (title) body.title = title;
 
   state.dub = { jobId: '', status: 'queued', note: '正在提交…', error: '', out: '', outName: '', ticks: 0, url: '', notReady: false };
-  renderDubState();
+  state.dubBusy = true; renderDubState();
 
   try {
     const r = await api('/api/dub/run', {
@@ -2818,7 +2818,7 @@ async function startDubRun() {
     };
     renderDubState();
     toast('出片失败：' + e.message, true);
-  }
+  } finally { state.dubBusy = false; renderDubState(); }
 }
 
 /** 任务成功 ≠ 文件一定在。要一小段字节（Range 0-0）**真的确认**过，才给播放按钮。 */
@@ -3055,11 +3055,13 @@ async function startRun(force) {
   // 声音参数有冲突（用户自己在 --q 里写了）时如实提示，不静默覆盖
   if (voiceNotes && voiceNotes.length) toast(voiceNotes[0], true);
 
+  const btn = $('btnRun'); if (btn.disabled) return;   // ★ 重入守卫：键盘路径(Enter/Ctrl+Enter)绕过按钮 ⇒ 在此拦
+  btn.disabled = true;                       // ★ await 前就禁用：否则 precheck 往返窗口内可双击重复入队
   if (!force) {
     hideLockWarn();
     try {
       const pre = await api('/api/precheck?slug=' + encodeURIComponent(slug));
-      if (pre && pre.locked) { showLockWarn(pre, slug, opts); return; }
+      if (pre && pre.locked) { showLockWarn(pre, slug, opts); btn.disabled = false; return; }
     } catch (e) {
       // 预检本身失败**不阻断启动** —— 它只是提示，不该变成新的故障点
       console.warn('并发预检失败（不阻断启动）：', e);
@@ -3068,8 +3070,6 @@ async function startRun(force) {
     hideLockWarn();
   }
 
-  const btn = $('btnRun');
-  btn.disabled = true;
   try {
     const r = await api('/api/run', {
       method: 'POST',

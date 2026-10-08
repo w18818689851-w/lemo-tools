@@ -334,6 +334,10 @@
  *   —— 路径 + `:` + 行号（可 `N` / `N-M` / `N/M/…` / 逗号组 `N-M,K`），路径**带扩展名**。
  *   ★ **扩展名必须以字母开头**（`\.[A-Za-z]…`）：这一条规则**同时**挡掉两类假阳 ——
  *     ① **`地址:端口`**（`127.0.0.1:12345` / `127.0.0.1:9257`：左侧全是数字点，**没有**「以字母开头的扩展名」）；
+ *        ★ **2026-10-08 追加（同类的第二种形态）**：**RFC 2606/6762 保留域名**（`.example` / `.invalid` / `.local`）
+ *        —— 它们是「文档/测试用的示例主机名」，出现在 `http://rt-wb.example:3000/` 这类裸 URL 里时，
+ *        会被 `BARE_REF` 当成 `<路径>:<行号>`（`rt-wb.example` + `:3000`）⇒ **假阳** ⇒ 一并跳过
+ *        （`isReservedHostPort()`；★ **有意不含 `test`** —— `foo.test` 仍可能是真文件）。
  *     ② **`数值比`**（对比度的 `2.5:1` / `11.4:1` / `14.8:1` / `1.5:1`：左侧是纯小数，`5`/`4`/`8` 不是字母）。
  *   ★ **实测（同一台机同一时刻，真实语料）**：**宽松版 305 处 → 收窄后 295 处**（**−10**）；
  *     被挡掉的 10 处**逐条核对全是**上面这两类假阳，**没有误伤任何一条真裸引用**。
@@ -816,6 +820,17 @@ const bareKnownHit = new Set();
 let bareChecked = 0;   // ★ 真的被 (a)(b)(d) 核过的裸引用数
 /** 占位符 / 通配的路径不算引用（`styles/<slug>/demo`、`film*.js`） */
 const isPlaceholder = (p) => /[<>*…]/.test(p);
+/**
+ * ★ 2026-10-08 追加（**误报形态**收窄，非放宽判据）：
+ *   **RFC 2606 / 6762 保留域名**（`.example` / `.invalid` / `.local`）**永远不可能是仓库里的真文件** ——
+ *   它们是「文档/测试用的示例主机名」，出现在 `http://rt-wb.example:3000/` 这类**裸 URL** 里时，
+ *   会被 `BARE_REF` 当成 `<路径>:<行号>`（`rt-wb.example` + `:3000`）⇒ **假阳**。
+ *   ★ 与既有规则 ①（`地址:端口`：左侧全是数字点）**同类**，只是左侧换成了**带保留 TLD 的主机名**。
+ *   ★ **有意不含 `test`**（`foo.test` 仍可能是真文件，宁可漏收窄也不冒漏判风险）。
+ *   ★ 代价（如实登记）：若真有人写 `foo.example:12` 指**真文件** `foo.example`，本判据会跳过它。
+ */
+const RESERVED_TLD = /\.(?:example|invalid|local)$/i;
+const isReservedHostPort = (p) => RESERVED_TLD.test(p);
 const isLogRef = (p) => /(^|\/)logs?\//.test(p) || /\.log$/.test(p);
 /**
  * (d) 的「结构性行」：分隔线 / 代码块围栏 —— 这类行**没有任何被引内容**，
@@ -1086,6 +1101,7 @@ for (const file of SCAN) {
     const masked = (() => { let x = line; for (const sp of codeSpans(line)) x = x.slice(0, sp.i) + ' '.repeat(sp.e - sp.i) + x.slice(sp.e); return x; })();
     for (const bm of masked.matchAll(BARE_REF)) {
       if (isPlaceholder(bm[1])) continue;      // `styles/<slug>/demo`、`film*.js` 这类占位/通配不算
+      if (isReservedHostPort(bm[1])) continue; // ★ 2026-10-08：保留域名（`.example`/`.invalid`/`.local`）不是文件，见 isReservedHostPort 注释
       bareCount++;
       if (path.resolve(file) === DUB_STYLES_FILE) dubBareCount++;
       if (path.resolve(file) === DUB_VISUAL_FILE) dvBareCount++;

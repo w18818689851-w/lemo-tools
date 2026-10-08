@@ -29,7 +29,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { styleSpec, buildAss, alphaOf, isVisibleColor, relativeLuminance } from '../lib/dub-core.mjs';
@@ -80,7 +79,12 @@ if (only) list = list.filter((s) => only.includes(s.slug));
 if (!list.length) { console.error('没有匹配的 plate="box" 风格'); process.exit(2); }
 if (!fs.existsSync(FF)) { console.error(`找不到 ffmpeg: ${FF}`); process.exit(2); }
 
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'plate-px-'));
+// ★ 硬规则：禁止写 C 盘。`os.tmpdir()` 在 Windows 上就是 C 盘，所以临时根显式落在非 C 盘
+//   （默认 D:/lemo-tmp，可用 LEMO_TMP 覆盖；若解析到 C 盘则**直接炸**，不静默往 C 盘拉屎）。
+const TMP_ROOT = path.resolve(process.env.LEMO_TMP || 'D:/lemo-tmp');
+if (/^[cC]:/.test(path.parse(TMP_ROOT).root)) throw new Error(`临时根落在 C 盘（${TMP_ROOT}）——本项目禁止写 C 盘`);
+fs.mkdirSync(TMP_ROOT, { recursive: true });
+const TMP = fs.mkdtempSync(path.join(TMP_ROOT, 'plate-px-'));
 const items = [{ sub0: 0, sub1: 3.0, text: '字幕底衬像素校验 ABC 123' }];
 
 /** 渲染一帧，返回 rawvideo 的 rgb24 Buffer */

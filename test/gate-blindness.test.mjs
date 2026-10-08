@@ -3153,10 +3153,14 @@ test('check-redline-md5：登记处漂移 ⇒ exit 1 点名；提取不到 ⇒ �
 //   拷真实语料则**自洽**（闸门与语料同一快照）—— 这也正是本闸门要守的那件事的反面。
 // ★ 该闸门**没有** `LEMO_*` 覆盖点（扫描根按脚本自身位置推导）⇒ 只能「整棵拷 + `copyGate`」。
 const copyEnvregCorpus = (root) => {
-  mk(path.join(root, 'lib')); mk(path.join(root, 'scripts'));
+  mk(path.join(root, 'lib')); mk(path.join(root, 'scripts')); mk(path.join(root, 'test'));
   for (const f of fs.readdirSync(path.join(TOOLS, 'lib'))) if (f.endsWith('.mjs')) fs.copyFileSync(path.join(TOOLS, 'lib', f), path.join(root, 'lib', f));
   for (const f of fs.readdirSync(path.join(TOOLS, 'scripts'))) if (f.endsWith('.mjs')) fs.copyFileSync(path.join(TOOLS, 'scripts', f), path.join(root, 'scripts', f));
   for (const f of fs.readdirSync(TOOLS)) if (f.endsWith('.mjs')) fs.copyFileSync(path.join(TOOLS, f), path.join(root, f));
+  // ★ 2026-10-08 追加：登记表里的 reader **可能是 test/ 下的文件**（如 `LEMO_TMP` 的读者
+  //   `test/originality.test.mjs`）⇒ 夹具**必须也拷 test/**，否则该 entry 的「登记了但读者没了」会在
+  //   **夹具里假红**（实测：不拷 ⇒ 本套件 4 条断言全红）。★ 整目录拷，免得将来再加 test 读者又要改这里。
+  for (const f of fs.readdirSync(path.join(TOOLS, 'test'))) if (f.endsWith('.mjs')) fs.copyFileSync(path.join(TOOLS, 'test', f), path.join(root, 'test', f));
   return copyGate('check-env-overrides.mjs', root);
 };
 

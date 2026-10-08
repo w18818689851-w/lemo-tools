@@ -31,7 +31,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -51,6 +50,13 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+// ★ 硬规则：禁止写 C 盘。`os.tmpdir()` 在 Windows 上就是 C 盘，所以临时根显式落在非 C 盘
+//   （默认 D:/lemo-tmp，可用 LEMO_TMP 覆盖；若解析到 C 盘则**直接炸**，不静默往 C 盘拉屎）。
+const TMP_ROOT = path.resolve(process.env.LEMO_TMP || 'D:/lemo-tmp');
+if (/^[cC]:/.test(path.parse(TMP_ROOT).root)) {
+  throw new Error(`临时根落在 C 盘（${TMP_ROOT}）——本项目禁止写 C 盘`);
+}
+fs.mkdirSync(TMP_ROOT, { recursive: true });
 
 const TTY = process.stdout.isTTY;
 const C = {
@@ -564,56 +570,58 @@ const CASES = [
   {
     name: '㉝ CLI 端到端：真·原创 → 退出码 0，产物齐全；整套照抄 → 退出码 1',
     run: async () => {
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lemo-orig-'));
-      const mk = (name, content, code, events) => {
-        const d = path.join(tmp, name);
-        fs.mkdirSync(path.join(d, 'subjects'), { recursive: true });
-        fs.writeFileSync(path.join(d, 'content.json'), JSON.stringify(content, null, 2));
-        fs.writeFileSync(path.join(d, 'subjects', name === 'ref' ? 'bee.js' : 'coffee.js'), code);
-        fs.writeFileSync(path.join(d, 'events.json'), JSON.stringify(events));
-        return d;
-      };
-      const refDir = mk('ref', REF, REF_CODE, REF_EV);
-      const newDir = mk('new', NEW, NEW_CODE, NEW_EV);
-      const copyDir = mk('copy', REF, REF_CODE, REF_EV);
-      const outDir = path.join(tmp, 'out');
+      const tmp = fs.mkdtempSync(path.join(TMP_ROOT, 'lemo-orig-'));
+      try {
+        const mk = (name, content, code, events) => {
+          const d = path.join(tmp, name);
+          fs.mkdirSync(path.join(d, 'subjects'), { recursive: true });
+          fs.writeFileSync(path.join(d, 'content.json'), JSON.stringify(content, null, 2));
+          fs.writeFileSync(path.join(d, 'subjects', name === 'ref' ? 'bee.js' : 'coffee.js'), code);
+          fs.writeFileSync(path.join(d, 'events.json'), JSON.stringify(events));
+          return d;
+        };
+        const refDir = mk('ref', REF, REF_CODE, REF_EV);
+        const newDir = mk('new', NEW, NEW_CODE, NEW_EV);
+        const copyDir = mk('copy', REF, REF_CODE, REF_EV);
+        const outDir = path.join(tmp, 'out');
 
-      const args = (nd, rd, od) => ['originality-audit.mjs',
-        '--new-content', path.join(nd, 'content.json'), '--new-subjects', path.join(nd, 'subjects'),
-        '--ref-content', path.join(rd, 'content.json'), '--ref-subjects', path.join(rd, 'subjects'),
-        '--out', od];
+        const args = (nd, rd, od) => ['originality-audit.mjs',
+          '--new-content', path.join(nd, 'content.json'), '--new-subjects', path.join(nd, 'subjects'),
+          '--ref-content', path.join(rd, 'content.json'), '--ref-subjects', path.join(rd, 'subjects'),
+          '--out', od];
 
-      const okRun = await runNode(args(newDir, refDir, outDir));
-      assert.strictEqual(okRun.code, 0, `原创片退出码 ${okRun.code}\n${okRun.stdout}\n${okRun.stderr}`);
-      for (const f of ['originality.json', 'originality.md']) {
-        assert.ok(fs.existsSync(path.join(outDir, f)), `没有产出 ${f}`);
-        assert.ok(fs.statSync(path.join(outDir, f)).size > 200, `${f} 太小`);
+        const okRun = await runNode(args(newDir, refDir, outDir));
+        assert.strictEqual(okRun.code, 0, `原创片退出码 ${okRun.code}\n${okRun.stdout}\n${okRun.stderr}`);
+        for (const f of ['originality.json', 'originality.md']) {
+          assert.ok(fs.existsSync(path.join(outDir, f)), `没有产出 ${f}`);
+          assert.ok(fs.statSync(path.join(outDir, f)).size > 200, `${f} 太小`);
+        }
+        const parsed = JSON.parse(fs.readFileSync(path.join(outDir, 'originality.json'), 'utf8'));
+        assert.strictEqual(parsed.summary.ok, true);
+        assert.ok(parsed.checks.length >= 9);
+
+        const copyRun = await runNode(args(copyDir, refDir, path.join(tmp, 'out2')));
+        assert.strictEqual(copyRun.code, 1, `照抄片应退出 1，实得 ${copyRun.code}\n${copyRun.stdout}`);
+
+        // 缺素材：新片 subjects 目录不存在 → unknown → 退出 1（不许默认通过）
+        const bareDir = path.join(tmp, 'bare');
+        fs.mkdirSync(bareDir, { recursive: true });
+        fs.writeFileSync(path.join(bareDir, 'content.json'), JSON.stringify(NEW, null, 2));
+        const bareRun = await runNode(['originality-audit.mjs',
+          '--new-content', path.join(bareDir, 'content.json'), '--new-subjects', path.join(bareDir, 'subjects'),
+          '--ref-content', path.join(refDir, 'content.json'), '--ref-subjects', path.join(refDir, 'subjects'),
+          '--out', path.join(tmp, 'out3')]);
+        assert.strictEqual(bareRun.code, 1, `缺素材应退出 1，实得 ${bareRun.code}`);
+        const bareJson = JSON.parse(fs.readFileSync(path.join(tmp, 'out3', 'originality.json'), 'utf8'));
+        assert.ok(bareJson.summary.unknown >= 2, `缺素材时 unknown 太少：${bareJson.summary.unknown}`);
+        assert.strictEqual(bareJson.summary.ok, false);
+
+        // 用法错误 → 退出 2
+        const badRun = await runNode(['originality-audit.mjs', '--new-content', 'x.json']);
+        assert.strictEqual(badRun.code, 2, `用法错误应退出 2，实得 ${badRun.code}`);
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
       }
-      const parsed = JSON.parse(fs.readFileSync(path.join(outDir, 'originality.json'), 'utf8'));
-      assert.strictEqual(parsed.summary.ok, true);
-      assert.ok(parsed.checks.length >= 9);
-
-      const copyRun = await runNode(args(copyDir, refDir, path.join(tmp, 'out2')));
-      assert.strictEqual(copyRun.code, 1, `照抄片应退出 1，实得 ${copyRun.code}\n${copyRun.stdout}`);
-
-      // 缺素材：新片 subjects 目录不存在 → unknown → 退出 1（不许默认通过）
-      const bareDir = path.join(tmp, 'bare');
-      fs.mkdirSync(bareDir, { recursive: true });
-      fs.writeFileSync(path.join(bareDir, 'content.json'), JSON.stringify(NEW, null, 2));
-      const bareRun = await runNode(['originality-audit.mjs',
-        '--new-content', path.join(bareDir, 'content.json'), '--new-subjects', path.join(bareDir, 'subjects'),
-        '--ref-content', path.join(refDir, 'content.json'), '--ref-subjects', path.join(refDir, 'subjects'),
-        '--out', path.join(tmp, 'out3')]);
-      assert.strictEqual(bareRun.code, 1, `缺素材应退出 1，实得 ${bareRun.code}`);
-      const bareJson = JSON.parse(fs.readFileSync(path.join(tmp, 'out3', 'originality.json'), 'utf8'));
-      assert.ok(bareJson.summary.unknown >= 2, `缺素材时 unknown 太少：${bareJson.summary.unknown}`);
-      assert.strictEqual(bareJson.summary.ok, false);
-
-      // 用法错误 → 退出 2
-      const badRun = await runNode(['originality-audit.mjs', '--new-content', 'x.json']);
-      assert.strictEqual(badRun.code, 2, `用法错误应退出 2，实得 ${badRun.code}`);
-
-      fs.rmSync(tmp, { recursive: true, force: true });
     },
   },
   {
