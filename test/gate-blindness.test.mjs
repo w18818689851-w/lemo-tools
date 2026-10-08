@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 129 条用例 / 覆盖全部 43 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 130 条用例 / 覆盖全部 44 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -175,6 +175,18 @@
  *            且失明时**不输出判据**；
  *          ⑫ **★自证**：分别**短路**判据②、判据③ 的「workbuddy 条目里」支、判据⑤、判据⑦(b) 的倒置判定
  *            ⇒ 对应变异**重新变绿**（证明判据**承重**，不是摆设）。
+ *        · `check-resources`（2026-10-09 建，第 44 个；守「**通用资源检测适配模块**」`lib/resources.mjs`
+ *          与仓内契约 `_distill/资源检测适配模块-接口规格-2026-10-09.md` —— KINDS/STATES 字面量、
+ *          14 个导出、注册表 schema、纯函数真值表、`dirFor` 路径安全、`resourceRoot` 非 C 盘）：
+ *          主夹具 = **整棵拷真实 `lib/`**（契约要求「14 导出 + 两常量字面量 + 注册表 schema 合法」全在，
+ *          手写最小树 = 抄第二遍契约；且被测模块 `import './env.mjs'` ⇒ 必须整棵拷，否则子进程
+ *          `ERR_MODULE_NOT_FOUND` 崩在路径上 —— 崩掉的闸门既不报特有文案、也不报判据）；
+ *          覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 check-llm-api / check-doc-coverage / check-env-overrides）；
+ *          ① **阴性对照**（未变异）⇒ exit 0 且打印「满足契约」；② **变异 A（判据①）** 删掉 `mount` 的
+ *          `export` ⇒ FAIL 并点名 `mount`；③ **变异 B（判据②）** `STATES` 的 `'ready'` → `'redy'` ⇒
+ *          FAIL 并点名 `STATES`；④ **失明（判据⑦）** `RESOURCES` 置空 ⇒ FAIL +「本闸门已失明」，
+ *          且失明时不输出判据；⑤ **★自证**：短路判据② 的「不一致」判定（`if (got.join('|') !==
+ *          expected.join('|'))` → `if (false)`）⇒ 变异 B **重新变绿**（证明断言承重）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -4802,11 +4814,14 @@ test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目�
 // ── 12j. check-llm-call-sites.mjs（「LLM 调用点」，2026-10-08 建，第 43 个）──────────────────
 // ★ 本闸门**没有** env 覆盖点（扫描根按**脚本自身位置**推导，见它头注释 ⑥）⇒ 夹具按第 ② 种写法：
 //   把闸门拷进 `<夹具根>/scripts/`，再往 `<夹具根>/lib/` 放**真** `llm-api.mjs`（规范通路）与
-//   `triple-check.mjs`（已登记例外）⇒ 闸门扫的就是这棵夹具树，**不动真实仓**。
+//   **`EXCEPTIONS` 登记表里列到的每个文件**（`triple-check.mjs`、`resources.mjs`）⇒ 闸门扫的就是这棵
+//   夹具树，**不动真实仓**。★ 判据③ 要求「登记的例外文件必须**仍然存在**」⇒ 漏拷一个就会让**阴性对照误红**
+//   （2026-10-09 实测：`lib/resources.mjs` 刚进 `EXCEPTIONS` 时，本用例即因夹具缺它而红）。
 const llmCallTree = (dir) => {
   mk(path.join(dir, 'lib'));
   fs.copyFileSync(path.join(TOOLS, 'lib', 'llm-api.mjs'), path.join(dir, 'lib', 'llm-api.mjs'));
   fs.copyFileSync(path.join(TOOLS, 'lib', 'triple-check.mjs'), path.join(dir, 'lib', 'triple-check.mjs'));
+  fs.copyFileSync(path.join(TOOLS, 'lib', 'resources.mjs'), path.join(dir, 'lib', 'resources.mjs'));
   return dir;
 };
 /** 一个**不走模块**的旁路（第 3 行就是「端点字面量 + fetch」）—— 判据① 的靶子。 */
@@ -5202,6 +5217,71 @@ test('★自证 check-api-docs：摘掉「任一侧解析出 0 条 /api 路由�
     // 两条守卫都摘掉后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
     assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+// ── 12k. check-resources.mjs（「通用资源检测适配模块」，2026-10-09 建，第 44 个）────────────────
+// ★ 主夹具 = **整棵拷真实 `lib/`**（契约要求「14 个导出 + KINDS/STATES 字面量 + 注册表 schema 合法」全在，
+//   手写最小树 = 抄第二遍契约）；且被测模块 `import './env.mjs'` ⇒ 必须整棵拷，否则子进程
+//   `ERR_MODULE_NOT_FOUND` 崩在路径上（崩掉的闸门既不报特有文案、也不报判据 ⇒ 断言会以「崩在路径上」假绿）。
+// ★ 变异一律走 `mutateFile()`（两道防空转断言：片段必须在 + 替换必须生效）。
+// ★ 覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 check-llm-api / check-doc-coverage / check-env-overrides）；
+//   被测模块 = `<root>/lib/resources.mjs`。
+const copyResLib = (root) => {
+  fs.cpSync(path.join(TOOLS, 'lib'), path.join(root, 'lib'), { recursive: true });
+  return root;
+};
+const RES_REL = path.join('lib', 'resources.mjs');
+/** 整棵拷 `lib/` 后，在夹具副本的 `resources.mjs` 上做一处精确替换（**不动真实模块**）。 */
+const resMut = (dir, from, to) => {
+  copyResLib(dir);
+  mutateFile(path.join(TOOLS, RES_REL), path.join(dir, RES_REL), from, to);
+  return dir;
+};
+
+test('check-resources：阴性对照 + 判据①/② 变异 + 失明（RESOURCES 置空）⇒ FAIL 并点名', async () => {
+  const dir = path.join(TMP, 'res');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE_EXPORTS = '要求的导出缺失';        // 判据① 特有文案（逐字抄自闸门源码）
+  const NEEDLE_STATES = '与契约不一致';            // 判据② 特有文案（逐字抄自闸门源码）
+  try {
+    // ① 阴性对照：整棵 `lib/` 拷进夹具树（未变异）⇒ exit 0 且不含失明文案
+    const neg = copyResLib(path.join(dir, 'neg'));
+    const r0 = await runGate('check-resources.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-resources 阴性对照');
+    assert.ok(r0.out.includes('满足契约'), `阴性对照应打印 ✓ 满足契约\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异 A（判据① 导出齐全）：删掉 `mount` 的 `export` ⇒ FAIL 并点名 `mount`
+    const a = resMut(path.join(dir, 'a'),
+      'export async function mount', 'async function mount');
+    const r1 = await runGate('check-resources.mjs', { LEMO_TOOLS_ROOT: a });
+    expectBlind(r1, NEEDLE_EXPORTS, 'check-resources 变异A（导出缺失）');
+    assert.ok(r1.out.includes('mount'), `变异A 应点名 mount\n${r1.out.slice(0, 1400)}`);
+
+    // ③ 变异 B（判据② 常量逐字）：`STATES` 里 `'ready'` → `'redy'` ⇒ FAIL 并点名 `STATES`
+    const b = resMut(path.join(dir, 'b'), "'ready',", "'redy',");
+    const r2 = await runGate('check-resources.mjs', { LEMO_TOOLS_ROOT: b });
+    expectBlind(r2, NEEDLE_STATES, 'check-resources 变异B（STATES 漂移）');
+    assert.ok(r2.out.includes('STATES'), `变异B 应点名 STATES\n${r2.out.slice(0, 1400)}`);
+
+    // ④ 变异 C（失明守卫）：`RESOURCES` 置空 ⇒ FAIL +「本闸门已失明」，且失明时不输出判据
+    const c = resMut(path.join(dir, 'c'),
+      'Object.freeze(_entries.map((e) => Object.freeze(e)))', 'Object.freeze([])');
+    const r3 = await runGate('check-resources.mjs', { LEMO_TOOLS_ROOT: c });
+    expectBlind(r3, N_BLIND, 'check-resources 变异C（RESOURCES 置空 ⇒ 失明）');
+    assert.ok(r3.out.includes('为空'), `失明应点名「RESOURCES 为空」\n${r3.out.slice(0, 900)}`);
+    assert.ok(!r3.out.includes('·契约不符'), `失明时不该输出判据\n${r3.out.slice(0, 900)}`);
+
+    // ★自证：把判据② 的「不一致」判定**短路成恒假** ⇒ **同一套正向断言必须变红**
+    //   （证明断言真的在测判据②，而不是在测「闸门有没有崩」）。
+    const gdir = path.join(dir, 'mut');
+    mk(path.join(gdir, 'scripts'));
+    const mut = patchGate('check-resources.mjs', path.join(gdir, 'scripts'),
+      [["if (got.join('|') !== expected.join('|')) {", 'if (false) {']]);
+    const rm1 = await run(NODE, [mut], { env: { LEMO_TOOLS_ROOT: b } });
+    assert.equal(rm1.code, 0, `短路判据② 后变异 B 应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE_STATES, 'mut'), undefined,
+      '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测判据②');
   } finally { rm(dir); }
 });
 

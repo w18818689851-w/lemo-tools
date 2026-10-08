@@ -128,9 +128,13 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | POST | `/api/llm/chat` | 跑一次 chat()（**兼容保留**：面板「试跑」已改走 `/api/llm/invoke`） | 同步 |
 | POST | `/api/llm/invoke` | 通用 AI 算力调用（chat / image / audio / embedding / custom，转发到模块 invoke()） | 同步 |
 | POST | `/api/llm/models` | 拉取当前 Endpoint 的可用模型清单（面板「多模型切换」用） | 同步 |
+| GET | `/api/resources/scan` | 资源全量/子集扫描（返回 `lib/resources.mjs` 的 `scanAll()`；30s 缓存 + 并发合并） | 同步 |
+| GET | `/api/resources/dirplan` | 目录规划（纯函数、不碰 IO，直接透传） | 同步 |
+| POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
+| POST | `/api/resources/download` | 一键下载（后台任务，日志走既有任务/SSE 通道） | 同步 |
 
-★ 上表共 **50** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
-其余 **48** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
+★ 上表共 **54** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
+其余 **52** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
 `DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
 ★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
 

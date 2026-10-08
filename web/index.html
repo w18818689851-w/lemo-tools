@@ -74,6 +74,23 @@
       <div class="setup-list" id="setupList"></div>
     </section>
 
+    <!-- 资源检测：环境 / 依赖 / 模型 / 素材 / 插件的统一体检（数据来自 /api/resources/scan）。
+         ★ 只渲染服务端给的字段，前端**不重推判据**（5 态 / 版本 / 目录规划都在 lib/resources.mjs）。
+         ★ 本地优先：state==='ready' 的条目**不显示下载按钮**，避免重复下载。 -->
+    <section class="card resources-card" id="resourcesCard">
+      <div class="card-head">
+        <h2 class="card-title">
+          资源检测 <span class="res-count" id="resCount"></span>
+          <span class="res-sum" id="resSum"></span>
+        </h2>
+        <div class="card-tools">
+          <button class="btn ghost" id="btnResRefresh" title="重新扫描全部资源（会起 WSL，稍慢）">重新扫描</button>
+        </div>
+      </div>
+      <div class="res-intro" id="resIntro"></div>
+      <div class="res-list" id="resList"></div>
+    </section>
+
     <section class="card">
       <h2 class="card-title">启动任务</h2>
       <div class="form-grid">

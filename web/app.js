@@ -17,6 +17,7 @@ const state = {
   jobs: [],
   env: null,
   setup: null,       // 首次运行向导的安装计划（来自 /api/setup/actions）
+  resources: null,   // 资源检测结果（来自 /api/resources/scan）；null = 还没加载
   logJobId: null,
   logJobKind: null,  // 'render' | 'setup' —— 安装任务结束后要重跑环境检测
   es: null,          // 当前 EventSource
@@ -558,6 +559,188 @@ async function installAllAuto() {
     if (first) attachLog(first, []);
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ── 资源检测面板（/api/resources/*）──────────────────────────
+//
+// ★ 判据只有一处：5 态（ready/missing/corrupt/version-mismatch/path-abnormal）、版本匹配、
+//   目录规划、能不能自动下载，全部来自服务端 /api/resources/scan —— 前端**只渲染**，
+//   不重推任何一条（否则 lib/resources.mjs 一改，UI 就开始说假话）。
+// ★ 本地优先：state==='ready' 的条目**不显示下载按钮**；只有服务端给了 download（非空）
+//   的条目才渲染「一键下载」—— 这是「禁止重复下载」的界面体现。
+// ★ 模块未就绪：服务端回 503，这里显示一句人话提示，**不影响页面其它功能**。
+
+const RES_STATE_META = {
+  ready: { label: '就绪', cls: 'ready' },
+  missing: { label: '缺失', cls: 'missing' },
+  corrupt: { label: '已损坏', cls: 'corrupt' },
+  'version-mismatch': { label: '版本不符', cls: 'version' },
+  'path-abnormal': { label: '路径异常', cls: 'path' },
+};
+const RES_BAD_STATES = ['missing', 'corrupt', 'version-mismatch', 'path-abnormal'];
+
+function resItem(r) {
+  const meta = RES_STATE_META[r.state] || { label: r.state || '未知', cls: '' };
+  const card = el('div', 'res-item ' + meta.cls + (r.required ? ' urgent' : ''));
+  card.dataset.resId = r.id;
+
+  const head = el('div', 'res-item-head');
+  head.appendChild(el('span', 'res-badge ' + meta.cls, meta.label));
+  head.appendChild(el('span', 'res-title', r.label || r.id));
+  head.appendChild(el('span', 'res-id', r.id));
+  if (r.bundled) head.appendChild(el('span', 'res-tag', '内置'));
+  if (r.required) head.appendChild(el('span', 'res-tag req', '必需'));
+  if (r.version) head.appendChild(el('span', 'res-ver', 'v' + r.version));
+  card.appendChild(head);
+
+  if (r.detail) card.appendChild(el('div', 'res-detail', r.detail));
+  if (r.impact) card.appendChild(el('div', 'res-impact', '影响：' + r.impact));
+  if (r.fix) card.appendChild(el('div', 'res-fix', '修复：' + r.fix));
+  if (r.path) card.appendChild(el('div', 'res-path', '路径：' + r.path));
+
+  if (r.state === 'ready') {
+    // ★ ready：直接用、跳过下载 —— 不给任何下载按钮（本地优先）
+    card.appendChild(el('div', 'res-foot res-ready-note', '已就绪，直接使用（跳过下载）'));
+    return card;
+  }
+
+  const foot = el('div', 'res-foot');
+  // 「一键下载」只在服务端给了 download 规格时出现（判据在服务端）
+  if (r.download) {
+    const b = el('button', 'btn primary small', '一键下载');
+    b.dataset.resId = r.id;
+    b.addEventListener('click', () => runResourceDownload(r.id, b));
+    foot.appendChild(b);
+    if (r.download.estBytes) foot.appendChild(el('span', 'res-hint', `约 ${fmtSize(r.download.estBytes)}`));
+  } else {
+    foot.appendChild(el('span', 'res-hint', '该资源无自动下载源，请手动导入'));
+  }
+  // 「手动导入」只在服务端说支持（r.import === true）时出现
+  if (r.import) {
+    const imp = el('button', 'btn ghost small', '手动导入');
+    imp.addEventListener('click', () => toggleResImport(card, r));
+    foot.appendChild(imp);
+  }
+  card.appendChild(foot);
+  return card;
+}
+
+/** 展开 / 收起「手动导入」行：填一个本机包路径，POST /api/resources/import。 */
+function toggleResImport(card, r) {
+  const existing = card.querySelector('.res-import-row');
+  if (existing) { existing.remove(); return; }
+  const row = el('div', 'res-import-row');
+  const inp = el('input', 'input res-import-input');
+  inp.placeholder = '粘贴本机包路径（如 D:\\lemo-res\\_download\\ffmpeg.zip）';
+  const go = el('button', 'btn primary small', '导入');
+  go.addEventListener('click', async () => {
+    const p = inp.value.trim();
+    if (!p) { toast('请先填写本机包路径', true); return; }
+    go.disabled = true;
+    try {
+      await api('/api/resources/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: r.id, path: p }),
+      });
+      toast(`已导入 ${r.label || r.id}`);
+      await loadResources(true);
+    } catch (e) {
+      toast('导入失败：' + e.message, true);
+    } finally { go.disabled = false; }
+  });
+  row.appendChild(inp);
+  row.appendChild(go);
+  row.appendChild(el('span', 'res-hint', '导入会把包放进规划目录并校验，不覆盖已有可用文件。'));
+  card.appendChild(row);
+  inp.focus();
+}
+
+/** 一键下载：入队后台任务 → 把日志接到「实时日志」面板（复用既有任务/SSE 通道）。 */
+async function runResourceDownload(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api('/api/resources/download', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (r.skipped) { toast(r.reason || '已就绪，跳过下载'); return; }
+    if (r.reused) toast('该资源的下载任务已在队列里，直接看日志');
+    else toast(`已入队资源下载：${(r.job && r.job.title) || id}`);
+    await loadJobs();
+    if (r.job) attachLog(r.job.id, []);
+  } catch (e) {
+    toast('下载启动失败：' + e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderResources(data) {
+  state.resources = data;
+  const list = $('resList');
+  list.textContent = '';
+  const rs = (data && data.resources) || [];
+  const sum = (data && data.summary) || {};
+
+  $('resCount').textContent = sum.total != null ? `${sum.total} 项` : '';
+  const bad = RES_BAD_STATES.reduce((n, k) => n + (sum[k] || 0), 0);
+  $('resSum').textContent = bad ? `${bad} 项需处理` : '全部就绪';
+  $('resSum').className = 'res-sum' + (bad ? ' warn' : ' ok');
+  $('resIntro').textContent =
+    `共 ${sum.total || 0} 项资源：就绪 ${sum.ready || 0}，缺失 ${sum.missing || 0}，`
+    + `损坏 ${sum.corrupt || 0}，版本不符 ${sum['version-mismatch'] || 0}，`
+    + `路径异常 ${sum['path-abnormal'] || 0}。`
+    + '「就绪」的条目直接使用、不重复下载；其余按提示一键下载或手动导入。';
+
+  if (!rs.length) {
+    list.appendChild(el('div', 'res-empty', '没有可检测的资源（注册表为空）。'));
+    return;
+  }
+
+  // 按 state 分组：问题态在前（可操作），ready 收尾（量大、常态）
+  const groups = new Map([...RES_BAD_STATES, 'ready'].map((k) => [k, []]));
+  for (const r of rs) {
+    if (!groups.has(r.state)) groups.set(r.state, []);
+    groups.get(r.state).push(r);
+  }
+  for (const [st, items] of groups) {
+    if (!items.length) continue;
+    const meta = RES_STATE_META[st] || { label: st };
+    const g = el('div', 'res-group');
+    g.appendChild(el('h4', 'res-group-title', `${meta.label}（${items.length}）`));
+    for (const r of items) g.appendChild(resItem(r));
+    list.appendChild(g);
+  }
+
+  const note = el('div', 'res-note',
+    `扫描时间 ${fmtTime(new Date(data.checkedAt).getTime())}${data.cached ? '（缓存）' : ''}`
+    + ' · 资源检测是「咨询性」的：缺资源不会阻止你启动任务，只做提示。');
+  list.appendChild(note);
+}
+
+/** 扫描失败 / 模块未就绪 —— 显示一句人话，不抛、不影响页面其它功能。 */
+function renderResourcesError(e) {
+  const list = $('resList');
+  list.textContent = '';
+  $('resCount').textContent = '';
+  $('resSum').textContent = '';
+  $('resSum').className = 'res-sum';
+  $('resIntro').textContent = '';
+  const box = el('div', 'res-empty');
+  const notReady = e && e.status === 503;
+  box.appendChild(el('div', 'res-empty-title', notReady ? '资源检测模块尚未就绪' : '资源扫描失败'));
+  box.appendChild(el('div', 'res-empty-note', (e && e.message) || String(e)));
+  if (notReady) box.appendChild(el('div', 'res-empty-note', '不影响页面其它功能；稍后可点「重新扫描」重试。'));
+  list.appendChild(box);
+}
+
+async function loadResources(force) {
+  try {
+    const d = await api('/api/resources/scan' + (force ? '?force=1' : ''));
+    renderResources(d);
+  } catch (e) {
+    renderResourcesError(e);
   }
 }
 
@@ -5089,6 +5272,7 @@ function bind() {
   }
   if ($('btnDubRun')) $('btnDubRun').addEventListener('click', startDubRun);
   $('btnRefreshEnv').addEventListener('click', () => loadEnv(true));
+  $('btnResRefresh').addEventListener('click', () => loadResources(true));
   // 首次运行向导
   $('btnSetupRefresh').addEventListener('click', () => refreshAfterSetup());
   $('btnSetupAuto').addEventListener('click', installAllAuto);
@@ -5234,7 +5418,7 @@ async function boot() {
   await Promise.all([
     loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs(),
     loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(),
-    loadLlm(),
+    loadLlm(), loadResources(false),
   ]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）
   setInterval(() => { loadJobs(); }, 3000);

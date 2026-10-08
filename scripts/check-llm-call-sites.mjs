@@ -46,7 +46,8 @@
  *   **判据② 例外清单（两层语义）**
  *     · **已登记**（`EXCEPTIONS` 里的文件，带**理由**（「为什么还没迁」/「为什么不迁」）+ **归属批次**）⇒ **只列 ℹ、不判 FAIL**。
  *     · **没登记** ⇒ 判据① 的 FAIL（这就是「两层语义」的另一半）。
- *     · 当前登记 **1** 条：`lib/triple-check.mjs`（理由与批次见登记表注释）。
+ *     · 当前登记 **2** 条：`lib/triple-check.mjs`（模型生命周期）、`lib/resources.mjs`（资源探活、非推理）
+ *       （理由与批次见登记表注释）。
  *
  *   **判据③ 例外不得「失效」**（双向守卫的另一半，照 `check-env-overrides.mjs` 的思路）
  *     · 对 `EXCEPTIONS` 里**每一条**，断言它的文件**仍然**：(a) 存在；(b) 在 `maskNonCode()` 文本里
@@ -87,8 +88,10 @@
  *     `test/gate-blindness.test.mjs` 的夹具字符串里就有 `api.anthropic.com`、`test/triple-check-flow.test.mjs`
  *     的桩路由写 `/v1/chat/completions`）⇒ 纳入会**大面积误报**，而它们**不做推理**。
  *   · **不纳入 `web/**`**：前端**不做推理**（它只调本机控制台的 `/api/llm/*`），且面板**合法地**把端点路径
- *     当 **UI 占位文字**（实测 `web/index.html:327` 的 `placeholder` 就写着 `https://api.anthropic.com`、
- *     `:357` 写着 `默认 /chat/completions`）⇒ 若哪天这些文字落进一个**也有 `fetch`** 的 `.js`（`web/app.js`
+ *     当 **UI 占位文字**（实测 `web/index.html` 里那个 baseUrl `placeholder` 就写着 `https://api.anthropic.com`、
+ *     另一个 path `placeholder` 写着 `默认 /chat/completions`；★ 2026-10-09 改用**符号锚** ——
+ *     原先写的行号已随界面新增「资源检测」区块而漂，行号引用是**结构性隐患**，见引用纪律第 12 条）
+ *     ⇒ 若哪天这些文字落进一个**也有 `fetch`** 的 `.js`（`web/app.js`
  *     就有 `fetch`）⇒ 必误报。
  *   ⇒ 两条**已知盲区**（如实登记）：`test/**` 与 `web/**` 里新写的旁路**本闸门看不见**。
  *   · **端点模式表**（`ENDPOINT_PATTERNS`，LLM 专用）：`chat/completions`、`/v1/messages`、
@@ -180,6 +183,17 @@ const EXCEPTIONS = [
       + '**不并入** `lib/llm-api.mjs`（该模块只管「发一次对话、取回文本」）⇒ 这几处**有意保留**，不再计划迁移。',
     batch: '**不迁**（模型生命周期，按规格 §10.5 的边界**有意保留**）',
     kinds: ['lmstudio-port', 'chat-completions'],
+  },
+  {
+    rel: 'lib/resources.mjs',
+    why: '★ **不是推理调用，是资源探活**（2026-10-09 建）：该模块是「通用资源检测适配模块」，'
+      + '其中 `model.lmstudio` 一项用 `LEMO_LMSTUDIO_URL`（默认 `http://127.0.0.1:12345`）做**只读探活** ——'
+      + '只判「本机 LM Studio 服务在不在」，**不发送任何提示词、不取回任何文本**（等价于探端口）。'
+      + '★ 按规格 `_distill/资源检测适配模块-接口规格-2026-10-09.md` §一 的边界：资源**探测**归本模块，'
+      + 'LLM **调用**归 `lib/llm-api.mjs`（该模块只管「发一次对话、取回文本」）⇒ 此处**有意保留**。'
+      + '★ 若日后要真正调用 LM Studio 做推理 ⇒ **必须**走 `lib/llm-api.mjs` 的 `chat()`，不得在此直连。',
+    batch: '**不迁**（资源探活、非推理；按资源模块规格 §一 的边界有意保留）',
+    kinds: ['lmstudio-port'],
   },
 ];
 

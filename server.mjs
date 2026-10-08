@@ -17,7 +17,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkEnv, CFG } from './lib/env.mjs';
 import * as jobs from './lib/jobs.mjs';
 import * as store from './lib/store.mjs';
@@ -460,6 +460,209 @@ async function apiSetupRun(req, res) {
     title: act.title,
     steps: act.steps,
     estBytes: act.estBytes || 0,
+  });
+  sendJson(res, 200, { ok: true, job: jobs.getSummary(job.id) });
+}
+
+// ── API: /api/resources/*（通用资源检测适配模块的 HTTP 层）───────
+//
+// 契约见 _distill/资源检测适配模块-接口规格-2026-10-09.md（§六 对外 API / §八 HTTP 接口）。
+// ★ 本层**只做搬运**：判据（5 态、版本匹配、目录规划、下载规格）全部来自 lib/resources.mjs，
+//   这里不重推任何一条 —— 沿用「同一判据只写一处」的项目铁律。
+// ★★ 必须用**动态 import**（不在文件顶部静态 import）：lib/resources.mjs 可能正在被别的
+//   智能体写入；静态 import 一旦解析失败，整个 server.mjs 起不来（连别的接口一起拖死）。
+//   动态 import 失败只让本组接口回 503，服务照常。
+// ★ 扫描要起 WSL（成本高）——照抄 apiEnv 的「TTL 缓存 + 并发合并(inflight)」。
+const RES_MOD_URL = pathToFileURL(path.join(__dirname, 'lib', 'resources.mjs')).href;
+const RES_TTL_MS = 30000;
+
+// 只缓存「成功的模块加载」；失败**不缓存** —— 否则模块后补上来也永远 503。
+let resMod = null;
+async function loadResources() {
+  if (resMod) return { ok: true, mod: resMod, error: null };
+  try {
+    const mod = await import('./lib/resources.mjs');
+    resMod = mod;
+    return { ok: true, mod, error: null };
+  } catch (e) {
+    return { ok: false, mod: null, error: e };
+  }
+}
+
+/** 模块未就绪时的**说人话**错误（区分「文件还没写」和「加载/求值报错」）。 */
+function resNotReadyMsg(e) {
+  const msg = String((e && e.message) || e || '');
+  if (/ERR_MODULE_NOT_FOUND|Cannot find (module|package)/.test(msg)) {
+    return '资源检测模块（lib/resources.mjs）尚未就绪：文件不存在。'
+      + '稍后重试；若已发布仍如此，说明安装包缺少该模块。';
+  }
+  return `资源检测模块（lib/resources.mjs）加载失败：${msg}`;
+}
+
+// 缓存 / 并发合并都**按 only 集合分组**（key='*' 表示全量扫描）。
+const resScanCache = new Map();     // key → { at, data }
+const resScanInflight = new Map();  // key → Promise
+
+/** 解析 ?only=a,b —— 逐个校验 id 白名单（防路径穿越，与契约 §九.4 同一条正则）。 */
+function parseOnlyParam(url) {
+  const raw = (url.searchParams.get('only') || '').trim();
+  if (!raw) return { only: null, error: null };
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) return { only: null, error: null };
+  for (const id of parts) {
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) return { only: null, error: `only 含非法 id：${id}` };
+  }
+  return { only: parts, error: null };
+}
+
+/**
+ * GET /api/resources/scan[?force=1][&only=a,b] —— 资源全量/子集扫描。
+ *
+ * ★ 返回 lib/resources.mjs 的 scanAll() 结果（原样透传，前端只渲染不重推）。
+ * ★ 30s 缓存 + 并发合并：扫描要起 WSL，成本高，并发请求只真跑一次。
+ */
+async function apiResourcesScan(req, res, url) {
+  const { only, error } = parseOnlyParam(url);
+  if (error) return sendJson(res, 400, { error });
+
+  const loaded = await loadResources();
+  if (!loaded.ok) return sendJson(res, 503, { error: resNotReadyMsg(loaded.error) });
+
+  const force = url.searchParams.get('force') === '1';
+  const key = only ? [...only].sort().join(',') : '*';
+
+  if (!force) {
+    const hit = resScanCache.get(key);
+    if (hit && Date.now() - hit.at < RES_TTL_MS) {
+      return sendJson(res, 200, { ...hit.data, cached: true, cacheAgeMs: Date.now() - hit.at });
+    }
+  }
+  // 并发请求只跑一次全量扫描（探测要起 WSL，成本高）—— 用 inflight 去重
+  let p = resScanInflight.get(key);
+  if (!p) {
+    p = Promise.resolve()
+      .then(() => (only ? loaded.mod.scanAll({ only, force }) : loaded.mod.scanAll({ force })))
+      .then((d) => { resScanCache.set(key, { at: Date.now(), data: d }); return d; })
+      .finally(() => { resScanInflight.delete(key); });
+    resScanInflight.set(key, p);
+  }
+  let data;
+  try { data = await p; }
+  catch (e) { return sendJson(res, 503, { error: `资源扫描失败：${String((e && e.message) || e)}` }); }
+  sendJson(res, 200, { ...data, cached: false, cacheAgeMs: 0 });
+}
+
+/** GET /api/resources/dirplan —— 目录规划（纯函数、不碰 IO，直接透传）。 */
+async function apiResourcesDirplan(req, res) {
+  const loaded = await loadResources();
+  if (!loaded.ok) return sendJson(res, 503, { error: resNotReadyMsg(loaded.error) });
+  let d;
+  try { d = loaded.mod.dirPlan(); }
+  catch (e) { return sendJson(res, 503, { error: `读取目录规划失败：${String((e && e.message) || e)}` }); }
+  sendJson(res, 200, d);
+}
+
+/**
+ * POST /api/resources/import {id, path} —— 手动导入用户自备的包。
+ *
+ * ★ 未知 id ⇒ 400（契约：scanOne 对不存在的 id 返回 null）。
+ * ★ 只写 _download/ 与 dirFor()（模块内部保证），本层不碰任何文件。
+ */
+async function apiResourcesImport(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+
+  const id = body.id;
+  const srcPath = body.path;
+  if (typeof id !== 'string' || !id.trim()) return sendJson(res, 400, { error: '缺少 id' });
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) return sendJson(res, 400, { error: `id 含非法字符：${id}` });
+  if (typeof srcPath !== 'string' || !srcPath.trim()) {
+    return sendJson(res, 400, { error: '缺少 path（要导入的本地包路径）' });
+  }
+
+  const loaded = await loadResources();
+  if (!loaded.ok) return sendJson(res, 503, { error: resNotReadyMsg(loaded.error) });
+
+  let known = null;
+  try { known = await loaded.mod.scanOne(id); }
+  catch (e) { return sendJson(res, 503, { error: `资源检测失败：${String((e && e.message) || e)}` }); }
+  if (known === null) return sendJson(res, 400, { error: `未知资源 id：${id}` });
+
+  let r;
+  try { r = await loaded.mod.importResource(id, srcPath.trim()); }
+  catch (e) { return sendJson(res, 400, { error: `导入失败：${String((e && e.message) || e)}` }); }
+  // 模块返回 {ok:false, error:<机器码>, detail:<人话>} —— 对外统一给人话（前端只读 message）。
+  if (r && r.ok === false) return sendJson(res, 400, { ok: false, id, error: r.detail || r.error || '导入失败' });
+  sendJson(res, 200, r || { ok: true });
+}
+
+/** 生成「跑 runDownload(id) 的内联 ESM 脚本」——把模块日志逐行写到 stdout（喂给任务 SSE）。 */
+function buildResourceDownloadScript(id) {
+  return [
+    `const m = await import(${JSON.stringify(RES_MOD_URL)});`,
+    `const onLog = (line) => process.stdout.write(String(line) + '\\n');`,
+    `try {`,
+    `  const r = await m.runDownload(${JSON.stringify(id)}, onLog);`,
+    `  if (r && r.ok === false) {`,
+    `    console.error('[资源下载] 失败：' + (r.detail || r.error || '未知错误'));`,
+    `    process.exit(1);`,
+    `  }`,
+    `  console.log('[资源下载] 完成：' + JSON.stringify(r));`,
+    `} catch (e) {`,
+    `  console.error('[资源下载] 失败：' + ((e && e.message) || e));`,
+    `  process.exit(1);`,
+    `}`,
+  ].join('\n');
+}
+
+/**
+ * POST /api/resources/download {id} —— 一键下载（后台任务，日志走既有任务/SSE 通道）。
+ *
+ * ★ 复用既有任务队列：把 runDownload 包成一个 kind='exe' 的步骤（起独立 node 进程），
+ *   它的 stdout/stderr 由 lib/setup.mjs 的 runStep 逐行喂进 job 日志 → /api/logs/:id SSE。
+ *   这样「取消 / 列表 / 续传」等既有能力**一行不用重写**。
+ * ★ 去重：同一资源的下载任务已在跑/在排队 → 直接复用。
+ * ★ 未知 id ⇒ 400；模块未就绪 ⇒ 503。
+ */
+async function apiResourcesDownload(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+
+  const id = body.id;
+  if (typeof id !== 'string' || !id.trim()) return sendJson(res, 400, { error: '缺少 id' });
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) return sendJson(res, 400, { error: `id 含非法字符：${id}` });
+
+  const loaded = await loadResources();
+  if (!loaded.ok) return sendJson(res, 503, { error: resNotReadyMsg(loaded.error) });
+
+  let st = null;
+  try { st = await loaded.mod.scanOne(id); }
+  catch (e) { return sendJson(res, 503, { error: `资源检测失败：${String((e && e.message) || e)}` }); }
+  if (st === null) return sendJson(res, 400, { error: `未知资源 id：${id}` });
+
+  // ★ 本地优先：已就绪的资源**跳过下载**（幂等，不重下）——与 /api/setup/run 的 skipped 同款语义。
+  if (st.state === 'ready') {
+    return sendJson(res, 200, { ok: true, skipped: true, reason: '该资源已就绪，跳过下载（本地优先，不重复下载）' });
+  }
+
+  const actionId = `resource.download.${id}`;
+  const q = jobs.queueState();
+  const dup = [q.running, ...q.waiting].find((j) => j && j.kind === 'setup' && j.actionId === actionId);
+  if (dup) return sendJson(res, 200, { ok: true, reused: true, job: jobs.getSummary(dup.id) });
+
+  const job = jobs.enqueueSetup({
+    actionId,
+    title: `资源下载：${st.label || id}`,
+    steps: [{
+      kind: 'exe',
+      label: `下载资源 ${id}`,
+      exe: process.execPath,
+      args: ['--input-type=module', '-e', buildResourceDownloadScript(id)],
+      cwd: __dirname,
+    }],
+    estBytes: (st.download && st.download.estBytes) || 0,
   });
   sendJson(res, 200, { ok: true, job: jobs.getSummary(job.id) });
 }
@@ -2252,6 +2455,11 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/env' && m === 'GET') return await apiEnv(req, res, url.searchParams.get('force') === '1', url);
     if (p === '/api/setup/actions' && m === 'GET') return await apiSetupActions(req, res, url);
     if (p === '/api/setup/run' && m === 'POST') return await apiSetupRun(req, res);
+    // ── 通用资源检测适配模块（/api/resources/*）—— 契约见 _distill/资源检测适配模块-接口规格 ──
+    if (p === '/api/resources/scan' && m === 'GET') return await apiResourcesScan(req, res, url);
+    if (p === '/api/resources/dirplan' && m === 'GET') return await apiResourcesDirplan(req, res);
+    if (p === '/api/resources/import' && m === 'POST') return await apiResourcesImport(req, res);
+    if (p === '/api/resources/download' && m === 'POST') return await apiResourcesDownload(req, res);
     if (p === '/api/demos' && m === 'GET') return apiDemos(req, res);
     if (p === '/api/films' && m === 'GET') return apiFilms(req, res);
     if (p === '/api/console' && m === 'GET') return apiConsole(req, res);

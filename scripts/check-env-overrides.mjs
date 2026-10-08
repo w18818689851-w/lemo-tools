@@ -556,6 +556,23 @@ const OVERRIDES = {
     what: '★ 测试残留清理工具的**备份根**（默认 `D:/lemo-backup`；**禁止 C 盘**）。'
       + '★ 该工具**默认只预览（dry-run）**，要真删必须 `--apply` + 二次确认，且**备份失败即拒绝删除** ✓',
   },
+  // ★ 2026-10-09 追加：**通用资源检测适配模块**（`lib/resources.mjs`）的三个覆盖点。
+  //   ★ 三个都是**路径 / 端点重定向**（把「去哪找 / 去哪连」指到别处）⇒ 归 `OVERRIDES`（不是外部约定）✓
+  LEMO_RES_DIR: {
+    readers: ['lib/resources.mjs'],
+    what: '★ 通用资源检测适配模块的**资源根**（默认 `D:\\lemo-res`；**禁止 C 盘**）。'
+      + '它是「自动下载的资源一律存到**预先规划好的**文件夹」这条规格的落点 —— 目录结构 = `<root>/<kind>/<id>`，'
+      + '下载先落 `<root>/_download/` 中转、校验通过才移入 ✓',
+  },
+  LEMO_INDEX_TTS_DIR: {
+    readers: ['lib/resources.mjs'],
+    what: '★ 本地 **Index-TTS** 安装目录（默认 `D:\\Index-tts\\Index-tts_v2.5`）—— 资源检测用它判「本地语音模型是否就位」✓',
+  },
+  LEMO_LMSTUDIO_URL: {
+    readers: ['lib/resources.mjs'],
+    what: '★ 本地 **LM Studio** 服务地址（默认 `http://127.0.0.1:12345`）—— 资源检测用它探活'
+      + '（**只读健康检查，不做任何推理**；见 `scripts/check-llm-call-sites.mjs` 的例外登记）✓',
+  },
   LEMO_TMP: {
     readers: ['scripts/check-plate-pixel.mjs', 'test/originality.test.mjs'],
     what: '★ 临时根（默认 D:/lemo-tmp；**禁止写 C 盘** ⇒ 读者一律「解析到 C 盘就直接炸」）。'
