@@ -282,18 +282,18 @@
       </details>
     </section>
 
-    <!-- LLM API 配置：软件内涉及 LLM 推理的任务**默认走 workbuddy**，这里可切到任意
-         OpenAI 兼容 / Anthropic / 厂商私有接口（不限云端 / 本地、不限厂商 / 底层模型）。
-         ★ 接口：GET /api/llm/profiles|config、POST /api/llm/config|validate|chat
-           （契约见 server.mjs 的 /api/llm/* 组说明）。
-         ★ 密钥安全：key **永不回显**（只显示「已配置 / 未配置」），输入框留空 = 不改；
-           自定义头里敏感名（authorization / *api*key* / token…）的值由后端打码成 ••••••，
-           同样「留占位符 = 不改」。
+    <!-- 通用 AI 算力 API 接入模块（规格 v3）：软件内涉及 LLM 推理的任务**默认走 workbuddy**，
+         这里可切到任意 OpenAI 兼容 / Anthropic / 厂商私有接口（不限云端 / 本地、不限厂商 / 底层模型）。
+         ★ 规格 v3「算力类型不限」：面板「算力类型」选择器可切 chat / image / audio / embedding / custom
+           ⇒ 用户**用得到**图像生成 / 语音合成 / 向量计算，而不只是 LLM 文本推理。
+         ★ 接口：GET /api/llm/profiles|config、POST /api/llm/config|validate|chat|invoke|models（契约见 server.mjs）。
+         ★ 密钥安全：key **永不回显**（只显示「已配置 / 未配置」），输入框留空 = 不改；自定义头里敏感名
+           （authorization / *api*key* / token…）的值由后端打码成 ••••••，同样「留占位符 = 不改」。
          ★ 「一键校验」按契约分三步**逐步**显示：可达 → 鉴权 → 返回体；任一步失败都给可操作的中文提示。
          ★ 落盘 D:\lemo-films\_llm-api.json（仓库之外 ⇒ 不进 git）。 -->
     <section class="card llm-card" id="llmCard">
       <div class="card-head">
-        <h2 class="card-title">LLM API 配置 <span class="count" id="llmProfileBadge"></span></h2>
+        <h2 class="card-title">通用 AI 算力 API 接入 <span class="count" id="llmProfileBadge"></span></h2>
         <!-- ★ 规格要求「当前优先配置 WorkBuddy」⇒ 界面要能**一眼看出当前默认走哪个**。
              默认（workbuddy）显示「当前默认：WorkBuddy」；切到别的则显示「已切换：<label>」。 -->
         <span class="llm-current-pill" id="llmCurrentPill">当前默认：WorkBuddy</span>
@@ -302,9 +302,9 @@
         </div>
       </div>
       <div class="llm-intro" id="llmIntro">
-        软件内涉及 <b>LLM 推理</b>的任务<b>默认走 <code>workbuddy</code>（智能体 API）</b>；这里可换成任意
+        软件内涉及 <b>AI 算力</b>的任务<b>默认走 <code>workbuddy</code>（智能体 API）</b>；这里可换成任意
         <b>智能体 API</b> 或 <b>底层基础大模型 API</b>（<b>OpenAI 兼容</b> / <b>Anthropic</b> / <b>厂商私有</b>）——
-        用「接入对象」选类型、用 profile 选厂商；选中项与覆盖落盘到 <code>D:\lemo-films\_llm-api.json</code>（<b>不在仓库内</b>，不进 git）。
+        用「接入对象」选类型、用 profile 选厂商；<b>算力类型不限</b>（文本推理 / 图像 / 语音 / 向量…），在下方「算力类型」里切换；覆盖落盘到 <code>D:\lemo-films\_llm-api.json</code>（<b>不在仓库内</b>，不进 git）。
       </div>
 
       <div class="form-grid llm-grid">
@@ -328,17 +328,17 @@
         </label>
         <div class="field llm-target-field">
           <span class="lbl">接入对象</span>
-          <select id="llmTarget" class="input llm-target" title="底层基础大模型 API：由模块在请求里下发 model 参数；智能体 API：模型名仅作本地备注，不强制下发"><option value="agent">智能体 API（模型名仅作本地备注）</option><option value="model">底层基础大模型 API（下发 model 参数）</option></select>
-          <span class="lbl" id="llmModelLabel">模型名 model</span>
+          <select id="llmTarget" class="input llm-target" title="底层基础大模型 API：由模块在请求里下发 model 参数；智能体 API：服务名称标记仅作本地备注，请求体不下发 model"><option value="agent">智能体 API（服务名称标记仅作本地备注）</option><option value="model">底层基础大模型 API（下发 model 参数）</option></select>
+          <span class="lbl" id="llmModelLabel">服务名称标记</span>
           <div class="llm-model-row">
             <input id="llmModel" class="input" list="llmModelList" placeholder="如 gpt-4o-mini / claude-sonnet-4 / qwen2.5" autocomplete="off">
             <button type="button" class="btn ghost small" id="btnLlmModels"
-                    title="从当前 Endpoint 拉取可用模型清单（GET {baseUrl}/models），供下拉切换">拉取模型</button>
+                    title="从当前 Endpoint 拉取可用模型清单（GET {baseUrl}/models），供下拉切换">拉取服务清单</button>
           </div>
           <select id="llmModelSelect" class="input llm-model-select" hidden
-                  title="从端点拉到的可用模型里挑一个（选中即填入模型名）"></select>
+                  title="从端点拉到的可用服务里挑一个（选中即填入服务名称标记）"></select>
           <datalist id="llmModelList"></datalist>
-          <span class="hint" id="llmModelHint">可从下拉切换，也可手填任意模型名</span>
+          <span class="hint" id="llmModelHint">可从下拉切换，也可手填任意服务名称标记</span>
         </div>
         <label class="field">
           <span class="lbl">请求超时 timeoutMs</span>
@@ -357,7 +357,7 @@
           <input id="llmPath" class="input" placeholder="默认 /chat/completions" autocomplete="off">
         </label>
         <label class="field">
-          <span class="lbl">取文本路径 extract（custom 用）</span>
+          <span class="lbl">取值路径 extract（custom 用）</span>
           <input id="llmExtract" class="input" placeholder="点分路径，默认 choices.0.message.content" autocomplete="off">
         </label>
       </div>
@@ -385,13 +385,28 @@
         <div class="llm-step-hint" id="llmStepHint"></div>
       </div>
 
-      <!-- 试一句：按当前配置真的发一次 chat()，把返回文本 / 错误贴出来。 -->
+      <!-- 试跑：**按当前「算力类型」**真的发一次请求（POST /api/llm/invoke → 模块 invoke()），
+           把返回结果 / 错误贴出来。chat=文本推理；image=图像生成；audio=语音合成；embedding=向量计算；
+           custom=自定义出口（用下方 path / extract + 输入框当请求体）。
+           ★ 参数区随类型变：占位提示 + 下面这行说明随 task 切（见 app.js 的 syncLlmTaskUi）。 -->
       <div class="llm-try">
         <div class="llm-row">
+          <label class="llm-task-pick">
+            <span class="lbl">算力类型</span>
+            <select id="llmTask" class="input llm-task"
+                    title="通用 AI 算力类型（规格 v3：算力类型不限）：文本推理 / 图像生成 / 语音合成 / 向量计算 / 自定义出口">
+              <option value="chat">chat · LLM 文本推理</option>
+              <option value="image">image · 图像生成</option>
+              <option value="audio">audio · 语音合成</option>
+              <option value="embedding">embedding · 向量计算</option>
+              <option value="custom">custom · 自定义出口</option>
+            </select>
+          </label>
           <input id="llmTryText" class="input" maxlength="500" autocomplete="off"
                  placeholder="试一句：留空用默认示例句（最多 500 字）">
-          <button class="btn primary" id="btnLlmTry" title="按当前配置真的发一次 chat()">试一句</button>
+          <button class="btn primary" id="btnLlmTry" title="按当前「算力类型」真的发一次请求（POST /api/llm/invoke）">试跑</button>
         </div>
+        <div class="llm-task-hint" id="llmTaskHint"></div>
         <div class="llm-try-out" id="llmTryOut"></div>
       </div>
     </section>

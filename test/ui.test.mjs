@@ -27,9 +27,9 @@
  *   I 补的是 **LLM API 配置面板**（`/api/llm/*`）—— 此前在 UI 层**零覆盖**（探针只在 `D:/lemo-tmp/`，
  *   不进仓）。四条断言：① 顶栏「LLM 配置」入口可达（点了给卡片加 .flash 并滚进视口）；
  *   ② 「当前默认：WorkBuddy」胶囊默认态可见、切走变「已切换：…」；③ 多模型切换（拉取模型 → 下拉候选
- *   → 选中回填模型名输入框，手填兜底仍在）；④ **坏后端不白屏**（patch `window.fetch` 只拦 `/api/llm/*`，
- *   造 4 类坏响应：网络失败 / 500+HTML / 空 body / `{ok:false}` 结构异常 ⇒ 逐个点校验·试一句·拉取模型
- *   ⇒ 面板仍在且有内容 + 未捕获异常 **0**）；⑤ 落盘隔离 + 保存刷新后候选仍在。
+ *   → 选中回填模型名输入框，手填兜底仍在）★ 并钉住规格 v3「**agent 模式禁止拉取模型清单**」（按钮不可见 + 强触发被后端拒）；④ **坏后端不白屏**（
+ *   patch `window.fetch` 只拦 `/api/llm/*`，造 4 类坏响应：网络失败 / 500+HTML / 空 body / `{ok:false}`
+ *   结构异常 ⇒ 逐个点校验·试一句·拉取模型 ⇒ 面板仍在且有内容 + 未捕获异常 **0**）；⑤ 落盘隔离 + 保存刷新后候选仍在。
  *   ★★ 落盘隔离：I 组另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向临时树）⇒ 覆盖文件
  *     `<成片根>/_llm-api.json` 写进临时树，**绝不碰真实 `D:/lemo-films/_llm-api.json`**（用例里
  *     读真实文件前后快照逐字节比对当红线）。上游是**本地 mock**（不打真实外网），跑完随临时树删除。
@@ -2941,9 +2941,34 @@ async function main() {
         await waitFor(cdp.evalJs, `/当前默认/.test(document.getElementById('llmCurrentPill').textContent)`, { timeoutMs: 15000 });
       });
 
-      await runCase('I3 多模型切换：点「拉取模型」→ 下拉出现候选 → 选中后回填进模型名输入框', async () => {
-        // 把表单指向本地 mock 上游（走真实前端逻辑，不预先保存）
+      await runCase('I3 多模型切换 + agent 模式禁止拉取：agent 下按钮不可见且强行触发被拒；model 下拉取→候选→回填', async () => {
+        // ★★ W2 新规格（规格 v3：不探查智能体内部模型）——**先钉住 agent 模式禁止拉取模型清单**：
+        //   · 按钮**不可见**（面板层面禁用）；★ 且即便程序化 .click() 绕过可见性，**后端也拒绝**
+        //     （不会返回候选）⇒ 这条断言「有牙」：把端点指向 mock，若真去拉会**命中 mock 并出现候选**。
         await cdp.evalJs(`(() => {
+          const t = document.getElementById('llmTarget');
+          t.value = 'agent'; t.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('llmKind').value = 'openai-compatible';
+          document.getElementById('llmBaseUrl').value = ${JSON.stringify(llmMockBase)};
+          document.getElementById('llmKey').value = 'sk-ui-mock-key-123456';
+          document.getElementById('llmTimeout').value = '5000';
+          const s = document.getElementById('llmModelSelect'); s.hidden = true; s.textContent = '';
+          document.getElementById('llmModelHint').textContent = '';
+          return true;
+        })()`);
+        need(await cdp.evalJs(`document.getElementById('btnLlmModels').hidden === true`),
+          'agent 模式下「拉取服务清单」按钮应不可见（规格 v3 禁止探查智能体内部模型）');
+        // 强行触发（绕过可见性）⇒ 后端拒绝 ⇒ 下拉**不出现候选** + 提示含「失败」
+        await cdp.evalJs(`document.getElementById('btnLlmModels').click(); true`);
+        await waitFor(cdp.evalJs, `/失败/.test(document.getElementById('llmModelHint').textContent)`, { timeoutMs: 20000 });
+        const agentCand = await cdp.evalJs(`[...document.getElementById('llmModelSelect').options].filter((o) => o.value).length`);
+        need(agentCand === 0,
+          `agent 模式强行拉取竟拿到 ${agentCand} 个候选（后端没拦住「探查智能体内部模型」？）`);
+
+        // 切回「底层基础大模型 API」⇒ 按钮恢复可见，再走原有的「拉取 → 下拉 → 回填」流程。
+        await cdp.evalJs(`(() => {
+          const t = document.getElementById('llmTarget');
+          t.value = 'model'; t.dispatchEvent(new Event('change', { bubbles: true }));
           document.getElementById('llmKind').value = 'openai-compatible';
           document.getElementById('llmBaseUrl').value = ${JSON.stringify(llmMockBase)};
           document.getElementById('llmModel').value = '';
@@ -2952,6 +2977,8 @@ async function main() {
           document.getElementById('llmModelSelect').hidden = true;
           return true;
         })()`);
+        need(await cdp.evalJs(`document.getElementById('btnLlmModels').hidden === false`),
+          'model 模式下「拉取服务清单」按钮应可见（切回底层基础大模型 API 后）');
 
         await cdp.evalJs(`document.getElementById('btnLlmModels').click(); true`);
         await waitFor(cdp.evalJs,
@@ -2972,7 +2999,7 @@ async function main() {
           return { disabled: i.disabled, readonly: i.readOnly, hasList: !!document.getElementById('llmModelList') }; })()`);
         need(manual.disabled === false && manual.readonly === false && manual.hasList,
           `手填兜底被破坏：${JSON.stringify(manual)}`);
-        notes.push(`I3 拉取模型 → 下拉候选 ${JSON.stringify(cand)}；选中「${pick}」→ #llmModel 回填成功`);
+        notes.push(`I3 agent 模式：按钮不可见 + 强行触发被拒（候选 0）；model 模式：拉取 → 候选 ${JSON.stringify(cand)}；选中「${pick}」→ #llmModel 回填成功`);
       });
 
       await runCase('I4 坏后端不白屏：patch fetch 拦 /api/llm/* 造 4 类坏响应，面板仍在 + 未捕获异常 0', async () => {
@@ -3056,7 +3083,11 @@ async function main() {
 
       await runCase('I5 落盘隔离 + 保存刷新后候选仍在：覆盖文件写进临时树，真实 _llm-api.json 逐字节不变', async () => {
         // ★ I4 重载过页面 ⇒ 表单与候选都回到初始态，这里**自成一体**地重做一遍「指向 mock → 拉取 → 保存」。
+        // ★★ 规格 v3（W2）：agent 模式已**禁止**拉取模型清单 ⇒ 本用例走**底层基础大模型 API**（target='model'）——
+        //    这是「测试跟上规格」，不是放宽断言（agent 模式禁拉取已由 I3 正向钉住）。
         await cdp.evalJs(`(() => {
+          const t = document.getElementById('llmTarget');
+          t.value = 'model'; t.dispatchEvent(new Event('change', { bubbles: true }));
           document.getElementById('llmKind').value = 'openai-compatible';
           document.getElementById('llmBaseUrl').value = ${JSON.stringify(llmMockBase)};
           document.getElementById('llmModel').value = '';

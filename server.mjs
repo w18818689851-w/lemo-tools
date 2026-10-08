@@ -1851,9 +1851,11 @@ function watchBriefJob(jobId, briefId) {
 //
 // 分工（本批）：
 //   · 适配器 / 配置解析 / **落盘** / 脱敏**全在 lib/llm-api.mjs**（见 §一~§六）—— 本文件只调它的导出：
-//     listProfiles / resolveConfig / readOverride / saveOverride / validate / chat。
+//     listProfiles / resolveConfig / readOverride / saveOverride / validate / chat / listModels / **invoke**。
 //     ★ 不自己实现适配器，也**不再自己读写** `_llm-api.json`（避免两份落盘实现各自漂移）。
 //   · 本文件只负责：HTTP 信封（§七）、面板需要的「自定义头占位符回填」、以及把请求体拼成 opts。
+//   · ★ 2026-10-09：新增 `POST /api/llm/invoke`（**通用 AI 算力**，转发模块 `invoke()`）—— 规格 v3
+//     「算力类型不限（LLM 文本推理 / 图像生成 / 语音 / 向量计算…）」在服务端的落点（见其处理器说明）。
 //
 // ★ 三条铁律：
 //   ① **key 永不回显**：GET 只回 `hasKey`；自定义头里凡敏感名（authorization / *api*key* / token…）
@@ -2135,11 +2137,57 @@ async function apiLlmChat(req, res) {
 }
 
 /**
+ * POST /api/llm/invoke —— **通用 AI 算力调用**（chat / image / audio / embedding / custom；契约 §十三）。
+ *
+ * ★ 转发到模块的**通用入口** `invoke(task, params, opts)` —— 这是规格 v3「算力类型不限」在**服务端**
+ *   的落点：面板的「算力类型」选择器选什么，这里就把 `task` 透传给模块（本文件**不**自己拼各家协议）。
+ * ★ **信封与既有 `/api/llm/*` 完全一致**（别另造一套）：`{ok:true, data}` / `{ok:false, error}`，
+ *   HTTP 一律 200；模块结果**整体**放 `data`（读 `data.ok` / `data.task` / `data.result` / `data.error`）。
+ * ★ **密钥永不回显**：opts 的 apiKey 只在服务端用；模块 `invoke()` 的返回里不含 key（meta 只有
+ *   profile / kind / target / model / baseUrl / task / ms / httpStatus）。
+ * ★ **异常归一**：模块 `invoke()` **永不抛**（任何失败都归一成 `{ok:false,task,error:{kind,…}}`）；
+ *   本文件再兜一层（模块没就绪 / 动态 import 抛）—— 绝不把底层原始报错直接抛给前端。
+ *
+ * body：
+ *   · `task`   —— 'chat' | 'image' | 'audio' | 'embedding' | 'custom'（未知 ⇒ 模块归一为 `config` 错）
+ *   · `params` —— 该算力类型的入参（见契约 §13.2；缺省 `{}`）
+ *   · 其余字段同 `/api/llm/chat`（profile / baseUrl / kind / model / target / headers / timeoutMs / path / extract / apiKey）
+ * 返回 `{ok:true, data:{ok:true,task,result,raw,meta} | {ok:false,task,error:{kind,message,…},meta}}`。
+ */
+async function apiLlmInvoke(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
+  try {
+    const mod = await loadLlmApi();
+    if (typeof mod.invoke !== 'function') {
+      return sendJson(res, 200, {
+        ok: false,
+        error: {
+          kind: 'config',
+          message: 'lib/llm-api.mjs 还没有通用算力入口 invoke()（另一个智能体在实现）。落地后重开控制台即可。',
+        },
+      });
+    }
+    const task = typeof body.task === 'string' ? body.task.trim() : '';
+    const params = (body.params && typeof body.params === 'object' && !Array.isArray(body.params)) ? body.params : {};
+    const r = await mod.invoke(task, params, buildLlmOpts(body, mod.readOverride().headers));
+    sendJson(res, 200, { ok: true, data: r });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
  * POST /api/llm/models —— 拉取当前 Endpoint 的**可用模型清单**（§七；面板「多模型切换」用）。
  * body 同 /api/llm/validate（可传**临时配置**，不必先保存）。
  * 返回 `{ok:true, data:{ok:true,models,meta} | {ok:false,error,meta}}`。
  * ★ 模块 `listModels()` **永不抛**：异常接口（非 JSON / 5xx / 超时 / 空 body）一律归一为
  *   `{ok:false,error:{kind,...}}` ⇒ 面板据此给可操作提示，**不会把界面搞崩**。
+ * ★★ **W2 守卫（规格 v3）**：接入对象是**智能体 API**（`target:'agent'`）时 **拒绝**拉取端点模型清单 ——
+ *   `GET /v1/models` 查的就是智能体（中继）内部可用的模型，属规格 v3 明禁的「**探查 / 读取智能体内部模型信息**」
+ *   （默认 profile `workbuddy` = agent 正落此格）。★ 拒绝用 `{ok:false,error:{kind:'config'}}`（面板据此给可操作中文提示）。
+ *   ★ 本守卫是**纵深防御**：模块 `listModels()` 自身也已加同口径守卫（另一智能体改 `lib/llm-api.mjs`）——
+ *     本文件**不重复它的实现**，只在服务端入口再拦一道（模块守卫若变，这里仍守得住）。
  */
 async function apiLlmModels(req, res) {
   let body;
@@ -2148,7 +2196,21 @@ async function apiLlmModels(req, res) {
 
   try {
     const mod = await loadLlmApi();
-    const r = await mod.listModels(buildLlmOpts(body, mod.readOverride().headers));
+    const opts = buildLlmOpts(body, mod.readOverride().headers);
+    // ★ 只做「读」：resolveConfig 不发起任何请求（纯解析配置），拿 target 判守卫。
+    let probe = null;
+    try { probe = mod.resolveConfig(opts); } catch { probe = null; }
+    if (probe && probe.target === 'agent') {
+      return sendJson(res, 200, {
+        ok: false,
+        error: {
+          kind: 'config',
+          message: '接入对象是「智能体 API」：规格 v3 规定软件不探查智能体内部的模型信息，'
+            + '故不拉取该端点的模型清单。若确实需要模型清单，请把「接入对象」切到「底层基础大模型 API」。',
+        },
+      });
+    }
+    const r = await mod.listModels(opts);
     sendJson(res, 200, { ok: true, data: r });
   } catch (e) { llmFail(res, e); }
 }
@@ -2248,6 +2310,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/llm/config' && m === 'POST') return await apiLlmConfigSave(req, res);
     if (p === '/api/llm/validate' && m === 'POST') return await apiLlmValidate(req, res);
     if (p === '/api/llm/chat' && m === 'POST') return await apiLlmChat(req, res);
+    if (p === '/api/llm/invoke' && m === 'POST') return await apiLlmInvoke(req, res);
     if (p === '/api/llm/models' && m === 'POST') return await apiLlmModels(req, res);
 
     if (p.startsWith('/api/')) return sendJson(res, 404, { error: `未知接口 ${m} ${p}` });

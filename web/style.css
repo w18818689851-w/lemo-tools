@@ -1629,13 +1629,18 @@ html[data-theme="light"] {
 .llm-step-hint:empty { display: none; }
 @keyframes llm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* 试一句 */
+/* 试跑（原「试一句」）：按「算力类型」选任务，参数区随类型变 */
 .llm-try {
   margin-top: 12px; padding: 10px;
   border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
 }
 .llm-try .llm-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .llm-try .llm-row .input { flex: 1 1 320px; min-width: 0; }
+/* ★ 算力类型选择器：窄列、不参与拉伸（其余输入框仍按 flex 撑开） */
+.llm-try .llm-task-pick { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.llm-try .llm-task-pick .lbl { white-space: nowrap; }
+.llm-try .llm-row .llm-task { flex: 0 0 auto; width: auto; min-width: 168px; }
+.llm-task-hint { font-size: 11.5px; color: var(--fg-faint); margin-top: 6px; line-height: 1.6; }
 .llm-try-out { margin-top: 8px; }
 .llm-try-out:empty { display: none; }
 .llm-try-out .llm-out-text {
@@ -1647,6 +1652,7 @@ html[data-theme="light"] {
 .llm-try-out .llm-out-meta { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; font-family: var(--mono); }
 .llm-try-out .llm-out-err { font-size: 12.5px; color: var(--err); line-height: 1.6; word-break: break-word; }
 .llm-try-out .llm-out-err .llm-out-hint { color: var(--warn); display: block; margin-top: 3px; }
+.llm-try-out audio { margin-top: 8px; width: 100%; max-width: 420px; display: block; }
 
 /* ── ★ 接入对象（target）：模型名语义随它变（见 app.js 的 applyLlmTargetUi） ── */
 .llm-target { margin-bottom: 6px; }
