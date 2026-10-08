@@ -30,6 +30,7 @@ node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 �
 node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套件（129 条：**全部 43 个闸门**的失明/反向守卫 + **17 条核心判据**，每条都含「正向命中 + 阴性对照」，另含 60 个「改坏守卫或判据必须变红」自证）
 node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs 的行为测试（21 条，★ 槽位上限用子进程并发验排队 + 过期槽接管 + .mutex 清理 + CLI 退出码透传 + release 绝不抛）
 node test/llm-api.test.mjs        # 开放式 LLM 配置模块 lib/llm-api.mjs 的纯逻辑/离线测试（28 条，★ 桩服务用 node:http 监听随机端口、**不打真实外网**；钉「chat() 永不抛」+ 容错 8 类 + 密钥不外泄 + 覆盖文件读写）
+node test/prune-jobs.test.mjs     # scripts/prune-jobs.mjs 的**并发写**回归测试（1 条，★ 带屏障：父进程先占住跨进程写锁 + 等 prune 读完索引；钉「`--apply` 与并发 console 写**共用同一把锁** ⇒ 不丢并发新增的任务」，修前红/修后绿）
 ```
 
 `test/setup.test.mjs` 与 `test/ui.test.mjs` 都是**独立入口**，故意不并进 `smoke.mjs`：安装逻辑、UI 层各自一个数字，三边互不干扰。
@@ -342,6 +343,17 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
        ★ 实测（2026-10-09）：`node --test test/ui.test.mjs` **连跑 3 次全绿**（各 `65 passed / 0 failed` / `exit 0`）；
          **并发两实例**亦全绿（各 65/0）；真实 `D:\lemo-films\.console\index.json` md5 与 `.briefs` 全文件聚合 md5
          跑前/跑后**逐字节一致**（`72f5132b0d587ef2beb89548b825dee4` / `a17f56ce1b289599abead7bd60835fa4`）。
+       ★★ **2026-10-09 追加复核（第 9 轮「全 19 套件快照对比」）—— 还剩哪些套件会碰真实盘**：
+       · ★ **方法**：对每个 `test/*.test.mjs` 做「**跑前/跑后快照对比**」（文件名清单 + 逐文件 md5）⇒ ★ **实测才是真值**；
+         ★ **不要靠 grep 粗筛**（我 grep 出「7 个套件起服务却没用 `LEMO_FILM_DIR`」，★ **实测有 6 个是误报** ——
+         它们各有自己的隔离手段：`setup-api` 用 `LEMO_FILMS_ROOT` 自建树、`slot` 用 `SLOT_TMP`、`originality` 用 `D:/lemo-tmp`、
+         `gate-blindness`/`setup`/`triple-check-flow` 只 spawn 子进程而不落盘）。
+       · ★ **`test/dub-api.test.mjs`**：★ **已隔离**（动态 import + 只读夹具；★ 详见其文件头「隔离成片根」段）。
+       · ★★ **`test/smoke.mjs`：有意不隔离**（★ 如实登记）—— 它要跑**真实编排器**，且 ⑨「影片 Range 请求」**依赖真实成片库**
+         （★ 实测：**隔离后 ⑨ 必红**，因为空目录里没有影片）⇒ ★ 按纪律「**依赖真实内容 ⇒ 不硬隔离、只登记**」；
+         ★ 副作用 = 它起的控制台实例会写真实 `.console/index.json`（★ 无只读夹具可替代 ⇒ 保留）。
+       · ★★ **`test/briefs.test.mjs`**：★ **已默认隔离**（见本文件另一处口径段）。
+       ★ **结论**：★ **19 个套件里，只有 `smoke.mjs` 有意碰真实盘**（其余 18 个跑完**零差异**）✓
 
 ★ **2026-10-08 更新（纯注释：修一处陈旧计数 35 → 37）**：`lemo-make.mjs` 的 `ORCH_SKIP_STEPS` 登记表头注释写着
 「全库 **35** 个带 `build.sh` 的风格里」，而实测 `ls styles/*/demo/build.sh | wc -l` = **37**
@@ -758,7 +770,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 12. **测试自身代码也是 LF**（② 那条会把 `test/*.mjs` 一起查）。
 13. **`ui.test.mjs` 的 D4 会往 `D:\lemo-films\.briefs\` 写一张测试工单**（主题「UI 测试：音色随主题出片传递」）：登记在 `BRIEF_IDS`，跑完在**停服务之前**走 `DELETE /api/briefs/:id` 删掉（还在出片时 409 → 重试；404 视为已删）。实测**正常跑完**该目录为空。
     ★ **口径订正（2026-10-09）**：**被中断 / 并发**时会留渣 —— 实测真仓 `D:\lemo-films\.briefs` 攒下过 **198 个**残留（`bfill-*` / `bcorrupt-1` 是 `test/briefs.test.mjs` 的夹具，`bmuz*` 是中断时留在飞工单），且它与 `test/briefs.test.mjs` **共用**该目录 ⇒ 二者并发必互撞。
-    ★ 现已把 `test/briefs.test.mjs` 改成**默认跑在仓外隔离成片根**（`D:\lemo-tmp\bf-film-<pid>-<ts>`，见其文件头「隔离成片根」段）—— 它不再写用户的 `.briefs`，①②（容量裁剪假红）与 ⑭（并发互删假红）一并消失；`ui.test.mjs` 的 D4 仍写真实目录（待同步隔离）。
+    ★ 现已把 `test/briefs.test.mjs` 改成**默认跑在仓外隔离成片根**（`D:\lemo-tmp\bf-film-<pid>-<ts>`，见其文件头「隔离成片根」段）—— 它不再写用户的 `.briefs`，①②（容量裁剪假红）与 ⑭（并发互删假红）一并消失；`ui.test.mjs` 的 D4 仍写真实目录（待同步隔离）。　★★ **2026-10-09 复核（第 9 轮审计 C1）：上句「D4 仍写真实目录（待同步隔离）」已**过时**（原文保留作历史）。** 事实：`ui.test.mjs:847` 的主测试服务**已显式注入** `LEMO_FILM_DIR`（=`TEST_FILM_ROOT`，仓外临时落盘根），而 D4 走 `POST /api/briefs`（`test/ui.test.mjs:1501`），落点 `lib/briefs.mjs:79` 的 `ROOT = path.join(CFG.exportDir, '.briefs')` 认这个覆盖点 ⇒ **D4 的测试工单落在临时根、不再写真实 `D:\lemo-films\.briefs`**（与本文件上方 §①「2026-10-09 复核：已隔离到仓外临时根」段一致）。核法：`grep -n "LEMO_FILM_DIR" test/ui.test.mjs`（`:847` 主服务）+ `grep -n "ROOT = path.join(CFG.exportDir" lib/briefs.mjs`（`:79`）。
 14. ★ **跑本套件 / 改仓库文件之前，先查有没有并发批量作业在跑**（2026-10-06 真实事故：一个子智能体改 `core/render/mux.sh` 的 WIN 侧、WSL 侧还是旧的 ⇒ 两侧 `core/` 分叉 ⇒ 编排器的「两侧 `core/` 一致」闸门**拒绝开工** ⇒ 当日的 38 风格日批**废掉 21 个**）。查法与判据见 `_distill/AGENT-BRIEF.md` 的「动两侧副本共享的文件之前」一节：`ls -lat _distill/render-run-*.log` / `ls -lat _distill/logs/*.log` 看日志 mtime、`ls -la D:/lemo-films/.*.lock`、`tasklist //FI "IMAGENAME eq ffmpeg.exe"` —— **日志 mtime 在几分钟内 / 有 `.lock` / 有 ffmpeg ⇒ 判定有并发作业，等它排空再动**。★ 本套件与日批抢的正是同一批锁：`lemo-make.mjs:1547` 记着「跑出片的同时跑套件，⑥ 必然失败，耗时 9s → 88s」。
 15. ★ **写任务书派活前，任务书里的「环境事实」必须附核法**（2026-10-06 立）：凡出现 **文件路径 / 行号 / 函数名 / 进程 / 端口 / 存在与否 / 谁读谁** 这类断言 ⇒ 都算「环境事实」，都要写「用哪条命令核出来的」；**设计意图 / 要求 / 判断标准 / 已知的通用知识不算**（不必核）。判据、可照抄的格、以及用真实错误做的「凭印象 → 核过之后」正反例，见 `_distill/AGENT-BRIEF.md` 的「派活前：任务书里的『环境事实』必须附核法」一节（核法：`grep -n '环境事实' _distill/AGENT-BRIEF.md`）。★ 同一天同一根因的三次实测：`hologram-hud`（凭印象点名 voices 的读取者，实际全库 **84** 个 `.py`）、`D:/lemo-films/.console-port`（实际在 `D:/lemo-tools/.console-port`，`server.mjs:60`）、「端口文件存在 ⇒ 控制台在跑」（`server.mjs:2070` 明写退出**不删**，存在 ≠ 在跑）。
 

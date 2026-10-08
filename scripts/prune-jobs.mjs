@@ -28,9 +28,19 @@
  *
  * ★ 覆盖点：`LEMO_FILM_DIR`（默认 `D:/lemo-films`，与 lib/jobs.mjs 的 FILM_DIR 同义），
  *   便于在临时树上做非破坏性验证（不碰真实产物）。
+ *
+ * ★★ 并发写者（2026-10-09 第 9 轮修）：`--apply` 摘注册表条目时，**与 `lib/store.mjs` 共用同一把
+ *   跨进程写锁**（`acquireLock` / `releaseLock`，同一 root ⇒ 同一个 `.console/index.lock`），
+ *   且是「拿锁 → 重读 → 只摘本次真删了的 id → 原子写」—— 不再是「用启动时的旧快照整文件盖写」。
+ *   拿不到锁时**不阻塞**（有界等待）⇒ 照写 + warn（与 `saveIndex` 同纪律）。
  */
 import fs from 'node:fs';
 import path from 'node:path';
+// ★★ 与 lib/store.mjs **共用同一把跨进程写锁**（2026-10-09 第 9 轮修）——
+//   本脚本 `--apply` 也写同一个 `.console/index.json`，必须和 `saveIndex` 真正串行化，
+//   否则整文件重写会盖掉并发 console 刚建的任务（lost update，见第 9 轮审计 A1）。
+//   同一 root（都从 `LEMO_FILM_DIR` 派生）⇒ 同一个 `.console/index.lock`。
+import { acquireLock, releaseLock } from '../lib/store.mjs';
 
 const FILM_DIR = process.env.LEMO_FILM_DIR || 'D:/lemo-films';
 const JOBS_DIR = path.join(FILM_DIR, '_jobs');
@@ -109,10 +119,36 @@ function dirSize(d) {
 }
 
 if (APPLY && droppedIds.length) {
-  reg.jobs = jobs.filter((j) => !droppedIds.includes(j.id));
-  reg.savedAt = Date.now();
-  fs.writeFileSync(INDEX, JSON.stringify(reg, null, 2) + '\n');
-  console.log(`  ✓ 注册表已摘除 ${droppedIds.length} 条（剩余 ${reg.jobs.length} 条）`);
+  // ★★ 与 `lib/store.mjs` 共用同一把跨进程写锁（同一 root ⇒ 同一个 `.console/index.lock`）——
+  //   否则下面这句**整文件重写**会盖掉并发 console 刚建的任务（教科书式 lost update，第 9 轮审计 A1）。
+  //   ★ 降级策略：拿不到锁**不阻塞**（`acquireLock` 本身有界，最多等 `LOCK_WAIT_MS`）—— 照写 + warn，
+  //     与 `saveIndex` 的既有降级同纪律（best-effort：宁可有竞态，也不让运维命令卡死）。
+  const locked = acquireLock();
+  if (!locked) console.warn('  ⚠️  [prune-jobs] 没拿到跨进程写锁（另一实例正在写索引）→ 本次不合并地写，对方的改动可能被覆盖');
+  try {
+    // ★ 拿锁之后**重读**：只摘掉本次真删了的 `droppedIds`，其余（含别的实例刚建的）一律保留。
+    //   读不到 / 解析失败 ⇒ 退回本进程启动时读到的快照（`reg`）—— 绝不把「读不到」当成「盘上是空的」。
+    let fresh = reg;
+    try {
+      const reread = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
+      if (reread && typeof reread === 'object') fresh = reread;
+    } catch { /* 读不到 / 坏 ⇒ 用启动时的快照 */ }
+    const before = Array.isArray(fresh.jobs) ? fresh.jobs : jobs;
+    fresh.jobs = before.filter((j) => !droppedIds.includes(j.id));
+    fresh.savedAt = Date.now();
+    // ★ 原子写（tmp + rename，与 `lib/store.mjs` 同一套做法）；tmp 名带 pid 免得两个进程抢同一个 `.tmp`。
+    const tmp = `${INDEX}.${process.pid}.prune.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(fresh, null, 2) + '\n');
+      fs.renameSync(tmp, INDEX);
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+      throw e;
+    }
+    console.log(`  ✓ 注册表已摘除 ${droppedIds.length} 条（剩余 ${fresh.jobs.length} 条）${locked ? '' : '（★ 未拿到锁）'}`);
+  } finally {
+    if (locked) releaseLock();
+  }
 }
 
 console.log(`\n[prune-jobs] 汇总：待清理 ${drop.length} 个（可回收约 ${(bytes / 1048576).toFixed(1)}MB）｜${APPLY ? `实删目录 ${dirsRemoved}` : '未删任何东西'}｜安全闸拦截 ${blockers}`);

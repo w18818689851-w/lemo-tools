@@ -20,6 +20,10 @@
  *   - 测试自己用内核分配的空闲端口起服务，**绝不碰用户那个实例**。
  *   - 测试服务会覆写 `.console-port` / `打开控制台.url` —— 跑前按字节备份、跑后逐字节还原。
  *   - ★ 上传会写 `dub.UPLOAD_DIR/index.json` 登记表 —— 同样按字节备份、跑后还原。
+ *   - ★★ 成片根（`dub` / `.console` / `.briefs` / `_jobs`）**默认隔离**到仓外临时树
+ *     （`D:\lemo-tmp\dub-api-film-<pid>-<ts>`，见下方「隔离成片根」段）—— 绝不写用户的 `D:\lemo-films`；
+ *     外部显式设了 `LEMO_FILM_DIR` 则尊重它（跑完不删）。⑰ 需一条真实成片 ⇒ 从真实 `dub` **只读**复制
+ *     一条进隔离根当夹具（不写真实盘）。
  *   - 不用 curl（本机走代理，打 localhost 得到 502）；不用 spawnSync（本环境一律 EBUSY）。
  *   - 临时文件在非 C 盘（CFG.tmpDir）；跑完按**确切路径**递归删除（不用通配符）。
  *   - ★ 测试造的**每一个上传文件**都登记（用响应里的 path），`finally` 里删干净。
@@ -37,8 +41,44 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
-import { CFG } from '../lib/env.mjs';       // 只借常量；env.mjs 顶层无副作用
-import * as dub from '../lib/dub.mjs';      // 只借常量 / 路径；dub.mjs 顶层无副作用
+// ★★ 隔离成片根（**默认隔离**，可被外部 env 覆盖）—— 与 briefs.test.mjs / ui.test.mjs 同款。
+//   为什么必须有：②③ 会上传文件、由**测试服务**写 `dub.UPLOAD_DIR/index.json` 登记表，⑮ 收尾再按字节
+//   还原 ⇒ 内容虽一致，**mtime 仍被改写** ⇒ 那仍是对用户真实 `D:\lemo-films` 的一次写。
+//   实测（只读快照对比，2026-10-09）：未隔离时跑完 `D:\lemo-films\dub\_uploads\index.json` 的 mtime 必变。
+//   ⇒ 默认把成片根指到仓外临时树（非 C 盘 + pid 防并发互撞），跑完递归删；
+//     外部显式设了 `LEMO_FILM_DIR` 则尊重它（跑完不删）。
+//   ★ 唯一坑：`CFG.exportDir` 在 `lib/env.mjs` 模块求值那一刻定死 ⇒ 必须先设 env、**再动态 import**。
+const EXTERNAL_FILM_DIR = process.env.LEMO_FILM_DIR || '';
+const TEST_FILM_ROOT = EXTERNAL_FILM_DIR
+  ? path.resolve(EXTERNAL_FILM_DIR)
+  : path.resolve('D:/lemo-tmp', `dub-api-film-${process.pid}-${Date.now().toString(36)}`);
+const OWNS_FILM_ROOT = !EXTERNAL_FILM_DIR;
+if (OWNS_FILM_ROOT) {
+  process.env.LEMO_FILM_DIR = TEST_FILM_ROOT;
+  fs.mkdirSync(TEST_FILM_ROOT, { recursive: true });
+  process.on('exit', () => { try { fs.rmSync(TEST_FILM_ROOT, { recursive: true, force: true }); } catch { /* 尽力而为 */ } });
+}
+// ★ 动态 import：让上面的 LEMO_FILM_DIR 先生效（静态 import 会被提升到文件顶部）。
+const dub = await import('../lib/dub.mjs');   // 只借常量 / 路径；dub.mjs 顶层无副作用
+
+// ★ ⑰ 要一条真实「文案出片」成片（>200KB、含 ftyp 头）来验 Range/HEAD/穿越 —— 本套件**只读**真实成片根、
+//   把一条复制进隔离根当夹具（不写真实盘）。真实库里没有成片时 ⑰ 照旧明确失败（与隔离前行为一致）。
+if (OWNS_FILM_ROOT) {
+  try {
+    const REAL_DUB = 'D:/lemo-films/dub';   // 未显式设 LEMO_FILM_DIR ⇒ 真实根就是默认的 D:\lemo-films
+    let best = null;
+    for (const ent of fs.readdirSync(REAL_DUB, { withFileTypes: true })) {
+      if (!ent.isDirectory() || ent.name.startsWith('_') || ent.name.startsWith('.')) continue;
+      const f = path.join(REAL_DUB, ent.name, 'film.mp4');
+      try { const st = fs.statSync(f); if (st.size > 200000 && (!best || st.size > best.size)) best = { f, size: st.size, name: ent.name }; } catch { /* 跳过 */ }
+    }
+    if (best) {
+      const dstDir = path.join(TEST_FILM_ROOT, 'dub', best.name);
+      fs.mkdirSync(dstDir, { recursive: true });
+      fs.copyFileSync(best.f, path.join(dstDir, 'film.mp4'));
+    }
+  } catch { /* 真实成片根不可读 ⇒ ⑰ 自行失败（与隔离前一致） */ }
+}
 
 // ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
 //   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。

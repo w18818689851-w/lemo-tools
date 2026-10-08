@@ -77,7 +77,10 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 import { CFG } from '../lib/env.mjs';      // 只借常量（tmpDir / exportDir）；顶层无副作用
-import * as dub from '../lib/dub.mjs';     // 只借常量（UPLOAD_DIR）；顶层无副作用（与 dub-api.test.mjs 同款）
+// ★ 2026-10-09 移除 `import * as dub`（第 9 轮隔离审计）：★ **静态 import 会在任何 env 设置之前求值**
+//   ⇒ 它借来的 `dub.UPLOAD_DIR` **冻在真实成片根**上（本进程的 CFG 早于 LEMO_FILM_DIR 生效）⇒
+//   ★ E7 的「备份/还原上传登记表」会**白写用户的真实盘**（服务端本身已隔离，只有这一处打错目标）✓
+//   ⇒ 改为**从隔离根自算**（见下面 DUB_INDEX_FILE）✓
 
 // ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
 //   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
@@ -115,7 +118,11 @@ const CONSOLE_LOGS = path.join(CONSOLE_ROOT, 'logs');
 const CONSOLE_INDEX = path.join(CONSOLE_ROOT, 'index.json');
 // E7 要真的上传一个极小的假 mp4（为了拿到一个真实 videoToken 走形态 2）——
 // 它落在 dub 的上传目录里，跑前按字节备份登记表、跑完按**确切路径**删文件并还原登记表。
-const DUB_INDEX_FILE = path.join(dub.UPLOAD_DIR, 'index.json');
+// ★★ 2026-10-09 修（第 9 轮隔离审计）：★ 原为 `path.join(dub.UPLOAD_DIR, 'index.json')` ——
+//   而 `dub.UPLOAD_DIR` 派生自**模块求值期**的 `CFG.exportDir` ⇒ ★ **恒指真实成片根**（见上面移除 import 的说明）⇒
+//   ★ E7 的备份/还原会**白写用户的真实盘**（★ 实测：只改 mtime、内容逐字节还原，但仍是**不该发生的写**）✓
+//   ⇒ 改为**从隔离根自算**：服务端是带 `LEMO_FILM_DIR=TEST_FILM_ROOT` 起的 ⇒ 它写的是同一路径 ✓
+const DUB_INDEX_FILE = path.join(TEST_FILM_ROOT, 'dub', '_uploads', 'index.json');
 
 // ── 命令行 ──────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -1211,7 +1218,14 @@ async function main() {
     });
 
     await runCase('B8 Ctrl+Enter 真的能启动任务（不是只绑了个监听器）', async () => {
-      const before = (await get('/api/jobs')).json.jobs.length;
+      // ★★ 2026-10-09 修（第 9 轮审计 A2 —— ★ 本条曾被提交信息**误称已修**，实为漏改）：
+      //   原判据是「**条数增量**」（`list.length > before`），但 `/api/jobs` 有**硬上限 120**
+      //   （`lib/store.mjs` maxPersistJobs → `lib/jobs.mjs` MAX_JOBS → `trimJobs()`）⇒
+      //   ★ **列表满 120 时「新建 1 条」会同时「淘汰 1 条」⇒ 条数原地不动 ⇒ 判据永假 ⇒ 20s 超时假红** ✓
+      //   ⇒ 改成 **「id 差集」**（与 B7 同款）：★ **不受上限影响**，且 ★ **不放宽**（仍验证「真的新建了任务」）✓
+      //   ★ 并把 `JOB_IDS.add` **提到 `need()` 之前** ⇒ 防「**自我投毒**」
+      //   （原顺序下本用例一红，它建的那条任务**永不被 cleanup 摘掉**、永久留在用户 index.json 里）✓
+      const priorIds = new Set(((await get('/api/jobs')).json.jobs || []).map((j) => j.id));
       await cdp.evalJs(`
         document.getElementById('fSlug').value = ${JSON.stringify(state.slugB)};
         document.getElementById('fDryRun').checked = true;
@@ -1226,13 +1240,14 @@ async function main() {
       while (Date.now() - t0 < 20000) {
         const r = await get('/api/jobs');
         const list = r.json.jobs || [];
-        if (list.length > before) { job = list[0]; break; }
+        job = list.find((j) => !priorIds.has(j.id)) || null;   // ★ id 差集：不受 120 上限影响
+        if (job) break;
         await sleep(300);
       }
-      need(job, `按下 Ctrl+Enter 后 20s 内 /api/jobs 没有多出任务（任务数一直是 ${before}）`);
+      if (job) JOB_IDS.add(job.id);   // ★★ 登记清理**必须在断言之前**（防自我投毒）
+      need(job, `按下 Ctrl+Enter 后 20s 内 /api/jobs 没有出现新任务（现有 ${priorIds.size} 条，id 差集为空）`);
       need(job.slug === state.slugB, `Ctrl+Enter 启动的是 ${job.slug}，期望 ${state.slugB}`);
       need(job.batchId === null, `Ctrl+Enter 启动的任务不该带批次标记，实际 batchId=${job.batchId}`);
-      JOB_IDS.add(job.id);
       notes.push(`B8 Ctrl+Enter 启动了 ${job.slug}（${job.id}，opts=${JSON.stringify(job.opts)}）`);
     });
 

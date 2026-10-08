@@ -549,6 +549,13 @@ const OVERRIDES = {
     readers: ['lib/env.mjs', 'scripts/check-selfcheck-claims.mjs', 'scripts/prune-jobs.mjs'],
     what: '成片根（lib/env.mjs 的 exportDir；★ 曾被硬编码过一段时期，见头注释 ①）',
   },
+  // ★ 2026-10-09 追加：测试残留清理工具的**备份目录覆盖点**。
+  //   ★ 它是**路径重定向**（把备份落到哪）⇒ 归 `OVERRIDES`（不是外部约定）✓
+  LEMO_BACKUP_DIR: {
+    readers: ['scripts/clean-test-residue.mjs'],
+    what: '★ 测试残留清理工具的**备份根**（默认 `D:/lemo-backup`；**禁止 C 盘**）。'
+      + '★ 该工具**默认只预览（dry-run）**，要真删必须 `--apply` + 二次确认，且**备份失败即拒绝删除** ✓',
+  },
   LEMO_TMP: {
     readers: ['scripts/check-plate-pixel.mjs', 'test/originality.test.mjs'],
     what: '★ 临时根（默认 D:/lemo-tmp；**禁止写 C 盘** ⇒ 读者一律「解析到 C 盘就直接炸」）。'

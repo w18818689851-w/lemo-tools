@@ -484,6 +484,26 @@ node D:/lemo-tools/scripts/prune-jobs.mjs --keep 20    # 换保留条数（默�
 `Get-ScheduledTask | ? { $_.Actions.Arguments -match 'lemo|prune' }`（计划任务 **196** 个、命中 **0**）。
 ★ 现状：**需人工定期跑**（未挂任何自动触发；合适的挂载点需人工拍板，不擅自挂）。
 
+### ★ 测试残留会积在**用户数据根**里：`clean-test-residue.mjs`（2026-10-09 立）
+
+**为什么需要它**：测试会往**用户的成片数据根** `D:/lemo-films` 里写夹具 / 探针 / 锁目录 ——
+`test/briefs.test.mjs` 的 `bfill-*` / `bcorrupt-1` 写死夹具、`test/cases.mjs` 的 `__fp-*` 探针、
+测试批量起的任务 id `jmuzz*`（`lib/jobs.mjs:60 nowId()`）与 brief id `bmuz*`（`lib/briefs.mjs:471 newId()`）、
+以及 `test/briefs.test.mjs:99` 建的 `.locks-test/<pid>/` 锁目录。跑挂（被中断 / 并发互撞）就留渣。
+实测真根攒下 **197** 个 `.briefs` 残留、**24** 条 `jmuzz*` 注册表条目、**22** 个测试日志、**60** 个 pid 锁目录（合计 303 项 / 36.71MB）。
+
+```bash
+node D:/lemo-tools/scripts/clean-test-residue.mjs                                                         # ① 预览（默认，一个字节都不删）
+node D:/lemo-tools/scripts/clean-test-residue.mjs --apply --yes-i-have-a-backup                           # ② 备份+删（两道开关，缺一即拒）
+node D:/lemo-tools/scripts/clean-test-residue.mjs --apply --yes-i-have-a-backup --allow-permanent-delete  # ③ 回收站不可用时的第三道
+```
+
+★ **默认 dry-run；要真删必须显式 `--apply` + 二次确认开关 `--yes-i-have-a-backup`**（两者缺一即拒绝，exit 1）。
+真删前**先把要动的东西原样备份到非 C 盘**（`D:/lemo-backup/test-residue-<时间戳>/`）**并校验**（条目数 + 总字节），
+**备份失败即拒绝删除**。判据（唯一真源）：id 匹配 `^(bfill|bcorrupt|bmuz|jmuzz|__fp|_smoke)`；
+`index.json` **只摘测试条目、不删整个文件**（摘前整文件已备份）。回收站可用则送回收站，不可用需第三道开关才永久删。
+★ 覆盖点 `LEMO_FILM_DIR` / `LEMO_BACKUP_DIR` ⇒ 可在临时树上非破坏演练。★ **只人工跑**（未挂任何 automation / 测试 / 闸门）。
+
 ### ★★ 重蒸馏之前：先过三道前置检查（2026-10-06 立，治「越修越坏」）
 
 ★ **病根**：`plan` 报出「待处理」**不等于**「该重渲」。本轮实测 33 个「待处理」里 **21 个是误标**
