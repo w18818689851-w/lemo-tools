@@ -57,10 +57,35 @@
  *     （`LEMO_LLM_PROFILE` / `LEMO_LLM_BASE` / `LEMO_LLM_KEY` / `LEMO_LLM_MODEL` /
  *      `LEMO_LLM_HEADERS` / `LEMO_LLM_TIMEOUT_MS`）—— **多一个 / 少一个都 FAIL** 并点名差额。
  *
+ *   **判据⑦ 解析优先级顺序 == 契约声明**（★ 2026-10-08 追加；补一个**已由审计登记的盲区**）
+ *     · 由来：本模块的**配置解析优先级**在 2026-10-08 按规格**修正**过一次（把「运行时线索
+ *       `ANTHROPIC_*`/`OPENAI_*`」降到「用户覆盖文件（面板）」之下 —— 依据规格原文「用户仍可在 API
+ *       配置面板**手动切换**」+「模块配置修改会**全局生效**」），但**契约文档当时没跟着改**（§二 / §六 /
+ *       §十一 至少 3 处仍写旧序，§十一 还声称「优先级不变」）—— 而本闸门**不判顺序** ⇒
+ *       「实现改了、文档没改」**抓不到**（审计已登记为盲区）。
+ *     · (a) **契约侧**：从**契约文档** `<LEMO_TOOLS_ROOT>/_distill/llm-api-接口规格-2026-10-08.md` 抽
+ *       「顺序声明」—— 锚点 = 含 `修正后顺序` + `=`（可全角 `＝`）的那一段，截到第一个 `。`，按 `→`
+ *       切成 5 段，逐段按关键词归一为 5 个来源 id（`显式传参`→`explicit` / `LEMO_LLM_*`→`env` /
+ *       `覆盖文件`→`override` / `运行时线索`→`runtime` / `内置默认`→`builtin`）。断言它**逐项等于**闸门
+ *       常量 `ORDER_DECLARED`（★ 改常量 = 改契约，须**先**改契约文档）。**切不出 5 段 / 归一不到 5 个
+ *       互异 id ⇒ 失明**（别让声明写法一变就静默空转）。
+ *     · (b) **代码侧**：从**剥注释+字符串后**的代码体里，切出 `resolveConfig` 里 `baseUrl` / `apiKey` /
+ *       `model` 三行的 `pick(...)` **实参**，按**实参次序**归一为来源 id（`o.`→`explicit` /
+ *       `process.env.LEMO_LLM_`→`env` / `file.`→`override` / `rt[A-Z]`→`runtime` / `base.`→`builtin`；
+ *       字面量兜底（如 `''`）**不算来源**，跳过）。断言每个字段的 id 序列在 `ORDER_DECLARED` 里
+ *       **严格递增**（= 代码次序与契约声明**一致**；允许某字段只用一部分来源，如 `apiKey` 无 `builtin`）。
+ *     · ★ **为什么判 `pick(...)` 实参次序、不判代码里那句同顺序的注释**：注释是**自然语言**、会漂、且
+ *       本项目反复治过「判据可被**注释**满足」的假绿；`pick(...)` 的实参次序是 `resolveConfig`
+ *       **真实生效**的取值次序（`pick` = 取第一个非空值）⇒ 判它才**承重**。
+ *     · ★ **不剥注释剥过头**：代码侧用 `codeOnly`（**同时剥注释与字符串**）—— 既防「注释里写对顺序」
+ *       假绿，也防「字符串字面量里的 `pick(...)`」干扰；判据①(c)(d) 仍用 `stripComments`（**保留字符串**）。
+ *     · 不一致 ⇒ FAIL，**点名具体的倒置对**（如「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」）。
+ *
  *   **判据⑥ 失明守卫（防空转绿灯）**：读不到 `lib/llm-api.mjs` / 代码体为空 / 一个导出都没抽到 /
  *     一个 `LEMO_LLM_*` 都没抽到 / 一条 `kind:` 字面量都没抽到 / 切不出 `chat` 函数体 /
- *     切不出 `PROFILES` 字面量 ⇒ **FAIL 并明说「本闸门已失明」**，且**失明时不再输出判据①~⑤**
- *     （在失明的树上它们只会刷屏，且会被误读成「模块违约」）。
+ *     切不出 `PROFILES` 字面量 / **（判据⑦）读不到契约文档 / 切不出顺序声明 / 切不出 `pick(...)`** ⇒
+ *     **FAIL 并明说「本闸门已失明」**，且**失明时不再输出判据①~⑤、⑦**（在失明的树上它们只会刷屏，
+ *     且会被误读成「模块违约」）。★ 判据⑥ 是**失明守卫本身**，故它不与①~⑤、⑦ 并列编号。
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ③ 误报率实测（**先在真实模块上跑一遍、逐条人读命中，再定稿**）
@@ -74,6 +99,11 @@
  *   · **判据④**：全模块只有一处 `console.*`（`warnOnce` 里的 `console.warn(…${msg})`），参数是 `msg`，
  *     **不是**密钥类标识符 ⇒ **命中 0 / 误报 0**。
  *   · **判据⑤**：`LEMO_LLM_*` 集合恰为那 6 个 ⇒ **命中 0**。
+ *   · **判据⑦**：真实语料上，契约文档的顺序声明归一为 `explicit → env → override → runtime → builtin`，
+ *     与闸门常量 `ORDER_DECLARED` **逐项相等**（⑦(a) 命中 0）；代码侧 `baseUrl`(5 个来源) / `apiKey`(4 个) /
+ *     `model`(5 个) 三个 `pick(...)` 的 id 序列**全部严格递增**（⑦(b) 命中 0）⇒ **命中 0 / 误报 0**。
+ *     ★ 对照：修正前的**旧序**（`override`/`runtime` 对调）下 ⑦(b) 会**立刻**报「契约声明『覆盖文件』在
+ *     『运行时线索』之前，代码里却是反的」—— 这正是本判据要防的那类漂移（详见 ⑤ 的变异 G/H）。
  *   · 真实模块上 **exit 0**（0 FAIL）。
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -87,7 +117,14 @@
  *   · **已知盲区（如实写）**：① 判据② 只看 `chat` **函数体内**的 `throw` —— 它调用的**别处** helper 里
  *     若有 `throw` 且没被 catch，本闸门看不见（假阴）；② 判据④ 只看**本文件的 `console.*`**，
  *     经本地 helper 间接打印、或写进文件的密钥看不见；③ 判据③ 依赖「`PROFILES` 条目按顶层逗号可切」——
- *     若有人用**工厂函数**在运行期拼表，本闸门会切不出 `isDefault` ⇒ 报失明（**宁可报失明，不误报**）。
+ *     若有人用**工厂函数**在运行期拼表，本闸门会切不出 `isDefault` ⇒ 报失明（**宁可报失明，不误报**）；
+ *     ④ 判据⑦ 只看 `baseUrl` / `apiKey` / `model` **三行**的 `pick(...)` —— `headers` 走
+ *     `mergeHeaders(base.headers, file.headers, envHeaders(), o.headers)`（**合并**语义，写出来的次序与
+ *     `pick` 相反但**语义一致**：后合者赢 ⇒ 显式最高），故**不判**；`timeoutMs` / `path` / `extract` /
+ *     `models` 的 `pick(...)` 也**不判**（它们不含运行时线索，验不出本判据要防的那类倒置）；
+ *     ⑤ 若有人把 `resolveConfig` 改成**不用 `pick(...)`**（如手写 if/else 链），判据⑦ 切不出实参
+ *     ⇒ 报失明（**宁可报失明，不误报**）；⑥ 契约文档的顺序声明锚点（`修正后顺序 = …`）被改写
+ *     ⇒ 同样报失明。
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ⑤ 验证（**临时副本 + 覆盖点，全程不动真实模块**；同一套断言也写在
@@ -101,16 +138,23 @@
  *   · **变异 D（判据④）**：加一行 `console.log(apiKey)` ⇒ **exit 1** 并点名。
  *   · **变异 E（判据⑤）**：加一行 `process.env.LEMO_LLM_ZZZ` ⇒ **exit 1** 并点名差额。
  *   · **变异 F（判据①(c)）**：把某个 `kind:` 字面量改成枚举外的值 ⇒ **exit 1** 并点名。
- *   · **失明两态**（模块文件缺失 / 模块里一条 `LEMO_LLM_*` 都没有）⇒ **exit 1 + 「本闸门已失明」**，
- *     且**不输出判据①~⑤**。
- *   · **★自证**：分别**短路**判据①/②/③ 的比较 ⇒ 对应变异**重新变绿**（证明判据**承重**，不是摆设）。
+ *   · **变异 G（判据⑦(b)）**：把 `baseUrl` 那行 `pick(...)` 的 `file.baseUrl` 与 `rtBase` **对调**
+ *     （= 旧序）⇒ **exit 1** 并点名「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」。
+ *   · **变异 H（判据⑦(a)）**：把**契约文档**的顺序声明改成旧序（`覆盖文件` 与 `运行时线索` 对调）
+ *     ⇒ **exit 1** 并点名「契约文档的顺序声明与闸门常量不一致」。
+ *   · **失明三态**（模块文件缺失 / 模块里一条 `LEMO_LLM_*` 都没有 / 契约文档缺失或顺序声明切不出）
+ *     ⇒ **exit 1 + 「本闸门已失明」**，且**不输出判据①~⑤、⑦**。
+ *   · **★自证**：分别**短路**判据①/②/③/⑤/⑦ 的比较 ⇒ 对应变异**重新变绿**（证明判据**承重**，
+ *     不是摆设）。★ 判据⑦ 的短路点选「代码侧严格递增」那一步（真的能让变异 G 变绿）。
  *
  * 用法：node scripts/check-llm-api.mjs
  * 环境变量：
  *   LEMO_TOOLS_ROOT  工具仓根（默认 `<脚本>/..`，与 `check-doc-coverage` / `check-env-overrides` /
  *                    `check-gate-self-claims` **同名同义**）—— 被测模块 = `<LEMO_TOOLS_ROOT>/lib/llm-api.mjs`，
- *                    供**非破坏性变异验证**（指向临时夹具树，绝不动真实模块）。
- * 退出码：0 = `lib/llm-api.mjs` 满足契约（判据①~⑤ 全过）；
+ *                    ★ 判据⑦ 另读**契约文档** = `<LEMO_TOOLS_ROOT>/_distill/llm-api-接口规格-2026-10-08.md`；
+ *                    供**非破坏性变异验证**（指向临时夹具树，绝不动真实模块）—— ★ 夹具树里**也要**有这份
+ *                    契约文档（`test/gate-blindness.test.mjs` 的 `llmTree` / `llmMut` 会把它一并拷进去）。
+ * 退出码：0 = `lib/llm-api.mjs` 满足契约（判据①~⑤、⑦ 全过）；
  *         1 = 有 FAIL（契约不符），或**本闸门已失明**。
  */
 import fs from 'node:fs';
@@ -122,6 +166,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(process.env.LEMO_TOOLS_ROOT || path.join(HERE, '..'));
 const MODULE_REL = 'lib/llm-api.mjs';
 const MODULE = path.join(ROOT, 'lib', 'llm-api.mjs');
+/** ★ 判据⑦ 的**契约文档**（与 `MODULE` 同一个覆盖点 `LEMO_TOOLS_ROOT`）—— 抽「顺序声明」用。 */
+const CONTRACT_REL = '_distill/llm-api-接口规格-2026-10-08.md';
+const CONTRACT = path.join(ROOT, CONTRACT_REL);
 
 // ── 规格 §一 / §二 的常量（契约真值；改这里 = 改契约，须先改规格）──────────────
 const REQUIRED_EXPORTS = ['PROFILES', 'listProfiles', 'resolveConfig', 'validate', 'chat', 'listModels'];
@@ -133,6 +180,20 @@ const ENV_EXPECTED = ['LEMO_LLM_PROFILE', 'LEMO_LLM_BASE', 'LEMO_LLM_KEY', 'LEMO
 /** 密钥类标识符（**整标识符**匹配；`hasKey` / `monkey` 不算 —— `key` 前还有字母）。 */
 const KEY_IDENT = new Set(['apikey', 'api_key', 'key', 'secret', 'token', 'password', 'passwd',
   'credential', 'accesskey', 'secretkey', 'authkey', 'privatekey']);
+
+// ── 判据⑦ 的顺序真值（契约）────────────────────────────────────────────────────
+/**
+ * ★ 契约声明的**配置解析优先级**（2026-10-08 修正后）—— 这五个 id 的**次序**就是契约真值。
+ *   ① 显式传参 → ② `LEMO_LLM_*` → ③ 覆盖文件（面板） → ④ 运行时线索（`ANTHROPIC_*`/`OPENAI_*`） → ⑤ 内置默认。
+ *   ★ 改这里 = 改契约，须**先**改契约文档（`_distill/llm-api-接口规格-2026-10-08.md` 的顺序声明）。
+ *   ★ 由来：修正前是 `… → runtime → override → …`（运行时线索压过面板）—— 违反规格「面板手动切换 + 全局生效」。
+ */
+const ORDER_DECLARED = ['explicit', 'env', 'override', 'runtime', 'builtin'];
+/** 来源 id → 中文名（报错点名用）。 */
+const SRC_LABEL = {
+  explicit: '显式传参', env: '环境变量（LEMO_LLM_*）', override: '覆盖文件（面板）',
+  runtime: '运行时线索（ANTHROPIC_*/OPENAI_*）', builtin: '内置默认（profile 表）',
+};
 
 // ── ★ 剥注释（**保留字符串字面量**）—— 状态机；行号不变 ─────────────────────
 //   ★ 顺序关键：**先判注释、再判引号** ⇒ 注释里的引号 / 反引号不会把状态机带偏；
@@ -338,6 +399,74 @@ function identifiers(text) {
   return set;
 }
 
+// ── 判据⑦ 的小工具 ──────────────────────────────────────────────────────────
+/** 按**顶层逗号**切实参（追踪 `()[]{}` 深度）。 */
+function splitArgs(s) {
+  const out = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    else if (c === ',' && depth === 0) { out.push(s.slice(start, i)); start = i + 1; }
+  }
+  out.push(s.slice(start));
+  return out;
+}
+/**
+ * 切出 `const <field> = … pick( … )` 的**实参列表**（入参 = 剥注释+字符串后的代码体）。
+ * 找不到 `const <field> =` / 其后**同一条语句**内没有 `pick(` / 括号不配平 ⇒ `null`（交由失明守卫）。
+ */
+function pickArgsOf(code, field) {
+  const m = new RegExp(`\\bconst\\s+${field}\\s*=`).exec(code);
+  if (!m) return null;
+  const from = m.index + m[0].length;
+  const semi = code.indexOf(';', from);
+  const limit = semi < 0 ? code.length : semi;
+  const pi = code.indexOf('pick', from);
+  if (pi < 0 || pi > limit) return null;
+  let i = pi + 'pick'.length;
+  while (i < limit && /\s/.test(code[i])) i++;
+  if (code[i] !== '(') return null;
+  const close = matchParen(code, i);
+  if (close < 0 || close > limit) return null;
+  return splitArgs(code.slice(i + 1, close));
+}
+/** `pick(...)` 的一个实参 → 来源 id（非来源，如字面量兜底 `''`，⇒ `null`）。 */
+function srcIdOf(arg) {
+  const a = String(arg).trim();
+  if (!a) return null;
+  if (/^o\s*\./.test(a)) return 'explicit';
+  if (/^process\s*\.\s*env\s*\.\s*LEMO_LLM_/.test(a)) return 'env';
+  if (/^file\s*\./.test(a)) return 'override';
+  if (/^rt[A-Z]/.test(a)) return 'runtime';
+  if (/^base\s*\./.test(a)) return 'builtin';
+  return null;
+}
+/**
+ * 从**契约文档**里抽「顺序声明」→ 来源 id 数组（**切不出 5 个互异 id ⇒ `null`**，交由失明守卫）。
+ * 锚点：含 `修正后顺序` + `=`（可全角 `＝`）的那一段，截到第一个 `。`，按 `→` 切段、逐段关键词归一。
+ */
+function parseDeclaredOrder(docText) {
+  const m = /修正后顺序\s*[=＝]\s*([^。]*)/.exec(docText);
+  if (!m) return null;
+  const ids = [];
+  for (const seg of m[1].split('→')) {
+    const s = seg.trim();
+    if (!s) continue;
+    let id = null;
+    if (/内置默认/.test(s)) id = 'builtin';
+    else if (/运行时线索/.test(s)) id = 'runtime';
+    else if (/覆盖文件/.test(s)) id = 'override';
+    else if (/LEMO_LLM/.test(s)) id = 'env';
+    else if (/显式/.test(s)) id = 'explicit';
+    if (id === null) return null;                 // 有一段归一不到 id ⇒ 声明写法不认识 ⇒ 失明
+    ids.push(id);
+  }
+  if (ids.length !== ORDER_DECLARED.length || new Set(ids).size !== ORDER_DECLARED.length) return null;
+  return ids;
+}
+
 // ── 读被测模块 ───────────────────────────────────────────────────────────────
 const fails = [];   // { crit, detail }
 const blind = [];   // string[]
@@ -444,14 +573,74 @@ if (raw !== null && code.trim() !== '') {
   }
 }
 
+// ── 判据⑦：解析优先级顺序 == 契约声明 ────────────────────────────────────────
+//   ★ 由来：本模块的解析优先级按规格修正过一次（运行时线索降到覆盖文件之下），但**契约文档**当时
+//     没跟着改 ⇒ 「实现改了、文档没改」本闸门抓不到。本判据把「文档声明 ↔ 代码实次序」逐项比对。
+//   ★ 代码侧判 `pick(...)` 的**实参次序**（`pick` = 取第一个非空 ⇒ 实参次序就是真实优先级），
+//     不判代码里那句注释（注释会漂、且「判据可被注释满足」是本项目反复治过的假绿）。
+if (raw !== null && code.trim() !== '') {
+  // ⑦(a) 契约侧：契约文档的顺序声明必须 == 闸门常量（契约真值）。
+  let docText = null;
+  try {
+    docText = fs.readFileSync(CONTRACT, 'utf8');
+  } catch (e) {
+    blind.push(`读不到契约文档 \`${CONTRACT}\`（${(e && e.message) || e}）⇒ 判据⑦(a) 空转`);
+  }
+  if (docText !== null) {
+    const declared = parseDeclaredOrder(docText);
+    if (declared === null) {
+      blind.push(`契约文档 \`${CONTRACT_REL}\` 里切不出「顺序声明」（锚点「修正后顺序 = … → …。」写法变了？）⇒ 判据⑦(a) 空转`);
+    } else if (declared.join('>') !== ORDER_DECLARED.join('>')) {
+      fails.push({
+        crit: '⑦(a)',
+        detail: '契约文档的**顺序声明**与闸门常量 `ORDER_DECLARED`（契约真值）不一致：\n'
+          + `     · 文档声明：${declared.map((x) => SRC_LABEL[x]).join(' → ')}\n`
+          + `     · 闸门常量：${ORDER_DECLARED.map((x) => SRC_LABEL[x]).join(' → ')}\n`
+          + '     ↳ 二者必有其一漂了。要改契约请**先改契约文档**、再同步改本闸门的 `ORDER_DECLARED`（改常量 = 改契约）。',
+      });
+    }
+  }
+
+  // ⑦(b) 代码侧：`resolveConfig` 里 baseUrl / apiKey / model 三行的 pick(...) 实参次序，必须在
+  //   契约声明里**严格递增**（= 与声明一致；允许某字段只用其中一部分来源）。
+  const perField = [];
+  for (const f of ['baseUrl', 'apiKey', 'model']) {
+    const args = pickArgsOf(code, f);
+    if (!args) continue;
+    perField.push({ field: f, seq: args.map(srcIdOf).filter(Boolean) });
+  }
+  const totalSrcs = perField.reduce((a, x) => a + x.seq.length, 0);
+  if (perField.length === 0 || totalSrcs === 0) {
+    blind.push('切不出 `resolveConfig` 里 `baseUrl` / `apiKey` / `model` 的 `pick(...)` 取值次序（写法变了？）⇒ 判据⑦(b) 空转');
+  } else {
+    const rank = (id) => ORDER_DECLARED.indexOf(id);
+    const inv = [];
+    for (const { field, seq } of perField) {
+      for (let i = 1; i < seq.length; i++) {
+        if (rank(seq[i - 1]) > rank(seq[i])) { inv.push({ field, hi: seq[i - 1], lo: seq[i] }); break; }
+      }
+    }
+    if (inv.length) {
+      const lines = inv.map((x) => `     · \`${x.field}\`：契约声明「${SRC_LABEL[x.lo]}」在「${SRC_LABEL[x.hi]}」**之前**，`
+        + `代码里却是**反的**（「${SRC_LABEL[x.hi]}」排在「${SRC_LABEL[x.lo]}」前）`);
+      fails.push({
+        crit: '⑦(b)',
+        detail: '`resolveConfig` 的解析次序与契约声明不一致'
+          + `（契约：${ORDER_DECLARED.map((x) => SRC_LABEL[x]).join(' → ')}）：\n${lines.join('\n')}`,
+      });
+    }
+  }
+}
+
 // ── 判据⑥：失明守卫 ─────────────────────────────────────────────────────────
 const blindGuard = blind.length > 0;
 
 // ── 输出 ─────────────────────────────────────────────────────────────────────
 console.log('LLM 配置契约闸门 —— 守 `lib/llm-api.mjs` 与规格（`D:/lemo-tmp/llm-api-spec.md` §一/§二）的契约');
 console.log('  判据: ① 导出契约 + ok 字段 + error.kind 枚举 | ② chat 永不抛 | ③ 默认 profile = workbuddy |');
-console.log('        ④ 密钥不外泄 | ⑤ 环境变量集合 == 6 | ⑥ 失明守卫（防空转绿灯）');
+console.log('        ④ 密钥不外泄 | ⑤ 环境变量集合 == 6 | ⑦ 解析优先级顺序 == 契约声明 | ⑥ 失明守卫（防空转绿灯）');
 console.log(`  被测: ${MODULE}`);
+console.log(`  契约: ${CONTRACT}`);
 console.log(`  扫描: 剥注释+字符串后 ${code.split('\n').length} 行代码体；剥注释（留字符串）后 ${noComment.split('\n').length} 行`);
 console.log('');
 
@@ -459,7 +648,7 @@ if (blindGuard) {
   console.log('✘✘ 本闸门已失明：');
   for (const b of blind) console.log(`   ✘ ${b}`);
   console.log('   ⇒ 「0 处违约」是假的，别信这个绿。请先修路径 / 剥注释写法，再信本闸门的结论。');
-  console.log('   ⇒ 已失明 ⇒ 判据①~⑤ 本次**不输出**（在失明的树上它们只会刷屏）。');
+  console.log('   ⇒ 已失明 ⇒ 判据①~⑤、⑦ 本次**不输出**（在失明的树上它们只会刷屏；判据⑥ 是失明守卫本身）。');
   console.log('');
   console.log('[闸门] LLM 契约：已失明 ⇒ 一条判据都没可信地跑过 ✘');
   process.exitCode = 1;
@@ -467,14 +656,16 @@ if (blindGuard) {
 }
 
 if (fails.length) {
-  console.log(`✘ 判据①~⑤·契约不符 ${fails.length} 处：\n`);
+  console.log(`✘ 判据①~⑤、⑦·契约不符 ${fails.length} 处：\n`);
   for (const f of fails) console.log(`   ✘ 判据${f.crit}  ${f.detail}`);
   console.log('\n   ↳ 修法：让 `lib/llm-api.mjs` 满足规格（`D:/lemo-tmp/llm-api-spec.md` §一/§二）；');
   console.log('     若**规格本身**要改，请先改规格、再同步改本闸门的常量（改常量 = 改契约）。');
+  console.log('     ★ 判据⑦ 的契约侧在**仓内契约文档** `' + CONTRACT_REL + '`（顺序声明）；改契约请先改它。');
 } else {
-  console.log('✓ 判据①~⑤·`lib/llm-api.mjs` 满足契约（导出齐全、chat 不抛、默认 profile = workbuddy、密钥不外泄、环境变量恰为规格那 6 个）');
+  console.log('✓ 判据①~⑤、⑦·`lib/llm-api.mjs` 满足契约（导出齐全、chat 不抛、默认 profile = workbuddy、密钥不外泄、'
+    + '环境变量恰为规格那 6 个、解析优先级顺序与契约声明一致）');
 }
 
 console.log(`\n[闸门] LLM 契约：导出 ${REQUIRED_EXPORTS.length} 符号 · kind 枚举 ${KIND_ENUM.length} 个 · `
-  + `环境变量 ${ENV_EXPECTED.length} 个 · 违约 ${fails.length} 处 ${fails.length ? '✘' : 'OK'}`);
+  + `环境变量 ${ENV_EXPECTED.length} 个 · 优先级 ${ORDER_DECLARED.length} 段 · 违约 ${fails.length} 处 ${fails.length ? '✘' : 'OK'}`);
 process.exitCode = fails.length ? 1 : 0;

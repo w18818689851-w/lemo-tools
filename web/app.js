@@ -4271,7 +4271,7 @@ function focusSearch() {
 
 const LLM_STEP_ORDER = ['reachable', 'auth', 'shape'];
 const LLM_STEP_ICO = { pending: '○', running: '⟳', ok: '✓', fail: '✗', skip: '–' };
-const llmState = { profiles: [], current: 'workbuddy', cfg: null, busy: false };
+const llmState = { profiles: [], current: 'workbuddy', cfg: null, busy: false, models: [] };
 
 function llmSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 function llmSafeStr(o) { try { return JSON.stringify(o).slice(0, 200); } catch { return String(o); } }
@@ -4330,6 +4330,33 @@ function renderLlmProfileOptions() {
   }
 }
 
+/**
+ * ★ 多模型切换：把可用模型清单灌进「下拉选择」+ datalist（两者同源）。
+ *  · 清单来自端点（`POST /api/llm/models`）或配置；**前端不写死任何模型名**。
+ *  · 选中下拉项 ⇒ 填入模型名输入框；输入框仍可手填任意模型名（兜底）。
+ *  · 清单为空 ⇒ 隐藏下拉（只留手填），避免一个空的、点了没反应的控件误导用户。
+ */
+function renderLlmModelOptions(models, sourceLabel) {
+  const list = Array.isArray(models) ? models.filter(Boolean).map(String) : [];
+  llmState.models = list;                    // ★ 记下来 ⇒ 保存时一并落盘（下拉在刷新后仍在）
+  const dl = $('llmModelList');
+  if (dl) {
+    dl.textContent = '';
+    for (const m of list) { const o = document.createElement('option'); o.value = m; dl.appendChild(o); }
+  }
+  const sel = $('llmModelSelect');
+  if (!sel) return;
+  sel.textContent = '';
+  if (!list.length) { sel.hidden = true; return; }
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = `— 从 ${list.length} 个可用模型里选（${sourceLabel || '端点'}）—`;
+  sel.appendChild(ph);
+  for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); }
+  sel.hidden = false;
+  sel.value = '';
+}
+
 /** 把生效配置填进表单（★ 不回显 key；headers 用打码后的值）。 */
 function renderLlmForm(cfg) {
   if (!cfg) return;
@@ -4347,9 +4374,13 @@ function renderLlmForm(cfg) {
       ? `每行一条「名称: 值」；留空该行 = 删除该头。当前生效头（profile 默认 + 覆盖）：${eff.join(', ')}`
       : '每行一条「名称: 值」；留空该行 = 删除该头', false);
 
-  const dl = $('llmModelList');
-  dl.textContent = '';
-  for (const m of (cfg.models || [])) { const o = document.createElement('option'); o.value = m; dl.appendChild(o); }
+  // ★ 多模型切换：候选清单（来自端点拉取 / 配置）同时灌进「下拉选择」与 datalist；
+  //   输入框仍可手填任意模型名（兜底）。清单为空 ⇒ 隐藏下拉，只留手填。
+  const modelList = Array.isArray(cfg.models) ? cfg.models : [];
+  renderLlmModelOptions(modelList, '端点 / 配置');
+  setLlmHint($('llmModelHint'), modelList.length
+    ? `共 ${modelList.length} 个候选模型（点「拉取模型」可从端点刷新）；也可手填任意模型名`
+    : '点「拉取模型」可从端点拉候选清单，也可手填任意模型名', false);
 
   const st = $('llmKeyState');
   st.textContent = cfg.hasKey ? '已配置' : '未配置';
@@ -4367,6 +4398,13 @@ function renderLlmForm(cfg) {
   $('llmProfileHint').textContent = p
     ? `默认 profile = workbuddy；当前 ${p.label || p.id}${p.isDefault ? '（默认）' : ''}${p.note ? ' · ' + p.note : ''}`
     : '默认 profile = workbuddy（软件默认走它）';
+  // ★ 规格「当前优先配置 WorkBuddy」：一眼看出当前默认走哪个；切到别的则明确显示「已切换」。
+  const pill = $('llmCurrentPill');
+  if (pill) {
+    const isDefault = pid === 'workbuddy';
+    pill.textContent = isDefault ? '当前默认：WorkBuddy' : `已切换：${(p && (p.label || p.id)) || pid}`;
+    pill.className = 'llm-current-pill ' + (isDefault ? 'is-default' : 'is-switched');
+  }
   setLlmHint($('llmSaveHint'), `落盘：${cfg.overrideFile || 'D:\\lemo-films\\_llm-api.json'}`, false);
   syncLlmCustomRows();
 }
@@ -4388,6 +4426,8 @@ function llmFormPayload(includeKey) {
     path: $('llmPath').value.trim(),
     extract: $('llmExtract').value.trim(),
     headers: parseLlmHeaders($('llmHeaders').value),
+    // ★ 拉取到的候选模型清单随保存落盘（模块 resolveConfig 本就支持 models）⇒ 刷新后下拉仍在。
+    models: Array.isArray(llmState.models) ? llmState.models : [],
   };
   if (includeKey) { const k = $('llmKey').value; if (k) p.apiKey = k; }
   return p;
@@ -4423,6 +4463,46 @@ async function loadLlm() {
   // ★ 初次加载 / 点「刷新」：读**生效**配置（不带 ?profile=，才会把已保存的覆盖算进去）。
   //   只有用户**手动切**下拉时才走 loadLlmConfig(id) 的「预览该 profile 默认值」分支。
   await loadLlmConfig(null);
+}
+
+/**
+ * ★ 多模型切换：从当前 Endpoint 拉取可用模型清单（POST /api/llm/models → 模块 listModels()）。
+ * 用**当前表单**的临时配置（不必先保存）。★ 异常接口（非 JSON / 5xx / 超时 / 空 body）由
+ * llmReq() + 模块归一成 `{ok:false,error}` ⇒ 这里只更新一句中文提示，**绝不抛、绝不白屏**。
+ */
+async function fetchLlmModels() {
+  if (llmState.busy) return;
+  llmState.busy = true;
+  const btn = $('btnLlmModels');
+  if (btn) btn.disabled = true;
+  setLlmHint($('llmModelHint'), '拉取中…（受配置的超时限制）', false);
+
+  const r = await llmReq('/api/llm/models', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(llmFormPayload(true)),
+  });
+  llmState.busy = false;
+  if (btn) btn.disabled = false;
+
+  if (!r.ok) {
+    setLlmHint($('llmModelHint'), '拉取模型失败：' + llmErrText(r.error)
+      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
+    toast('拉取模型失败', true);
+    return;
+  }
+  const d = r.data || {};
+  if (d.ok === true) {
+    const models = Array.isArray(d.models) ? d.models : [];
+    renderLlmModelOptions(models, '端点');
+    setLlmHint($('llmModelHint'), models.length
+      ? `已从端点拉到 ${models.length} 个可用模型（下拉可选，也可手填）`
+      : '端点返回了空的模型清单（可手填模型名）', !models.length);
+    toast(models.length ? `已拉取 ${models.length} 个模型` : '端点没有可用模型');
+  } else {
+    const e = (d && d.error) || {};
+    setLlmHint($('llmModelHint'), '拉取模型失败：' + `[${e.kind || 'unknown'}] ${e.message || ''}`, true);
+    toast('拉取模型失败', true);
+  }
 }
 
 async function saveLlmConfig() {
@@ -4573,6 +4653,17 @@ function renderLlmTryOut(r) {
   }
 }
 
+/** ★ 界面入口：顶栏「LLM 配置」→ 滚到面板卡片并高亮一下（纯前端定位，不发请求）。 */
+function gotoLlmCard() {
+  const card = $('llmCard');
+  if (!card) return;
+  if (card.scrollIntoView) {
+    try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { card.scrollIntoView(); }
+  }
+  card.classList.add('flash');
+  setTimeout(() => card.classList.remove('flash'), 1600);
+}
+
 // ── 事件绑定 ────────────────────────────────────────────────
 function bind() {
   // ⚠️ 必须包一层：直接传 startRun 会把 MouseEvent 当成 force 参数（真值）→ 预检被跳过
@@ -4604,7 +4695,12 @@ function bind() {
   });
   $('btnRefreshFilms').addEventListener('click', () => { loadFilms(); });
   // LLM API 配置：刷新 / 保存 / 一键校验 / 试一句 / 清除密钥 / 切 profile / kind 联动
+  if ($('btnGotoLlm')) $('btnGotoLlm').addEventListener('click', gotoLlmCard);
   if ($('btnLlmRefresh')) $('btnLlmRefresh').addEventListener('click', loadLlm);
+  if ($('btnLlmModels')) $('btnLlmModels').addEventListener('click', (e) => { e.preventDefault(); fetchLlmModels(); });
+  if ($('llmModelSelect')) $('llmModelSelect').addEventListener('change', (e) => {
+    if (e.target.value) $('llmModel').value = e.target.value;   // 选中下拉项 ⇒ 填入模型名
+  });
   if ($('btnLlmSave')) $('btnLlmSave').addEventListener('click', saveLlmConfig);
   if ($('btnLlmValidate')) $('btnLlmValidate').addEventListener('click', validateLlm);
   if ($('btnLlmClearKey')) $('btnLlmClearKey').addEventListener('click', clearLlmKey);

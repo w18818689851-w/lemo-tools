@@ -87,8 +87,8 @@
  *     `test/gate-blindness.test.mjs` 的夹具字符串里就有 `api.anthropic.com`、`test/triple-check-flow.test.mjs`
  *     的桩路由写 `/v1/chat/completions`）⇒ 纳入会**大面积误报**，而它们**不做推理**。
  *   · **不纳入 `web/**`**：前端**不做推理**（它只调本机控制台的 `/api/llm/*`），且面板**合法地**把端点路径
- *     当 **UI 占位文字**（实测 `web/index.html:321` 的 `placeholder` 就写着 `https://api.anthropic.com`、
- *     `:343` 写着 `默认 /chat/completions`）⇒ 若哪天这些文字落进一个**也有 `fetch`** 的 `.js`（`web/app.js`
+ *     当 **UI 占位文字**（实测 `web/index.html:327` 的 `placeholder` 就写着 `https://api.anthropic.com`、
+ *     `:357` 写着 `默认 /chat/completions`）⇒ 若哪天这些文字落进一个**也有 `fetch`** 的 `.js`（`web/app.js`
  *     就有 `fetch`）⇒ 必误报。
  *   ⇒ 两条**已知盲区**（如实登记）：`test/**` 与 `web/**` 里新写的旁路**本闸门看不见**。
  *   · **端点模式表**（`ENDPOINT_PATTERNS`，LLM 专用）：`chat/completions`、`/v1/messages`、

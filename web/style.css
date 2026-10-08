@@ -1580,6 +1580,19 @@ html[data-theme="light"] {
 .llm-key-state { font-size: 11px; font-weight: 600; }
 .llm-key-state.ok { color: var(--ok); }
 .llm-key-state.missing { color: var(--warn); }
+/* 「当前默认走 WorkBuddy」状态胶囊（规格：当前优先配置 WorkBuddy ⇒ 界面要一眼可见）。 */
+.llm-current-pill {
+  font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--bg-2); color: var(--fg-dim);
+  white-space: nowrap;
+}
+.llm-current-pill.is-default { color: var(--ok); border-color: var(--ok); }
+.llm-current-pill.is-switched { color: var(--warn); border-color: var(--warn); }
+/* 多模型切换：模型名输入框 + 「拉取模型」按钮同一行；候选下拉在下一行。 */
+.llm-model-row { display: flex; gap: 8px; align-items: center; }
+.llm-model-row .input { flex: 1 1 auto; min-width: 0; }
+.llm-model-row .btn { flex: 0 0 auto; }
+.llm-model-select { margin-top: 6px; }
 .llm-headers-field { margin-top: 10px; }
 .llm-headers {
   font-family: var(--mono); font-size: 12px; line-height: 1.5;

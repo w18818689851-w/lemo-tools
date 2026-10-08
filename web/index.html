@@ -22,6 +22,9 @@
   </div>
 
   <div class="top-actions">
+    <!-- ★ 界面入口：LLM API 配置面板藏在长页面靠下的位置 ⇒ 顶栏给一个**显眼可达**的跳转按钮
+         （点了滚到卡片并高亮；纯前端定位，不发请求）。 -->
+    <button class="btn ghost" id="btnGotoLlm" title="跳到「LLM API 配置」面板（软件内 LLM 推理默认走 WorkBuddy，这里可切换）">LLM 配置</button>
     <button class="btn ghost" id="btnRefreshEnv" title="重新全量探测环境">重新检测</button>
     <button class="btn ghost" id="btnSimulate" title="演练模式：假装这是一台全新机器，预览首次运行引导（不会真的安装）">演练</button>
     <button class="btn ghost" id="btnTheme" title="切换浅色 / 深色主题（默认深色；选择记在本机）">浅色</button>
@@ -291,6 +294,9 @@
     <section class="card llm-card" id="llmCard">
       <div class="card-head">
         <h2 class="card-title">LLM API 配置 <span class="count" id="llmProfileBadge"></span></h2>
+        <!-- ★ 规格要求「当前优先配置 WorkBuddy」⇒ 界面要能**一眼看出当前默认走哪个**。
+             默认（workbuddy）显示「当前默认：WorkBuddy」；切到别的则显示「已切换：<label>」。 -->
+        <span class="llm-current-pill" id="llmCurrentPill">当前默认：WorkBuddy</span>
         <div class="card-tools">
           <button class="btn ghost" id="btnLlmRefresh" title="重新读 profile 清单与当前生效配置（GET /api/llm/*）">刷新</button>
         </div>
@@ -322,7 +328,15 @@
         </label>
         <label class="field">
           <span class="lbl">模型名 model</span>
-          <input id="llmModel" class="input" list="llmModelList" placeholder="如 gpt-4o-mini / claude-sonnet-4 / qwen2.5" autocomplete="off">
+          <!-- ★ 多模型切换：① 点「拉取模型」从当前 Endpoint 拉可用清单（GET {baseUrl}/models）→
+               ② 下方下拉选择（选中即填入模型名）；③ 输入框仍可手填任意模型名（兜底）。 -->
+          <div class="llm-model-row">
+            <input id="llmModel" class="input" list="llmModelList" placeholder="如 gpt-4o-mini / claude-sonnet-4 / qwen2.5" autocomplete="off">
+            <button type="button" class="btn ghost small" id="btnLlmModels"
+                    title="从当前 Endpoint 拉取可用模型清单（GET {baseUrl}/models），供下拉切换">拉取模型</button>
+          </div>
+          <select id="llmModelSelect" class="input llm-model-select" hidden
+                  title="从端点拉到的可用模型里挑一个（选中即填入模型名）"></select>
           <datalist id="llmModelList"></datalist>
           <span class="hint" id="llmModelHint">可从下拉切换，也可手填任意模型名</span>
         </label>

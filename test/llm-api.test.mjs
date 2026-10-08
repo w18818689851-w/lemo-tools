@@ -16,7 +16,7 @@
  *   · ★ **密钥绝不外泄**：用假 key 断言 `listProfiles()` / `validate()` 的**任何输出**都不含它。
  *
  * 覆盖：
- *   ① resolveConfig 优先级（显式 > env > 运行时线索 > 覆盖文件 > 内置默认）+ 超时钳制 + 头合并；
+ *   ① resolveConfig 优先级（★ 2026-10-08 修正后：显式 > env > **覆盖文件（面板）** > **运行时线索** > 内置默认；原序「运行时线索 > 覆盖文件」已按规格更正）+ 超时钳制 + 头合并；
  *   ② ★★ 容错 8 类（每类独立夹具）：unreachable / timeout / auth(401,403) / rate-limit(429) /
  *      http-error(500) / bad-json / bad-shape / empty-output；
  *   ③ chat() 成功路径（OpenAI 格式）、anthropic 路径、custom（自定义 path + extract）；
@@ -26,6 +26,10 @@
  *   ⑦ ★ 多模态（2026-10-08 追加）：OpenAI 兼容 / Anthropic 两种图片块、`opts.images` 便利入参
  *      （本地文件 / base64 / dataURL）、体积守卫（单图 + 总请求体）、图片内容不外泄、
  *      以及 ★★ **纯文本请求体逐字节回归**（证明向后兼容）。
+ *   ⑧ ★ 国产厂商内置预设（2026-10-08 追加）：豆包/火山方舟、通义/百炼、腾讯混元、DeepSeek、
+ *      智谱 GLM、月之暗面 Kimi、硅基流动 —— 每家断言 `listProfiles()` 含它、`previewProfile()`
+ *      出**脱敏**配置、`resolveConfig` 解析出 endpoint 与模型；并断言**默认 profile 仍是 `workbuddy`**。
+ *      ★ 全部离线（不打外网）：只解析内置表，不发任何网络请求。
  *
  * 用法：node test/llm-api.test.mjs
  * 退出码：全绿 0，有失败 1，自身异常 2。
@@ -131,7 +135,7 @@ async function expectFail(name, base, kind, extra = {}) {
 }
 
 // ── ① resolveConfig 优先级 ──────────────────────────────────
-test('★ resolveConfig：显式 > env > 运行时线索 > 覆盖文件 > 内置默认（逐级验证）', async () => {
+test('★ resolveConfig：显式 > env > 覆盖文件 > 运行时线索 > 内置默认（逐级验证）', async () => {
   rmOverride();
   await withEnv({ ...CLEAN, LEMO_LLM_PROFILE: 'openai-compatible', LEMO_LLM_BASE: 'http://env-base/v1',
     LEMO_LLM_KEY: 'sk-envkey-abcdefgh', LEMO_LLM_MODEL: 'env-model', LEMO_LLM_TIMEOUT_MS: '5000' }, async () => {
@@ -150,7 +154,9 @@ test('★ resolveConfig：显式 > env > 运行时线索 > 覆盖文件 > 内置
     assert.equal(b.apiKey, 'sk-envkey-abcdefgh', '未显式给 key ⇒ 仍取 env');
   });
 
-  // ③ 运行时线索（只读环境，不读密钥文件）
+  // ④ 运行时线索（只读环境，不读密钥文件）
+  //   ★ 2026-10-08 修正：运行时线索**低于覆盖文件**（见下 ③ 与专门用例）—— 此处**没有**覆盖文件，
+  //     故仍取 ANTHROPIC_*（断言不变）。
   await withEnv({ ...CLEAN, LEMO_LLM_PROFILE: 'anthropic',
     ANTHROPIC_API_KEY: 'sk-runtime-abcdefgh', ANTHROPIC_BASE_URL: 'http://rt.example',
     ANTHROPIC_MODEL: 'rt-model' }, async () => {
@@ -167,8 +173,10 @@ test('★ resolveConfig：显式 > env > 运行时线索 > 覆盖文件 > 内置
     assert.equal(resolveConfig({ model: 'explicit-model' }).model, 'explicit-model', '显式 model 应压过一切');
   });
 
-  // ④ 覆盖文件（保存的配置）压过内置默认；⑤ env 压过覆盖文件
-  //   ★ 必须清掉环境（本机真实环境里就设了 ANTHROPIC_*，不清会让运行时线索压过覆盖文件 —— 那是**预期**的优先级）。
+  // ③ 覆盖文件（保存的配置 = 面板）压过运行时线索与内置默认；② env 压过覆盖文件
+  //   ★ 必须清掉环境里的 `LEMO_LLM_*`（否则 env 会压过覆盖文件 —— 那是**预期**的优先级，② > ③）；
+  //     ★ 2026-10-08 修正后 `ANTHROPIC_*` / `OPENAI_*` 已**低于**覆盖文件 ⇒ 留着也不再遮蔽面板
+  //     （专门的对照用例见下一条 `★ resolveConfig：覆盖文件 > 运行时线索`）。
   await withEnv(CLEAN, async () => {
     rmOverride();
     fs.writeFileSync(overrideFilePath(), JSON.stringify({ model: 'file-model', baseUrl: 'http://file-base' }), 'utf8');
@@ -782,6 +790,84 @@ test('★★ 多模态·图片内容不外泄：响应体回显图片 base64 ⇒
     assert.ok(!all.includes(FAKE), '★ 密钥照旧不外泄');
     assert.match(res.error.detail, /bad image/, 'detail 应保留（非图片部分的）错误信息');
   } finally { await stub.close(); }
+});
+
+// ── ⑧ 国产厂商内置预设（2026-10-08 追加）───────────────────────
+//   ★ 规格要求「原生兼容国内主流智能体与大模型生态，包含但不限于豆包 / 通义千问 / 腾讯系列」。
+//   ★ 断言三件套（每家）：`listProfiles()` 含它 / `previewProfile()` 出脱敏配置 /
+//     `resolveConfig` 解析出 endpoint 与模型。★ 全部离线（不打外网）。
+//   ★ 这里列的是「**内置表里的默认值**」—— 断言的是「预设确实带了可用的 endpoint 与常用模型名」。
+const VENDOR_PRESETS = [
+  { id: 'doubao', kind: 'openai-compatible', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-1-6-251015' },
+  { id: 'qwen', kind: 'openai-compatible', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { id: 'hunyuan', kind: 'openai-compatible', baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1', model: 'hunyuan-turbos-latest' },
+  { id: 'deepseek', kind: 'openai-compatible', baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' },
+  { id: 'zhipu', kind: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3' },
+  { id: 'kimi', kind: 'openai-compatible', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2.7' },
+  { id: 'siliconflow', kind: 'openai-compatible', baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
+];
+
+test('★ 国产厂商内置预设：每家都能 listProfiles / previewProfile / resolveConfig（脱敏、离线）', async () => {
+  rmOverride();                                        // 干净环境：不读覆盖文件（只看内置表 + 环境）
+  await withEnv(CLEAN, () => {
+    const profiles = listProfiles();
+    const byId = new Map(profiles.map((p) => [p.id, p]));
+    for (const v of VENDOR_PRESETS) {
+      // ① listProfiles() 含它（且 kind / baseUrl / model 与内置表一致）
+      const listed = byId.get(v.id);
+      assert.ok(listed, `listProfiles() 应含内置预设「${v.id}」`);
+      assert.equal(listed.kind, v.kind, `${v.id}: kind 应为 ${v.kind}`);
+      assert.equal(listed.baseUrl, v.baseUrl, `${v.id}: listProfiles 的 baseUrl 应为内置预设值`);
+      assert.equal(listed.model, v.model, `${v.id}: listProfiles 的 model 应为内置预设默认值`);
+      assert.equal(listed.isDefault, false, `${v.id}: ★ 不得是默认 profile（默认必须仍是 workbuddy）`);
+      assert.ok(typeof listed.note === 'string' && listed.note.length > 0, `${v.id}: note 应非空（面板要显示「去哪拿 Key」）`);
+      assert.equal(listed.hasKey, false, `${v.id}: 干净环境下不应有 key`);
+
+      // ② previewProfile() 出**脱敏**配置（显式 id、不读覆盖文件、不发网络）
+      const pv = previewProfile(v.id);
+      assert.equal(pv.id, v.id);
+      assert.equal(pv.kind, v.kind);
+      assert.equal(pv.baseUrl, v.baseUrl, `${v.id}: previewProfile 的 baseUrl`);
+      assert.equal(pv.model, v.model, `${v.id}: previewProfile 的 model`);
+      assert.equal(pv.hasKey, false, `${v.id}: 干净环境下不应有 key`);
+      assert.equal(pv.unknownProfile, false, `${v.id}: 不应是未知 profile`);
+      assert.ok(Array.isArray(pv.models) && pv.models.length >= 1, `${v.id}: 应有可选模型列表（供面板多模型切换）`);
+      assert.ok(pv.models.includes(v.model), `${v.id}: models[] 应含默认模型`);
+      assert.ok(!('apiKey' in pv), `${v.id}: ★ 预览输出不得含 apiKey 字段`);
+      assert.ok(!JSON.stringify(pv).includes('"apiKey"'), `${v.id}: ★ 预览输出序列化后也不得出现 apiKey`);
+
+      // ③ resolveConfig 能解析出 endpoint 与模型
+      const cfg = resolveConfig({ profile: v.id });
+      assert.equal(cfg.kind, v.kind, `${v.id}: resolveConfig 的 kind`);
+      assert.equal(cfg.baseUrl, v.baseUrl, `${v.id}: resolveConfig 的 baseUrl`);
+      assert.equal(cfg.model, v.model, `${v.id}: resolveConfig 的 model`);
+      assert.ok(cfg.models.includes(v.model), `${v.id}: resolveConfig 的 models[] 应含默认模型`);
+      assert.equal(cfg.apiKey, '', `${v.id}: ★ 内置预设**不得**带任何密钥`);
+    }
+
+    // ★★ 默认 profile 仍是 workbuddy（规格硬要求；新增预设一律不得抢默认）
+    const defaults = profiles.filter((p) => p.isDefault);
+    assert.equal(defaults.length, 1, '★ 恰一个默认 profile');
+    assert.equal(defaults[0].id, 'workbuddy', '★ 默认 profile 必须仍是 workbuddy');
+  });
+});
+
+test('★ 国产厂商内置预设：key 经环境注入 ⇒ 逐家预览都脱敏（前 4 位 + …），绝不含明文', async () => {
+  rmOverride();
+  const FAKE = 'sk-VENDOR-abcdefghijklmnop-0123456789';
+  await withEnv({ ...CLEAN, LEMO_LLM_KEY: FAKE }, () => {
+    for (const v of VENDOR_PRESETS) {
+      const pv = previewProfile(v.id);
+      assert.equal(pv.hasKey, true, `${v.id}: 应识别到 key（hasKey:true）`);
+      assert.equal(pv.keyMask, 'sk-V…', `${v.id}: key 应脱敏为前 4 位 + …`);
+      assert.ok(!JSON.stringify(pv).includes(FAKE), `★ ${v.id}: 预览输出不得含 key 明文`);
+      // 走一遍 resolveConfig：apiKey 能解析到（供真实调用），但**绝不进 listProfiles() 的输出**
+      assert.equal(resolveConfig({ profile: v.id }).apiKey, FAKE, `${v.id}: resolveConfig 应取到 key（调用用）`);
+    }
+    const pText = JSON.stringify(listProfiles());
+    assert.ok(!pText.includes(FAKE), '★ listProfiles() 输出里不得出现 key 明文');
+    assert.ok(!pText.includes('"apiKey"'), '★ listProfiles() 项里不得有 apiKey 字段');
+  });
 });
 
 // ── 运行器 ──────────────────────────────────────────────────

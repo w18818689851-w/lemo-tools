@@ -1494,7 +1494,7 @@
       "sourceFiles": [
         "styles/halftone-dossier/demo/index.html"
       ],
-      "evidence": "无独立 JS；绘图内联在 index.html（1087 行，SVG）。index.html:57 调色板 `#F4ECDD`(cream) `#1D2340`(navy) `#2E55D6`(blue) `#FF5A87`(pink) `#FFC628`(yellow)；index.html:8 '#F4ECDD'；字体走内联 font-family（:106/:162/:364 F.sans / F.mono）",
+      "evidence": "无独立 JS；绘图内联在 index.html（1087 行，SVG）。styles/halftone-dossier/demo/index.html 顶部 `<style>` 的调色板 `#F4ECDD`(cream) `#1D2340`(navy) `#2E55D6`(blue) `#FF5A87`(pink) `#FFC628`(yellow)；index.html:8 '#F4ECDD'；字体走内联 font-family（:106/:162/:364 F.sans / F.mono）",
       "palette": {
         "bg": "#F4ECDD",
         "bg2": "#1D2340",

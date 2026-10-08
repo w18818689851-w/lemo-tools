@@ -147,12 +147,15 @@
  *          ⑩ **★自证**：分别**短路**判据①②③（含「缺声明」支）⇒ 对应变异**重新变绿**。
  *          ★ 夹具**绝不碰真实闸门**：整棵树建在 `D:/lemo-tmp/…` 下，靠 `LEMO_TOOLS_ROOT` 重定向。
  *        · `check-llm-api`（2026-10-08 建，第 42 个；守「**LLM 配置契约**」—— 本批新增的开放式
- *          LLM 配置模块 `lib/llm-api.mjs` 与共享规格 `D:/lemo-tmp/llm-api-spec.md` §一/§二）：
+ *          LLM 配置模块 `lib/llm-api.mjs` 与共享规格 `D:/lemo-tmp/llm-api-spec.md` §一/§二；
+ *          ★ 判据⑦ 另守**仓内契约文档** `_distill/llm-api-接口规格-2026-10-08.md` 的「顺序声明」）：
  *          主夹具 = **在真实 `lib/llm-api.mjs` 源码上做一处精确替换**后整份拷进夹具树（契约要求
  *          「6 个导出 + 10 个 error kind 字面量 + 6 个覆盖点」**全在**，手写最小树 = 抄第二遍契约），
  *          变异一律走 `mutateFile()`（带「待替换片段必须在 + 替换必须生效」两道防空转断言）；
  *          覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 `check-doc-coverage` / `check-env-overrides` /
- *          `check-gate-self-claims`），被测模块 = `<root>/lib/llm-api.mjs`。
+ *          `check-gate-self-claims`），被测模块 = `<root>/lib/llm-api.mjs`；
+ *          ★ 判据⑦ 还要 `<root>/_distill/llm-api-接口规格-2026-10-08.md` ⇒ `llmTree` / `llmMut`
+ *            会把**真实契约文档**一并拷进夹具树（`copyContract`），`contractMut` 供变异 H 用。
  *          ① **阴性对照**（真实模块整份拷进去）⇒ exit 0 且打印「满足契约」；
  *          ② **变异 A（判据①(a)）** 删掉 `chat` 的 `export` ⇒ FAIL 并点名 `chat`；
  *          ③ **变异 B（判据②）** 在 `chat` 函数体里塞一行裸 `throw` ⇒ FAIL（**剥注释后**判，别被注释骗）；
@@ -161,9 +164,13 @@
  *          ⑥ **变异 D（判据④）** 加一行 `console.log(apiKey)` ⇒ FAIL 并点名密钥类标识符；
  *          ⑦ **变异 E（判据⑤）** 加一个规格外的 `process.env.LEMO_LLM_ZZZ` ⇒ FAIL 并点名差额；
  *          ⑧ **变异 F（判据①(c)）** 把 `kind:` 字面量改成枚举外的值 ⇒ FAIL 并点名；
- *          ⑨ **失明两态**（模块文件缺失 / 0 个 `LEMO_LLM_*`）⇒ FAIL +「本闸门已失明」，且失明时**不输出判据**；
- *          ⑩ **★自证**：分别**短路**判据②、判据③ 的「workbuddy 条目里」支、判据⑤ ⇒ 对应变异**重新变绿**
- *            （证明判据**承重**，不是摆设）。
+ *          ⑨ **变异 G（判据⑦(b)）** 把 `baseUrl` 那行 `pick(...)` 的 `file.baseUrl` 与 `rtBase` 对调
+ *            （= 旧序）⇒ FAIL 并点名「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」；
+ *          ⑩ **变异 H（判据⑦(a)）** 把**契约文档**的顺序声明改成旧序 ⇒ FAIL「契约文档的顺序声明与闸门常量不一致」；
+ *          ⑪ **失明三态**（模块文件缺失 / 0 个 `LEMO_LLM_*` / 契约文档缺失）⇒ FAIL +「本闸门已失明」，
+ *            且失明时**不输出判据**；
+ *          ⑫ **★自证**：分别**短路**判据②、判据③ 的「workbuddy 条目里」支、判据⑤、判据⑦(b) 的倒置判定
+ *            ⇒ 对应变异**重新变绿**（证明判据**承重**，不是摆设）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -4545,15 +4552,30 @@ test('★自证 check-header-counts：短路判据⑤（`c.judge === 5`）后，
 //   `check-gate-self-claims`）；被测模块 = `<root>/lib/llm-api.mjs`。
 /** 读**真实** `lib/llm-api.mjs`（懒读：文件不在也不在加载期崩，交给用例自己断言）。 */
 const realLlm = () => fs.readFileSync(path.join(TOOLS, 'lib', 'llm-api.mjs'), 'utf8');
-/** 把一份 `lib/llm-api.mjs` 写进夹具树，返回夹具根。 */
-const llmTree = (dir, src) => { wf(path.join(dir, 'lib', 'llm-api.mjs'), src); return dir; };
-/** 在真实模块源码上做一处精确替换后写进夹具树（两道防空转断言，逐字复用 `mutateFile()`）。 */
+/** ★ 判据⑦ 的**契约文档**（闸门从 `<LEMO_TOOLS_ROOT>/_distill/…` 读它的「顺序声明」）。 */
+const LLM_CONTRACT_REL = path.join('_distill', 'llm-api-接口规格-2026-10-08.md');
+/** 读**真实**契约文档。 */
+const realContract = () => fs.readFileSync(path.join(TOOLS, LLM_CONTRACT_REL), 'utf8');
+/** 把**真实**契约文档拷进夹具树（判据⑦ 要求夹具树里也有它，否则整闸门失明）。 */
+const copyContract = (dir) => {
+  mk(path.join(dir, '_distill'));
+  fs.copyFileSync(path.join(TOOLS, LLM_CONTRACT_REL), path.join(dir, LLM_CONTRACT_REL));
+  return dir;
+};
+/** 把一份 `lib/llm-api.mjs` 写进夹具树（**连带契约文档**），返回夹具根。 */
+const llmTree = (dir, src) => { wf(path.join(dir, 'lib', 'llm-api.mjs'), src); return copyContract(dir); };
+/** 在真实模块源码上做一处精确替换后写进夹具树（**连带契约文档**；两道防空转断言，逐字复用 `mutateFile()`）。 */
 const llmMut = (dir, from, to) => {
   mutateFile(path.join(TOOLS, 'lib', 'llm-api.mjs'), path.join(dir, 'lib', 'llm-api.mjs'), from, to);
+  return copyContract(dir);
+};
+/** 在**真实契约文档**上做一处精确替换后写进夹具树（判据⑦(a) 的变异用；同样两道防空转断言）。 */
+const contractMut = (dir, from, to) => {
+  mutateFile(path.join(TOOLS, LLM_CONTRACT_REL), path.join(dir, LLM_CONTRACT_REL), from, to);
   return dir;
 };
 
-test('check-llm-api：阴性对照 + 判据①~⑤ 六种变异（导出缺失 / chat 里 throw / isDefault 缺或挪走 / 密钥外泄 / 多余环境变量 / 枚举外 kind）⇒ FAIL 并点名；失明两态', async () => {
+test('check-llm-api：阴性对照 + 判据①~⑤、⑦ 八种变异（导出缺失 / chat 里 throw / isDefault 缺或挪走 / 密钥外泄 / 多余环境变量 / 枚举外 kind / 代码次序倒置 / 契约声明倒置）⇒ FAIL 并点名；失明三态', async () => {
   const dir = path.join(TMP, 'cla');
   const N_BLIND = '本闸门已失明';
   try {
@@ -4622,7 +4644,7 @@ test('check-llm-api：阴性对照 + 判据①~⑤ 六种变异（导出缺失 /
     const e1 = path.join(dir, 'nofile'); mk(path.join(e1, 'lib'));
     const rb1 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: e1 });
     expectBlind(rb1, N_BLIND, 'check-llm-api 失明①（模块缺失）');
-    assert.ok(!rb1.out.includes('判据①~⑤·契约不符'), `失明时不该输出判据\n${rb1.out.slice(0, 900)}`);
+    assert.ok(!rb1.out.includes('·契约不符'), `失明时不该输出判据\n${rb1.out.slice(0, 900)}`);
 
     // ⑩ 失明②（一个 `LEMO_LLM_*` 都没有）：把全部 `LEMO_LLM_` 改成 `LEMO_XLLM_`
     const noenvSrc = realLlm().replace(/LEMO_LLM_/g, 'LEMO_XLLM_');
@@ -4630,11 +4652,38 @@ test('check-llm-api：阴性对照 + 判据①~⑤ 六种变异（导出缺失 /
     const e2 = llmTree(path.join(dir, 'noenv'), noenvSrc);
     const rb2 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: e2 });
     expectBlind(rb2, N_BLIND, 'check-llm-api 失明②（0 个 LEMO_LLM_*）');
-    assert.ok(!rb2.out.includes('判据①~⑤·契约不符'), `失明时不该输出判据\n${rb2.out.slice(0, 900)}`);
+    assert.ok(!rb2.out.includes('·契约不符'), `失明时不该输出判据\n${rb2.out.slice(0, 900)}`);
+
+    // ⑪ 变异 G（判据⑦(b)）：把 `baseUrl` 那行 `pick(...)` 的 `file.baseUrl` 与 `rtBase` **对调**
+    //   （= 旧序：运行时线索压过覆盖文件）⇒ FAIL 并点名「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」
+    const g = llmMut(path.join(dir, 'g'),
+      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, file.baseUrl, rtBase, base.baseUrl, \'\')',
+      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, rtBase, file.baseUrl, base.baseUrl, \'\')');
+    const r8 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: g });
+    expectBlind(r8, '契约声明「覆盖文件（面板）」在「运行时线索', 'check-llm-api 变异G（判据⑦(b) 代码次序倒置）');
+    assert.ok(r8.out.includes('判据⑦(b)'), `变异G 应点名判据⑦(b)\n${r8.out.slice(0, 1400)}`);
+
+    // ⑫ 变异 H（判据⑦(a)）：把**契约文档**的顺序声明改成旧序（③ 覆盖文件 ↔ ④ 运行时线索 整段对调）
+    //   ⇒ FAIL 并点名「契约文档的顺序声明与闸门常量不一致」
+    const h = llmTree(path.join(dir, 'h'), realLlm());
+    contractMut(h,
+      '③ **用户覆盖文件（面板保存的配置）** →\n  ④ **运行时线索**（`ANTHROPIC_*` / `OPENAI_*`）',
+      '③ **运行时线索**（`ANTHROPIC_*` / `OPENAI_*`） →\n  ④ **用户覆盖文件（面板保存的配置）**');
+    const r9 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: h });
+    expectBlind(r9, '契约文档的**顺序声明**与闸门常量', 'check-llm-api 变异H（判据⑦(a) 契约声明倒置）');
+    assert.ok(r9.out.includes('判据⑦(a)'), `变异H 应点名判据⑦(a)\n${r9.out.slice(0, 1400)}`);
+
+    // ⑬ 失明③（判据⑦ 契约侧）：模块在、但**契约文档缺失** ⇒ FAIL +「本闸门已失明」
+    const e3 = path.join(dir, 'nodoc'); mk(path.join(e3, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'llm-api.mjs'), path.join(e3, 'lib', 'llm-api.mjs'));
+    const rb3 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: e3 });
+    expectBlind(rb3, N_BLIND, 'check-llm-api 失明③（契约文档缺失）');
+    assert.ok(rb3.out.includes('读不到契约文档'), `失明③ 应点名「读不到契约文档」\n${rb3.out.slice(0, 900)}`);
+    assert.ok(!rb3.out.includes('·契约不符'), `失明时不该输出判据\n${rb3.out.slice(0, 900)}`);
   } finally { rm(dir); }
 });
 
-test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目里」支 / 判据⑤ 后，对应变异必须重新变绿', async () => {
+test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目里」支 / 判据⑤ / 判据⑦(b) 后，对应变异必须重新变绿', async () => {
   const dir = path.join(TMP, 'cla-mut');
   try {
     // 变异 B 夹具（chat 里有裸 throw）
@@ -4651,6 +4700,10 @@ test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目�
     // 变异 E 夹具（规格外的 LEMO_LLM_ZZZ）
     const e = llmMut(path.join(dir, 'e'), "const OVERRIDE_BASENAME = '_llm-api.json';",
       "const OVERRIDE_BASENAME = '_llm-api.json';\nconst _probe = process.env.LEMO_LLM_ZZZ;");
+    // 变异 G 夹具（判据⑦(b)：baseUrl 那行 file.baseUrl ↔ rtBase 对调 ⇒ 旧序）
+    const g = llmMut(path.join(dir, 'g'),
+      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, file.baseUrl, rtBase, base.baseUrl, \'\')',
+      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, rtBase, file.baseUrl, base.baseUrl, \'\')');
 
     // ★ 短路判据② 的 `else if (/\bthrow\b/.test(chatBody))` ⇒ 变异 B 应**真变绿**（exit 0）
     const gB = patchGate('check-llm-api.mjs', path.join(dir, 'gB'),
@@ -4675,6 +4728,14 @@ test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目�
     assert.equal(rE.code, 0, `短路判据⑤ 后变异 E 应变绿（exit 0），实得 ${rE.code}\n${rE.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rE, '覆盖点集合 ≠ 规格 §二 那 6 个', 'mut'), undefined,
       '短路判据⑤ 后变异 E 竟然还报 ⇒ 那条正向断言没在测判据⑤');
+
+    // ★ 短路判据⑦(b) 的 `if (inv.length) {`（倒置判定）⇒ 变异 G 应**真变绿**（exit 0）
+    const gG = patchGate('check-llm-api.mjs', path.join(dir, 'gG'),
+      [['if (inv.length) {', 'if (false) {']]);
+    const rG = await run(NODE, [gG], { env: { LEMO_TOOLS_ROOT: g } });
+    assert.equal(rG.code, 0, `短路判据⑦(b) 后变异 G 应变绿（exit 0），实得 ${rG.code}\n${rG.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rG, '契约声明「覆盖文件（面板）」在「运行时线索', 'mut'), undefined,
+      '短路判据⑦(b) 后变异 G 竟然还报 ⇒ 那条正向断言没在测判据⑦(b)');
   } finally { rm(dir); }
 });
 

@@ -2025,7 +2025,8 @@ async function apiLlmConfigGet(req, res, url) {
  *   · `apiKey` 空串/缺省 ⇒ **不改**；`clearKey:true` ⇒ 清掉已存密钥；
  *   · `baseUrl` / `model` / `kind` / `path` / `extract` 空串 ⇒ **删掉该项覆盖**（回落到默认）；
  *   · `headers` 值 = 占位符 `••••••` ⇒ 保留原值，空串 ⇒ 删该头；空对象 ⇒ 删 headers 覆盖；
- *   · `timeoutMs` 空 ⇒ 删；否则须在 1000–600000。
+ *   · `timeoutMs` 空 ⇒ 删；否则须在 1000–600000；
+ *   · `models` 数组 ⇒ 存（面板拉到的候选模型清单）；空数组 / null ⇒ 删该项覆盖。
  * ★ 删除靠「把值置成 undefined」：模块 saveOverride 是浅合并，JSON 序列化会丢弃 undefined 键。
  * ★ 落盘用模块的 saveOverride（原子写 + 与现有覆盖合并），本文件**不自己读写**那个文件。
  */
@@ -2059,6 +2060,16 @@ async function apiLlmConfigSave(req, res) {
     }
     if (body.clearKey === true) partial.apiKey = undefined;
     else if (typeof body.apiKey === 'string' && body.apiKey !== '') partial.apiKey = body.apiKey;
+    // ★ 多模型切换：候选模型清单（面板「拉取模型」拉到的）随保存落盘；空数组 ⇒ 删掉该项覆盖。
+    if (body.models !== undefined) {
+      if (body.models === null) partial.models = undefined;
+      else if (Array.isArray(body.models)) {
+        const arr = body.models.map((x) => String(x ?? '').trim()).filter(Boolean);
+        partial.models = arr.length ? arr : undefined;
+      } else {
+        return sendJson(res, 200, { ok: false, error: { kind: 'config', message: 'models 必须是数组' } });
+      }
+    }
     if (body.headers !== undefined) {
       if (body.headers === null) partial.headers = undefined;
       else if (typeof body.headers === 'object' && !Array.isArray(body.headers)) {
@@ -2110,6 +2121,25 @@ async function apiLlmChat(req, res) {
       ? body.messages
       : [{ role: 'user', content: String(body.prompt || '你好，请用一句话回复「pong」。') }];
     const r = await mod.chat(msgs, buildLlmOpts(body, mod.readOverride().headers));
+    sendJson(res, 200, { ok: true, data: r });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * POST /api/llm/models —— 拉取当前 Endpoint 的**可用模型清单**（§七；面板「多模型切换」用）。
+ * body 同 /api/llm/validate（可传**临时配置**，不必先保存）。
+ * 返回 `{ok:true, data:{ok:true,models,meta} | {ok:false,error,meta}}`。
+ * ★ 模块 `listModels()` **永不抛**：异常接口（非 JSON / 5xx / 超时 / 空 body）一律归一为
+ *   `{ok:false,error:{kind,...}}` ⇒ 面板据此给可操作提示，**不会把界面搞崩**。
+ */
+async function apiLlmModels(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
+  try {
+    const mod = await loadLlmApi();
+    const r = await mod.listModels(buildLlmOpts(body, mod.readOverride().headers));
     sendJson(res, 200, { ok: true, data: r });
   } catch (e) { llmFail(res, e); }
 }
@@ -2209,6 +2239,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/llm/config' && m === 'POST') return await apiLlmConfigSave(req, res);
     if (p === '/api/llm/validate' && m === 'POST') return await apiLlmValidate(req, res);
     if (p === '/api/llm/chat' && m === 'POST') return await apiLlmChat(req, res);
+    if (p === '/api/llm/models' && m === 'POST') return await apiLlmModels(req, res);
 
     if (p.startsWith('/api/')) return sendJson(res, 404, { error: `未知接口 ${m} ${p}` });
 

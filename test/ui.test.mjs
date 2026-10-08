@@ -5,11 +5,11 @@
  * 为什么单独一个入口：`test/README.md` 里如实写着「Web UI 交互：一条都没测」——
  * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  *   ★ 2026-10-08 复核：服务端侧现为 smoke **41** + setup **12** = **53** 条（「42 = 30 + 12」是写本文件时的快照）；
- *     本文件（UI 层）现为 **59** 条。
+ *     本文件（UI 层）现为 **64** 条。
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
  * 批次：A/B/C/D（前四批）+ E（第五批：文案出片面板）+ F（第六批：补三处 UI 盲区）
- *   + **G（第七批：补剩余可点击路径 + 一个刚新增的功能开关）**。
+ *   + **G（第七批：补剩余可点击路径 + 一个刚新增的功能开关）** + **I（第八批：LLM API 配置面板）**。
  *   E 补的是「文案出片」这张卡片的**用户点击路径** —— 形态切换、断句逐字一致、分析、风格下拉、
  *   出片请求体契约（形态 1 / 形态 2）、以及三条**纯前端拦截**（空文案 / 形态 2 无素材 / 尺寸非法）。
  *   这三条拦截服务端测不到（前端先拦，请求根本不发出去），只有 UI 层能钉住。
@@ -24,6 +24,15 @@
  *   任务列表的行内「取消」（用户主动取消 ≠ 失败，文案必须中性）、启动表单的「常用组合」预设与「复制」。
  *   ★ 重活一律用**页面内 patch window.fetch** 拦下短路（真 TTS 合成 / 真导入 / 真出片绝不触发）；
  *     真落盘的工单（BRIEF_IDS）与真入队的任务（JOB_IDS）在 finally 里清干净。
+ *   I 补的是 **LLM API 配置面板**（`/api/llm/*`）—— 此前在 UI 层**零覆盖**（探针只在 `D:/lemo-tmp/`，
+ *   不进仓）。四条断言：① 顶栏「LLM 配置」入口可达（点了给卡片加 .flash 并滚进视口）；
+ *   ② 「当前默认：WorkBuddy」胶囊默认态可见、切走变「已切换：…」；③ 多模型切换（拉取模型 → 下拉候选
+ *   → 选中回填模型名输入框，手填兜底仍在）；④ **坏后端不白屏**（patch `window.fetch` 只拦 `/api/llm/*`，
+ *   造 4 类坏响应：网络失败 / 500+HTML / 空 body / `{ok:false}` 结构异常 ⇒ 逐个点校验·试一句·拉取模型
+ *   ⇒ 面板仍在且有内容 + 未捕获异常 **0**）；⑤ 落盘隔离 + 保存刷新后候选仍在。
+ *   ★★ 落盘隔离：I 组另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向临时树）⇒ 覆盖文件
+ *     `<成片根>/_llm-api.json` 写进临时树，**绝不碰真实 `D:/lemo-films/_llm-api.json`**（用例里
+ *     读真实文件前后快照逐字节比对当红线）。上游是**本地 mock**（不打真实外网），跑完随临时树删除。
  *
  * 用法：
  *   node test/ui.test.mjs                 全部用例
@@ -164,11 +173,14 @@ function uploadDubRaw(port, name, buf) {
 }
 
 // ── 测试服务 ────────────────────────────────────────────────
-function spawnServer(port) {
+// ★ I 组（LLM 面板）要一个**落盘隔离**的测试服务：把 `LEMO_FILM_DIR` 指到临时树 ⇒
+//   覆盖文件 `<成片根>/_llm-api.json` 写进临时树，**绝不碰真实 `D:/lemo-films/_llm-api.json`**。
+//   `extraEnv` 是**追加**的（不传 = 与既有行为逐字一致），所以 B~H 组的主服务一点没变。
+function spawnServer(port, extraEnv = null) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['server.mjs', '--port', String(port)], {
       cwd: ROOT, windowsHide: true,
-      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', ...(extraEnv || {}) },
     });
     let out = '';
     let done = false;
@@ -192,10 +204,10 @@ function spawnServer(port) {
   });
 }
 
-async function startServer(attempts = 3) {
+async function startServer(attempts = 3, extraEnv = null) {
   let last;
   for (let i = 0; i < attempts; i++) {
-    try { return await spawnServer(await freePort()); }
+    try { return await spawnServer(await freePort(), extraEnv); }
     catch (e) { last = e; log(C.dim(`  （第 ${i + 1} 次起服务失败，换端口重试：${String(e.message).split('\n')[0]}）`)); }
   }
   throw last;
@@ -210,6 +222,35 @@ function stopServer(child) {
     }, 6000);
     child.once('exit', () => { clearTimeout(t); resolve(); });
     try { child.kill(); } catch { clearTimeout(t); resolve(); }
+  });
+}
+
+/**
+ * ★ I3 用的**正常**上游：一个极小的 OpenAI 兼容 mock（只服务「拉取模型」要的 `GET /v1/models`）。
+ *   · 候选清单写死 3 个，便于断言「下拉里恰好出现这 3 个」；★ 不打真实外网。
+ *   · 用完在 finally 里 close（+ closeAllConnections，免得 keep-alive 连接把 close 挂住）。
+ */
+const LLM_MOCK_MODELS = ['mock-alpha', 'mock-beta', 'mock-gamma'];
+function startLlmMock(port) {
+  const srv = http.createServer((req, res) => {
+    const send = (code, obj) => {
+      const b = Buffer.from(JSON.stringify(obj), 'utf8');
+      res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': b.length });
+      res.end(b);
+    };
+    if (req.method === 'GET' && req.url === '/v1/models') {
+      return send(200, { data: LLM_MOCK_MODELS.map((id) => ({ id })) });
+    }
+    if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+      req.on('data', () => { /* 丢掉请求体 */ });
+      req.on('end', () => send(200, { choices: [{ message: { role: 'assistant', content: 'pong（ui-mock）' } }], usage: { total_tokens: 5 } }));
+      return;
+    }
+    send(404, { error: 'not found' });
+  });
+  return new Promise((resolve, reject) => {
+    srv.on('error', reject);
+    srv.listen(port, '127.0.0.1', () => resolve(srv));
   });
 }
 
@@ -376,8 +417,13 @@ async function launchCdp(edge) {
   const ws = await wsConnect(target.webSocketDebuggerUrl);
   let seq = 0;
   const pending = new Map();
+  // ★ I4「坏后端不白屏」要断言**未捕获异常数 == 0** ⇒ 这里开始记录所有 CDP 事件
+  //   （`Runtime.exceptionThrown` 既覆盖同步未捕获错误，也覆盖未处理的 Promise rejection）。
+  //   只新增一条 `else if`，**不影响**原有的「按 id 匹配请求响应」路径。
+  const events = [];
   ws.handlers.push((m) => {
     if (m.id && pending.has(m.id)) { const fn = pending.get(m.id); pending.delete(m.id); fn(m); }
+    else if (m.method) events.push(m);
   });
   const cmd = (method, params = {}, timeoutMs = 30000) => new Promise((resolve, reject) => {
     const id = ++seq;
@@ -412,7 +458,13 @@ async function launchCdp(edge) {
     try { child.kill(); } catch { /* ignore */ }
   };
 
-  return { child, cmd, evalJs, goto, close };
+  /** 累计的**未捕获异常**（文本化，便于失败时直接打印）。 */
+  const exceptions = () => events.filter((e) => e.method === 'Runtime.exceptionThrown').map((e) => {
+    const d = (e.params && e.params.exceptionDetails) || {};
+    return `${d.text || ''} ${(d.exception && d.exception.description) || ''}`.trim();
+  });
+
+  return { child, cmd, evalJs, goto, close, exceptions };
 }
 
 /** 轮询等一个页面内条件成立。 */
@@ -678,6 +730,9 @@ async function main() {
 
   let server = null;
   let cdp = null;
+  // ★ I 组（LLM 面板）专用：一个**落盘隔离**的测试服务 + 一个正常上游 mock。
+  let llmServer = null;
+  let llmMock = null;
   const state = {};
 
   try {
@@ -2796,6 +2851,260 @@ async function main() {
       need(w.btns.length === 1, `重核 3 次后按钮数=${w.btns.length}，期望恰好 1 个（幂等被破坏）：${JSON.stringify(w.btns)}`);
       notes.push(`H5 连派 3 次 change → 按钮仍为 ${w.btns.length} 个（未堆叠）`);
     });
+
+    // ══ I. LLM API 配置面板（/api/llm/*）══════════════════════════
+    // ★ 本批新增：面板此前在 UI 层**零覆盖**（只有 D:/lemo-tmp 下不进仓的探针）。
+    //   四条断言：① 顶栏「LLM 配置」入口可达；② 默认/切换胶囊；③ 多模型切换（拉取→下拉→回填）；
+    //   ④ 坏后端不白屏（patch window.fetch 只拦 /api/llm/*，4 类坏响应 × 3 个按钮 ⇒ 面板仍在 + 未捕获异常 0）；
+    //   ⑤ 落盘隔离 + 保存刷新后候选仍在。
+    //   ★ 落盘隔离：本组另起一个**专用测试服务**，把 LEMO_FILM_DIR 指到临时树 ⇒ 覆盖文件
+    //     `<成片根>/_llm-api.json` 写进临时树，**绝不碰真实 `D:/lemo-films/_llm-api.json`**。
+    //   ★ 只用 CDP 真点击 + 页面内 patch fetch，**不打真实外网**（上游是本地 mock）。
+    const I_NAMES = ['I1 顶栏', 'I2 「当前默认', 'I3 多模型', 'I4 坏后端', 'I5 落盘隔离'];
+    const iWillRun = !OPT.filter || I_NAMES.some((n) => n.includes(OPT.filter));
+    if (iWillRun) {
+      log('');
+      log(C.b('  I. LLM API 配置面板（/api/llm/*）'));
+
+      const llmFilmDir = path.join(CFG.tmpDir, `b4-ui-llm-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(llmFilmDir, { recursive: true });
+      TMP_ROOTS.add(llmFilmDir);                       // 跑完随 cleanupTmpDirs() 递归删掉
+      const REAL_LLM_OVERRIDE = 'D:\\lemo-films\\_llm-api.json';
+      const realOverrideBefore = (() => { try { return fs.readFileSync(REAL_LLM_OVERRIDE); } catch { return null; } })();
+
+      llmMock = await startLlmMock(await freePort());
+      const llmMockBase = `http://127.0.0.1:${llmMock.address().port}/v1`;
+      llmServer = await startServer(2, { LEMO_FILM_DIR: llmFilmDir });
+      const llmBase = `http://127.0.0.1:${llmServer.port}`;
+      log(C.dim(`  LLM 测试服务 → ${llmBase}（覆盖文件隔离到 ${llmFilmDir}）`));
+      log(C.dim(`  mock 上游 → ${llmMockBase}（候选模型 ${LLM_MOCK_MODELS.join(' / ')}）`));
+
+      // ★ 必须**先导航到隔离服务**（H 组停在主服务上；否则保存会写到真实成片根）——
+      //   再等面板**完整**就绪（`#llmProfileBadge` 只在 renderLlmForm 里填 ⇒ 它非空说明初始
+      //   loadLlm() 已经跑完；否则 I2 的「切 profile」会被仍在飞的初始 loadLlmConfig 回填覆盖）。
+      await cdp.goto(llmBase + '/', 4000);
+      const iReady = `!!document.getElementById('llmCard') && !!document.getElementById('btnGotoLlm')
+        && document.getElementById('llmProfile').options.length > 0
+        && document.getElementById('llmProfileBadge').textContent.length > 0`;
+      await waitFor(cdp.evalJs, iReady, { timeoutMs: 30000 });
+
+      await runCase('I1 顶栏「LLM 配置」入口可达：按钮在、点了给卡片加高亮并滚进视口', async () => {
+        need(await cdp.evalJs(`!!document.getElementById('btnGotoLlm')`), '顶栏没有「LLM 配置」入口按钮 #btnGotoLlm');
+        // 先滚到顶（面板卡片在长页面靠下 ⇒ 此刻必然在视口外），再点入口 —— 才能证明「点了真的滚过去」
+        await cdp.evalJs(`window.scrollTo(0, 0); true`);
+        const beforeTop = await cdp.evalJs(`document.getElementById('llmCard').getBoundingClientRect().top`);
+        const vh = await cdp.evalJs(`window.innerHeight`);
+        need(beforeTop > vh, `前置失败：#llmCard 起点 ${Math.round(beforeTop)} 已在视口内，测不出「点了会滚过去」`);
+        await cdp.evalJs(`document.getElementById('btnGotoLlm').click(); true`);
+        // ★ 有牙的判据：gotoLlmCard() 会给卡片加 .flash 高亮（证明入口真的接到了面板，不是空按钮）
+        need(await cdp.evalJs(`document.getElementById('llmCard').classList.contains('flash')`) === true,
+          '点「LLM 配置」后 #llmCard 没有 .flash 高亮类（入口没接到面板）');
+        await waitFor(cdp.evalJs,
+          `document.getElementById('llmCard').getBoundingClientRect().top < window.innerHeight`,
+          { timeoutMs: 8000 });
+        const afterTop = await cdp.evalJs(`document.getElementById('llmCard').getBoundingClientRect().top`);
+        need(afterTop < beforeTop, `点入口后 #llmCard 没上移（top ${Math.round(beforeTop)} → ${Math.round(afterTop)}）`);
+        notes.push(`I1 顶栏入口可达：#llmCard 加 .flash；top ${Math.round(beforeTop)} → ${Math.round(afterTop)}`);
+      });
+
+      await runCase('I2 「当前默认：WorkBuddy」胶囊：默认态可见，切到别的 profile 后变「已切换：…」', async () => {
+        // 面板已完整就绪（初始 loadLlm 跑完）⇒ 此刻就是默认态。
+        // ★ 这里**不点「刷新」**：刷新会再起一次 loadLlm()，若它的响应晚于「切 profile」回来，
+        //   会把 pill 回填成默认态（竞态）。等 badge 非空已经保证初始加载结束。
+        await waitFor(cdp.evalJs, `/当前默认/.test(document.getElementById('llmCurrentPill').textContent)`, { timeoutMs: 15000 });
+        const pill0 = await cdp.evalJs(`document.getElementById('llmCurrentPill').textContent`);
+        need(/WorkBuddy/.test(pill0), `默认态胶囊文案是「${pill0}」，期望含「WorkBuddy」`);
+        need(/is-default/.test(await cdp.evalJs(`document.getElementById('llmCurrentPill').className`)),
+          '默认态胶囊没有 .is-default 类');
+
+        // 切到一个非默认 profile（从下拉里挑一个 ≠ workbuddy 的，**不写死 id**）
+        const sw = await cdp.evalJs(`(() => {
+          const s = document.getElementById('llmProfile');
+          const o = [...s.options].find((x) => x.value && x.value !== 'workbuddy');
+          if (!o) return { ok: false };
+          s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true }));
+          return { ok: true, id: o.value };
+        })()`);
+        need(sw.ok, '#llmProfile 下拉里没有 workbuddy 之外的 profile（profile 清单读不到？）');
+        await waitFor(cdp.evalJs, `/已切换/.test(document.getElementById('llmCurrentPill').textContent)`, { timeoutMs: 15000 });
+        const pill1 = await cdp.evalJs(`document.getElementById('llmCurrentPill').textContent`);
+        need(/is-switched/.test(await cdp.evalJs(`document.getElementById('llmCurrentPill').className`)),
+          `切走后胶囊没有 .is-switched 类：${pill1}`);
+        need(pill1.startsWith('已切换：'), `切到 ${sw.id} 后胶囊文案是「${pill1}」，期望以「已切换：」开头`);
+        notes.push(`I2 胶囊：默认「${pill0}」→ 切到 ${sw.id} 后「${pill1}」`);
+
+        // 切回 workbuddy，免得影响后面的用例
+        await cdp.evalJs(`(() => { const s = document.getElementById('llmProfile');
+          if ([...s.options].some((o) => o.value === 'workbuddy')) {
+            s.value = 'workbuddy'; s.dispatchEvent(new Event('change', { bubbles: true }));
+          } return true; })()`);
+        await waitFor(cdp.evalJs, `/当前默认/.test(document.getElementById('llmCurrentPill').textContent)`, { timeoutMs: 15000 });
+      });
+
+      await runCase('I3 多模型切换：点「拉取模型」→ 下拉出现候选 → 选中后回填进模型名输入框', async () => {
+        // 把表单指向本地 mock 上游（走真实前端逻辑，不预先保存）
+        await cdp.evalJs(`(() => {
+          document.getElementById('llmKind').value = 'openai-compatible';
+          document.getElementById('llmBaseUrl').value = ${JSON.stringify(llmMockBase)};
+          document.getElementById('llmModel').value = '';
+          document.getElementById('llmKey').value = 'sk-ui-mock-key-123456';
+          document.getElementById('llmTimeout').value = '5000';
+          document.getElementById('llmModelSelect').hidden = true;
+          return true;
+        })()`);
+
+        await cdp.evalJs(`document.getElementById('btnLlmModels').click(); true`);
+        await waitFor(cdp.evalJs,
+          `document.getElementById('llmModelSelect').hidden === false
+           && [...document.getElementById('llmModelSelect').options].filter((o) => o.value).length === ${LLM_MOCK_MODELS.length}`,
+          { timeoutMs: 20000 });
+        const cand = await cdp.evalJs(`[...document.getElementById('llmModelSelect').options].map((o) => o.value).filter(Boolean)`);
+        need(JSON.stringify(cand) === JSON.stringify(LLM_MOCK_MODELS),
+          `下拉候选是 ${JSON.stringify(cand)}，期望 ${JSON.stringify(LLM_MOCK_MODELS)}`);
+
+        // 选中第 2 个 → 回填进模型名输入框（手填兜底仍在：输入框不是 disabled/readonly）
+        const pick = LLM_MOCK_MODELS[1];
+        await cdp.evalJs(`(() => { const s = document.getElementById('llmModelSelect');
+          s.value = ${JSON.stringify(pick)}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+        const mv = await cdp.evalJs(`document.getElementById('llmModel').value`);
+        need(mv === pick, `选中下拉项后 #llmModel = 「${mv}」，期望「${pick}」`);
+        const manual = await cdp.evalJs(`(() => { const i = document.getElementById('llmModel');
+          return { disabled: i.disabled, readonly: i.readOnly, hasList: !!document.getElementById('llmModelList') }; })()`);
+        need(manual.disabled === false && manual.readonly === false && manual.hasList,
+          `手填兜底被破坏：${JSON.stringify(manual)}`);
+        notes.push(`I3 拉取模型 → 下拉候选 ${JSON.stringify(cand)}；选中「${pick}」→ #llmModel 回填成功`);
+      });
+
+      await runCase('I4 坏后端不白屏：patch fetch 拦 /api/llm/* 造 4 类坏响应，面板仍在 + 未捕获异常 0', async () => {
+        // 重新打开页面，拿一个干净的异常基线（此后本页只由本用例驱动）
+        await cdp.goto(llmBase + '/', 4000);
+        await waitFor(cdp.evalJs, `!!document.getElementById('llmCard')`, { timeoutMs: 30000 });
+        await cdp.evalJs(`(() => {
+          // 页面内计数：未捕获 error + 未处理的 Promise rejection（CDP 之外的**第二道**观测）
+          window.__uncaught = 0;
+          window.addEventListener('error', () => { window.__uncaught += 1; });
+          window.addEventListener('unhandledrejection', () => { window.__uncaught += 1; });
+          // ★ 只拦 /api/llm/*，其余请求照走真后端
+          if (!window.__origFetch) {
+            window.__origFetch = window.fetch;
+            window.__badMode = 'none';
+            window.fetch = async (input, opts) => {
+              const url = String(input && input.url ? input.url : input);
+              if (!url.includes('/api/llm/')) return window.__origFetch(input, opts);
+              const mode = window.__badMode;
+              if (mode === 'netfail') throw new TypeError('Failed to fetch');
+              if (mode === 'html500') return new Response('<html><body>500 Internal Server Error</body></html>', { status: 500, headers: { 'Content-Type': 'text/html' } });
+              if (mode === 'empty') return new Response('', { status: 200 });
+              if (mode === 'errshape') return new Response(JSON.stringify({ ok: false }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+              return window.__origFetch(input, opts);
+            };
+          }
+          return true;
+        })()`, { awaitPromise: true });
+
+        const exBefore = cdp.exceptions().length;
+        const modes = [
+          ['netfail', '网络失败（fetch 抛 TypeError）'],
+          ['html500', '500 + HTML 响应体'],
+          ['empty', '200 + 空 body'],
+          ['errshape', '200 + {ok:false}（缺 error 字段的结构异常）'],
+        ];
+        const rows = [];
+        for (const [mode, label] of modes) {
+          await cdp.evalJs(`window.__badMode = ${JSON.stringify(mode)}; true`);
+          // 清掉上一次的反馈，免得「等到的是陈旧输出」造成假绿
+          await cdp.evalJs(`(() => {
+            document.getElementById('llmTryOut').textContent = '';
+            document.getElementById('llmModelHint').textContent = '';
+            document.getElementById('llmSteps').hidden = true;
+            for (const n of document.querySelectorAll('.llm-step')) n.className = 'llm-step';
+            return true;
+          })()`);
+          // ★ 逐个动作都点一遍（校验 / 试一句 / 拉取模型）—— **串行**，因为前端有 llmState.busy 互斥
+          await cdp.evalJs(`document.getElementById('btnLlmValidate').click(); true`);
+          await waitFor(cdp.evalJs,
+            `[...document.querySelectorAll('.llm-step')].some((n) => /fail/.test(n.className))`, { timeoutMs: 20000 });
+          await cdp.evalJs(`document.getElementById('btnLlmTry').click(); true`);
+          await waitFor(cdp.evalJs, `!!document.querySelector('#llmTryOut .llm-out-err')`, { timeoutMs: 20000 });
+          await cdp.evalJs(`document.getElementById('btnLlmModels').click(); true`);
+          await waitFor(cdp.evalJs, `/失败/.test(document.getElementById('llmModelHint').textContent)`, { timeoutMs: 20000 });
+
+          // ★ 面板仍在、有内容（不白屏）
+          const alive = await cdp.evalJs(`(() => {
+            const c = document.getElementById('llmCard');
+            return { hasCard: !!c, h: c ? c.offsetHeight : 0,
+                     textLen: document.body.innerText.trim().length,
+                     hasBtn: !!document.getElementById('btnLlmValidate') };
+          })()`);
+          need(alive.hasCard && alive.h > 0 && alive.hasBtn,
+            `坏后端(${mode}/${label})：面板消失了（${JSON.stringify(alive)}）`);
+          need(alive.textLen > 100, `坏后端(${mode}/${label})：页面文本只剩 ${alive.textLen} 字（疑似白屏）`);
+          rows.push(`${mode} ✓`);
+        }
+
+        const exAfter = cdp.exceptions().length;
+        const inPage = await cdp.evalJs(`window.__uncaught`);
+        need(exBefore === 0,
+          `打开面板页面时就已有 ${exBefore} 个未捕获异常（页面本身不干净）：${JSON.stringify(cdp.exceptions().slice(0, exBefore))}`);
+        need(exAfter === exBefore,
+          `坏后端 4 类 × 3 动作后**新增未捕获异常** ${exAfter - exBefore} 个：${JSON.stringify(cdp.exceptions().slice(exBefore))}`);
+        need(inPage === 0, `页面内 error/unhandledrejection 计数为 ${inPage}（应为 0）`);
+        // 恢复 fetch（后续用例 / 收尾不受影响）
+        await cdp.evalJs(`if (window.__origFetch) { window.fetch = window.__origFetch; window.__badMode = 'none'; } true`);
+        notes.push(`I4 坏后端 4 类（网络失败 / 500+HTML / 空 body / {ok:false} 结构异常）× 3 动作（校验/试一句/拉取模型）⇒ 面板仍在、未捕获异常新增 ${exAfter - exBefore} 个、页面内计数 ${inPage}`);
+      });
+
+      await runCase('I5 落盘隔离 + 保存刷新后候选仍在：覆盖文件写进临时树，真实 _llm-api.json 逐字节不变', async () => {
+        // ★ I4 重载过页面 ⇒ 表单与候选都回到初始态，这里**自成一体**地重做一遍「指向 mock → 拉取 → 保存」。
+        await cdp.evalJs(`(() => {
+          document.getElementById('llmKind').value = 'openai-compatible';
+          document.getElementById('llmBaseUrl').value = ${JSON.stringify(llmMockBase)};
+          document.getElementById('llmModel').value = '';
+          document.getElementById('llmKey').value = 'sk-ui-mock-key-123456';
+          document.getElementById('llmTimeout').value = '5000';
+          return true;
+        })()`);
+        await cdp.evalJs(`document.getElementById('btnLlmModels').click(); true`);
+        await waitFor(cdp.evalJs,
+          `document.getElementById('llmModelSelect').hidden === false
+           && [...document.getElementById('llmModelSelect').options].filter((o) => o.value).length === ${LLM_MOCK_MODELS.length}`,
+          { timeoutMs: 20000 });
+
+        // 前置：面板显示的落盘路径必须在隔离的临时树里
+        const hint0 = await cdp.evalJs(`document.getElementById('llmSaveHint').textContent`);
+        need(hint0.includes(llmFilmDir),
+          `面板显示的落盘路径「${hint0}」不在隔离的临时树里 —— 服务没吃到 LEMO_FILM_DIR？`);
+
+        // 保存会把 models 一并落盘
+        await cdp.evalJs(`document.getElementById('btnLlmSave').click(); true`);
+        await waitFor(cdp.evalJs, `/已保存/.test(document.getElementById('llmSaveHint').textContent)`, { timeoutMs: 15000 });
+
+        // ★ 覆盖文件真的落在临时树里（且不是真实路径）
+        const isoFile = path.join(llmFilmDir, '_llm-api.json');
+        need(fs.existsSync(isoFile), `保存后临时树里没有 ${isoFile}（覆盖没落盘？）`);
+        const saved = JSON.parse(fs.readFileSync(isoFile, 'utf8'));
+        need(JSON.stringify(saved.models) === JSON.stringify(LLM_MOCK_MODELS),
+          `临时覆盖文件里的 models 是 ${JSON.stringify(saved.models)}，期望 ${JSON.stringify(LLM_MOCK_MODELS)}`);
+
+        // ★ 刷新页面 → 候选下拉仍在（models 随覆盖落盘 ⇒ 前端从 /api/llm/config 读回来）
+        await cdp.goto(llmBase + '/', 4000);
+        await waitFor(cdp.evalJs,
+          `document.getElementById('llmModelSelect') && document.getElementById('llmModelSelect').hidden === false
+           && [...document.getElementById('llmModelSelect').options].filter((o) => o.value).length === ${LLM_MOCK_MODELS.length}`,
+          { timeoutMs: 20000 });
+        const after = await cdp.evalJs(`[...document.getElementById('llmModelSelect').options].map((o) => o.value).filter(Boolean)`);
+        need(JSON.stringify(after) === JSON.stringify(LLM_MOCK_MODELS),
+          `刷新后候选下拉是 ${JSON.stringify(after)}，期望 ${JSON.stringify(LLM_MOCK_MODELS)}`);
+
+        // ★★ 红线：真实 `D:/lemo-films/_llm-api.json` 逐字节不变（读前后快照比对）
+        const realAfter = (() => { try { return fs.readFileSync(REAL_LLM_OVERRIDE); } catch { return null; } })();
+        const same = (realOverrideBefore === null && realAfter === null)
+          || (realOverrideBefore !== null && realAfter !== null && realOverrideBefore.equals(realAfter));
+        need(same,
+          `真实 ${REAL_LLM_OVERRIDE} 被改动了（跑前 ${realOverrideBefore ? realOverrideBefore.length + ' 字节' : '不存在'} → 跑后 ${realAfter ? realAfter.length + ' 字节' : '不存在'}）`);
+        notes.push(`I5 保存落盘到临时树 ${isoFile}（models=${JSON.stringify(saved.models)}）；刷新后下拉仍在；真实 ${REAL_LLM_OVERRIDE} 逐字节不变`);
+      });
+    }
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）
@@ -2808,6 +3117,12 @@ async function main() {
     }
     if (cdp && !OPT.keepBrowser) { await cdp.close(); log(C.dim('  无头 Edge 已关闭')); }
     if (server) { await stopServer(server.child); log(C.dim(`  测试服务已停止（pid ${server.child.pid}）`)); }
+    // ★ I 组的 LLM 专用服务 + mock 上游：一并停掉（覆盖文件所在的临时树由 cleanupTmpDirs() 删）
+    if (llmServer) { await stopServer(llmServer.child); log(C.dim(`  LLM 测试服务已停止（pid ${llmServer.child.pid}）`)); }
+    if (llmMock) {
+      try { llmMock.closeAllConnections && llmMock.closeAllConnections(); llmMock.close(); } catch { /* ignore */ }
+      log(C.dim('  LLM mock 上游已关闭'));
+    }
 
     // ★ 回归钉子 · 取快照：**必须在还原之前**读 —— 还原会把脏值写回基线、掩盖问题。
     //   服务已停，此刻这两个文件就是「测试跑完」的状态。
@@ -2914,7 +3229,7 @@ async function main() {
   log('─'.repeat(64));
   log('');
 
-  // ★ 钉子红了也要非 0 —— 否则会被这里覆盖成 0（但**不**混进上面 59 条用例计数）。
+  // ★ 钉子红了也要非 0 —— 否则会被这里覆盖成 0（但**不**混进上面 64 条用例计数）。
   process.exitCode = (failed.length || entryTouched) ? 1 : 0;
 }
 
