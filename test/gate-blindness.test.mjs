@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 93 条用例 / 覆盖全部 37 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 95 条用例 / 覆盖全部 38 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -99,6 +99,16 @@
  *            ⇒ 变异 A/B **重新变绿**。
  *          ★ 主夹具**整棵拷真实 `DEMO.md` + `style.json` 语料**（手写最小树 = 抄第二遍），
  *            本地副本读数侧指回**真实风格树**（只读）。
+ *        · `check-target-as-measured`（2026-10-08 建；抓「**把目标/参数值当成实测读数写进文档**」）：
+ *          主夹具用**合成极小树**（1 风格 + 1 条 `DEMO.md` 结果位读数）—— 本闸门的事实源是
+ *          「文档结果位读数 ↔ 目标/参数值 ↔ `_distill.json` 实测真值」**三方关系**，最小树即可精确摆出。
+ *          ① **阴性对照**（结果位值 == 目标 **且** == 实测 ⇒ 判据 ③ 放行 ⇒ 归「巧合」桶、exit 0）；
+ *          ② **正向**（同一句、实测改成 −3.34 ⇒ 判据 ③ 成立 ⇒ FAIL 并点名 slug + 该读数）；
+ *          ③ **失明守卫**（`LEMO_OPUSCAR` / `LEMO_DISTILL_ROOT` 两根全空 ⇒ 0 风格 / 0 声称 / 0 目标来源
+ *            ⇒ FAIL +「本闸门已失明」，且失明时**不输出判据**）；
+ *          ④ **真实语料阴性对照**（只读）：修好后 exit 0；若库仓那处**已登记真阳**（`watercolor/DEMO.md`）
+ *            尚未修，则唯一 FAIL 必须是它（**不接受**别的命中）。
+ *          ⑤ **★自证**：短路判据 ③（`nearActual` 恒真）⇒ 正向夹具**重新变绿**。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -3756,6 +3766,86 @@ test('★自证 check-demo-header：短路时长判据后，变异 A/B 必须重
     const rb = await run(NODE, [gb], { env: { LEMO_OPUSCAR: b, LEMO_DISTILL_ROOT: DISTILL_REAL } });
     assert.throws(() => expectBlind(rb, N_FAIL, 'mut'), undefined,
       '短路时长判据后变异B 竟然还报 ⇒ 那条正向断言没在测时长判据');
+  } finally { rm(dir); }
+});
+
+// ── 12f. check-target-as-measured.mjs（「把目标/参数值当实测」闸门，2026-10-08 建）──────
+// ★ 主夹具用**合成极小树**（1 个风格 + 1 条 `DEMO.md` 结果位读数）：本闸门的事实源是
+//   「文档结果位读数 ↔ 目标/参数值 ↔ `_distill.json` 实测真值」**三方关系**，手写最小树就能**精确摆出**
+//   那三种关系（值==目标且≠实测 / 值==目标且==实测 / 值==目标但不在结果位）—— 无需整棵拷真实语料。
+// ★ 覆盖点：**`LEMO_OPUSCAR`**（库仓根：文档 + demo 参数 + `core/render/mux.sh` 默认值）
+//   + **`LEMO_DISTILL_ROOT`**（风格技能树：`SKILL.md` 文档 + `_distill.json` 真值/散文），与既有闸门同名同义。
+const tamDistill = (peakTarget, truePeak) => ({
+  selfCheck: {
+    loudness: {
+      truePeakDbtp: truePeak, samplePeakDbfs: truePeak,
+      integratedLufs: -14.2, lra: 3.2, peakDbtpTarget: peakTarget,
+    },
+  },
+});
+/** 造一棵「1 风格」的极小树：库仓 `styles/<slug>/DEMO.md` + 技能树 `<slug>/{SKILL.md,_distill.json}`。 */
+const tamTree = (dir, slug, demoLine, distill) => {
+  const opus = path.join(dir, 'opuscar');
+  const dist = path.join(dir, 'distill');
+  wf(path.join(opus, 'styles', slug, 'DEMO.md'), `${demoLine}\n`);
+  wf(path.join(dist, slug, 'SKILL.md'), `# ${slug}\n`);
+  rj(path.join(dist, slug, '_distill.json'), distill);
+  return { opus, dist };
+};
+
+test('check-target-as-measured：结果位数值 == 目标/参数值 且 ≠ 实测 ⇒ FAIL 并点名；阴性对照（= 实测 ⇒ 放行）；失明守卫', async () => {
+  const dir = path.join(TMP, 'tam');
+  const N_FAIL = '结果位数值 == 目标/参数值，且与实测不符';
+  const N_BLIND = '本闸门已失明';
+  // 同一句「结果位」写法：`→` 结果列表 + 紧邻 `,`；行内 `TP=-1.2` 也是目标/参数来源（判据 ④）。
+  const LINE = '- At mux: `loudnorm=I=-14:TP=-1.2` → −14.2 LUFS, −1.2 dBTP.';
+  try {
+    // ① 阴性对照：结果位读数 −1.2 dBTP 既 == 目标（`peakDbtpTarget` −1.2）**又 == 实测**（−1.2）
+    //    ⇒ 判据 ③（值≠实测）不成立 ⇒ 归「巧合」桶、exit 0（证明「永远 exit 1」的坏断言不成立）。
+    const neg = tamTree(path.join(dir, 'neg'), 'gb-tam', LINE, tamDistill(-1.2, -1.2));
+    const r0 = await runGate('check-target-as-measured.mjs', { LEMO_OPUSCAR: neg.opus, LEMO_DISTILL_ROOT: neg.dist });
+    expectClean(r0, N_FAIL, 'check-target-as-measured 阴性对照');
+    assert.ok(!r0.out.includes('已失明'), `阴性对照不应失明\n${r0.out.slice(0, 700)}`);
+
+    // ② 正向：**同一句**，但实测真峰值改成 −3.34（≠ −1.2）⇒ 判据 ③ 成立 ⇒ FAIL 并点名该行。
+    const pos = tamTree(path.join(dir, 'pos'), 'gb-tam', LINE, tamDistill(-1.2, -3.34));
+    const r1 = await runGate('check-target-as-measured.mjs', { LEMO_OPUSCAR: pos.opus, LEMO_DISTILL_ROOT: pos.dist });
+    expectBlind(r1, N_FAIL, 'check-target-as-measured 正向');
+    assert.ok(r1.out.includes('gb-tam') && r1.out.includes('−1.2 dBTP'),
+      `正向应点名 gb-tam + −1.2 dBTP\n${r1.out.slice(0, 1200)}`);
+
+    // ③ 失明守卫：两个根都空 ⇒ 0 风格 / 0 声称 / 0 目标来源 ⇒ FAIL +「本闸门已失明」，且**不输出判据**。
+    const e = path.join(dir, 'empty'); mk(e);
+    const rb = await runGate('check-target-as-measured.mjs', { LEMO_OPUSCAR: e, LEMO_DISTILL_ROOT: e });
+    expectBlind(rb, N_BLIND, 'check-target-as-measured 失明');
+    assert.ok(!rb.out.includes(N_FAIL), `失明时不该输出判据\n${rb.out.slice(0, 900)}`);
+
+    // ④ 阴性对照（真实语料，只读）：修好后 exit 0；若库仓那处**已登记真阳**（`watercolor/DEMO.md`）
+    //    尚未修，则唯一 FAIL 必须是它（**不接受**别的命中 —— 否则说明闸门在真实语料上抓错了东西）。
+    const rr = await runGate('check-target-as-measured.mjs', {});
+    if (rr.code === 0) {
+      expectClean(rr, N_BLIND, 'check-target-as-measured 真实语料阴性对照');
+    } else {
+      assert.ok(/FAIL 1 处/.test(rr.out) && rr.out.includes('watercolor/DEMO.md'),
+        `真实语料若仍 FAIL，唯一命中必须是已登记的 watercolor/DEMO.md 真阳\n${rr.out.slice(0, 1400)}`);
+    }
+  } finally { rm(dir); }
+});
+
+test('★自证 check-target-as-measured：短路判据 ③（值≠实测）后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-tam');
+  const N_FAIL = '结果位数值 == 目标/参数值，且与实测不符';
+  try {
+    // 短路判据 ③：把「与实测相符 ⇒ 放行」那一句改成恒真（**只改这一处**，不动其它结构）
+    //   ⇒ 任何结果位命中都被当「巧合」放行 ⇒ 正向夹具必须**不再** FAIL。
+    const subs = [['      const nearActual = rec.truth.some((x) => isNum(x) && Math.abs(x - v) <= TOL[kind]);',
+      '      const nearActual = true;']];
+    const pos = tamTree(path.join(dir, 'pos'), 'gb-tam',
+      '- At mux: `loudnorm=I=-14:TP=-1.2` → −14.2 LUFS, −1.2 dBTP.', tamDistill(-1.2, -3.34));
+    const g = patchGate('check-target-as-measured.mjs', path.join(dir, 'g'), subs);
+    const r = await run(NODE, [g], { env: { LEMO_OPUSCAR: pos.opus, LEMO_DISTILL_ROOT: pos.dist } });
+    assert.throws(() => expectBlind(r, N_FAIL, 'mut'), undefined,
+      '短路判据 ③ 后正向竟然还报 ⇒ 那条正向断言没在测判据 ③');
   } finally { rm(dir); }
 });
 
