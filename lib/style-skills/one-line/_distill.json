@@ -90,6 +90,8 @@
     "ttsRan": true,
     "asrMismatches": 0,
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/one-line/one-line.mp4",
       "integratedLufs": -14.48,
       "lra": 7,
       "truePeakDbtp": -1.62,

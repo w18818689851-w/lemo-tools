@@ -57,7 +57,7 @@
  *          ③ **变异 C**（把已登记的 `selfCheck.muxEncoder` 从**全部** json 删掉）⇒ **仍 exit 0**
  *            —— 钉住判据② 的**语义**：「登记了但**闸门**不在了才红」，**不是**「字段消失了就红」；
  *          ④ **失明三态**（空风格树 / 数据里 0 字段 / 空登记表）⇒ FAIL +「本闸门已**失明**」；
- *          ★ 夹具**整棵拷真实 `_distill.json` 语料**（276 条登记表抄第二遍必然漂移）；
+ *          ★ 夹具**整棵拷真实 `_distill.json` 语料**（278 条登记表抄第二遍必然漂移）；
  *            要变异**登记表**本身时只能「拷闸门 + `LEMO_TOOLS_ROOT` 指回真实仓」（判据② 才找得到那些闸门）。
  *        · `check-sources-paths`（2026-10-08 建，`_distill.json#sources` 的**路径引用存在性**）：
  *          ① **解析不到的路径**（临时语料给 `art-deco` 加 `lib/style-dna/__NOPE__art-deco.md`）⇒ FAIL 并点名
@@ -3404,7 +3404,7 @@ test('★自证 check-env-overrides·库仓侧：把判据⑤⑥⑦⑧ 整段摘
 
 // ── 12c. check-distill-fields.mjs（`_distill.json` 字段路径的「登记表 + 双向守卫」，2026-10-07 建）──
 // ★ 为什么夹具是「**整棵拷真实 `_distill.json` 语料**」而不是手写最小树：判据① 要求「真实数据里出现的
-//   **每一条**字段路径都已在登记表里」⇒ 手写最小树等于把 276 条登记表**抄第二遍**（两套口径必然漂移）。
+//   **每一条**字段路径都已在登记表里」⇒ 手写最小树等于把 278 条登记表**抄第二遍**（两套口径必然漂移）。
 //   拷真实语料则**自洽**（闸门与语料同一快照）—— 这也正是本闸门要守的那件事的反面。
 // ★ 本闸门**有**两个覆盖点（`LEMO_DISTILL_ROOT` 风格树 / `LEMO_TOOLS_ROOT` 仓根）⇒ 语料可重定向，
 //   但要变异**登记表**本身时，只能「拷闸门 + `LEMO_TOOLS_ROOT` 指回真实仓」（判据② 才找得到那些闸门）。
@@ -3440,8 +3440,8 @@ test('check-distill-fields：未登记字段 ⇒ FAIL 并点名；删字段不�
     expectClean(r0, N_UNREG, 'check-distill-fields 阴性对照');
     assert.ok(r0.out.includes('✓ 判据①·') && r0.out.includes('✓ 判据②·'),
       `阴性对照应真的跑过判据①②\n${r0.out.slice(0, 900)}`);
-    assert.ok(/实测 43 个风格 \/ 276 条去重字段路径/.test(r0.out),
-      `阴性对照应打印「43 个风格 / 276 条字段路径」\n${r0.out.slice(0, 900)}`);
+    assert.ok(/实测 43 个风格 \/ 278 条去重字段路径/.test(r0.out),
+      `阴性对照应打印「43 个风格 / 278 条字段路径」\n${r0.out.slice(0, 900)}`);
 
     // ② 变异 A（判据①）：给某份 json 加一个全新字段 ⇒ FAIL 并**点名 slug + 字段路径**
     const pos = copyDistillCorpus(path.join(dir, 'pos'));
@@ -3467,8 +3467,8 @@ test('check-distill-fields：未登记字段 ⇒ FAIL 并点名；删字段不�
     for (const s of fs.readdirSync(c)) editDistill(path.join(c, s, '_distill.json'), (j) => { if (j.selfCheck) delete j.selfCheck.muxEncoder; });
     const r3 = await runGate('check-distill-fields.mjs', { LEMO_DISTILL_ROOT: c });
     expectClean(r3, N_GONE, 'check-distill-fields 变异 C（删字段）');
-    assert.ok(/实测 43 个风格 \/ 275 条去重字段路径/.test(r3.out) && r3.out.includes('✓ 判据②·'),
-      `变异 C 应显示 275 条、且判据② 不响\n${r3.out.slice(0, 900)}`);
+    assert.ok(/实测 43 个风格 \/ 277 条去重字段路径/.test(r3.out) && r3.out.includes('✓ 判据②·'),
+      `变异 C 应显示 277 条、且判据② 不响\n${r3.out.slice(0, 900)}`);
 
     // ④b 变异 D（判据⑤·2026-10-08 新增）：把某条「无闸门」条目的 `verifiability` 改成**非法值**
     //    ⇒ FAIL 并点名（守住「三档计数不会静默失真」）。

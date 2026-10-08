@@ -82,6 +82,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/microgame/microgame.mp4",
       "integratedLufs": -14.28,
       "lra": 3.5,
       "truePeakDbtp": -1.32,

@@ -85,6 +85,8 @@
       "混流 MUX_OK 36912520 src_frames=1248 out_frames=1248，CRF 26 / grain 0（logs:8/138）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/crayon-book/crayon-book.mp4",
       "truePeakDbtp": -1.57,
       "integratedLufs": -14.21,
       "peakDbtpTarget": -1.2,

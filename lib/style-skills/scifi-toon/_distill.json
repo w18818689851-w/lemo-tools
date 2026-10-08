@@ -81,6 +81,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/scifi-toon/scifi-toon.mp4",
       "integratedLufs": -14.18,
       "lra": 5.4,
       "truePeakDbtp": -1.59,

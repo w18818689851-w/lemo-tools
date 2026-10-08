@@ -78,6 +78,8 @@
       "本次出片非本智能体执行（GPU 独占，纪律禁止起渲染），以上数据全部转录自 _distill/logs/stained-glass.log"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/stained-glass/stained-glass.mp4",
       "truePeakDbtp": -1.83,
       "integratedLufs": -14.44,
       "peakDbtpTarget": -1.2,

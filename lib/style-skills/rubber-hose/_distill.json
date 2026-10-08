@@ -75,6 +75,8 @@
     "muxEncoder": "nvenc",
     "warnings": [],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/rubber-hose/rubber-hose.mp4",
       "truePeakDbtp": -2.94,
       "integratedLufs": -14.02,
       "peakDbtpTarget": -1.2,

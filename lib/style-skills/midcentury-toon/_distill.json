@@ -81,6 +81,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/midcentury-toon/midcentury-toon.mp4",
       "integratedLufs": -14.14,
       "lra": 7.3,
       "truePeakDbtp": -1.5,

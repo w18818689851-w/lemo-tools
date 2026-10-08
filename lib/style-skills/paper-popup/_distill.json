@@ -131,6 +131,8 @@
       "`mix.py:196,202` 的 np.convolve 直卷 6384000x14400 实测 30+ 分钟不结束（530% CPU / 34 线程 / load average 21，极易误判为卡死），已改为 scipy.signal.fftconvolve（<75 秒，输出逐位相同）；该修正未回写上游仓库"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/paper-popup/paper-popup.mp4",
       "truePeakDbtp": -1.65,
       "integratedLufs": -14.04,
       "peakDbtpTarget": -1.2,

@@ -95,6 +95,8 @@
       "成片渲染 922 frames / 29 s / 6 workers → video_gpu.mp4 39.6 MB；混流走 nvenc，MUX_OK 26452481 src_frames=922 out_frames=922，最终 25.2 MB / 总耗时 54.1 s（log:58-123）。"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/silkscreen-poster/silkscreen-poster.mp4",
       "truePeakDbtp": -1.4,
       "integratedLufs": -14.67,
       "peakDbtpTarget": -1.2,

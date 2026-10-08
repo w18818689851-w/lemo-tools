@@ -91,6 +91,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/watercolor/watercolor.mp4",
       "integratedLufs": -14.11,
       "lra": 6.6,
       "truePeakDbtp": -3.34,

@@ -15,7 +15,9 @@
  * 用法：
  *   node scripts/check-skill-artifacts.mjs [--only a,b] [--json] [--tol-bytes 1024] [--tol-sec 0.05]
  *   node scripts/check-skill-artifacts.mjs --update      # 把不一致的**按实物更正**（会改文档；默认只报不改）
- * 退出码：有不一致 → 1；否则 0。
+ * 退出码：有不一致（`fails`）**或本闸门失明**（`blind`）→ 1；否则 0。
+ *   ★ 另有 `exit 2`（2026-10-08 补声明）：找不到 ffprobe（无法核成片实物）。
+ *   （★ 2026-10-08 复核：原只写「有不一致 → 1；否则 0」，漏了 `blind` 与 `exit 2`。）
  */
 
 import fs from 'node:fs';

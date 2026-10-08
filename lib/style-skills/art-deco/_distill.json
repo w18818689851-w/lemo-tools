@@ -74,6 +74,8 @@
       "峰值口径订正：成片真峰值 = loudnorm 的 input_tp（4× 过采样）= -1.17 dBTP，与 -1.2 dBTP 交付线擦线、超 0.03 dB（测量/编码噪声量级，未触发 mux 告警）。日志 log:98 的 astats「Peak level dB: -1.388914」是采样峰值、不是真峰值；log:97 的 ebur128「Peak: -1.2 dBFS」才接近真峰值。（★ 原记·2026-10-03；成片已于 2026-10-03 用 scripts/fix-truepeak.mjs 重混、2026-10-05 重渲后实测真峰值 -1.54 dBTP 达标）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/art-deco/art-deco.mp4",
       "truePeakDbtp": -1.54,
       "integratedLufs": -14.14,
       "peakDbtpTarget": -1.2,

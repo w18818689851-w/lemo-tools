@@ -24,6 +24,10 @@
  *      「本闸门已失明」**，且失明时**不再输出判据 ①②**（那只会刷屏且会被误读成「字段有问题」）。
  *   ⑤ **登记表自洽性 ⇒ FAIL**：每条 `coveredBy: null` 条目**必须**带合法 `verifiability`
  *      （`'value'` / `'claim'` / `'unverifiable'`）—— 否则三档计数会**静默失真**（新增的守卫，见 ③）。
+ *   ⑥ **`selfCheck.loudness` 必须声明「读数测的是哪一份产物」⇒ 缺 / 枚举外 ⇒ FAIL**（★ 2026-10-08 新增，
+ *      治第 113~116 批连续四批的**根因混淆**）：逐份核 `selfCheck.loudness.measuredFrom` **存在**且在
+ *      枚举（`local-copy` / `published-film`）内，否则 FAIL 并点名 slug；`measuredPath` 若在须是非空字符串、
+ *      且 `measuredFrom === 'local-copy'` 时须等于 `D:/lemo-films/<slug>/<slug>.mp4`。详见 ⑨。
  *
  * ★★ ③ 登记表的**三档语义**（★ 2026-10-08 从「两档」升级；`--json` 见下）：
  *   · `coveredBy: '<闸门名>'` ⇒ 判据② 守着它（闸门文件在 + 源码里有 token）。
@@ -68,17 +72,20 @@
  *   · 枚举到 **43 个风格 / 276 条去重字段路径**（★ 与 `check-selfcheck-claims.mjs` 头注释里那条
  *     一次性审计的「283 条」**口径不同**：那是**只看 `selfCheck` 子树**、且深度 / 数组展开规则未写明；
  *     本闸门的规则是「**整份 json**、对象递归、数组元素对象加 `[]`」，可复现 —— **以本闸门为准**）。
- *   · 登记 **276 条**（有闸门 **224** 条 / 无闸门 **52** 条 = **可核·待补闸门 5**〔值级 4 / 声称级 1〕
+ *     ★ 2026-10-08 加判据⑥ 时给 43 份加了两条新路径（`selfCheck.loudness.{measuredFrom,measuredPath}`）
+ *     ⇒ 现为 **278 条**（登记表同步 +2，见 ⑨）。
+ *   · 登记 **278 条**（有闸门 **226** 条 / 无闸门 **52** 条 = **可核·待补闸门 5**〔值级 4 / 声称级 1〕
  *     **+ 不可核 47**）。★ 2026-10-08 复核时修正 **6 条过期条目**：`sources` 由「无闸门」**提升为有闸门**
  *     （`check-sources-paths.mjs`，2026-10-08 新建、读 `json.sources`）；`audioScoreBasis` / `selfCheck.ratio` /
  *     `selfCheck.clippedSamples` / `selfCheck.loudness.{truePeakMethod,lraMethod}` **5 条**由「可核·待补」
  *     **提升为有闸门**（`check-selfcheck-claims.mjs` 2026-10-08 新增**判据 G / H1 / H2 / F** 读了它们）
- *     ⇒ 无闸门由 58 → **52**（见 ⑧）。
- *   · 判据① 命中 **0**（真实语料 276 条**全部**已登记 —— 登记表就是照它建的）⇒ 真阳 0 / 误报 0。
- *   · 判据② 命中 **0**（224 条覆盖声明 = **184 条**用显式 `match`（归并为 **6 个 (闸门, token) 对**：
+ *     ⇒ 无闸门由 58 → **52**（见 ⑧）。★ 同日加判据⑥ ⇒ 新登记 2 条 `selfCheck.loudness.{measuredFrom,measuredPath}`
+ *     （`coveredBy: 'check-distill-fields.mjs'` 自指本闸门）⇒ 有闸门 224 → **226**。
+ *   · 判据① 命中 **0**（真实语料 278 条**全部**已登记 —— 登记表就是照它建的）⇒ 真阳 0 / 误报 0。
+ *   · 判据② 命中 **0**（226 条覆盖声明 = **184 条**用显式 `match`（归并为 **6 个 (闸门, token) 对**：
  *     `JSON_FIELDS` / `scoreBreakdown` / `audioEvidence` / `generatedVideo` / `loudness` / `selfCheck`）
- *     + **40 条**用**叶名** token（含 `sources` 与 2026-10-08 提升的 5 条；归并为 **40 个 (闸门, 叶名) 对**），
- *     共 **46 个 (闸门, token) 对**，**逐个**在闸门**剥注释后**的源码里核对过 token 存在）⇒ 真阳 0 / 误报 0。
+ *     + **42 条**用**叶名** token（含 `sources` 与 2026-10-08 提升的 5 条 + 新增 2 条；归并为 **42 个 (闸门, 叶名) 对**），
+ *     共 **48 个 (闸门, token) 对**，**逐个**在闸门**剥注释后**的源码里核对过 token 存在）⇒ 真阳 0 / 误报 0。
  *   · ★ 误报率的**真实检验**在 ⑦ 的变异与反向验证里（阴性对照 = 真实语料 **exit 0**）。
  *
  * ★★ ⑦ 验证（**临时副本 + 覆盖点，绝不动真实仓**）：
@@ -88,13 +95,33 @@
  *   · **变异 C**（临时副本把**已登记为有闸门**的字段名从数据里删掉）⇒ **exit 0**
  *     —— 确认判据② 的语义是「登记了但闸门不在了才红」，不是「字段消失了就红」。
  *   · **变异 D**（2026-10-08 新增；判据⑤）：把某条「无闸门」条目的 `verifiability` 删掉 / 改非法 ⇒ **exit 1**。
- *   · ★★ **反向验证**：分别**短路判据① / 判据②** ⇒ 对应变异必须**重新变绿**（证明判据承重，不是摆设）。
+ *   · **变异 E**（2026-10-08 新增；判据⑥）：临时副本删掉某份 `selfCheck.loudness.measuredFrom` ⇒ **exit 1 且点名**；
+ *   · **变异 F**（2026-10-08 新增；判据⑥）：把某份 `measuredFrom` 改成**枚举外**的值（如 `'whatever'`）⇒ **exit 1 且点名**。
+ *   · ★★ **反向验证**：分别**短路判据① / 判据② / 判据⑥** ⇒ 对应变异必须**重新变绿**（证明判据承重，不是摆设）。
  *   · **失明三态**（空风格树 / 数据里 0 字段 / 清空登记表）⇒ **均 exit 1 + 「本闸门已失明」**。
  *   ★ **实测退出码**（2026-10-08 复核；同一套断言也写在 `test/gate-blindness.test.mjs` 的
  *     `check-distill-fields` 用例里）：阴性对照 **0**；变异A **1**（点名 `art-deco` + `selfCheck.LEMO_ZZZ_PROBE`）；
  *     变异B **1**（点名 `check-zzz-not-exist.mjs`）；变异C **0**（275 条路径，判据② 未响）；
  *     短路判据① 后变异A **0**；短路判据② 后变异B **0**；
+ *     变异E（删 `measuredFrom`）**1**（点名 slug）；变异F（枚举外值）**1**（点名 slug）；短路判据⑥ 后 E/F **均 0**；
  *     失明三态（空风格树 / 数据里 0 字段 / 空登记表）**均 1** 且都打「本闸门已**失明**」、且不输出判据①②。
+ *
+ * ★★ ⑨ 判据⑥ 的由来与设计（★ 2026-10-08 新增，治「读数测的是谁」的**根因混淆**）：
+ *   · **病症**：`selfCheck.loudness` 里的读数（`truePeakDbtp` / `integratedLufs` / `lra` /
+ *     `samplePeakDbfs` / `peakTargetMet` …）测的是**本地副本**（`D:/lemo-films/<slug>/<slug>.mp4`），
+ *     而字段本身**完全没写这件事** —— `truePeakMethod` 只写 `ffmpeg -i <film> …`（`<film>` 是**歧义的**）。
+ *     项目学说（`D:/lemo-opuscar/MAINTAINING.md`「The published film carries the pre-fix audio」）
+ *     却规定**权威 artifact 是「已发布影片」**、不是本地副本 ⇒ 于是连续四批把本地读数当权威：
+ *     撤错扣分 / 把已发布规格当陈旧「修」掉 / 拿本地读数判「达标」而发布片其实超标
+ *     （已实测 **43 部发布片里 37 部真峰值 > −1.2 dBTP**，而 `selfCheck` 因读本地副本记 `peakTargetMet: true`）。
+ *   · **修法**：给 `selfCheck.loudness` 加**声明产物来源**的两个字段（只加字段、**不改任何既有数值**）：
+ *     `measuredFrom`（枚举 `local-copy` / `published-film`）+ `measuredPath`（可读路径）。
+ *     ★ **为什么只声明来源、不写发布片读数**：写死发布片读数会**在替换后立刻过期**
+ *     （第 116 批已修好 43 部发布片待上传 ⇒ 现在的发布片读数马上失效），而「来源」是**长期有效**的；
+ *     且维护两套读数会**新增漂移面**、本闸门也无法在仓内复核发布片读数（要联网下载整片）。
+ *   · **语义边界（如实写）**：判据⑥ 是**存在级 + 枚举级** —— 保证「来源**被声明了**且值合法」，
+ *     **不**保证「声明为真」（读数到底出自哪个文件，仓内无机械对照物）。要判发布片是否达标，
+ *     **必须另行实测发布片**（见 `_distill/AGENT-BRIEF.md` 的命令）。
  *
  * ★★ ⑧ 2026-10-08 的「可核性分类」升级（本闸门的 `coveredBy: null` 条目由「一档 reason」拆成**三档**）：
  *   · 起因：58 条 `coveredBy: null` 的 `reason` 原来**混着三种性质不同的东西**（值级可核 / 声称级可核 /
@@ -131,7 +158,7 @@
  *     并允许**未来被推翻**（推翻时改 `verifiability` 即可，判据⑤ 会守住格式）。
  *
  * 用法：node scripts/check-distill-fields.mjs [--json]
- * 退出码：有未登记字段 / 覆盖声明失效 / 失明 / 登记表失格 ⇒ 1；否则 0（判据③ 的 ℹ 不影响退出码）。
+ * 退出码：有未登记字段 / 覆盖声明失效 / 失明 / 登记表失格 / 读数来源未声明或非法 ⇒ 1；否则 0（判据③ 的 ℹ 不影响退出码）。
  */
 
 import fs from 'node:fs';
@@ -452,6 +479,8 @@ const FIELDS = {
   'selfCheck.loudness.masterPeakMatched': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_SINGLE + '（实际只出现在 `pixel-rpg`，且其 run 是失败 run）' },
   'selfCheck.loudness.masterPeakTarget': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_SINGLE + '（只出现在 `pixel-rpg`）' },
   'selfCheck.loudness.masterPeakTargetDbfs': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_SINGLE + '（只出现在 `pixel-rpg`）' },
+  'selfCheck.loudness.measuredFrom': { coveredBy: 'check-distill-fields.mjs', reason: '★ 2026-10-08 新增：**读数测的是哪一份产物**的声明（枚举 `local-copy` / `published-film`）。判据⑥ 逐份核「存在 + 值在枚举内」，缺 / 枚举外 ⇒ FAIL 并点名 slug（token = 叶名 `measuredFrom`，出现在本闸门判据⑥ 代码 `L.measuredFrom`）。★ 由来：第 113~116 批连续四批把**本地副本读数**当**权威 artifact（已发布影片）** ⇒ 撤错扣分 / 把已发布规格当陈旧「修」掉' },
+  'selfCheck.loudness.measuredPath': { coveredBy: 'check-distill-fields.mjs', reason: '★ 2026-10-08 新增：来源**路径**（可读值；local-copy 时为 `D:/lemo-films/<slug>/<slug>.mp4`）。判据⑥：若在，须是非空字符串；且 measuredFrom === local-copy 时须等于 `D:/lemo-films/<slug>/<slug>.mp4`（防「随便写个字符串」；token = 叶名 `measuredPath`，出现在本闸门判据⑥ 代码 `L.measuredPath`）' },
   'selfCheck.loudness.mixWavPeak': { coveredBy: null, verifiability: 'unverifiable', reason: R_UNV_FAILED + '（上游 `mix.wav` 读数）' },
   'selfCheck.loudness.peakDbtpTarget': { coveredBy: 'check-tp-prose.mjs', reason: '交付线本身（用于排除「阈值提及」误报）' },
   'selfCheck.loudness.peakNote': { coveredBy: 'check-tp-prose.mjs', match: 'loudness', reason: 'json 散文白名单（`/^selfCheck\\.loudness\\.peakNote$/`）+ (J5) 覆盖级自洽；正则字面量 ⇒ match 指向命名空间 `loudness`' },
@@ -534,6 +563,8 @@ slugs.sort();
 
 /** 真实数据里的字段路径 → 出现在哪些 slug（`Map<path, Set<slug>>`）。 */
 const real = new Map();
+/** 解析好的 json（`slug → json`）—— 供判据⑥ 复用，避免二次读盘（坏的进 `badJson`、不在这里）。 */
+const parsed = new Map();
 const badJson = [];                                    // ℹ：读不到 / JSON 坏的（会让 real 变小 ⇒ 输出里显式列出）
 for (const slug of slugs) {
   const f = path.join(DIR, slug, '_distill.json');
@@ -541,6 +572,7 @@ for (const slug of slugs) {
   try { txt = fs.readFileSync(f, 'utf8'); } catch (e) { badJson.push({ slug, why: `读不到（${(e && e.message) || e}）` }); continue; }
   let json;
   try { json = JSON.parse(txt); } catch (e) { badJson.push({ slug, why: `JSON 解析失败（${(e && e.message) || e}）` }); continue; }
+  parsed.set(slug, json);
   const set = new Set();
   walk(json, '', set);
   for (const p of set) { if (!real.has(p)) real.set(p, new Set()); real.get(p).add(slug); }
@@ -596,6 +628,45 @@ const verifiableNoGate = [...valueNoGate, ...claimNoGate];
 /** ★ 判据⑤（登记表自洽性）：每条「无闸门」条目**必须**带合法 `verifiability`（否则三档计数会静默失真）。 */
 const badTier = noGate.filter(([, e]) => !(e && TIER[e.verifiability]));
 
+// ── 判据 ⑥：`selfCheck.loudness` 必须声明**读数测的是哪一份产物**（第 113~116 批的根因混淆）──
+//   ★ 由来：`selfCheck.loudness` 的读数测的是**本地副本**（`D:/lemo-films/<slug>/<slug>.mp4`），
+//     而项目学说（`D:/lemo-opuscar/MAINTAINING.md`「The published film carries the pre-fix audio」）
+//     的**权威 artifact 是已发布影片**；字段本身不写这件事 ⇒ 把本地读数当权威 ⇒ 撤错扣分 /
+//     把已发布规格当陈旧「修」掉 / 拿本地读数判「达标」而发布片其实超标（已实测 37/43 发布片 > −1.2 dBTP）。
+//   ★ 判据（逐份）：① `selfCheck.loudness` 必须存在且是对象；② 必须带 `measuredFrom`；
+//     ③ `measuredFrom` 必须在 `MEASURED_FROM_ENUM` 内（枚举外 ⇒ FAIL，防「随便写个字符串糊过去」）；
+//     ④ `measuredPath` 若在 ⇒ 须是非空字符串，且 `measuredFrom === 'local-copy'` 时须等于
+//        `D:/lemo-films/<slug>/<slug>.mp4`（防路径写错 / 乱写）。
+//   ★ 语义边界（如实写）：这是**存在级 + 枚举级**判据 —— 它保证「来源**被声明了**且值合法」，
+//     **不**保证「声明为真」（读数到底出自哪个文件，仓内无法机械复核 —— 见头注释「已知局限」）。
+const MEASURED_FROM_ENUM = ['local-copy', 'published-film'];
+const measuredFails = [];                              // {slug, why}
+for (const slug of slugs) {
+  const json = parsed.get(slug);
+  if (!json) continue;                                 // 读不到 / JSON 坏 ⇒ 已在 `badJson` 列过
+  const L = json.selfCheck && json.selfCheck.loudness;
+  if (!L || typeof L !== 'object' || Array.isArray(L)) {
+    measuredFails.push({ slug, why: '`selfCheck.loudness` 缺失 / 不是对象 ⇒ 无法声明读数测的是哪一份产物' });
+    continue;
+  }
+  const mf = L.measuredFrom;
+  if (mf === undefined) { measuredFails.push({ slug, why: '缺 `selfCheck.loudness.measuredFrom`（读数测的是哪一份产物？）' }); continue; }
+  if (!MEASURED_FROM_ENUM.includes(mf)) {
+    measuredFails.push({ slug, why: `\`measuredFrom\` = ${JSON.stringify(mf)} **不在枚举** ${JSON.stringify(MEASURED_FROM_ENUM)} 内` });
+    continue;
+  }
+  if (L.measuredPath !== undefined) {
+    if (typeof L.measuredPath !== 'string' || L.measuredPath === '') {
+      measuredFails.push({ slug, why: `\`measuredPath\` 必须是非空字符串，实为 ${JSON.stringify(L.measuredPath)}` });
+    } else if (mf === 'local-copy') {
+      const want = `D:/lemo-films/${slug}/${slug}.mp4`;
+      if (L.measuredPath !== want) {
+        measuredFails.push({ slug, why: `\`measuredFrom: 'local-copy'\` 但 \`measuredPath\` = ${JSON.stringify(L.measuredPath)} ≠ \`${want}\`` });
+      }
+    }
+  }
+}
+
 // ── 判据 ④：失明守卫（防空转绿灯）──────────────────────────────────────────
 const blind = [];
 if (slugs.length === 0) blind.push(`\`${DIR}\` 下一个风格都没枚举到（路径 / 过滤变了？）⇒ 一个字段都没检查过`);
@@ -604,7 +675,7 @@ if (Object.keys(FIELDS).length === 0) blind.push('`FIELDS` 登记表为空 ⇒ �
 
 // ── 输出 ────────────────────────────────────────────────────────────────────
 const nCov = Object.keys(FIELDS).length - noGate.length;
-const ok = unregistered.length === 0 && gone.length === 0 && blind.length === 0 && badTier.length === 0;
+const ok = unregistered.length === 0 && gone.length === 0 && blind.length === 0 && badTier.length === 0 && measuredFails.length === 0;
 
 if (JSON_OUT) {
   console.log(JSON.stringify({
@@ -613,9 +684,11 @@ if (JSON_OUT) {
     scope: { styles: slugs.length, fieldPaths: real.size, registered: Object.keys(FIELDS).length,
       covered: nCov, noGate: noGate.length, badJson: badJson.length },
     verdict: { value: valueNoGate.length, claim: claimNoGate.length,
-      verifiableNoGate: verifiableNoGate.length, unverifiable: unverifiable.length, badTier: badTier.length },
+      verifiableNoGate: verifiableNoGate.length, unverifiable: unverifiable.length, badTier: badTier.length,
+      measuredFromFails: measuredFails.length },
     unregistered,
     gone,
+    measuredFails,
     verifiableNoGate: verifiableNoGate.map(([p, e]) => ({ path: p, verifiability: e.verifiability, tier: TIER[e.verifiability], reason: e.reason })),
     unverifiable: unverifiable.map(([p, e]) => ({ path: p, verifiability: e.verifiability, reason: e.reason })),
     badTier: badTier.map(([p, e]) => ({ path: p, verifiability: (e && e.verifiability) || null })),
@@ -688,9 +761,20 @@ if (badTier.length) {
   console.log('   ↳ 修法：给该条补 `verifiability: \'value\' | \'claim\' | \'unverifiable\'`（语义见头注释 ③）。');
 }
 
+if (measuredFails.length) {
+  console.log(`\n✘ 判据⑥·有 ${measuredFails.length} 份 \`selfCheck.loudness\` **没声明（或声明非法）读数测的是哪一份产物**：`);
+  for (const m of measuredFails) console.log(`   ✘ ${m.slug} —— ${m.why}`);
+  console.log(`   ↳ 修法：在 \`selfCheck.loudness\` 里加 \`"measuredFrom": "local-copy"\`（枚举 ${JSON.stringify(MEASURED_FROM_ENUM)}）`);
+  console.log('     并加 `"measuredPath": "D:/lemo-films/<slug>/<slug>.mp4"`。★ 本地副本读数**不是**权威 artifact ——');
+  console.log('     要判「已发布影片是否达标」必须**另行实测发布片**（见 `_distill/AGENT-BRIEF.md`）。');
+} else {
+  console.log(`✓ 判据⑥·${slugs.length} 份 \`selfCheck.loudness\` **全部**声明了读数来源（值在枚举 ${JSON.stringify(MEASURED_FROM_ENUM)} 内）`);
+}
+
 console.log(`\n[闸门] _distill.json 字段登记：${slugs.length} 个风格 / ${real.size} 条字段路径 · `
   + `登记 ${Object.keys(FIELDS).length} 条（有闸门 ${nCov} / 无闸门 ${noGate.length} = `
   + `可核·待补 ${verifiableNoGate.length}〔值级 ${valueNoGate.length} / 声称级 ${claimNoGate.length}〕+ 不可核 ${unverifiable.length}）· `
-  + `未登记 ${unregistered.length} 条 · 覆盖声明失效 ${gone.length} 条 · 登记表失格 ${badTier.length} 条`
+  + `未登记 ${unregistered.length} 条 · 覆盖声明失效 ${gone.length} 条 · 登记表失格 ${badTier.length} 条 · `
+  + `来源未声明/非法 ${measuredFails.length} 条`
   + `${blind.length ? '、**已失明**' : ''} ${ok ? 'OK' : '✘'}`);
 process.exitCode = ok ? 0 : 1;

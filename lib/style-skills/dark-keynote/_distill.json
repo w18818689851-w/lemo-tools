@@ -73,6 +73,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/dark-keynote/dark-keynote.mp4",
       "integratedLufs": -14.54,
       "lra": 6,
       "truePeakDbtp": -1.5,

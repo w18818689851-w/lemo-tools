@@ -90,6 +90,8 @@
       "抽帧目录的处置（由 fix-pictogram-audio 执行，本人确认保留）：canonical 目录 _distill/frames/pictogram-motion/ 保持为修复前无声成片的那套帧——因视频段未重渲，逐帧内容与成片一致，且本人文档的逐帧叙述与之逐条吻合（f04 SPRINT / f08 BUTTERFLY / f09 03 BALL GAMES / f13 JUDO / f15 MMA / f16 ARCHERY / f23 IMAGINE ONE ASIA / f24 片尾卡 等）。新片抽帧另存 _distill/frames/pictogram-motion_163/（其采样因 24fps 下 t=k·dur/24 整体后移 1.2–1.9s，f15/f16 落在不同章节，故不作为 canonical）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/pictogram-motion/pictogram-motion.mp4",
       "truePeakDbtp": -1.63,
       "integratedLufs": -14.5,
       "peakDbtpTarget": -1.2,

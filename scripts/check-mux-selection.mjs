@@ -26,7 +26,8 @@
  *   ④ 不存在「`\` 续行后紧跟 `#` 注释」（注释会吃掉续行、命令被截断）
  *
  * 用法：node scripts/check-mux-selection.mjs
- * 退出码：被挑中的脚本有缺项 → 1；否则 0。
+ * 退出码：被挑中的脚本有缺项（`fails`）**或本闸门失明**（`blind`：风格根读不到 / 扫到 0 个风格目录）→ 1；否则 0。
+ *         （★ 2026-10-08 复核：原只写「被挑中的脚本有缺项 → 1；否则 0」，漏了 `blind` 也判 1。）
  */
 import fs from 'node:fs';
 import path from 'node:path';

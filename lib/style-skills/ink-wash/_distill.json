@@ -68,6 +68,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/ink-wash/ink-wash.mp4",
       "integratedLufs": -13.93,
       "lra": 8,
       "truePeakDbtp": -1.62,

@@ -81,6 +81,8 @@
       "WebGL 编译告警：THREE.WebGLProgram Program Info Log (86,12-86): warning X3595: gradient instruction used in a loop with varying iteration（log:38-39）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/backrooms/backrooms.mp4",
       "truePeakDbtp": -1.44,
       "integratedLufs": -14.24,
       "peakDbtpTarget": -1.2,

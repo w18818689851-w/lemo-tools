@@ -79,6 +79,8 @@
       "音频与渲染并行完成，总耗时 47.8s（936 帧渲染 19s）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/hologram-hud/hologram-hud.mp4",
       "truePeakDbtp": -1.53,
       "integratedLufs": -14.11,
       "peakDbtpTarget": -1.2,

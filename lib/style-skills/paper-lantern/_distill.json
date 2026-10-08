@@ -114,6 +114,8 @@
       "渲染：2922 帧耗时 489s（`logs/paper-lantern.log:93`），产物 video_gpu.mp4 103.5MB；首版混流 MUX_OK 55812383 src_frames=2922 out_frames=2922（帧数一致，末帧未被切）。2026-10-03 重混只换音轨、视频流不变，成片 59,657,832 B / 121.750000 s；本轮未重新渲染、未跑 TTS（音频修复由 fix-paperlantern-audio 完成，本文件只做回填）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/paper-lantern/paper-lantern.mp4",
       "truePeakDbtp": -1.68,
       "integratedLufs": -14.01,
       "peakDbtpTarget": -1.2,

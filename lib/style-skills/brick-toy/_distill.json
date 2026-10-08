@@ -90,6 +90,8 @@
       "配乐 mp3 与 beats npy 被 .gitignore 排除，只落本地不进 git；新 clone 需先取源"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/brick-toy/brick-toy.mp4",
       "truePeakDbtp": -1.52,
       "integratedLufs": -13.93,
       "peakDbtpTarget": -1.2,

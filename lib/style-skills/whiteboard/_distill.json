@@ -87,6 +87,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/whiteboard/whiteboard.mp4",
       "integratedLufs": -14.11,
       "lra": 3.4,
       "truePeakDbtp": -1.62,

@@ -76,6 +76,8 @@
       "本次出片非本智能体执行（GPU 独占，纪律禁止起渲染），以上数据全部转录自 _distill/logs/swiss-motion.log"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/swiss-motion/swiss-motion.mp4",
       "truePeakDbtp": -1.27,
       "integratedLufs": -14.22,
       "peakDbtpTarget": -1.2,

@@ -79,6 +79,8 @@
       "出片命令为 node lemo-make.mjs iso-infographic --skip-sync --no-preflight --ratio 16:9（跳过两份库同步与预检）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/iso-infographic/iso-infographic.mp4",
       "truePeakDbtp": -1.39,
       "integratedLufs": -14.62,
       "peakDbtpTarget": -1.2,

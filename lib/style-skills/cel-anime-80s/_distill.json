@@ -77,6 +77,8 @@
       "混流 MUX_OK 36350157 src_frames=1416 out_frames=1416（logs:118）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/cel-anime-80s/cel-anime-80s.mp4",
       "truePeakDbtp": -3.12,
       "integratedLufs": -14.08,
       "peakDbtpTarget": -1.2,

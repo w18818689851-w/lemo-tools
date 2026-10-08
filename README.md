@@ -497,7 +497,7 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `6283aadb98433b16ea2a35c2a754cd30`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `7130414be5906fcb0582c457e232b40b`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
 - **27 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`

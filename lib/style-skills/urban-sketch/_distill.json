@@ -81,6 +81,8 @@
       "真峰值 -1.5 dBFS 达标（<= -1.2 dBTP）；静音窗 20.4-21.58s 实测 -52.5 dBFS"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/urban-sketch/urban-sketch.mp4",
       "truePeakDbtp": -1.54,
       "integratedLufs": -14.38,
       "peakDbtpTarget": -1.2,

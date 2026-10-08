@@ -103,6 +103,8 @@
     "events": 81,
     "srtCues": 5,
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/papercut-red/papercut-red.mp4",
       "integratedLufs": -14.53,
       "lra": 4.9,
       "truePeakDbtp": -1.69,

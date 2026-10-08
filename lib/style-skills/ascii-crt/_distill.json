@@ -81,6 +81,8 @@
       "events.mjs 导出 362 事件 / subs.mjs 导出 9 条字幕，Windows 侧产物成功回传 WSL（log:25-29）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/ascii-crt/ascii-crt.mp4",
       "truePeakDbtp": -1.28,
       "integratedLufs": -14.26,
       "peakDbtpTarget": -1.2,

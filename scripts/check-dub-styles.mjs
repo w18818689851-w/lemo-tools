@@ -22,6 +22,7 @@
  *   主循环里每个风格都走 SKIP 分支、`fails` 恒空 ⇒ 闸门「什么都没检查」却报 exit 0（空转绿灯）。
  *   判据：`!STYLES_ROOT` 或 `skipped === dub.styles.length` ⇒ 判 FAIL 并明说「已失明」。
  * 退出码：发现硬红线不一致（或失明）→ 1；否则 0。
+ *   ★ 另有 `exit 2`（2026-10-08 补声明）：读不到 / 解析失败 `lib/dub-styles.json`、或它缺 `styles[]`（无法开工）。
  */
 
 import { readFileSync, existsSync } from 'node:fs';

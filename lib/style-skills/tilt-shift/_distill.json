@@ -69,6 +69,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/tilt-shift/tilt-shift.mp4",
       "integratedLufs": -14.27,
       "lra": 7.8,
       "truePeakDbtp": -1.56,

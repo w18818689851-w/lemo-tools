@@ -80,6 +80,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/shadow-puppet/shadow-puppet.mp4",
       "integratedLufs": -14.73,
       "lra": 7.1,
       "truePeakDbtp": -1.6,

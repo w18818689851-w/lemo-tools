@@ -98,6 +98,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/woodcut/woodcut.mp4",
       "integratedLufs": -13.96,
       "lra": 7.8,
       "truePeakDbtp": -1.42,

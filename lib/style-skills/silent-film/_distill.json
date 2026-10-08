@@ -77,6 +77,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/silent-film/silent-film.mp4",
       "integratedLufs": -14.67,
       "lra": 6.5,
       "truePeakDbtp": -1.56,

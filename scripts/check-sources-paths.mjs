@@ -92,6 +92,7 @@
  *
  * 用法：node scripts/check-sources-paths.mjs
  * 退出码：有 FAIL（路径解析不到 / 登记依据失效）**或本闸门失明** ⇒ 1；否则 0（判据② 的 ℹ 不影响退出码）。
+ *   ★ 另有 `exit 2`（2026-10-08 补声明）：无法列出风格技能树（`readdirSync` 抛错，如权限 / IO 故障）。
  */
 import fs from 'node:fs';
 import path from 'node:path';

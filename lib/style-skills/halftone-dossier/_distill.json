@@ -65,6 +65,8 @@
       "lemo-make 步骤[4] 为 --skip-audio，但 demo/mix.wav（music.py 产出）仍被 mux 采用"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/halftone-dossier/halftone-dossier.mp4",
       "truePeakDbtp": -2.79,
       "integratedLufs": -14.26,
       "peakDbtpTarget": -1.2,

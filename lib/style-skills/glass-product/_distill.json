@@ -77,6 +77,8 @@
       "音频与渲染并行完成，总耗时 355.4s"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/glass-product/glass-product.mp4",
       "truePeakDbtp": -1.62,
       "integratedLufs": -13.82,
       "peakDbtpTarget": -1.2,

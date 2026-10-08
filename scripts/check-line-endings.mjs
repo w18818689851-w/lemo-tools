@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * scripts/check-line-endings.mjs —— 「行尾卫生」闸门（本仓第 30 个 `check-*` 闸门）
+ * scripts/check-line-endings.mjs —— 「行尾卫生」闸门（**写作时**本仓第 30 个 `check-*` 闸门；
+ *   ★ 2026-10-08 复核：现共 **39** 个 `check-*.mjs` —— 序号是当时的快照，现值见 `ls scripts/check-*.mjs`）
  *
  * ★ ① 由来（**已造成过真实事故**，不是假想）：2026-10-06 日批，`D:/lemo-opuscar` 38 个风格里 **21 个废掉**。
  *   根因链（已实证，写在 `D:/lemo-opuscar/.gitattributes` 头注释里）：

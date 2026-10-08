@@ -83,6 +83,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/engraving/engraving.mp4",
       "integratedLufs": -14.14,
       "lra": 5.2,
       "truePeakDbtp": -1.54,

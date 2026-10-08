@@ -77,6 +77,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/lowpoly-island/lowpoly-island.mp4",
       "integratedLufs": -14.1,
       "lra": 4.6,
       "truePeakDbtp": -1.48,

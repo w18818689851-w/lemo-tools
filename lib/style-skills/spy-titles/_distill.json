@@ -68,6 +68,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/spy-titles/spy-titles.mp4",
       "integratedLufs": -14.2,
       "lra": 4.6,
       "truePeakDbtp": -2.23,

@@ -40,7 +40,9 @@
  *   （= `files.filter(isGate||isTool)`），与 test 侧（用过滤过的 `testEntries.length`）口径一致。
  *
  * 用法：node scripts/check-doc-coverage.mjs
- * 退出码：有未登记的脚本 → 1；否则 0。
+ * 退出码：`missing`（有脚本未登记进文档）/ `unlisted`（有测试入口未登记进 `test/README.md`）/
+ *         `countBad`（文档里的计数声称与实测不符）/ `blind` / `countBlind`（失明守卫）—— 任一非空 ⇒ 1；否则 0。
+ *         （★ 2026-10-08 复核：原只写「有未登记的脚本 → 1；否则 0」，漏了后四条也判 1。）
  */
 import fs from 'node:fs';
 import path from 'node:path';

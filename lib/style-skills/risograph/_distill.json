@@ -70,6 +70,8 @@
     "usedPreGeneratedAudio": false,
     "muxEncoder": "nvenc",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/risograph/risograph.mp4",
       "integratedLufs": -14.5,
       "lra": 4,
       "truePeakDbtp": -3.11,

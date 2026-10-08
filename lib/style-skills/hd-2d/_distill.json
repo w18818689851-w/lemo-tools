@@ -117,6 +117,8 @@
       "本次未改动任何源码：lemo-make.mjs 未动、D:/lemo-opuscar 下源码未动（含 core/render/mux.sh 的 LN_TP），只写 lib/style-skills/hd-2d/ 自己的两份交付物。旧帧先备份到 _distill/frames/hd-2d.bak-24fps/ 再重抽，未直接覆盖。"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/hd-2d/hd-2d.mp4",
       "truePeakDbtp": -1.54,
       "integratedLufs": -14.02,
       "peakDbtpTarget": -1.2,

@@ -19,7 +19,10 @@
  *   ② **可见化**：把字段按「被消费 / 只被打印 / 没人读」三态列出来，未消费的作为 **backlog** 供人工决定要不要接线。
  *
  * 用法：node scripts/check-dna-coverage.mjs [--verbose]
- * 退出码：3 条链路有断点 → 1；否则 0。
+ * 退出码：第一节 3 条链路有断点（`dnaFails`）、**或**第二节 `lib/dub-styles.json` 字段覆盖失败 / 失明
+ *         （`dubFails`）、**或**第三节 `bgRecipe.textureRaw` 取值级失败 / 失明（`texFails + texBlind`）
+ *         —— 三者任一非 0 ⇒ 1；否则 0。
+ *         （★ 2026-10-08 复核：原只写「3 条链路有断点 → 1；否则 0」，漏了第二 / 三节也判 1。）
  */
 import fs from 'node:fs';
 import path from 'node:path';

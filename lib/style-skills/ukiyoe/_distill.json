@@ -75,6 +75,8 @@
       "渲染 1056 帧仅 19s（Canvas2D，非 GPU 重负载）"
     ],
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/ukiyoe/ukiyoe.mp4",
       "truePeakDbtp": -2.6,
       "integratedLufs": -14.48,
       "peakDbtpTarget": -1.2,

@@ -116,6 +116,8 @@
     ],
     "voiceLineNote": "vo3 故意缺号——对应只活在文字里、只有 text blip 没有配音的角色",
     "loudness": {
+      "measuredFrom": "local-copy",
+      "measuredPath": "D:/lemo-films/pixel-rpg/pixel-rpg.mp4",
       "integratedLufs": -14.6,
       "lra": 8,
       "ebur128PeakDbfs": -1.7,
