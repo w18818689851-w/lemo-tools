@@ -377,7 +377,7 @@ try {
 if (jobEntries.length && !indexBad) {
   const ids = new Set(jobEntries.map((x) => x.id));
   const locked = acquireLock();
-  if (!locked) console.warn('  ⚠️ [clean-test-residue] 没拿到跨进程写锁（另一实例正在写索引）→ 本次不合并地写，对方改动可能被覆盖');
+  if (!locked) console.warn('  ⚠️ [clean-test-residue] 没拿到跨进程写锁（另一实例正在写索引）→ 仍会「重读 → 只摘本次的 id」后写，但「读盘 → 原子写」之间有竞态窗口，对方改动可能被覆盖');
   try {
     let fresh = indexReg;
     try {
@@ -386,7 +386,7 @@ if (jobEntries.length && !indexBad) {
     } catch { /* 读不到 / 坏 ⇒ 用启动时快照 */ }
     const before = Array.isArray(fresh.jobs) ? fresh.jobs : [];
     fresh.jobs = before.filter((j) => !(j && ids.has(j.id)));
-    fresh.savedAt = Date.now();
+    fresh.savedAt = new Date().toISOString();   // ★ 与 lib/store.mjs 的写法一致（同一字段只允许一种类型：ISO 字符串）
     const tmp = `${INDEX_FILE}.${process.pid}.clean.tmp`;
     try {
       fs.writeFileSync(tmp, JSON.stringify(fresh, null, 2) + '\n');

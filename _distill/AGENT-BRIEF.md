@@ -482,6 +482,25 @@ node D:/lemo-tools/scripts/prune-jobs.mjs --keep 20    # 换保留条数（默�
 ★ **核法**（本条断言「没有自动化在跑它」）：`ls .github .gitlab-ci.yml .circleci`（空）、
 `ls package.json`（无）、`ls .git/hooks/ | grep -v .sample`（空）、
 `Get-ScheduledTask | ? { $_.Actions.Arguments -match 'lemo|prune' }`（计划任务 **196** 个、命中 **0**）。
+
+### ★ 注册表写入是「跨进程读-改-写」，拿不到锁**也仍会合并**（2026-10-09 订正表述 + 补测试）
+
+**背景**：`lib/store.mjs` 的控制台**只在启动时读一次**注册表，之后整个生命周期都拿内存副本写盘
+⇒ 与另一个实例（或 `scripts/prune-jobs.mjs --apply`）的写之间没有串行化 = 教科书式 **lost update**。
+现 `saveIndex` 走「**拿跨进程写锁 → 重读盘上索引 → 合并 → 原子写**」；`prune-jobs --apply` 与
+`scripts/clean-test-residue.mjs` **共用同一把锁**（同一 `LEMO_FILM_DIR` ⇒ 同一个 `.console/index.lock`）。
+
+★ **拿不到锁时的真实行为（别被旧注释误导）**：**仍然「重读 + 合并」**（合并分支**没有** `locked` 守卫），
+只是**多一条 warn**；残留风险是「**读盘 → 原子写**」的**竞态窗口**，**不是**「不合并」。
+★ 判据：**合并总比不合并更安全**（不合并会整份丢掉别人的条目）⇒ **实现正确**。
+★ 2026-10-09 已把 6 处陈旧表述（`lib/store.mjs` 头部 ×2 + `acquireLock` JSDoc + warn；
+`scripts/prune-jobs.mjs` warn；`scripts/clean-test-residue.mjs` warn）订正为与实现一致，
+并补降级路径用例 **`test/store-lock.test.mjs`**（把 `index.lock` 做成**目录**迫使 `acquireLock()` 返回
+false；断言未拿锁**仍合并** + `savedAt` 统一为 ISO；★ 反向验证：临时给合并加 `&& locked` ⇒ 必红）。
+
+```bash
+node D:/lemo-tools/test/store-lock.test.mjs    # 未拿到跨进程写锁时的降级路径（2 条）
+```
 ★ 现状：**需人工定期跑**（未挂任何自动触发；合适的挂载点需人工拍板，不擅自挂）。
 
 ### ★ 测试残留会积在**用户数据根**里：`clean-test-residue.mjs`（2026-10-09 立）

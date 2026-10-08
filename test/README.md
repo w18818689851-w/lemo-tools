@@ -31,6 +31,7 @@ node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套�
 node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs 的行为测试（21 条，★ 槽位上限用子进程并发验排队 + 过期槽接管 + .mutex 清理 + CLI 退出码透传 + release 绝不抛）
 node test/llm-api.test.mjs        # 开放式 LLM 配置模块 lib/llm-api.mjs 的纯逻辑/离线测试（28 条，★ 桩服务用 node:http 监听随机端口、**不打真实外网**；钉「chat() 永不抛」+ 容错 8 类 + 密钥不外泄 + 覆盖文件读写）
 node test/prune-jobs.test.mjs     # scripts/prune-jobs.mjs 的**并发写**回归测试（1 条，★ 带屏障：父进程先占住跨进程写锁 + 等 prune 读完索引；钉「`--apply` 与并发 console 写**共用同一把锁** ⇒ 不丢并发新增的任务」，修前红/修后绿）
+node test/store-lock.test.mjs     # lib/store.mjs **未拿到跨进程写锁**时的降级路径测试（2 条，★ 把 `index.lock` 做成**目录**迫使 `acquireLock()` 返回 false；钉「未拿锁**仍会「重读 + 合并」**⇒ 不丢盘上别人的条目、且 `saveIndex` 返回 true」+「`savedAt` 统一为 ISO 字符串」；★ 反向验证：临时给合并加 `&& locked` 守卫 ⇒ 第 1 条**必红**）
 ```
 
 `test/setup.test.mjs` 与 `test/ui.test.mjs` 都是**独立入口**，故意不并进 `smoke.mjs`：安装逻辑、UI 层各自一个数字，三边互不干扰。

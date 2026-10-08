@@ -124,7 +124,7 @@ if (APPLY && droppedIds.length) {
   //   ★ 降级策略：拿不到锁**不阻塞**（`acquireLock` 本身有界，最多等 `LOCK_WAIT_MS`）—— 照写 + warn，
   //     与 `saveIndex` 的既有降级同纪律（best-effort：宁可有竞态，也不让运维命令卡死）。
   const locked = acquireLock();
-  if (!locked) console.warn('  ⚠️  [prune-jobs] 没拿到跨进程写锁（另一实例正在写索引）→ 本次不合并地写，对方的改动可能被覆盖');
+  if (!locked) console.warn('  ⚠️  [prune-jobs] 没拿到跨进程写锁（另一实例正在写索引）→ 仍会「重读 → 只摘本次真删的 id」后写，但「读盘 → 原子写」之间有竞态窗口，对方的改动可能被覆盖');
   try {
     // ★ 拿锁之后**重读**：只摘掉本次真删了的 `droppedIds`，其余（含别的实例刚建的）一律保留。
     //   读不到 / 解析失败 ⇒ 退回本进程启动时读到的快照（`reg`）—— 绝不把「读不到」当成「盘上是空的」。
@@ -135,7 +135,7 @@ if (APPLY && droppedIds.length) {
     } catch { /* 读不到 / 坏 ⇒ 用启动时的快照 */ }
     const before = Array.isArray(fresh.jobs) ? fresh.jobs : jobs;
     fresh.jobs = before.filter((j) => !droppedIds.includes(j.id));
-    fresh.savedAt = Date.now();
+    fresh.savedAt = new Date().toISOString();   // ★ 与 lib/store.mjs 的写法一致（同一字段只允许一种类型：ISO 字符串）
     // ★ 原子写（tmp + rename，与 `lib/store.mjs` 同一套做法）；tmp 名带 pid 免得两个进程抢同一个 `.tmp`。
     const tmp = `${INDEX}.${process.pid}.prune.tmp`;
     try {
