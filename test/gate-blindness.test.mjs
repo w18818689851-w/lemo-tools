@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 103 条用例 / 覆盖全部 41 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 106 条用例 / 覆盖全部 41 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -4397,6 +4397,120 @@ test('★自证 check-header-counts：短路判据①（整条比较）后，写
       `短路判据① 后变异A 应**真变绿**（exit 0），实得 ${ra.code}\n${ra.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(ra, 'distill-份数：头注释写', 'mut'), undefined,
       '短路判据① 后变异A 竟然还报 ⇒ 那条正向断言没在测它');
+  } finally { rm(dir); }
+});
+
+// ── 12b. check-header-counts 的**判据⑤**（库仓文档库级总数声称；2026-10-08 补）──────────
+/**
+ * 判据⑤ 专用夹具：在 `hcTree` 之上补 `core/`（库仓「已识别」标记）+ 两份文档 + 判据⑤ 的产物真值。
+ * 真值（分母）：styles=2 / buildSh=1 / noBuildSh=1 / filmJs=1 / srtFiles=1（+ hcTree 的其余真值）。
+ * ★ 为什么必须补 `core/`：闸门只在 `dirname(LEMO_STYLES_ROOT)` 下**同时**有 `core/` 与 `styles/`
+ *   时才认为「库仓已识别」⇒ 才要求两份文档可读 / 有声称（否则只 ℹ、不判失明）。既有 `hcTree`
+ *   **无** `core/` ⇒ 不能用来测判据⑤ 的失明态（这也正是闸门刻意让「未识别 ⇒ 只 ℹ」的原因：
+ *   否则既有阴性对照夹具会因缺两份文档而误红）。
+ * ★ 假闸门头注释必须带**至少一条**工具仓总数声称（`claims`），否则闸门会因「0 条声称」判**工具仓**失明。
+ */
+const hcDocTree = (root, claims, docs = {}) => {
+  hcTree(root, claims);
+  mk(path.join(root, 'core'));                                  // 库仓「已识别」标记
+  wf(path.join(root, 'styles', 'a', 'demo', 'build.sh'), '#!/bin/sh\n');
+  wf(path.join(root, 'styles', 'a', 'demo', 'film.js'), '// film\n');
+  wf(path.join(root, 'styles', 'a', 'a.srt'), '1\n');
+  for (const [name, text] of Object.entries(docs)) wf(path.join(root, name), text);
+  return root;
+};
+
+test('check-header-counts：判据⑤（库仓文档库级总数声称 ⇒ 变异 FAIL 并点名 + 子集误报形态不判 + 阴性对照）', async () => {
+  const dir = path.join(TMP, 'hc-doc');
+  try {
+    // 真值：styles=2 / buildSh=1 / noBuildSh=1 / filmJs=1 / srtFiles=1
+    const good = '文档：1 demos that ship a `build.sh`；1 of the 2 styles ship none；'
+      + '1 of the 2 styles have a `demo/film.js`；1 `.srt` files are committed。';
+
+    // 阴性对照：四类声称全部 == 实测 ⇒ 判据⑤ 不响 ⇒ exit 0
+    const ok = hcDocTree(path.join(dir, 'ok'), ['现共 1 个 `check-*.mjs`。'], {
+      'MAINTAINING.md': good + '\n', 'TECHNIQUE.md': good + '\n',
+    });
+    const r0 = await runGate('check-header-counts.mjs', hcEnv(ok));
+    expectClean(r0, '本闸门已失明', 'check-header-counts 判据⑤ 阴性对照');
+
+    // 变异 ⑤b：`9 of the 2 styles ship none`（实测 1）⇒ exit 1 并点名 no-build.sh·styles
+    const b = hcDocTree(path.join(dir, 'b'), ['现共 1 个 `check-*.mjs`。'], {
+      'MAINTAINING.md': '文档：9 of the 2 styles ship none。\n',
+      'TECHNIQUE.md': '文档：1 demos that ship a `build.sh`。\n',
+    });
+    const rb = await runGate('check-header-counts.mjs', hcEnv(b));
+    expectBlind(rb, 'no-build.sh·styles：文档写 **9**、实测 **1**', 'check-header-counts 变异⑤b');
+
+    // 变异 ⑤a：`5 demos that ship a \`build.sh\``（实测 1）⇒ exit 1 并点名 build.sh·demos
+    const a = hcDocTree(path.join(dir, 'a'), ['现共 1 个 `check-*.mjs`。'], {
+      'MAINTAINING.md': '文档：5 demos that ship a `build.sh`。\n',
+      'TECHNIQUE.md': '文档：1 `.srt` files are committed。\n',
+    });
+    const ra = await runGate('check-header-counts.mjs', hcEnv(a));
+    expectBlind(ra, 'build.sh·demos：文档写 **5**、实测 **1**', 'check-header-counts 变异⑤a');
+
+    // ★ 误报形态（子集写法）：`5 demos that ship a \`build.sh\` **with** …` ⇒ afterGuard 跳过 ⇒ 不判 ⇒ exit 0。
+    //   这条守卫在真实语料 0 处（不承重）⇒ 正靠这条用例证明它生效：摘掉 afterGuard 它会因 5≠1 变红。
+    const sub = hcDocTree(path.join(dir, 'sub'), ['现共 1 个 `check-*.mjs`。'], {
+      'MAINTAINING.md': '文档：5 demos that ship a `build.sh` with a custom mux。\n',
+      'TECHNIQUE.md': '文档：1 of the 2 styles ship none。\n',
+    });
+    const rsub = await runGate('check-header-counts.mjs', hcEnv(sub));
+    expectClean(rsub, '本闸门已失明', 'check-header-counts 判据⑤ 子集误报形态');
+    assert.ok(!rsub.out.includes('build.sh·demos：文档写 **5**'),
+      `子集写法（…that ship a \`build.sh\` with…）不该被判 ⇒ 不该点名 build.sh·demos\n${rsub.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+test('check-header-counts：判据⑤ 新根失明（库仓已识别但文档读不到 / 0 条声称 ⇒ FAIL；未识别 ⇒ 只 ℹ、exit 0）', async () => {
+  const dir = path.join(TMP, 'hc-doc-blind');
+  try {
+    const good = '文档：1 demos that ship a `build.sh`；1 of the 2 styles ship none；'
+      + '1 of the 2 styles have a `demo/film.js`；1 `.srt` files are committed。';
+
+    // 失明态（新根）：库仓已识别（有 core/），但删掉 TECHNIQUE.md ⇒ exit 1 +「本闸门已失明」并点名它
+    const m = hcDocTree(path.join(dir, 'm'), ['现共 1 个 `check-*.mjs`。'], {
+      'MAINTAINING.md': good + '\n', 'TECHNIQUE.md': good + '\n',
+    });
+    fs.rmSync(path.join(m, 'TECHNIQUE.md'));
+    const rM = await runGate('check-header-counts.mjs', hcEnv(m));
+    expectBlind(rM, '本闸门已失明', 'check-header-counts 判据⑤ 失明态（缺 TECHNIQUE.md）');
+    assert.ok(rM.out.includes('TECHNIQUE.md') && rM.out.includes('读不到'),
+      `判据⑤ 失明文案该点名 TECHNIQUE.md 读不到\n${rM.out.slice(0, 900)}`);
+
+    // 失明态（新根）：两份文档都可读，但 0 条库级总数声称 ⇒ exit 1 +「本闸门已失明」
+    const z = hcDocTree(path.join(dir, 'z'), ['现共 1 个 `check-*.mjs`。'], {
+      'MAINTAINING.md': '这两份文档里一个可识别的库级总数声称都没有。\n',
+      'TECHNIQUE.md': '纯粹是散文，没有任何锚点写法。\n',
+    });
+    const rZ = await runGate('check-header-counts.mjs', hcEnv(z));
+    expectBlind(rZ, '本闸门已失明', 'check-header-counts 判据⑤ 失明态（0 条文档声称）');
+
+    // 库仓**未识别**（无 core/）：两份文档缺失也**只 ℹ**、exit 0 —— 与「已识别」成对，证明守卫不是「永远 exit 1」
+    const n = hcTree(path.join(dir, 'n'), ['现共 1 个 `check-*.mjs`。']);   // hcTree 无 core/、无文档
+    const rN = await runGate('check-header-counts.mjs', hcEnv(n));
+    expectClean(rN, '本闸门已失明', 'check-header-counts 判据⑤ 库仓未识别（无 core/）');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-header-counts：短路判据⑤（`c.judge === 5`）后，写错库仓文档总数的夹具必须重新变绿', async () => {
+  const dir = path.join(TMP, 'hc-doc-mut');
+  try {
+    // ★ 短路的是**判据⑤ 那条比较**（`c.judge === 5 || …` ⇒ 判据⑤ 恒 ok），**不是** `if (false)`
+    //   —— 后者会让 `c.verdict` 永不赋值、所有声称都掉进 else 支被判 fail，那不是「变绿」。
+    const subs = [["  if (c.n === truth[c.kind]) { c.verdict = 'ok'; continue; }",
+      "  if (c.judge === 5 || c.n === truth[c.kind]) { c.verdict = 'ok'; continue; }"]];
+    const b = hcDocTree(path.join(dir, 'b'), ['现共 1 个 `check-*.mjs`。'], {
+      'MAINTAINING.md': '文档：9 of the 2 styles ship none。\n',
+      'TECHNIQUE.md': '文档：1 demos that ship a `build.sh`。\n',
+    });
+    const g = patchGate('check-header-counts.mjs', path.join(dir, 'g'), subs);
+    const rb = await run(NODE, [g], { env: hcEnv(b) });
+    assert.equal(rb.code, 0,
+      `短路判据⑤ 后变异⑤b 应**真变绿**（exit 0），实得 ${rb.code}\n${rb.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rb, 'no-build.sh·styles：文档写', 'mut'), undefined,
+      '短路判据⑤ 后变异⑤b 竟然还报 ⇒ 那条正向断言没在测判据⑤');
   } finally { rm(dir); }
 });
 
