@@ -113,6 +113,43 @@
  *       成本是「跨 5 文件同步 + 一处漏改即假绿」。⇒ 建议留给**能同时改这 5 个文件**的一批，
  *       并**先**把两闸门在同一合成夹具上跑出「结论逐项一致」的证据（本轮已备好该夹具与口径）。
  *
+ *   ★★ ⑩「**已发布影片归属**」豁免（2026-10-08 新增；修的是「拿本地副本真值苛求已发布读数」这个缺陷）：
+ *     · **缺陷**：本闸门的真值 `_distill.json#generatedVideo` 是**本地副本**的测量。正文里凡**显式归属**
+ *       给「**已发布影片**（`films` release）」或**别的具名 artifact** 的读数，**主题就不是本地副本**
+ *       ⇒ 拿本地真值去苛求它，是**判据用错对象**（不是散文写错）。实测：`paper-lantern` 于 2026-10-08
+ *       补了「本地副本 vs 已发布影片」对照段后，本闸门把「**已发布影片** 实测 **3653 帧**」当成
+ *       本地副本读数报 FAIL —— **真阳机制的误报**（散文是对的，是闸门按整行比错了对象）。
+ *     · **判据**：候选数值**所在子句**（`clauseOf`，分隔符 `。！？；;` —— 与 ⑨ **同一套**，不引入第二套）
+ *       内出现 `PUB` 标记，**且**该标记距该数值 **≤ `PUB_NEAR = 250` 字** ⇒ 单列 ℹ「**已发布归属豁免**」，
+ *       **不计 FAIL**（绝不静默丢弃）。
+ *     · ★ **为什么是「子句 ∧ 250 字」而不是「紧邻小窗」**（窗口大小 = 判据，实测得出）：
+ *       实测本库「已发布归属」的**最大归因距离 = 190 字**（`paper-lantern:193` 的 `108,908,265 B`，
+ *       最近的 PUB 标记 `films\` release` 在 **190** 字外；同处另一读数 `58,502,244 B` 为 **109** 字）。
+ *       ⇒ 任何「紧邻」窗（≤ 150）都会**漏掉** `108,908,265`；要覆盖它窗宽必须 ≥ 190，而这与**子句长度
+ *       同量级** ⇒ 取子句这个**结构性边界**（既有 `clauseOf` 直接复用，作用域与 ⑨ **逐字一致**）。
+ *       ★ 250 是**兜底上界**（190 的约 1.3 倍余量）：防「一个超长子句（本库最长 2859 字）里的 PUB 标记
+ *         把半行读数一起放掉」——那就是「整行豁免」的变体。**当前语料上该上界是 no-op**（最大 190 < 250）。
+ *     · ★ **不是整行豁免**：同一行里 PUB 标记与陈旧本地读数**不同子句**时**照旧判 FAIL**。
+ *       实测 `paper-lantern:220` 一行内**既有** `已发布影片`（末尾子句）**又有**陈旧本地字节读数
+ *       （`59,657,832 B` 距最近标记 521 字 / `59,360,035 B` 409 字，**均在不同子句**）⇒ 本判据**不**豁免它们。
+ *     · ★ **误报率实测**（2026-10-08，43 份正文 + 逐条人工过）：
+ *       | 判据 | 豁免命中 | 应豁免（已发布/非本片 artifact 归属） | 误豁免（真陈旧本地读数被放掉） |
+ *       |---|---|---|---|
+ *       | 固定字符窗 ≤ 150 字 | 1 | 1 | 0（但**漏** `paper-lantern:193` 的两处） |
+ *       | **子句 ∧ ≤ 250 字（现取值）** | **3** | **3** | **0** |
+ *       ⇒ 豁免 3 处 = `paper-lantern:158` 的 `3653 帧`、`paper-lantern:193` 的 `58,502,244 B` / `108,908,265 B`，
+ *         逐条核对原文归属（「已发布影片（`films` release）实测 3653 帧 / 30 fps」
+ *         「已发布 asset 字节 58,502,244 B」「`demo/out/video_gpu.mp4` 108,908,265 B」）⇒ **应豁免 3 / 误豁免 0**。
+ *     · ★ **反向守卫（合成夹具实测，`D:/lemo-tmp/...`，绝不动真实语料；`generatedVideo.frames=2923`）**：
+ *       (a) **无 PUB 标记**的陈旧本地读数（`| 帧数 | 本片成片帧数 **9999 帧**。 |`）
+ *           ⇒ **照旧 FAIL 并点名 `9999`**（exit **1**）；
+ *       (b) **同行有 PUB、但陈旧读数在别的子句**（`本片成片帧数 **9999 帧**；已发布影片（\`films\` release）实测 **3653 帧**。`）
+ *           ⇒ **照旧 FAIL 并点名 `9999`**（exit **1**；同行的 `3653` 进 ℹ 桶）——证明是**按子句**判，**不是整行放行**；
+ *       (c) 同一读数**加上 PUB 归属**（`已发布影片（\`films\` release）实测 **9999 帧**`）⇒ 进 ℹ 桶、exit **0**（证明本判据**承重**）；
+ *       (d) **短路本判据**（把 `PUB` 换成 `/(?!)/`）后跑真实语料 ⇒ 原 FAIL **复现**（`陈旧帧数 1 处`，exit **1**，ℹ 桶 0 处）
+ *           —— 证明这条判据确实是那处 FAIL 的**唯一**解除原因，没有靠别的豁免蒙混。
+ *     · ★ 本判据只把 token 从 FAIL 桶**挪到 ℹ 桶**，**不影响退出码**（与 ④/⑤ 的「豁免」同性质，但**可见**）。
+ *
  * ③ 已知局限：
  *   · 只认**字面量**：正文若写「约两分钟」「一帧不差」，闸门看不见（假阴）。
  *   · 帧数的「成片语境」用**整行**判定（这些表格行很长，行首的「成片 |」「帧数 |」离数字常 > 60 字）——
@@ -127,6 +164,12 @@
  *     仍会走到 FAIL 判定 —— 实测本库无此例（该桶 0 处）。
  *   · 只比对 `generatedVideo`；**不判断 json 自己的 `selfCheck` 正文是否也陈旧**
  *     （实测 `hd-2d` 的 json 内部就不自洽：`generatedVideo` 已 24 fps，`selfCheck.warnings` 仍写 60 fps）。
+ *   · ★ **⑩ 的归因是启发式**（如实登记）：它按「**子句 ∧ ≤250 字内出现 PUB 标记**」判归属，
+ *     并**不理解语义**。残留风险：若未来正文写成「**本片成片** `X B` 与**已发布影片** `Y B` 不同」这种
+ *     **同子句对照**（陈旧读数在前、PUB 标记在后），`X` 会被误豁免。缓解方向（本轮**未做**，越界）：
+ *     把判据收紧为「PUB 标记必须在数值**之前**」（实测本库 3/3 的标记都在数值前，收紧**不影响**当前结论），
+ *     或要求数值**紧贴具名 artifact**（如 `` `demo/out/video_gpu.mp4` ``）。★ 现取值取「**前后皆可**」
+ *     是按 `check-tp-prose.mjs` ⑦「成片归因」的既有口径（那里也是按窗口找归因词，不分前后）。
  *
  * 用法：node scripts/check-skill-film-fields.mjs
  * 退出码：
@@ -166,8 +209,30 @@ const clauseOf = (line, idx) => {
   return e === -1 ? tail : tail.slice(0, e + 1);
 };
 
+/** ★★ ⑩「已发布影片归属」标记（2026-10-08 新增，见头注释 ⑩ 一节）。
+ *  真值 `_distill.json#generatedVideo` 是**本地副本**的测量 ⇒ 显式归属给「已发布影片（`films` release）」
+ *  或别的具名 artifact 的读数**不该**拿本地真值苛求。
+ *  ★ 标记词表：`已发布` / `published` / `films\` release`（正文里 `films` 带反引号）/ `release asset|release 资产`。
+ *  ★ **刻意不含 `本地副本` / `local copy`** —— 那**正是** `generatedVideo` 度量的对象，标了它也照旧判 FAIL。 */
+const PUB = /已发布|published|films[\s`]{0,4}release|release\s*(?:asset|资产)/g;
+/** ⑩ 的作用域 = **token 的所在子句** ∧ **距标记 ≤ `PUB_NEAR` 字**（两者都要满足）。
+ *  ★ 子句（`clauseOf`，与 ⑨ 同一套 `。！？；;`）是**结构性**边界；`PUB_NEAR` 是**兜底上界**，
+ *    防「一个超长子句（本库最长 2859 字）里的 PUB 标记把半行读数一起放掉」——那就是「整行豁免」的变体。
+ *  ★ **实测定值**：本库已发布归属的**最大归因距离 = 190 字**（`paper-lantern:193` 的 `108,908,265 B`）；
+ *    取 **250** = 该实测值的约 1.3 倍余量。窗口**就是判据**，可被头注释的实测表反驳
+ *    （≤150 字 ⇒ 只豁免 1/3，**漏** `paper-lantern:193` 的两处）。 */
+const PUB_NEAR = 250;
+const pubAttributed = (line, idx) => {
+  const cl = clauseOf(line, idx);
+  for (const m of line.matchAll(PUB)) {
+    if (Math.abs(m.index - idx) > PUB_NEAR) continue;
+    if (clauseOf(line, m.index) === cl) return m;
+  }
+  return null;
+};
+
 const dirs = fs.readdirSync(DIR).filter((s) => fs.existsSync(path.join(DIR, s, 'SKILL.md'))).sort();
-const blind = [], staleFrame = [], staleRes = [], refDur = [], xref = [], resOrient = [];
+const blind = [], staleFrame = [], staleRes = [], refDur = [], xref = [], resOrient = [], pubExempt = [];
 
 for (const slug of dirs) {
   const jsonPath = path.join(DIR, slug, '_distill.json');
@@ -192,7 +257,11 @@ for (const slug of dirs) {
       if (NATIVE.test(near(m.index, m[0].length))) continue;  // 设计期 / 他版来源
       if (HIST.test(line) && !CUR.test(line)) continue;       // ④ 整行有历史语境（但同行有当前结论 ⇒ 不豁免）
       const isXref = others.some((o) => clauseOf(line, m.index).includes(o));   // ⑨ 同一子句（2026-10-07 收窄）
-      (isXref ? xref : staleFrame).push({ slug, ln: i + 1, v, measured: gv.frames, line });
+      if (isXref) { xref.push({ slug, ln: i + 1, v, measured: gv.frames, line }); continue; }
+      // ⑩ 已发布影片归属豁免（**按子句**，不是整行；只豁免紧邻 PUB 标记的那个数值 —— 见头注释 ⑩）
+      const pubF = pubAttributed(line, m.index);
+      if (pubF) { pubExempt.push({ slug, ln: i + 1, v, measured: gv.frames, line, by: pubF[0] }); continue; }
+      staleFrame.push({ slug, ln: i + 1, v, measured: gv.frames, line });
     }
 
     // ── 2) 分辨率（需 ③ 成片近邻 + ④ 历史语境 + 非假设语境 → 判 FAIL） ──
@@ -213,7 +282,11 @@ for (const slug of dirs) {
         continue;
       }
       const isXref = others.some((o) => clauseOf(line, m.index).includes(o));   // ⑨ 同一子句（2026-10-07 收窄）
-      (isXref ? xref : staleRes).push({ slug, ln: i + 1, v: `${w}×${h}`, measured: `${gv.width}×${gv.height}`, line });
+      if (isXref) { xref.push({ slug, ln: i + 1, v: `${w}×${h}`, measured: `${gv.width}×${gv.height}`, line }); continue; }
+      // ⑩ 已发布影片归属豁免（**按子句**，不是整行；见头注释 ⑩）
+      const pubR = pubAttributed(line, m.index);
+      if (pubR) { pubExempt.push({ slug, ln: i + 1, v: `${w}×${h}`, measured: `${gv.width}×${gv.height}`, line, by: pubR[0] }); continue; }
+      staleRes.push({ slug, ln: i + 1, v: `${w}×${h}`, measured: `${gv.width}×${gv.height}`, line });
     }
 
     // ── 3) 时长（噪声大 → 只列「参考」） ──
@@ -260,6 +333,12 @@ if (resOrient.length) {
   for (const r of resOrient) bySlug[r.slug] = (bySlug[r.slug] || 0) + 1;
   for (const [k, v] of Object.entries(bySlug)) console.log(`  ${k.padEnd(20)} ${v} 处`);
 }
+if (pubExempt.length) {
+  console.log(`\nℹ 已发布归属豁免：正文读数**显式归属**给「已发布影片（\`films\` release）」或别的具名 artifact 的 ${pubExempt.length} 处 —— 本闸门真值是**本地副本**的测量，不计 FAIL，供人工判断：`);
+  for (const p of pubExempt) {
+    console.log(`  ${p.slug.padEnd(20)} L${String(p.ln).padStart(4)}  正文 ${p.v} / 实测（本地副本）${p.measured}  （子句内标记「${p.by}」）\n      ${p.line.trim().slice(0, 150)}`);
+  }
+}
 if (blind.length) {
   console.log(`\nℹ 失明：读不到 _distill.json#generatedVideo 的风格 ${blind.length} 个（不计 FAIL，但统计）：`);
   console.log('  ' + blind.join('、'));
@@ -275,5 +354,5 @@ if (allBlind) {
 
 const fail = staleFrame.length + staleRes.length + (allBlind ? 1 : 0);
 if (!staleFrame.length && !staleRes.length && !allBlind) console.log('✓ 未发现「陈旧且非历史语境」的正文成片帧数 / 分辨率声称。');
-console.log(`\n[闸门] 陈旧帧数 ${staleFrame.length} 处 / 陈旧分辨率 ${staleRes.length} 处 / 参考时长 ${refDur.length} 处 / 参考画幅朝向 ${resOrient.length} 处 / 交叉引用 ${xref.length} 处 / 失明 ${blind.length} 个 ${fail ? '✘' : 'OK'}`);
+console.log(`\n[闸门] 陈旧帧数 ${staleFrame.length} 处 / 陈旧分辨率 ${staleRes.length} 处 / 参考时长 ${refDur.length} 处 / 参考画幅朝向 ${resOrient.length} 处 / 交叉引用 ${xref.length} 处 / 已发布归属豁免 ${pubExempt.length} 处 / 失明 ${blind.length} 个 ${fail ? '✘' : 'OK'}`);
 process.exitCode = fail ? 1 : 0;

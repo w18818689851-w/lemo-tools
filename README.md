@@ -284,7 +284,7 @@ lemo-make.bat --help
 1. **它不接受 `--size`** ⇒ 已给 `video_png.mjs` 补上 `--size` / `--ratio`：照 `core/render/page.mjs` 的
    `takeSize` **同源**解析（`{ w: W, h: H } = takeSize(args)`），**不自己发明一套**；`w/h` 传给**两处**
    `openDemo`（probe 与每个 worker）；顺带补上 core 版有的 `requireDemo(dir)`。缺省仍是 1920x1080
-   （`FALLBACK_SIZE`）⇒ **不改默认、全库 35 个 `build.sh` 的调用零回归**。
+   （`FALLBACK_SIZE`）⇒ **不改默认、全库 37 个 `build.sh` 的调用零回归**。
 2. **它默认输出 `out/video24.mp4`，与下游要读的 `out/video_gpu.mp4` 对不上** ⇒ **经复核这条不成立**：
    `video_png.mjs:18` 本来就吃 `--out`（`opt('--out', …)`），而编排器**显式传**了
    `--out …/out/video_gpu.mp4` ⇒ 它写的就是 `video_gpu.mp4`。下游 `mux.sh` 读的正是这个名，
@@ -372,7 +372,7 @@ const renderVArgs = [renderScriptRel, demoRel, '--fps', … ];   // 其余参数
 （那个镜像只覆盖「demo 自带候选脚本」这一类）⇒ 自动比对会把它们**全判成「漏跑」**（实测 34 个风格里 34 个命中，
 明显失真）。这也是本表选「人工核实 + 登记」而不是「自动比对」的原因。
 
-★ **干净名单**：按 `build.sh` 逐条抽取核对，35 个带 `build.sh` 的风格里**绝大多数至少漏跑一步**，
+★ **干净名单**：按 `build.sh` 逐条抽取核对，37 个带 `build.sh` 的风格里**绝大多数至少漏跑一步**，
 本表核出的「没有上述任何一步」的是 **crayon-book / impasto / paper-lantern**；另有 **lowpoly-island**
 （只差 `music/check.py` 一个自检）与 **scifi-toon**（只差 `asr.py` / `srt.mjs` —— 后者是编排器**有意**不跑的
 Node 字幕脚本，见「第 6 步混流」里的说明）。
@@ -438,7 +438,7 @@ Index-TTS 是本机部署的零样本克隆引擎，**从 WSL 启动即可**：�
 传给 `video.mjs`（低层渲染工具只认 `--size`，不认 `--ratio`）。
 
 ★ **「默认 9:16」为什么放在编排器/控制台，而不放在低层 `takeSize`**：`still.mjs` / `video.mjs` 是低层工具，
-全库 35 个风格的 `demo/build.sh` 都直接调它们、**都不传 `--size`、全按 1920×1080 构图**；把低层默认改成
+全库 37 个风格的 `demo/build.sh` 都直接调它们、**都不传 `--size`、全按 1920×1080 构图**；把低层默认改成
 9:16 会让那些示例片**当场全坏**。所以 `takeSize` 的默认仍是 1920×1080，「默认 9:16」只在出片流程生效。
 
 ★ 影片布局的自适应是**逐风格**做的：`styles/engraving/demo/film_coffee.js` 已改造（从视口 `opts.W/H`

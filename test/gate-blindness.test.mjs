@@ -2457,9 +2457,12 @@ test('★自证 check-tp-prose：摘掉「json 散文进 FAIL 桶」后，json �
   const dir = path.join(TMP, 'mut-tp-jsonprose');
   try {
     // 把「json 散文 token 进 FAIL 桶」这条新判据摘掉（`S.json` 的 token 一律降级为参考）。
+    // ★ 2026-10-08 同步：`check-tp-prose.mjs` 在 FAIL 边界前插入了「已发布影片归属豁免（⑪）」，
+    //   该行由「单行 `else if (…) fails.push(…)`」重构为**代码块** ⇒ 手术串随之更新
+    //   （仍只改 `if` 条件：加 `&& !S.json` ⇒ json 散文落 `else` 参考桶 ⇒ 正向断言必须变红）。
     const gate = mutate('check-tp-prose.mjs', dir,
-      "else if (D.mode === 'fail' && !S.jr) fails.get(D.key).push(rec2);",
-      "else if (D.mode === 'fail' && !S.jr && !S.json) fails.get(D.key).push(rec2);");
+      "else if (D.mode === 'fail' && !S.jr) {",
+      "else if (D.mode === 'fail' && !S.jr && !S.json) {");
     const root = path.join(dir, 'styles');
     const dj = tpDistill();
     dj.selfCheck.audio = { note: '本片成片实测真峰值 input_tp = −0.50 dBTP（本片成片实测）。' };
