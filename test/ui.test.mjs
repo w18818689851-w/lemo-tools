@@ -5,7 +5,7 @@
  * 为什么单独一个入口：`test/README.md` 里如实写着「Web UI 交互：一条都没测」——
  * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  *   ★ 2026-10-08 复核：服务端侧现为 smoke **41** + setup **12** = **53** 条（「42 = 30 + 12」是写本文件时的快照）；
- *     本文件（UI 层）现为 **64** 条。
+ *     本文件（UI 层）现为 **65** 条（★ 2026-10-09：I 组加 I6 后 64 → 65）。
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
  * 批次：A/B/C/D（前四批）+ E（第五批：文案出片面板）+ F（第六批：补三处 UI 盲区）
@@ -29,7 +29,8 @@
  *   ② 「当前默认：WorkBuddy」胶囊默认态可见、切走变「已切换：…」；③ 多模型切换（拉取模型 → 下拉候选
  *   → 选中回填模型名输入框，手填兜底仍在）★ 并钉住规格 v3「**agent 模式禁止拉取模型清单**」（按钮不可见 + 强触发被后端拒）；④ **坏后端不白屏**（
  *   patch `window.fetch` 只拦 `/api/llm/*`，造 4 类坏响应：网络失败 / 500+HTML / 空 body / `{ok:false}`
- *   结构异常 ⇒ 逐个点校验·试一句·拉取模型 ⇒ 面板仍在且有内容 + 未捕获异常 **0**）；⑤ 落盘隔离 + 保存刷新后候选仍在。
+ *   结构异常 ⇒ 逐个点校验·试一句·拉取模型 ⇒ 面板仍在且有内容 + 未捕获异常 **0**）；⑤ 落盘隔离 + 保存刷新后候选仍在；
+ *   ⑥ **`workbuddy-gateway` kind 认得**（默认态 `#llmKind` 显示的就是它 + hint 解释 + 试跑经**本地网关桩**取回文本 —— ★ 绝不指向真实网关）。
  *   ★★ 落盘隔离：I 组另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向临时树）⇒ 覆盖文件
  *     `<成片根>/_llm-api.json` 写进临时树，**绝不碰真实 `D:/lemo-films/_llm-api.json`**（用例里
  *     读真实文件前后快照逐字节比对当红线）。上游是**本地 mock**（不打真实外网），跑完随临时树删除。
@@ -247,6 +248,44 @@ function startLlmMock(port) {
       return;
     }
     send(404, { error: 'not found' });
+  });
+  return new Promise((resolve, reject) => {
+    srv.on('error', reject);
+    srv.listen(port, '127.0.0.1', () => resolve(srv));
+  });
+}
+
+/**
+ * ★★ I6 用的**本机智能体网关桩**（`kind:'workbuddy-gateway'`）。
+ *   ★ 纪律：**绝不**打真实网关的 `POST /api/v1/runs` —— 那会**真正发起一次 Agent 执行**、且网关的
+ *     `getOrCreateSession` 会落到**委托方当前会话** ⇒ **干扰用户工作**。试跑一律指向本桩（127.0.0.1:0，用完关闭）。
+ *   ★ 协议同网关实现（两段式）：`POST /api/v1/runs` → `202 {data:{runId}}`，
+ *     再 `GET /api/v1/runs/{runId}/stream`（SSE：`event: message` 出站消息 + `event: done`）。
+ *     与 `test/llm-api.test.mjs` 的 `startGatewayStub` 同形。
+ */
+const GW_STUB_TEXT = '网关桩回复：你好';
+function startGwStub(port) {
+  const srv = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/api/v1/runs') {
+      req.on('data', () => { /* 丢掉请求体 */ });
+      req.on('end', () => {
+        const b = Buffer.from(JSON.stringify({ data: { runId: 'run-ui-1', status: 'accepted' } }), 'utf8');
+        res.writeHead(202, { 'Content-Type': 'application/json', 'Content-Length': b.length });
+        res.end(b);
+      });
+      return;
+    }
+    if (req.method === 'GET' && /^\/api\/v1\/runs\/[^/]+\/stream$/.test(req.url)) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+      const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+      res.write(frame('message', { version: '1.0', replyTo: 'stub', status: 'streaming', content: { chunk: '网关桩' } }));
+      res.write(frame('message', { version: '1.0', replyTo: 'stub', status: 'completed', content: { markdown: GW_STUB_TEXT } }));
+      res.write(frame('done', {}));
+      res.end();
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end('{"error":{"code":"NOT_FOUND"}}');
   });
   return new Promise((resolve, reject) => {
     srv.on('error', reject);
@@ -733,6 +772,7 @@ async function main() {
   // ★ I 组（LLM 面板）专用：一个**落盘隔离**的测试服务 + 一个正常上游 mock。
   let llmServer = null;
   let llmMock = null;
+  let llmGwStub = null;      // ★ I6 用的本机智能体网关桩（绝不指向真实网关）
   const state = {};
 
   try {
@@ -2860,7 +2900,7 @@ async function main() {
     //   ★ 落盘隔离：本组另起一个**专用测试服务**，把 LEMO_FILM_DIR 指到临时树 ⇒ 覆盖文件
     //     `<成片根>/_llm-api.json` 写进临时树，**绝不碰真实 `D:/lemo-films/_llm-api.json`**。
     //   ★ 只用 CDP 真点击 + 页面内 patch fetch，**不打真实外网**（上游是本地 mock）。
-    const I_NAMES = ['I1 顶栏', 'I2 「当前默认', 'I3 多模型', 'I4 坏后端', 'I5 落盘隔离'];
+    const I_NAMES = ['I1 顶栏', 'I2 「当前默认', 'I3 多模型', 'I4 坏后端', 'I5 落盘隔离', 'I6 workbuddy-gateway'];
     const iWillRun = !OPT.filter || I_NAMES.some((n) => n.includes(OPT.filter));
     if (iWillRun) {
       log('');
@@ -3135,6 +3175,55 @@ async function main() {
           `真实 ${REAL_LLM_OVERRIDE} 被改动了（跑前 ${realOverrideBefore ? realOverrideBefore.length + ' 字节' : '不存在'} → 跑后 ${realAfter ? realAfter.length + ' 字节' : '不存在'}）`);
         notes.push(`I5 保存落盘到临时树 ${isoFile}（models=${JSON.stringify(saved.models)}）；刷新后下拉仍在；真实 ${REAL_LLM_OVERRIDE} 逐字节不变`);
       });
+
+      await runCase('I6 workbuddy-gateway：默认态下拉显示本机网关 kind + 试跑经本地网关桩取回文本', async () => {
+        // ★ 前置：I5 保存过覆盖文件（kind=openai-compatible）⇒ 先删掉它，回到**真·默认态**
+        //   （内置默认 profile workbuddy，其 kind 已是 workbuddy-gateway）。★ 只删隔离临时树里的那份。
+        const isoFile = path.join(llmFilmDir, '_llm-api.json');
+        try { fs.unlinkSync(isoFile); } catch { /* 不存在就算了 */ }
+        await cdp.goto(llmBase + '/', 4000);
+        await waitFor(cdp.evalJs,
+          `!!document.getElementById('llmCard') && document.getElementById('llmProfileBadge').textContent.length > 0`,
+          { timeoutMs: 30000 });
+
+        // ★★ 核心钉子（本次改动的直接目的）：默认态下 #llmKind 的值必须是 workbuddy-gateway
+        //   —— 改前下拉里没有这个 option ⇒ `$('llmKind').value = 'workbuddy-gateway'` 被浏览器丢弃、
+        //     回落成「（用 profile 默认）」⇒ 面板显示的 kind 与实际不符（误导用户）。
+        const k = await cdp.evalJs(`(() => {
+          const s = document.getElementById('llmKind');
+          return { value: s.value, shown: s.options[s.selectedIndex] ? s.options[s.selectedIndex].textContent : '' };
+        })()`);
+        need(k.value === 'workbuddy-gateway', `默认态 #llmKind 的值是「${k.value}」，期望「workbuddy-gateway」（下拉里漏了这个 option？）`);
+        need(/本机智能体网关/.test(k.shown), `默认态 #llmKind 显示「${k.shown}」，应含「本机智能体网关」`);
+
+        // ★ 面板要能**解释**这个 kind：hint 里含「本机智能体网关」，且**不含 markdown 星号**（判据⑧ 同口径）。
+        const hint = await cdp.evalJs(`(document.getElementById('llmKindHint') || {}).textContent || ''`);
+        need(/本机智能体网关/.test(hint), `#llmKindHint 文案「${hint}」应含「本机智能体网关」`);
+        need(!/\*\*/.test(hint), `#llmKindHint 含 markdown 星号（用户可见文案不许有）：${hint}`);
+
+        // ★ 试跑：端点指向**本地网关桩**（绝不指向真实网关）⇒ 面板按 kind 走两段式（run → SSE）取回文本。
+        llmGwStub = await startGwStub(await freePort());
+        const gwBase = `http://127.0.0.1:${llmGwStub.address().port}`;
+        await cdp.evalJs(`(() => {
+          const t = document.getElementById('llmTarget');
+          t.value = 'agent'; t.dispatchEvent(new Event('change', { bubbles: true }));
+          const kk = document.getElementById('llmKind');
+          kk.value = 'workbuddy-gateway'; kk.dispatchEvent(new Event('change', { bubbles: true }));
+          document.getElementById('llmBaseUrl').value = ${JSON.stringify(gwBase)};
+          document.getElementById('llmKey').value = '';
+          document.getElementById('llmTimeout').value = '8000';
+          document.getElementById('llmTryText').value = '你好';
+          document.getElementById('llmTryOut').textContent = '';
+          return true;
+        })()`);
+        await cdp.evalJs(`document.getElementById('btnLlmTry').click(); true`);
+        await waitFor(cdp.evalJs, `!!document.querySelector('#llmTryOut .llm-out-text')`, { timeoutMs: 20000 });
+        const got = await cdp.evalJs(`document.querySelector('#llmTryOut .llm-out-text').textContent`);
+        need(!(await cdp.evalJs(`!!document.querySelector('#llmTryOut .llm-out-err')`)),
+          `试跑走了错误分支（面板没取回文本）：${got}`);
+        need(got.includes(GW_STUB_TEXT), `试跑取回的文本是「${got}」，期望含「${GW_STUB_TEXT}」`);
+        notes.push(`I6 默认态 #llmKind=workbuddy-gateway（显示「${k.shown}」）；试跑经本地网关桩取回「${got}」`);
+      });
     }
   } finally {
     // ── 收尾 ──
@@ -3153,6 +3242,10 @@ async function main() {
     if (llmMock) {
       try { llmMock.closeAllConnections && llmMock.closeAllConnections(); llmMock.close(); } catch { /* ignore */ }
       log(C.dim('  LLM mock 上游已关闭'));
+    }
+    if (llmGwStub) {
+      try { llmGwStub.closeAllConnections && llmGwStub.closeAllConnections(); llmGwStub.close(); } catch { /* ignore */ }
+      log(C.dim('  LLM 网关桩已关闭'));
     }
 
     // ★ 回归钉子 · 取快照：**必须在还原之前**读 —— 还原会把脏值写回基线、掩盖问题。

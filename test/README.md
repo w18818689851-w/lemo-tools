@@ -13,7 +13,7 @@ node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自�
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12 条）
 node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（9 条，★ 绝不真安装）
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（64 条）
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（65 条）
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
 node test/briefs.test.mjs        # 「主题工单」数据层 + 接口 + UI 的测试（16 条，★ 含「控制台出片写进 _jobs 独立目录、不覆盖样板片」+「--ratio 的 `:` 判据」「filmUrl 指向本次产物」）
@@ -736,7 +736,9 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 10. **不用 `spawnSync`**：本环境对任何可执行文件都返回 `EBUSY`，全部异步 `spawn`。
 11. **WSL 命令一律「写脚本文件再执行」，不走内联 `bash -c`**：`wsl.exe` 会把命令行重新拼一遍再交给 Linux 侧解析，内联里的 `$变量` / 引号会被吃掉（`lib/env.mjs` 的注释里写着「内联会吃掉变量」，实测确实如此 —— 内联写法下 `$st` 变成空串，断言直接失去意义）。
 12. **测试自身代码也是 LF**（② 那条会把 `test/*.mjs` 一起查）。
-13. **`ui.test.mjs` 的 D4 会往 `D:\lemo-films\.briefs\` 写一张测试工单**（主题「UI 测试：音色随主题出片传递」）：登记在 `BRIEF_IDS`，跑完在**停服务之前**走 `DELETE /api/briefs/:id` 删掉（还在出片时 409 → 重试；404 视为已删）。实测跑完该目录为空。
+13. **`ui.test.mjs` 的 D4 会往 `D:\lemo-films\.briefs\` 写一张测试工单**（主题「UI 测试：音色随主题出片传递」）：登记在 `BRIEF_IDS`，跑完在**停服务之前**走 `DELETE /api/briefs/:id` 删掉（还在出片时 409 → 重试；404 视为已删）。实测**正常跑完**该目录为空。
+    ★ **口径订正（2026-10-09）**：**被中断 / 并发**时会留渣 —— 实测真仓 `D:\lemo-films\.briefs` 攒下过 **198 个**残留（`bfill-*` / `bcorrupt-1` 是 `test/briefs.test.mjs` 的夹具，`bmuz*` 是中断时留在飞工单），且它与 `test/briefs.test.mjs` **共用**该目录 ⇒ 二者并发必互撞。
+    ★ 现已把 `test/briefs.test.mjs` 改成**默认跑在仓外隔离成片根**（`D:\lemo-tmp\bf-film-<pid>-<ts>`，见其文件头「隔离成片根」段）—— 它不再写用户的 `.briefs`，①②（容量裁剪假红）与 ⑭（并发互删假红）一并消失；`ui.test.mjs` 的 D4 仍写真实目录（待同步隔离）。
 14. ★ **跑本套件 / 改仓库文件之前，先查有没有并发批量作业在跑**（2026-10-06 真实事故：一个子智能体改 `core/render/mux.sh` 的 WIN 侧、WSL 侧还是旧的 ⇒ 两侧 `core/` 分叉 ⇒ 编排器的「两侧 `core/` 一致」闸门**拒绝开工** ⇒ 当日的 38 风格日批**废掉 21 个**）。查法与判据见 `_distill/AGENT-BRIEF.md` 的「动两侧副本共享的文件之前」一节：`ls -lat _distill/render-run-*.log` / `ls -lat _distill/logs/*.log` 看日志 mtime、`ls -la D:/lemo-films/.*.lock`、`tasklist //FI "IMAGENAME eq ffmpeg.exe"` —— **日志 mtime 在几分钟内 / 有 `.lock` / 有 ffmpeg ⇒ 判定有并发作业，等它排空再动**。★ 本套件与日批抢的正是同一批锁：`lemo-make.mjs:1547` 记着「跑出片的同时跑套件，⑥ 必然失败，耗时 9s → 88s」。
 15. ★ **写任务书派活前，任务书里的「环境事实」必须附核法**（2026-10-06 立）：凡出现 **文件路径 / 行号 / 函数名 / 进程 / 端口 / 存在与否 / 谁读谁** 这类断言 ⇒ 都算「环境事实」，都要写「用哪条命令核出来的」；**设计意图 / 要求 / 判断标准 / 已知的通用知识不算**（不必核）。判据、可照抄的格、以及用真实错误做的「凭印象 → 核过之后」正反例，见 `_distill/AGENT-BRIEF.md` 的「派活前：任务书里的『环境事实』必须附核法」一节（核法：`grep -n '环境事实' _distill/AGENT-BRIEF.md`）。★ 同一天同一根因的三次实测：`hologram-hud`（凭印象点名 voices 的读取者，实际全库 **84** 个 `.py`）、`D:/lemo-films/.console-port`（实际在 `D:/lemo-tools/.console-port`，`server.mjs:60`）、「端口文件存在 ⇒ 控制台在跑」（`server.mjs:2070` 明写退出**不删**，存在 ≠ 在跑）。
 
@@ -752,7 +754,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（64 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 5 条）
+## `test/ui.test.mjs` 覆盖了什么（65 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条）
 
 补的就是上面「没覆盖什么」里那条 —— **前端渲染出来对不对**。三种手段从弱到强：
 
@@ -890,7 +892,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 > ★ 按钮文案是 `改用 <该风格 supported[0]>`，**动态取**（现在恰好都是 16:9，但不依赖这个巧合）；若该比例不在 `#briefRatio` 的 options 里，**只提示不硬设**（不把 select 设成空值）。**不禁用出片**、**不改默认比例** —— 保持项目原则「用户有权坚持出，只是要知情」。
 > ★ **文案出片（`#dubCard`）故意没有画幅警告**，这不是漏了：它的背景由 `lib/dub-core.mjs` 的 `bgSource(spec,{W,H,dur})` **按请求尺寸程序化生成**（`gradients=s=${W}x${H}`），**无绝对像素常量、与风格样板片模块无关**，所以 `FILM_META.aspects` 那套能力**不适用**。已在 `web/app.js` 的对应代码段写明理由，防后人误修。
 
-**I. LLM API 配置面板（5 条，第十二批）**
+**I. LLM API 配置面板（6 条，第十二批）**
 
 这一批补的是**此前在 UI 层零覆盖**的 `LLM API 配置`面板（`#llmCard`，接口 `/api/llm/*`）—— 之前只有不进仓的探针（`D:/lemo-tmp/llm-integration/`）。
 
@@ -901,9 +903,10 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 | I3 | 面板指向**本地 mock 上游** → 点「拉取模型」→ `#llmModelSelect` 出现 N 个候选 → 选中一项 **回填进 `#llmModel`**（手填兜底仍在：输入框非 disabled/readonly + `#llmModelList` 在） |
 | I4 | **坏后端不白屏**：页面内 patch `window.fetch` **只拦 `/api/llm/*`**，造 4 类坏响应（网络失败 / 500+HTML / 空 body / `{ok:false}` 结构异常）⇒ 逐个点「校验 / 试一句 / 拉取模型」⇒ 面板**仍在且有内容**、三类动作**各有可读反馈**、**未捕获异常 0** |
 | I5 | 落盘隔离：保存把候选清单写进**临时树**的 `_llm-api.json`（`LEMO_FILM_DIR` 隔离）→ 刷新页面后下拉**仍在**；★ 真实 `D:/lemo-films/_llm-api.json` 前后快照**逐字节不变** |
+| I6 | **`workbuddy-gateway` kind 认得**（补「默认 profile 已改走本机网关适配器」这一连带缺口）：默认态 `#llmKind` 的值就是 `workbuddy-gateway`（下拉里有这个 `<option>`，不是回落成「（用 profile 默认）」）+ `#llmKindHint` 解释它是「本机智能体网关」且**不含 markdown 星号**；试跑把端点指向**本地网关桩**（两段式 `POST /api/v1/runs` → `202 {data:{runId}}` → `GET …/stream` SSE）⇒ 面板取回文本「网关桩回复：你好」 |
 
 > ★★ **绝不碰真实落盘**：I 组另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向 `D:\WSL\b4-ui-llm-*` 临时树）⇒ 覆盖文件写进临时树；用例里对真实 `D:/lemo-films/_llm-api.json` 取前后快照**逐字节比对**当红线（跑完随 `cleanupTmpDirs()` 删临时树）。
-> ★ **绝不打真实外网**：I3/I5 的上游是一个**本地 `node:http` mock**（只服务 `GET /v1/models`，回 3 个写死模型名）；I4 的四类坏响应全部在**页面内**造，请求根本到不了真后端。
+> ★ **绝不打真实外网**：I3/I5 的上游是一个**本地 `node:http` mock**（只服务 `GET /v1/models`，回 3 个写死模型名）；I4 的四类坏响应全部在**页面内**造，请求根本到不了真后端。★★ **I6 绝不指向真实网关**：`workbuddy-gateway` 的试跑指向一个**本地网关桩**（`127.0.0.1:0`，两段式 `POST /api/v1/runs` → `202` + `GET …/stream` SSE）—— 真实网关的 `POST /api/v1/runs` 会**真正发起一次 Agent 执行**、且落到委托方当前会话 ⇒ **严禁**打它（桩的协议同 `test/llm-api.test.mjs` 的 `startGatewayStub`）。
 > ★ **「未捕获异常 0」怎么测**：双通道 —— ① CDP `Runtime.exceptionThrown`（`launchCdp` 里新记的 `events`，`exceptions()` 取差值）；② 页面内 `window.addEventListener('error'|'unhandledrejection')` 计数器。I4 断言**两路都为 0**（且页面打开时的基线就是 0）。
 > ★ **I2 的一处坑**（实测踩到）：别在「切 profile」之前点「刷新」—— `loadLlm()` 是异步的，晚回来的响应会把 pill 回填成默认态（假红）。现改为**等 `#llmProfileBadge` 非空**（它只在 `renderLlmForm` 里填 ⇒ 初始加载已结束）再切。
 > ★ **变异验证**：把按钮的点击处理改空操作 ⇒ H2 变红（`#briefRatio=9:16，期望 16:9`）；去掉「先清空容器」⇒ H2/H3/H5 变红（按钮堆到 10 个）。还原后 4 个文件 md5 回基线。

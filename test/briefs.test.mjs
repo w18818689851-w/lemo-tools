@@ -19,6 +19,9 @@
  *   - 测试服务会覆写 `.console-port` / `打开控制台.url` —— 跑前按字节备份、跑后逐字节还原。
  *   - 不用 curl（本机走代理，打 localhost 得到 502）；不用 spawnSync（本环境一律 EBUSY）。
  *   - 临时文件在非 C 盘（D:\WSL\bf-ui-*），跑完按**确切路径**递归删除（不用通配符）。
+ *   - ★ 成片根（`.briefs` / `.console` / `_jobs` / `.locks-test`）**默认隔离**到仓外临时树
+ *     （`D:\lemo-tmp\bf-film-<pid>-<ts>`，见下方「隔离成片根」段）—— 绝不碰用户的 `D:\lemo-films`；
+ *     外部若显式设了 `LEMO_FILM_DIR` 则尊重它（此时不由本套件删除）。
  *   - ★ 测试造的工单、任务、日志**全部登记**，`finally` 里删干净 —— 绝不往用户数据里留垃圾。
  *   - ★ 断言**增量**（不断言绝对数量）：工单目录与任务历史都是落盘持久化的。
  *
@@ -34,7 +37,34 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
-import { CFG } from '../lib/env.mjs';     // 只借常量；env.mjs 顶层无副作用
+// ★★ 隔离成片根（**默认隔离**，可被外部 env 覆盖）—— 本套件唯一治「假红」的地方。
+//   为什么必须有：本套件与 `ui.test.mjs` 的 D4 都往成片根写工单/任务/锁。默认共享用户的
+//   `D:\lemo-films` ⇒ ① 只要那里有效工单 ≥200，`createBrief` 写完即 `trimCapacity()`（CAP=200）
+//   把数量裁回 200 ⇒ ①② 的 `count === before+1` **必红**（那是**产品已文档化的正常行为**，不是缺陷）；
+//   ② 两个实例并发跑时共用同一 `.briefs`，⑪ 的写死夹具 `bfill-1…205` 会被对方 `cleanupBriefs()`
+//   删掉 ⇒ ⑭ 报「丢失」。⇒ 让套件**默认**跑在仓外临时树上，两条一起消失。
+//   ★ 不许碰用户的 `D:\lemo-films`（那是**用户数据目录** ⇒ 只许读、不许删/改/移动）。
+//   ★★ 实现上的**唯一坑**：`CFG.exportDir` 在 `lib/env.mjs` **模块求值那一刻**就定死
+//     （`lib/env.mjs:33` 认 `LEMO_FILM_DIR`），而 `lib/jobs.mjs` / `lib/briefs.mjs` / `lib/store.mjs`
+//     各自从 `CFG.exportDir` 派生 ⇒ 若仍用**静态** `import { CFG }`，本模块顶层再改 `process.env`
+//     已经来不及，且本进程与 spawn 出去的 server 会**各看各的树**（实测：设覆盖点后 ⑬/⑯ 必红）。
+//     ⇒ 先设 env、**再动态** `await import('../lib/env.mjs')`，让全进程（本模块 + 各 lib + 子进程）同一口径。
+const EXTERNAL_FILM_DIR = process.env.LEMO_FILM_DIR || '';   // 用户显式设了就尊重它
+const TEST_FILM_ROOT = EXTERNAL_FILM_DIR
+  ? path.resolve(EXTERNAL_FILM_DIR)
+  : path.resolve('D:/lemo-tmp', `bf-film-${process.pid}-${Date.now().toString(36)}`);  // 非 C 盘 + pid 防并发互撞
+const OWNS_FILM_ROOT = !EXTERNAL_FILM_DIR;   // 只有本套件**自造**的临时根才由它递归删（用户给的根只读、不碰）
+if (OWNS_FILM_ROOT) {
+  process.env.LEMO_FILM_DIR = TEST_FILM_ROOT;
+  fs.mkdirSync(TEST_FILM_ROOT, { recursive: true });
+  // ★ 兜底清理：挂在 `exit` 上而不是只写在 `finally` 里 —— 因为 ⑭ 的判据要在**根还在**时跑
+  //   （提前删会让它读空目录、空转），而 `exit` 在所有同步代码（含 ⑭）之后才触发 ⇒ 既保证清理、
+  //   又不牺牲 ⑭ 的意义；中途抛错/提前 return 也照样清。
+  process.on('exit', () => {
+    try { fs.rmSync(TEST_FILM_ROOT, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
+  });
+}
+const { CFG } = await import('../lib/env.mjs');   // ★ 动态：必须在设完 env 之后（见上）
 
 // ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
 //   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
@@ -57,12 +87,14 @@ const CONSOLE_INDEX = path.join(CONSOLE_ROOT, 'index.json');
 //     另一个实例的 ⑥ 就会因「锁存在且 PID 存活、年龄 <6h」被编排器**直接 fail(exit 1)** 而假红。
 //     实测：造一张占位锁（`pid=4`，System，必活）⇒ ⑥ **确定性**变红（不是随机崩）。
 //     现叠一层 `<pid>` 子目录 ⇒ **每个实例各用各的锁目录**，互不影响；断言一个字没改。
-//   ★★ 2026-10-07 起**已可隔离**（本条原写「无覆盖点 / 未完全隔离」，已过期）：`lib/env.mjs`
-//     的 `CFG.exportDir` **已认** `LEMO_FILM_DIR` ⇒ 本套件共享的 `D:\lemo-films\.briefs` 与 `.console`
-//     都跟着覆盖点走。⇒ **并发跑多个实例时，给每个实例设独立的 `LEMO_FILM_DIR`**：
-//       `LEMO_FILM_DIR=<每实例临时目录> node test/briefs.test.mjs`（不再需要「请单独跑」的硬约束）。
+//   ★★ 2026-10-07 起**已可隔离**；2026-10-09 起**默认隔离**（本条原写「无覆盖点 / 未完全隔离」，已过期）：
+//     `lib/env.mjs` 的 `CFG.exportDir` **已认** `LEMO_FILM_DIR` ⇒ 本套件共享的 `D:\lemo-films\.briefs`
+//     与 `.console` 都跟着覆盖点走。本套件现**默认**把 `LEMO_FILM_DIR` 指到仓外临时树（见上方
+//     「隔离成片根」段）⇒ **并发跑多个实例天然互不影响**，不再需要人工给每个实例设 `LEMO_FILM_DIR`。
+//     若用户**显式**设了 `LEMO_FILM_DIR`，则尊重它（此时并发需自行保证各实例目录不同）。
 //     ★ 已知残留：编排器 `lemo-make.mjs` 的 `exportDir` **不认** `LEMO_FILM_DIR`（红线）⇒
 //       本套件若走到**真出片**那一段，产物仍落真成片根 —— 那种场景下仍不要与用户实例并发。
+//       （本套件的出片用例一律 `--dry-run`，且 `lib/jobs.mjs` 注入 `--out <隔离根>\_jobs\<id>` ⇒ 不真落产物。）
 //     ⇒ 断言一个字没改，只订正本条说明。
 const TEST_LOCK_DIR = path.join(CFG.exportDir, '.locks-test', String(process.pid));
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
@@ -351,6 +383,9 @@ async function main() {
     try { backup.set(f, fs.readFileSync(f)); } catch { backup.set(f, null); }
   }
   // 跑前的工单目录快照：跑完必须与它**逐字一致**（这是「不留垃圾」的硬判据）
+  // ★ 默认隔离下这里**恒为空**（隔离根每次新建）⇒ ⑭ 的判据仍有意义：它只可能抓到「本套件自己
+  //   漏删的工单」；而下面那段「既有工单还原」在默认隔离下退化为空转（用户数据根本不在视野里），
+  //   仅当用户**显式**设了 `LEMO_FILM_DIR` 指到有内容的树时才照旧生效 —— 保留它是对的。
   const briefsBefore = fs.existsSync(BRIEFS_DIR) ? fs.readdirSync(BRIEFS_DIR).sort() : [];
   // ★ 既有工单（**不是**本套件造的）的原始字节备份 —— 见收尾处的还原。
   //   为什么必须有：⑪「容量上限」会真触发一次容量裁剪，而裁剪按 createdAt 从**最旧**的开始删，
@@ -377,6 +412,10 @@ async function main() {
     const del = (p) => httpRequest(server.port, 'DELETE', p);
 
     // ══ ① 白名单与建单 ══════════════════════════════════════
+    //   ★ 下面 `count === before+1` 的**增量断言刻意保留**：本套件默认跑在**干净的隔离成片根**上
+    //     （见文件头「隔离成片根」段）⇒ 跑到这里工单数恒远低于 CAP(200)，`createBrief` 不会触发
+    //     `trimCapacity()` ⇒ 断言成立。**不放宽成 `Math.min(before+1, CAP)`** —— 那会把「容量裁剪」
+    //     这条正常行为掩盖掉，属于「为了让断言变绿而放宽判据」（本项目明令禁止）。
     await runCase('① 建工单：合法 slug → 201 + 落盘文件存在且内容正确', async () => {
       const before = (await get('/api/briefs')).json.count;
 

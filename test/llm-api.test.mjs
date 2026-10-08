@@ -1527,6 +1527,42 @@ test('★ invoke(\'embedding\')：POST /embeddings，取 data[].embedding ⇒ ve
   } finally { await stub.close(); }
 });
 
+// ── ★★ 2026-10-09 追加：`embedding` 判定收紧（一条向量 = 非空且**元素全为数字**的数组，契约 §13.2）──
+//   ★ 由来（第 7 轮审计 A3）：原判据 `Array.isArray(v) && v.length` **不校验元素类型** ⇒
+//     `invoke('embedding',{extract:'data'})` 会把 `{embedding:[…]}`（**对象**）或 `['a','b']`（**字符串数组**）
+//     误当向量（`ok:true`）。★ 契约原只要求「至少 1 条**非空数组**」⇒ **严格未违约**，但**判定不自洽**。
+//   ★ 下面三条：① 真向量（数组的数组）⇒ 仍 `ok:true`；② 对象数组 / ③ 字符串数组 ⇒ 归一为 `bad-shape`。
+
+test('★★ invoke(\'embedding\')·收紧后：extract 指向 `[[0.1,0.2]]`（数组的数组）⇒ ok:true、vectors=[[0.1,0.2]]', async () => {
+  const stub = await startStub((req, res) => json200(res, { data: [[0.1, 0.2]] }));
+  try {
+    const r = await invoke('embedding', { input: 'x' },
+      { profile: 'openai-compatible', baseUrl: stub.base, apiKey: 'sk-test-1234567890', extract: 'data' });
+    assert.equal(r.ok, true, `应当成功：${JSON.stringify(r.error || '')}`);
+    assert.deepEqual(r.result.vectors, [[0.1, 0.2]], '★ 真向量（元素全为数字）应被接受，不受收紧影响');
+  } finally { await stub.close(); }
+});
+
+test('★★ invoke(\'embedding\')·收紧后：extract 指向 `[{embedding:[…]}]`（**对象**数组）⇒ bad-shape（第 7 轮审计 A3）', async () => {
+  const stub = await startStub((req, res) => json200(res, { data: [{ embedding: [0.1, 0.2] }] }));
+  try {
+    const r = await invoke('embedding', { input: 'x' },
+      { profile: 'openai-compatible', baseUrl: stub.base, apiKey: 'sk-test-1234567890', extract: 'data' });
+    assert.equal(r.ok, false, '★ 对象不得被当成向量');
+    assert.equal(r.error.kind, 'bad-shape', '★ 取不到合法向量应归一为 bad-shape');
+  } finally { await stub.close(); }
+});
+
+test('★★ invoke(\'embedding\')·收紧后：extract 指向 `[\'a\',\'b\']`（**字符串**数组）⇒ bad-shape', async () => {
+  const stub = await startStub((req, res) => json200(res, { data: ['a', 'b'] }));
+  try {
+    const r = await invoke('embedding', { input: 'x' },
+      { profile: 'openai-compatible', baseUrl: stub.base, apiKey: 'sk-test-1234567890', extract: 'data' });
+    assert.equal(r.ok, false, '★ 字符串数组不得被当成向量');
+    assert.equal(r.error.kind, 'bad-shape', '★ 取不到合法向量应归一为 bad-shape');
+  } finally { await stub.close(); }
+});
+
 test('★ invoke(\'audio\')：openai-compatible ⇒ POST /audio/speech，**二进制响应** ⇒ result.audio = base64', async () => {
   const RAW = Buffer.from('FAKE-MP3-BYTES-\u0000\u0001\u0002');
   const stub = await startStub(async (req, res) => {

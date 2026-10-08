@@ -314,12 +314,12 @@
           <span class="hint" id="llmProfileHint">默认 profile = workbuddy（软件默认走它）</span>
         </label>
         <label class="field">
-          <span class="lbl">适配器 kind</span>
+          <span class="lbl">适配器 kind</span><span class="hint" id="llmKindHint">workbuddy-gateway 走「本机智能体网关」：模块向本机发一次执行、再读结果流取文本（软件默认 profile workbuddy 用它；不用填 path / extract）</span>
           <select id="llmKind" class="input">
             <option value="">（用 profile 默认）</option>
             <option value="openai-compatible">openai-compatible</option>
             <option value="anthropic">anthropic</option>
-            <option value="custom">custom（厂商私有接口）</option>
+            <option value="custom">custom（厂商私有接口）</option><option value="workbuddy-gateway">workbuddy-gateway（本机智能体网关）</option>
           </select>
         </label>
         <label class="field">
