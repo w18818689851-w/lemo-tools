@@ -24,7 +24,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ③ 判据（**只做可机械判定的声称**；宁可少做几条，也不要误报）
  * ══════════════════════════════════════════════════════════════════════════════
- *   ★ 设计纪律：判据①/② 是**静态读码**（不 import —— 不引入副作用 / 不依赖网络），
+ *   ★ 设计纪律：判据①/②/⑦ 是**静态读码**（不 import —— 不引入副作用 / 不依赖网络），
  *     「代码体」一律用**剥注释（+字符串）后**的文本判（本项目反复治过「判据可被注释满足」的假绿）。
  *     判据③~⑥ **动态 import** 模块后读**运行时真值**（注册表 schema 合法 / 纯函数真值表 / 路径安全 / 非 C 盘）
  *     —— 因为这几条**必须**看运行期对象，静态猜文本会漏（如 RESOURCES 由工厂函数拼出）。
@@ -62,9 +62,19 @@
  *   **判据⑥ 非 C 盘**：`resourceRoot()` 的解析结果**不得**以 `C:` / `C:\` 开头（本项目硬规则 B）——
  *     命中 ⇒ FAIL 并打印实测根。
  *
- *   **判据⑦ 失明守卫（防空转绿灯）**：读不到 `lib/resources.mjs` / 剥注释后代码体为空 /
- *     `RESOURCES` 为空 ⇒ **FAIL 且明说「本闸门已失明」**，且失明时**不再输出判据①~⑥**（在失明的树上
- *     它们只会刷屏、且会被误读成「模块违约」）。★ 判据⑦ 是**失明守卫本身**，故不与①~⑥ 并列编号。
+ *   **判据⑦ `mount` 真被调用（静态调用点检查）**：从**剥注释（保留字符串）**的源码里切出
+ *     `runDownload` / `importResource` 的**函数体**，断言各自函数体里出现 `mount(` **调用**
+ *     （且**不是** `mount` 自身的定义）⇒ 缺谁**分别点名谁**。
+ *     ★ 由来（堵一个**假绿**）：`mount` 曾被 `runDownload` / `importResource` **完全无视**（死代码），
+ *       而判据① 只查「`mount` 有没有被**导出**」⇒ **一直是绿的**。这是「**有导出 ≠ 有功能**」的典型假绿：
+ *       导出只证明符号在，不证明任何入口真的调用它。故补此**调用点**判据。
+ *     ★ 为什么必须**剥注释**：否则「注释里写一句 `// 调用 mount(id)`」就满足它 ⇒ 判据恒真（= 摆设）。
+ *     ★ 为什么必须**按函数体切**：否则别处（`mount` 自己的定义、或将来别的新函数）出现 `mount(` 也会满足它。
+ *
+ *   **判据⑧ 失明守卫（防空转绿灯）**：读不到 `lib/resources.mjs` / 剥注释后代码体为空 /
+ *     `RESOURCES` 为空 / 切不出 `runDownload`·`importResource` 的函数体 ⇒ **FAIL 且明说「本闸门已失明」**，
+ *     且失明时**不再输出判据①~⑦**（在失明的树上它们只会刷屏、且会被误读成「模块违约」）。
+ *     ★ 判据⑧ 是**失明守卫本身**，故不与①~⑦ 并列编号。
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ④ 与「别处」的边界（本闸门**不做**什么，如实登记）
@@ -79,16 +89,24 @@
  *        报 **FAIL**（`无法动态 import`）而非静默绿灯；
  *     ③ 判据④ 只验契约明列的**那几条**真值 —— 更细的版本语义（`^` 预发布号等）由 `test/` 覆盖；
  *     ④ 判据⑤ 只抽查 3 个穿越样本，不穷举全部非法 id 形态。
+ *     ⑤ 判据⑦ 只做**静态调用点检查** —— 它只断言函数体**文本**里出现 `mount(` 调用，
+ *        **不保证运行期真的走到**（如 `await mount(id)` 写在一个永不进入的分支里），
+ *        也**不校验调用时机**（未断言「成功之后才调」、也未断言「失败路径不调」）；
+ *        且因**保留字符串**，函数体里若有一处**字符串字面量**含 `mount(` 也会被算作调用点（已知盲区，如实登记）。
+ *        运行期行为（真调 / 不调、返回 `mount`·`mounted` 字段）由 `test/resources.test.mjs` 覆盖。
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ⑤ 验证（**临时副本 + 覆盖点，全程不动真实模块**）
  * ══════════════════════════════════════════════════════════════════════════════
- *   · **阴性对照**：真实 `lib/resources.mjs` ⇒ **exit 0**（判据①~⑥ 全过、无失明）。
+ *   · **阴性对照**：真实 `lib/resources.mjs` ⇒ **exit 0**（判据①~⑦ 全过、无失明）。
  *   · **变异 A（判据①）**：删掉某导出（如把 `export function mount` 的 `export ` 去掉）⇒ **exit 1** 并点名 `mount`。
  *   · **变异 B（判据②）**：把 `STATES` 改一个字（如 `'ready'` → `'redy'`）⇒ **exit 1** 并点名差额。
  *   · **变异 C（判据③）**：给某条 `RESOURCES` 的 `kind` 改成 KINDS 外的值 ⇒ **exit 1** 并点名该 id。
  *   · **变异 D（判据⑤）**：让 `dirFor` 不再校验 id（直接 `path.join`）⇒ **exit 1** 并点名路径穿越。
- *   · **失明态**：模块文件缺失 / `RESOURCES` 为空 ⇒ **exit 1 + 「本闸门已失明」**，且不输出判据①~⑥。
+ *   · **变异 E（判据⑦）**：删掉 `runDownload` 函数体里的 `await mount(` 那一行（`importResource` 不动）⇒
+ *     **exit 1** 且**只点名 `runDownload`**（证明判据⑦ 能**分别**定位两个入口，不是「任一命中即全绿」）；
+ *     对称地，只删 `importResource` 的调用点 ⇒ 只点名 `importResource`。
+ *   · **失明态**：模块文件缺失 / `RESOURCES` 为空 ⇒ **exit 1 + 「本闸门已失明」**，且不输出判据①~⑦。
  *   ★ 变异验证用 `LEMO_TOOLS_ROOT` 指向 `D:/lemo-tmp/res-mut/` 下的**整棵 lib 副本**（非破坏性）。
  *
  * 用法：node scripts/check-resources.mjs [--json]
@@ -96,11 +114,11 @@
  *   LEMO_TOOLS_ROOT  工具仓根（默认 `<脚本>/..`，与 `check-llm-api` / `check-doc-coverage` /
  *                    `check-env-overrides` **同名同义**）—— 被测模块 = `<LEMO_TOOLS_ROOT>/lib/resources.mjs`，
  *                    供**非破坏性变异验证**（指向临时夹具树，绝不动真实模块）。
- * 退出码：0 = 全绿（判据①~⑥ 全过、无失明）；
+ * 退出码：0 = 全绿（判据①~⑦ 全过、无失明）；
  *         1 = 有 FAIL（契约不符），或**本闸门已失明**。
  *
  * ★ 本闸门**不产出「闸门自身异常」那个码**（契约里「前置不可用」的形态在此不存在：读不到模块 ⇒
- *   判据⑦ 失明、动态 import 抛错 ⇒ 判据③~⑥ FAIL，二者都归 1）⇒ 头注释只声明上面两个码，与实现一致
+ *   判据⑧ 失明、动态 import 抛错 ⇒ 判据③~⑥ FAIL，二者都归 1）⇒ 头注释只声明上面两个码，与实现一致
  *   （`check-gate-self-claims` 判据① 要求「声明 == 实际」，多声明一个从不出现的码会被它判 FAIL）。
  */
 import fs from 'node:fs';
@@ -175,7 +193,9 @@ function codeOnly(src) {
       if (t === 'expr') {
         if (c === '{') stack[stack.length - 1].depth++;
         else if (c === '}') {
-          if (stack[stack.length - 1].depth === 0) { stack.pop(); prevSig = '`'; i++; continue; }
+          // ★ 必须**把 `$…{…}` 的收尾 `}` 也剥成空格**：否则 `code` 里残留一个「游离 `}`」，
+          //   会让下游**按花括号配平切函数体**（判据⑦）提前闭合 ⇒ 函数体被截短（实测踩过）。
+          if (stack[stack.length - 1].depth === 0) { stack.pop(); blank(i, i + 1); prevSig = '`'; i++; continue; }
           stack[stack.length - 1].depth--;
         }
       }
@@ -213,6 +233,52 @@ function matchBracket(src, openIdx) {
     else if (src[i] === ']') { depth--; if (depth === 0) return i; }
   }
   return -1;
+}
+
+/**
+ * 在**剥注释+字符串**的 `code` 上切出 `(export )?(async )?function <name>(…){ … }` 的**函数体**区间
+ * `{start,end}`（含首尾花括号）。★ 必须在 `code`（字符串已剥成空格）上跑：否则串内的 `{` `}` 会把配平带偏。
+ * ★ 与 `noComment` 逐字符同长同下标 ⇒ 区间可直接去 `noComment` 上取**保留字符串**的函数体文本。
+ * 找不到 ⇒ `null`（交由失明守卫）。
+ */
+function functionBodyBounds(code, name) {
+  const m = new RegExp(`(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(code);
+  if (!m) return null;
+  let j = m.index + m[0].length - 1;   // 指向参数表的 `(`
+  let d = 0;
+  for (; j < code.length; j++) {       // 先配平参数表的圆括号
+    if (code[j] === '(') d++;
+    else if (code[j] === ')') { d--; if (d === 0) { j++; break; } }
+  }
+  while (j < code.length && code[j] !== '{') j++;   // 跳到函数体 `{`
+  if (j >= code.length) return null;
+  const start = j;
+  d = 0;
+  for (; j < code.length; j++) {
+    if (code[j] === '{') d++;
+    else if (code[j] === '}') { d--; if (d === 0) return { start, end: j }; }
+  }
+  return null;
+}
+
+/**
+ * 断言 `body`（**剥注释、保留字符串**的函数体文本）里存在 `mount(` **调用** —— 排除 `mount` 自身的**定义**
+ * 形态（`function mount(` / `async function mount(`）。返回布尔。
+ */
+function hasMountCall(body) {
+  const re = /\bmount\s*\(/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    const before = body.slice(0, m.index);
+    const wm = /([A-Za-z_$][A-Za-z0-9_$]*)\s*$/.exec(before);
+    if (wm && wm[1] === 'function') continue;                       // `function mount(`
+    if (wm && wm[1] === 'async') {                                  // `async function mount(`
+      const wm2 = /([A-Za-z_$][A-Za-z0-9_$]*)\s*$/.exec(before.slice(0, before.length - wm[0].length));
+      if (wm2 && wm2[1] === 'function') continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 /** 收集模块导出的名字（`export (async) function|const|… <name>` / `export { … }` / `export default`）。 */
@@ -428,7 +494,33 @@ if (mod) {
   }
 }
 
-// ── 判据⑦：失明守卫 ─────────────────────────────────────────────────────────
+// ── 判据⑦：`mount` 真被 `runDownload` / `importResource` 调用（静态调用点检查）────
+//   ★ 堵「有导出 ≠ 有功能」的假绿：`mount` 曾被这两个入口完全无视（死代码），而判据① 只查导出。
+//   ★ 剥注释（保留字符串）后**按函数体切**，各自断言函数体里有 `mount(` 调用 ⇒ 缺谁分别点名谁。
+let mountCallSites = null;
+if (blind.length === 0) {
+  const CALLERS = ['runDownload', 'importResource'];
+  const notCalled = [];
+  mountCallSites = {};
+  for (const fn of CALLERS) {
+    const b = functionBodyBounds(code, fn);
+    if (b === null) { blind.push(`切不出 \`${fn}\` 的函数体（写法变了？）⇒ 判据⑦ 空转`); continue; }
+    const body = noComment.slice(b.start, b.end + 1);   // ★ 剥注释、保留字符串
+    const called = hasMountCall(body);
+    mountCallSites[fn] = called;
+    if (!called) notCalled.push(fn);
+  }
+  if (notCalled.length) {
+    fails.push({
+      crit: '⑦',
+      detail: `\`mount\` 未被下列入口**调用**（静态调用点检查；契约 §七「下载 / 导入成功后挂载」）：`
+        + `${notCalled.join(' / ')}\n     · ★ 有导出 ≠ 有功能：\`mount\` 已在导出清单里，但这两个入口必须真的 \`await mount(id)\`。`
+        + `\n     · 实测调用点：${CALLERS.map((f) => `${f}=${mountCallSites[f] ? '有' : '无'}`).join('，')}`,
+    });
+  }
+}
+
+// ── 判据⑧：失明守卫 ─────────────────────────────────────────────────────────
 const blindGuard = blind.length > 0;
 
 // ── 输出 ─────────────────────────────────────────────────────────────────────
@@ -443,13 +535,14 @@ if (JSON_MODE) {
     exports: exportsFound,
     resourcesCount,
     root: rootResolved,
+    mountCallSites,
   }, null, 2));
   process.exitCode = (blindGuard || fails.length) ? 1 : 0;
 } else {
   console.log('通用资源检测适配模块契约闸门 —— 守 `lib/resources.mjs` 与仓内契约 `_distill/资源检测适配模块-接口规格-2026-10-09.md`');
   console.log('  判据: ① 导出齐全（14 个） | ② 常量逐字（KINDS/STATES） | ③ 注册表 schema 合法（动态 import 读 RESOURCES） |');
   console.log('        ④ 纯函数真值表（classify/satisfies） | ⑤ 路径安全（dirFor 穿越必须抛） | ⑥ 非 C 盘（resourceRoot） |');
-  console.log('        ⑦ 失明守卫（防空转绿灯）');
+  console.log('        ⑦ mount 真被调用（runDownload/importResource 静态调用点） | ⑧ 失明守卫（防空转绿灯）');
   console.log(`  被测: ${MODULE}`);
   console.log(`  扫描: 剥注释+字符串后 ${code.split('\n').length} 行代码体；剥注释（留字符串）后 ${noComment.split('\n').length} 行`);
   console.log('');
@@ -458,19 +551,19 @@ if (JSON_MODE) {
     console.log('✘✘ 本闸门已失明：');
     for (const b of blind) console.log(`   ✘ ${b}`);
     console.log('   ⇒ 「0 处违约」是假的，别信这个绿。请先修路径 / 写法，再信本闸门的结论。');
-    console.log('   ⇒ 已失明 ⇒ 判据①~⑥ 本次**不输出**（在失明的树上它们只会刷屏；判据⑦ 是失明守卫本身）。');
+    console.log('   ⇒ 已失明 ⇒ 判据①~⑦ 本次**不输出**（在失明的树上它们只会刷屏；判据⑧ 是失明守卫本身）。');
     console.log('');
     console.log('[闸门] 资源检测适配模块：已失明 ⇒ 一条判据都没可信地跑过 ✘');
     process.exitCode = 1;
   } else {
     if (fails.length) {
-      console.log(`✘ 判据①~⑥·契约不符 ${fails.length} 处：\n`);
+      console.log(`✘ 判据①~⑦·契约不符 ${fails.length} 处：\n`);
       for (const f of fails) console.log(`   ✘ 判据${f.crit}  ${f.detail}`);
       console.log('\n   ↳ 修法：让 `lib/resources.mjs` 满足契约（仓内契约 `_distill/资源检测适配模块-接口规格-2026-10-09.md`）；');
       console.log('     若**契约本身**要改，请先改契约文档、再同步改本闸门的常量（改常量 = 改契约）。');
     } else {
-      console.log('✓ 判据①~⑥·`lib/resources.mjs` 满足契约（导出齐全、常量逐字、注册表 schema 合法、');
-      console.log('   纯函数真值表正确、dirFor 拒绝路径穿越、resourceRoot 在非 C 盘）');
+      console.log('✓ 判据①~⑦·`lib/resources.mjs` 满足契约（导出齐全、常量逐字、注册表 schema 合法、');
+      console.log('   纯函数真值表正确、dirFor 拒绝路径穿越、resourceRoot 在非 C 盘、mount 被两入口调用）');
     }
     console.log(`\n[闸门] 资源检测适配模块：导出 ${REQUIRED_EXPORTS.length} 符号 · 注册表 ${resourcesCount} 条 · `
       + `根 ${rootResolved === null ? '(未取)' : rootResolved} · 违约 ${fails.length} 处 ${fails.length ? '✘' : 'OK'}`);

@@ -3314,6 +3314,170 @@ async function main() {
         notes.push(`I6 默认态 #llmKind=workbuddy-gateway（显示「${k.shown}」）；试跑经本地网关桩取回「${got}」`);
       });
     }
+
+    // ══ J. 资源检测面板（#resourcesCard）═══════════════════════
+    // 为什么有这一组：这个面板（web/index.html 的 #resourcesCard + app.js 的 renderResources）
+    //   此前**一条测试都没有** —— 写它的智能体自述「未起浏览器验证 DOM 渲染」。本项目纪律是
+    //   「验证 = 证明它能工作」，所以这里真的把夹具喂进**真实启动链路**（boot() → loadResources()
+    //   → renderResources()），再读回渲染出的 DOM 断言。
+    // ★★ 路线①（CDP 拦截，不用路线②直调渲染函数）：**不跑真实 /api/resources/scan**（它会起 WSL，
+    //   慢且不稳）。做法是用 CDP 的 `Page.addScriptToEvaluateOnNewDocument` 在**文档创建之前**注入一段
+    //   fetch 补丁，把 `/api/resources/scan` 的响应换成夹具 JSON，**其余请求照走真后端** ——
+    //   于是走的是与线上完全相同的渲染路径，不是「元素在不在」。
+    log('');
+    log(C.b('  J. 资源检测面板（把 /api/resources/scan 响应换成夹具，端到端渲染）'));
+
+    const J_NAMES = ['J1 资源检测面板', 'J2 5 种 state', 'J3 ready 条目', 'J4 非 ready'];
+    const jWillRun = !OPT.filter || J_NAMES.some((n) => n.includes(OPT.filter));
+    if (jWillRun) {
+      // 夹具：覆盖 5 种 state；一个 ready（required）、一个 ready（bundled）；一个 missing 且
+      // 带 download + import:true（判据 c/d 的靶子）；三条无下载源的问题态。
+      const RES_FIXTURE = {
+        checkedAt: '2026-10-09T12:00:00.000Z',
+        cached: false,
+        summary: { total: 6, ready: 2, missing: 1, corrupt: 1, 'version-mismatch': 1, 'path-abnormal': 1 },
+        resources: [
+          { id: 'ffmpeg', label: 'FFmpeg', state: 'ready', version: '6.1', required: true, path: 'D:/lemo-res/ffmpeg.exe' },
+          { id: 'model-x', label: '模型 X', state: 'missing', required: true, detail: '未找到模型文件',
+            impact: '无法渲染', fix: '一键下载或手动导入', download: { estBytes: 1048576 }, import: true },
+          { id: 'plugin-y', label: '插件 Y', state: 'corrupt', detail: '校验失败（SHA256 不符）' },
+          { id: 'dep-z', label: '依赖 Z', state: 'version-mismatch', version: '1.0', detail: '期望版本 2.0' },
+          { id: 'asset-w', label: '素材 W', state: 'path-abnormal', detail: '路径不存在或不是目录' },
+          { id: 'tool-v', label: '工具 V', state: 'ready', bundled: true },
+        ],
+      };
+      const resPatch = await cdp.cmd('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(() => {
+          const fixture = ${JSON.stringify(RES_FIXTURE)};
+          const orig = window.fetch;
+          window.__resPatched = true;
+          window.fetch = async (input, opts) => {
+            const url = String(input && input.url ? input.url : input);
+            if (url.includes('/api/resources/scan')) {
+              return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+            return orig(input, opts);
+          };
+        })();`,
+      });
+      try {
+        // 先导航：补丁在文档创建前生效 ⇒ boot() 里的 loadResources() 拿到的就是夹具。
+        await cdp.goto(base + '/', 4000);
+        await waitFor(cdp.evalJs,
+          `document.querySelectorAll('#resList .res-item').length === ${RES_FIXTURE.resources.length}`,
+          { timeoutMs: 25000 });
+
+        await runCase('J1 资源检测面板：卡片存在、标题含「资源检测」、夹具 6 项端到端渲染（fetch 被 CDP 补丁拦下）', async () => {
+          // 反空转：补丁真的生效了（否则这里会去跑真实 scan）
+          need(await cdp.evalJs(`window.__resPatched === true`), '注入的 fetch 补丁没生效（window.__resPatched 不为 true）');
+          need(await cdp.evalJs(`!!document.getElementById('resourcesCard')`),
+            '页面里没有 #resourcesCard（资源检测卡片没渲染）');
+          const title = await cdp.evalJs(`(document.querySelector('#resourcesCard .card-title') || {}).textContent || ''`);
+          need(title.includes('资源检测'), `#resourcesCard 的标题是「${title}」，不含「资源检测」`);
+          const n = await cdp.evalJs(`document.querySelectorAll('#resList .res-item').length`);
+          need(n === RES_FIXTURE.resources.length,
+            `#resList 里渲染出 ${n} 个 .res-item，期望 ${RES_FIXTURE.resources.length}（夹具没被渲染？）`);
+          const count = await cdp.evalJs(`document.getElementById('resCount').textContent`);
+          need(count === '6 项', `#resCount 是「${count}」，期望「6 项」`);
+          // 摘要口径：bad = missing(1)+corrupt(1)+version-mismatch(1)+path-abnormal(1) = 4
+          const sum = await cdp.evalJs(`document.getElementById('resSum').textContent`);
+          need(sum === '4 项需处理', `#resSum 是「${sum}」，期望「4 项需处理」`);
+          const sumCls = await cdp.evalJs(`document.getElementById('resSum').className`);
+          need(/warn/.test(sumCls), `有 4 项待处理时 #resSum 应带 .warn，实际 className=「${sumCls}」`);
+          notes.push(`J1 路线①（CDP addScriptToEvaluateOnNewDocument 注入 fetch 补丁）⇒ boot→loadResources→renderResources 端到端渲染 ${n} 条；#resCount「${count}」#resSum「${sum}」`);
+        });
+
+        await runCase('J2 5 种 state 各自渲染出对应徽标（res-badge 文案）', async () => {
+          const want = { ffmpeg: '就绪', 'model-x': '缺失', 'plugin-y': '已损坏', 'dep-z': '版本不符', 'asset-w': '路径异常' };
+          const got = await cdp.evalJs(`(() => {
+            const o = {};
+            for (const n of document.querySelectorAll('#resList .res-item')) {
+              o[n.dataset.resId] = (n.querySelector('.res-badge') || {}).textContent || '';
+            }
+            return o;
+          })()`);
+          const bad = [];
+          for (const [id, label] of Object.entries(want)) {
+            if (got[id] !== label) bad.push(`${id}: 期望「${label}」实际「${JSON.stringify(got[id])}」`);
+          }
+          need(bad.length === 0, `res-badge 文案不符：\n  ${bad.join('\n  ')}`);
+          // 徽标颜色类也要跟着 state（.ready/.missing/.corrupt/.version/.path）
+          const cls = await cdp.evalJs(`(() => {
+            const o = {};
+            for (const n of document.querySelectorAll('#resList .res-item')) {
+              o[n.dataset.resId] = (n.querySelector('.res-badge') || {}).className || '';
+            }
+            return o;
+          })()`);
+          need(/ready/.test(cls.ffmpeg) && /missing/.test(cls['model-x']) && /corrupt/.test(cls['plugin-y'])
+            && /version/.test(cls['dep-z']) && /path/.test(cls['asset-w']),
+            `res-badge 的颜色类没跟着 state：${JSON.stringify(cls)}`);
+          notes.push(`J2 5 态徽标：${Object.entries(want).map(([k, v]) => `${k}=${v}`).join(' / ')}（颜色类同步）`);
+        });
+
+        await runCase('J3 ready 条目**不出现下载按钮**，只出现 res-ready-note（本地优先·禁止重复下载）', async () => {
+          const readyIds = RES_FIXTURE.resources.filter((r) => r.state === 'ready').map((r) => r.id);
+          need(readyIds.length >= 1, '夹具里没有 ready 条目（前置错误，这条用例失去意义）');
+          const rows = [];
+          for (const id of readyIds) {
+            const info = await cdp.evalJs(`(() => {
+              const it = document.querySelector('#resList .res-item[data-res-id=${JSON.stringify(id)}]');
+              if (!it) return null;
+              const btns = [...it.querySelectorAll('button')].map((b) => b.textContent);
+              return {
+                note: !!it.querySelector('.res-ready-note'),
+                noteText: (it.querySelector('.res-ready-note') || {}).textContent || '',
+                btns,
+                download: btns.some((t) => t.includes('一键下载')),
+              };
+            })()`);
+            need(info, `找不到 ready 条目 ${id} 的 DOM`);
+            need(info.note, `ready 条目 ${id} 没有 .res-ready-note`);
+            need(info.noteText.includes('跳过下载'), `ready 条目 ${id} 的 .res-ready-note 文案是「${info.noteText}」，应含「跳过下载」`);
+            need(info.download === false, `★ ready 条目 ${id} 出现了「一键下载」按钮（本地优先被破坏）：${JSON.stringify(info.btns)}`);
+            need(info.btns.length === 0, `ready 条目 ${id} 不该有任何按钮，实际：${JSON.stringify(info.btns)}`);
+            rows.push(`${id} ✓`);
+          }
+          notes.push(`J3 ready 条目（${readyIds.join(', ')}）均无任何按钮、只有 .res-ready-note「跳过下载」`);
+        });
+
+        await runCase('J4 非 ready + download ⇒ 出现「一键下载」；import:true ⇒ 出现「手动导入」；无下载源 ⇒ 只有提示', async () => {
+          const dl = await cdp.evalJs(`(() => {
+            const it = document.querySelector('#resList .res-item[data-res-id="model-x"]');
+            return it ? [...it.querySelectorAll('button')].map((b) => b.textContent) : null;
+          })()`);
+          need(dl, '找不到 model-x 条目');
+          need(dl.some((t) => t.includes('一键下载')),
+            `model-x（missing + download）没有「一键下载」按钮，实际按钮：${JSON.stringify(dl)}`);
+          need(dl.some((t) => t.includes('手动导入')),
+            `model-x（import:true）没有「手动导入」按钮，实际按钮：${JSON.stringify(dl)}`);
+          // 无 download 规格的三条：不得出现「一键下载」，且要给出「无自动下载源」提示
+          const noDl = ['plugin-y', 'dep-z', 'asset-w'];
+          const rows = [];
+          for (const id of noDl) {
+            const info = await cdp.evalJs(`(() => {
+              const it = document.querySelector('#resList .res-item[data-res-id=${JSON.stringify(id)}]');
+              if (!it) return null;
+              return {
+                btns: [...it.querySelectorAll('button')].map((b) => b.textContent),
+                hint: [...it.querySelectorAll('.res-hint')].map((s) => s.textContent).join(' | '),
+              };
+            })()`);
+            need(info, `找不到条目 ${id}`);
+            need(!info.btns.some((t) => t.includes('一键下载')),
+              `★ ${id}（无 download 规格）不该有「一键下载」按钮：${JSON.stringify(info.btns)}`);
+            need(info.hint.includes('无自动下载源'), `${id} 的提示里应含「无自动下载源」，实际：「${info.hint}」`);
+            rows.push(`${id} ✓`);
+          }
+          notes.push(`J4 model-x 有「一键下载」+「手动导入」；无下载源的 ${noDl.join(', ')} 只有「无自动下载源」提示、无下载按钮`);
+        });
+      } finally {
+        // 移除注入脚本（避免影响后续导航）；页面内已生效的 fetch 补丁随下次导航自然失效。
+        if (resPatch && resPatch.identifier) {
+          try { await cdp.cmd('Page.removeScriptToEvaluateOnNewDocument', { identifier: resPatch.identifier }); } catch { /* ignore */ }
+        }
+      }
+    }
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）

@@ -13,7 +13,7 @@ node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自�
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12 条）
 node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（9 条，★ 绝不真安装）
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（65 条）
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（69 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现）
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
 node test/briefs.test.mjs        # 「主题工单」数据层 + 接口 + UI 的测试（16 条，★ 含「控制台出片写进 _jobs 独立目录、不覆盖样板片」+「--ratio 的 `:` 判据」「filmUrl 指向本次产物」）
@@ -32,7 +32,7 @@ node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs �
 node test/llm-api.test.mjs        # 开放式 LLM 配置模块 lib/llm-api.mjs 的纯逻辑/离线测试（28 条，★ 桩服务用 node:http 监听随机端口、**不打真实外网**；钉「chat() 永不抛」+ 容错 8 类 + 密钥不外泄 + 覆盖文件读写）
 node test/prune-jobs.test.mjs     # scripts/prune-jobs.mjs 的**并发写**回归测试（1 条，★ 带屏障：父进程先占住跨进程写锁 + 等 prune 读完索引；钉「`--apply` 与并发 console 写**共用同一把锁** ⇒ 不丢并发新增的任务」，修前红/修后绿）
 node test/store-lock.test.mjs     # lib/store.mjs **未拿到跨进程写锁**时的降级路径测试（2 条，★ 把 `index.lock` 做成**目录**迫使 `acquireLock()` 返回 false；钉「未拿锁**仍会「重读 + 合并」**⇒ 不丢盘上别人的条目、且 `saveIndex` 返回 true」+「`savedAt` 统一为 ISO 字符串」；★ 反向验证：临时给合并加 `&& locked` 守卫 ⇒ 第 1 条**必红**）
-node test/resources.test.mjs      # 通用资源检测适配模块 lib/resources.mjs 的纯逻辑 / 离线测试（10 条，★ 五态真值表 + `satisfies` 版本语义（`>=` / `^` / 精确 / `*`）+ `dirFor` 路径穿越被拒 + `planDownloads`「**ready 不产生动作**」（本地优先 / 禁止重复下载的核心断言）+ 注入 `envResult` **离线**跑通 —— **不起 WSL、不真下载**）
+node test/resources.test.mjs      # 通用资源检测适配模块 lib/resources.mjs 的纯逻辑 / 离线测试（14 条，★ 五态真值表 + `satisfies` 版本语义（`>=` / `^` / 精确 / `*`）+ `dirFor` 路径穿越被拒 + `planDownloads`「**ready 不产生动作**」（本地优先 / 禁止重复下载的核心断言）+ 注入 `envResult` **离线**跑通 + ★ **`mount` 接线**（静态断言两个入口的函数体里真的 `await mount(`；行为断言 `opts.mount=false` 跳过挂载、无下载配置时不挂载；★ **端到端离线**：就绪 ⇒ 导入后**真的挂载** `mounted:true`、不可用 ⇒ 仍 `ok:true` 但 `mounted:false`）—— **不起 WSL、不真下载**）
 ```
 
 `test/setup.test.mjs` 与 `test/ui.test.mjs` 都是**独立入口**，故意不并进 `smoke.mjs`：安装逻辑、UI 层各自一个数字，三边互不干扰。
@@ -788,7 +788,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（65 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条）
+## `test/ui.test.mjs` 覆盖了什么（69 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条）
 
 补的就是上面「没覆盖什么」里那条 —— **前端渲染出来对不对**。三种手段从弱到强：
 

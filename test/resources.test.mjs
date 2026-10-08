@@ -23,7 +23,14 @@
  *   ⑤ dirPlan() 结构；
  *   ⑥ planDownloads() 对合成 scan 的动作清单（★「ready 不产生下载动作」= 本地优先核心断言）；
  *   ⑦ scanAll({envResult}) **离线**跑通（注入桩 envResult，不起 WSL）；
- *   ⑧ RESOURCES 注册表 schema 自检。
+ *   ⑧ RESOURCES 注册表 schema 自检；
+ *   ⑨ mount **接线**：`runDownload` / `importResource` 的函数体里真的 `await mount(`（静态，
+ *      不真下载），且导入成功返回带 `mount` / `mounted`（`opts.mount=false` ⇒ 跳过挂载）——
+ *      堵「**有导出 ≠ 有功能**」的假绿（`mount` 曾被这两个入口完全无视，而导出检查一直是绿的）。
+ *   ⑩ ★ **端到端（离线）**：资源就绪 ⇒ 导入后**真的挂载**（`mounted:true`）；资源不可用 ⇒ 导入本身仍
+ *      `ok:true` 但 `mounted:false` 且 `detail` 说明「挂载失败」（★ **不把「挂载失败」混成「导入失败」**，
+ *      否则会误触发重新下载）。⑨ 只证「调用了 mount」，⑩ 才证「**mount 真的跑对了**」——
+ *      `mount(id, opts)` 把 opts 透传给 `scanOne` ⇒ 注入合成 `envResult` 即可离线判定状态，**不起 WSL**。
  *
  * 用法：node test/resources.test.mjs
  * 退出码：全绿 0，有失败 1。
@@ -43,7 +50,7 @@ process.on('exit', () => { try { fs.rmSync(TMP, { recursive: true, force: true }
 // ★ 动态 import：让上面的 LEMO_RES_DIR 先生效（静态 import 会被提升到文件顶部）。
 const {
   KINDS, STATES, resourceRoot, dirFor, dirPlan, RESOURCES,
-  classify, satisfies, planDownloads, scanAll,
+  classify, satisfies, planDownloads, scanAll, runDownload, importResource,
 } = await import('../lib/resources.mjs');
 
 test('KINDS / STATES 常量逐字冻结（契约 §二 / §四）', () => {
@@ -157,4 +164,90 @@ test('RESOURCES：注册表非空、id 唯一、schema 合法（契约 §五）'
     assert.ok(typeof e.label === 'string' && e.label.trim() !== '', `${e.id} 的 label 应非空`);
     assert.ok(['env', 'custom'].includes(e.detect && e.detect.via), `${e.id} 的 detect.via 应是 env/custom`);
   }
+});
+
+// ── ⑨ mount 接线（堵「有导出 ≠ 有功能」的假绿）───────────────────────────────
+//   ★ 静态：两个入口的**函数体**里必须真的出现 `await mount(`（不真下载、不起 WSL）。
+//   ★ 行为：用 `opts.mount === false` 与失败路径验证**返回字段**与**不挂载**。
+
+/** 取 `(export )?(async )?function <name>(` 起、到下一个顶层 `function` 前的**源码区间**（近似函数体）。 */
+function fnRegion(src, name) {
+  const m = new RegExp(`(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(src);
+  if (!m) return null;
+  const rest = src.slice(m.index);
+  const next = /\n(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$]/.exec(rest.slice(1));
+  return next ? rest.slice(0, next.index + 1) : rest;
+}
+const stripJsComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+test('runDownload / importResource 的函数体里真的 `await mount(`（静态；不下载、不起 WSL）', () => {
+  const src = fs.readFileSync(new URL('../lib/resources.mjs', import.meta.url), 'utf8');
+  for (const fn of ['runDownload', 'importResource']) {
+    const region = fnRegion(src, fn);
+    assert.ok(region, `应能切出 ${fn} 的源码区间`);
+    assert.match(stripJsComments(region), /await\s+mount\s*\(/,
+      `${fn} 的函数体里应有 \`await mount(\` 调用（★ 有导出 ≠ 有功能：光导出 mount 不算接线）`);
+  }
+});
+
+test('importResource：成功返回带 mount / mounted（opts.mount=false ⇒ 跳过挂载、不真挂载）', async () => {
+  const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
+  const id = list[0].id;
+  const src = path.join(TMP, 'cg-import-fixture.txt');   // ★ 只做文件复制，不下载 / 不起 WSL
+  fs.writeFileSync(src, 'fixture');
+  const res = await importResource(id, src, { mount: false });
+  assert.equal(res.ok, true, `导入应成功（只做文件复制），实测 ${JSON.stringify(res)}`);
+  assert.ok('mount' in res, `返回应含 mount 字段，实测键 ${Object.keys(res).join(',')}`);
+  assert.ok('mounted' in res, `返回应含 mounted 字段，实测键 ${Object.keys(res).join(',')}`);
+  assert.equal(res.mount, null, 'opts.mount=false ⇒ mount 应为 null（未挂载）');
+  assert.equal(res.mounted, null, 'opts.mount=false ⇒ mounted 应为 null');
+  assert.equal(res.mountSkipped, true, 'opts.mount=false ⇒ mountSkipped 应为 true');
+});
+
+test('runDownload：无下载配置 ⇒ ok:false 且不挂载（离线，不真下载）', async () => {
+  const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
+  const importOnly = list.find((e) => !e.download);   // import-only（download 为 null）资源
+  assert.ok(importOnly, '注册表应至少有一条 import-only（download 为 null）资源');
+  const res = await runDownload(importOnly.id);
+  assert.equal(res.ok, false, `无下载配置应 ok:false，实测 ${JSON.stringify(res)}`);
+  assert.notEqual(res.mounted, true, '下载未成功 ⇒ 不得挂载（mounted 不得为 true）');
+});
+
+// ── ⑩ ★ 端到端（**离线**）：导入成功 ⇒ **真的挂载** ──────────────────────────
+//   ★ 为什么必须有这一条：⑨ 只做到「静态断言调用了 `mount`」+「opt-out / 失败路径」，
+//     **没有任何一条测试证明「挂载这一步真的会跑、且跑对了」** —— 那正是「确认它存在 ≠ 证明它能工作」。
+//   ★ 怎么做到**离线**：`mount(id, opts)` 现在把 `opts` 透传给 `scanOne(id, opts)` ⇒ 注入一份合成
+//     `envResult` 即可决定该资源的状态，**完全不起 WSL**（这正是本批给 `mount` 加 opts 的主要理由：
+//     既让成功路径可测，也让调用方能复用上游刚算好的那份 env 结果、免掉一次重复的全量探测）。
+test('★ 端到端（离线）：资源就绪 ⇒ 导入后**真的挂载**；资源不可用 ⇒ 导入仍 ok 但 mounted=false', async () => {
+  const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
+  // 选一条 via:'env'、**无版本要求**、且**非端点挂载**的资源 ⇒ 状态完全由注入的 envResult 决定
+  const e = list.find((x) => x.detect && x.detect.via === 'env'
+    && !(x.version && x.version.want) && !(x.mount && x.mount.how === 'endpoint'));
+  assert.ok(e, '注册表应至少有一条「via:env + 无版本要求 + 非端点挂载」的资源（用于离线演练挂载）');
+
+  const envWith = (status) => ({
+    groups: [{ title: 't', items: [{ id: e.detect.id, label: 'x', status, detail: '', fix: '' }] }],
+    summary: { total: 1, ok: status === 'ok' ? 1 : 0, warn: 0, fail: status === 'ok' ? 0 : 1 },
+    runnable: status === 'ok', drift: [], checkedAt: new Date().toISOString(),
+  });
+
+  // ① 就绪 ⇒ 导入成功后**必须真的挂载**（规格第 3 条「下载完自动完成配置并建立连接」的真跑通断言）
+  const src1 = path.join(TMP, 'cg-e2e-ready.txt');
+  fs.writeFileSync(src1, 'fixture');
+  const r1 = await importResource(e.id, src1, { envResult: envWith('ok') });
+  assert.equal(r1.ok, true, `导入本身应成功，实测 ${JSON.stringify(r1)}`);
+  assert.equal(r1.mounted, true,
+    `资源就绪 ⇒ **必须挂载成功**，实测 mount=${JSON.stringify(r1.mount)}（★ 只断言「函数体里有 mount(」是不够的）`);
+  assert.equal(r1.mount.ok, true, 'mount.ok 应为 true');
+  assert.ok(fs.existsSync(path.join(dirFor(e.kind, e.id), path.basename(src1))),
+    `导入的文件应落在 dirFor(kind,id) 下：${dirFor(e.kind, e.id)}`);
+
+  // ② 不可用 ⇒ 导入本身仍成功（ok:true），但**挂载失败**；★ 不得把 ok 改成 false（否则会误触发重新下载）
+  const src2 = path.join(TMP, 'cg-e2e-bad.txt');
+  fs.writeFileSync(src2, 'fixture');
+  const r2 = await importResource(e.id, src2, { envResult: envWith('fail') });
+  assert.equal(r2.ok, true, '导入本身成功 ⇒ ok 仍应是 true（★ 不得把「挂载失败」混成「导入失败」）');
+  assert.equal(r2.mounted, false, `资源不可用 ⇒ 不应挂载成功，实测 ${JSON.stringify(r2.mount)}`);
+  assert.match(String(r2.detail || ''), /挂载失败/, `detail 应说明「已导入但挂载失败」，实测 ${JSON.stringify(r2.detail)}`);
 });
