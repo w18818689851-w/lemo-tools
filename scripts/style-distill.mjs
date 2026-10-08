@@ -9,7 +9,7 @@
  * 用法：
  *   node scripts/style-distill.mjs plan                    ← 按**源码指纹 + 产物存在性**报出「新纳入 / 变更 / 缺成片 / 台账缺指纹（未决）」
  *   node scripts/style-distill.mjs plan --backfill [--only a,b] [--force]  ← 补写台账指纹（默认拒绝「源码可能已变」的写入）
- *   node scripts/style-distill.mjs render [--force] [--only a,b] [--no-skip-sync]
+ *   node scripts/style-distill.mjs render [--force] [--only a,b] [--no-skip-sync] [--args "<透传给 lemo-make 的额外参数，如 --skip-audio / --skip-render>"]
  *   node scripts/style-distill.mjs frames [--force] [--only a,b]
  *   node scripts/style-distill.mjs status
  *

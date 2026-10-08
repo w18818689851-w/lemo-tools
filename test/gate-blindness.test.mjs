@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 101 条用例 / 覆盖全部 40 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 103 条用例 / 覆盖全部 41 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -4317,6 +4317,86 @@ test('★自证 check-gate-self-claims：短路判据① 缺声明支 / 判据�
       `短路判据③ 后变异E 应**真变绿**（exit 0），实得 ${re.code}\n${re.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(re, '判据③ 头注释称「失明」但代码里没有失明线索', 'mut'), undefined,
       '短路判据③ 后变异E 竟然还报 ⇒ 那条正向断言没在测判据③');
+  } finally { rm(dir); }
+});
+
+// ── 12. check-header-counts.mjs（覆盖点 LEMO_TOOLS_ROOT + LEMO_STYLES_ROOT ⇒ 合成夹具树）──
+/**
+ * 造一棵 `check-header-counts` 的合成夹具树：2 风格 / 每风格各 1 份产物 / 1 个闸门。
+ * 真值（分母）：styles=2 distill=2 styleDna=2 skDoc=2 demoMd=2 gates=1。
+ * `claims` = 假闸门**头注释块**里的行（不带 ` * ` 前缀）。
+ * ★ 两个**模板**目录（`_TEMPLATE` 有 SKILL.md / `_template` 有 DEMO.md）**不计入任何真值**
+ *   —— 夹具要能证明闸门真的排除了它们（否则 skDoc 会算成 3）。
+ */
+const hcTree = (root, claims) => {
+  for (const s of ['a', 'b']) {
+    rj(path.join(root, 'lib', 'style-skills', s, '_distill.json'), { x: 1 });
+    wf(path.join(root, 'lib', 'style-skills', s, 'SKILL.md'), '# 正文\n');
+    rj(path.join(root, 'lib', 'style-dna', `${s}.json`), { y: 1 });
+    wf(path.join(root, 'styles', s, 'DEMO.md'), 'Demo: 1\n');
+  }
+  wf(path.join(root, 'lib', 'style-skills', '_TEMPLATE', 'SKILL.md'), '# 模板\n');
+  wf(path.join(root, 'styles', '_template', 'DEMO.md'), 'Demo: 0\n');
+  wf(path.join(root, 'scripts', 'check-fake.mjs'),
+    '/**\n' + claims.map((l) => ` * ${l}`).join('\n') + '\n */\n'
+    + 'console.log("fake");\nprocess.exitCode = 0;\n');
+  return root;
+};
+const hcEnv = (root) => ({ LEMO_TOOLS_ROOT: root, LEMO_STYLES_ROOT: path.join(root, 'styles') });
+
+test('check-header-counts：判据①②③（写错库级总数 ⇒ FAIL 并点名）+ 阴性对照 + 失明两态', async () => {
+  const dir = path.join(TMP, 'hc');
+  try {
+    // 阴性对照：声称与实测一致（2 份各产物 / 全部 2 个风格 / 现共 1 个闸门）⇒ exit 0
+    const ok = hcTree(path.join(dir, 'ok'), [
+      '真值：2 份 `_distill.json` / 2 份 style-dna / 2 份 `DEMO.md` / 2 份正文。',
+      '全部 2 个风格。现共 1 个 `check-*.mjs`。',
+    ]);
+    const r0 = await runGate('check-header-counts.mjs', hcEnv(ok));
+    expectClean(r0, '本闸门已失明', 'check-header-counts 阴性对照');
+
+    // 变异 A（判据①）：写 5 份 `_distill.json`（实测 2）⇒ exit 1 并点名
+    const a = hcTree(path.join(dir, 'a'), ['真值：5 份 `_distill.json`。']);
+    const ra = await runGate('check-header-counts.mjs', hcEnv(a));
+    expectBlind(ra, 'distill-份数：头注释写 **5**、实测 **2**', 'check-header-counts 变异A');
+
+    // 变异 B（判据②）：全部 9 个风格（实测 2）⇒ exit 1 并点名
+    const b = hcTree(path.join(dir, 'b'), ['全部 9 个风格。']);
+    const rb = await runGate('check-header-counts.mjs', hcEnv(b));
+    expectBlind(rb, '风格总数·全部：头注释写 **9**、实测 **2**', 'check-header-counts 变异B');
+
+    // 变异 C（判据③）：现共 9 个 `check-*.mjs`（实测 1）⇒ exit 1 并点名
+    const c = hcTree(path.join(dir, 'c'), ['现共 9 个 `check-*.mjs`。']);
+    const rc = await runGate('check-header-counts.mjs', hcEnv(c));
+    expectBlind(rc, '闸门总数：头注释写 **9**、实测 **1**', 'check-header-counts 变异C');
+
+    // 失明态 1：scripts/ 下 0 个 check-*.mjs ⇒ exit 1 + 「本闸门已失明」
+    const z = hcTree(path.join(dir, 'z'), ['2 份 `_distill.json`。']);
+    fs.rmSync(path.join(z, 'scripts', 'check-fake.mjs'));
+    const rz = await runGate('check-header-counts.mjs', hcEnv(z));
+    expectBlind(rz, '本闸门已失明', 'check-header-counts 失明态1（0 闸门）');
+
+    // 失明态 2：有闸门但 0 条库级总数声称 ⇒ exit 1 + 「本闸门已失明」
+    const y = hcTree(path.join(dir, 'y'), ['这条头注释里一个库级总数声称都没有。']);
+    const ry = await runGate('check-header-counts.mjs', hcEnv(y));
+    expectBlind(ry, '本闸门已失明', 'check-header-counts 失明态2（0 声称）');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-header-counts：短路判据①（整条比较）后，写错份数的夹具必须重新变绿', async () => {
+  const dir = path.join(TMP, 'hc-mut');
+  try {
+    // ★ 短路的是**那条比较**（不是 `if (false)`）—— 后者会让 `c.verdict` 永不赋值、
+    //   所有声称都掉进 else 支被判 fail，那不是「变绿」。短路比较后全部声称恒「ok」。
+    const subs = [["  if (c.n === truth[c.kind]) { c.verdict = 'ok'; continue; }",
+      "  if (true) { c.verdict = 'ok'; continue; }"]];
+    const a = hcTree(path.join(dir, 'a'), ['真值：5 份 `_distill.json`。']);
+    const g = patchGate('check-header-counts.mjs', path.join(dir, 'g'), subs);
+    const ra = await run(NODE, [g], { env: hcEnv(a) });
+    assert.equal(ra.code, 0,
+      `短路判据① 后变异A 应**真变绿**（exit 0），实得 ${ra.code}\n${ra.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(ra, 'distill-份数：头注释写', 'mut'), undefined,
+      '短路判据① 后变异A 竟然还报 ⇒ 那条正向断言没在测它');
   } finally { rm(dir); }
 });
 
