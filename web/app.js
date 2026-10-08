@@ -1628,7 +1628,7 @@ async function loadVoiceSources() {
   } catch (e) {
     // ★ 接口还没就绪（404）也走这里：把原始信息交给 renderVoiceImport 原样显示。
     //   404 时服务端可能给的是自定义文案（不含 "HTTP 404"），所以用 status 判断。
-    state.vSources = { ok: false, error: e.message, sources: [], notReady: e.status === 404 };
+    state.vSources = { ok: false, error: e.message, sources: [] };  // ★ 2026-10-08 复核：删掉恒假的 notReady（后端 apiVoiceSources **恒返 200**，永不 404/503）——与 :2614/:2728 同型；消费点 `d.notReady === true` 变 undefined ⇒ 行为等价
   }
   renderVoiceImport();
 }
@@ -2485,10 +2485,10 @@ function renderDubLines() {
     const e = el('div', 'dub-err');
     e.appendChild(el('div', 'dub-err-title', '⚠️ 断句预览失败'));
     e.appendChild(el('div', 'dub-err-detail', dubErrText(p.error)));
-    if (p.notReady) {
-      e.appendChild(el('div', 'dub-err-hint',
-        '后端接口未就绪（/api/dub/preview）—— 前端已按契约写好，等后端上线后重试即可。'));
-    }
+    // ★ 2026-10-08 复核：原 `if (p.notReady)`「后端接口未就绪（/api/dub/preview）」分支已删除 ——
+    //   `/api/dub/preview` 后端**只返 400 / 200**、**从不** 404/503（见 server.mjs 的 apiDubPreview）
+    //   ⇒ 它**永远走不到**（`state.dubPreview.notReady` 字段已一并删除，见 startDubPreview 的 catch）。
+    //   失败时只显示上面的服务端原样错误，不再假装存在「未就绪」态。
     box.appendChild(e);
     if (hint) hint.textContent = '';
     if (cnt) cnt.textContent = '';
@@ -2610,8 +2610,8 @@ async function previewDub() {
     });
     state.dubPreview = d || { ok: false, error: '接口返回空' };
   } catch (e) {
-    // ★ 接口没就绪（404）也走这里：把原始信息交给 renderDubLines 原样显示
-    state.dubPreview = { ok: false, error: e.message, notReady: e.status === 404 };
+    // ★ 2026-10-08 复核：`/api/dub/preview` **从不**返 404/503（后端只返 400 / 200，见 server.mjs 的 apiDubPreview）⇒ 已删掉恒假的 `notReady` 字段（其 UI 分支也已删，见 renderDubLines）—— 失败时把原始信息交给 renderDubLines 原样显示。
+    state.dubPreview = { ok: false, error: e.message };
   }
 
   state.dubPreviewBusy = false;
@@ -2725,7 +2725,7 @@ async function loadDubSources() {
     d = await api('/api/dub/sources');
     d = d || { ok: false, error: '接口返回空', uploads: [] };
   } catch (e) {
-    d = { ok: false, error: e.message, uploads: [], notReady: e.status === 404 };
+    d = { ok: false, error: e.message, uploads: [] };   // ★ 2026-10-08 复核：/api/dub/sources 后端只返 200、从不 404/503 ⇒ 删掉恒假的 notReady（且它本来就无消费者，renderDubSources 只读 ok）
   }
   if (seq !== dubSourcesSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
   state.dubUploads = d;
@@ -2814,7 +2814,7 @@ async function startDubRun() {
     //   两种都**原样显示服务端的话**，只在旁边补一句「未就绪」的指引。
     state.dub = {
       jobId: '', status: 'failed', note: '', error: e.message,
-      out: '', outName: '', ticks: 0, url: '', notReady: e.status === 404,
+      out: '', outName: '', ticks: 0, url: '', notReady: e.status === 404 || e.status === 503,
     };
     renderDubState();
     toast('出片失败：' + e.message, true);
@@ -2872,8 +2872,8 @@ function pollDub() {
       }
       // ★ 用户主动取消 ≠ 故障：必须分开处理，别用红色「失败」措辞吓人（用户会以为出了 bug）。
       //   本仓库里 status=canceled **只**可能由 cancelJob() 产生，而它只被两处调用：
-      //     ① DELETE /api/jobs/:id（server.mjs:1640）—— 用户自己点「取消」；
-      //     ② 服务进程退出时的兜底（server.mjs:1896-1897）—— 那时页面已连不上，走不到这里。
+      //     ① DELETE /api/jobs/:id（server.mjs 里该路由的 DELETE 分支）—— 用户自己点「取消」；
+      //     ② 服务进程退出时的兜底（server.mjs 的 SIGINT/SIGTERM 处理）—— 那时页面已连不上，走不到这里。
       //   所以前端能到达的 canceled 就是「用户主动取消」，用中性提示即可。
       if (job.status === 'canceled') {
         state.dub.jobId = '';
@@ -2891,7 +2891,7 @@ function pollDub() {
         return;
       }
       if (job.status === 'ended') {
-        // ★ 'ended' = 控制台重启时这条任务还开着（lib/jobs.mjs:152 loadHistory 标定），已经不在跑了。
+        // ★ 'ended' = 控制台重启时这条任务还开着（lib/jobs.mjs 的 loadHistory 标定），已经不在跑了。
         //   原来它落进「非终态」分支 → 会一直轮询到 63 分钟上限才罢休（白等一场）；现在立刻收尾。
         state.dub.jobId = '';
         state.dub.error = '';

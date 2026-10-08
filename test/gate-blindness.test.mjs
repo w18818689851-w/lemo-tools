@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 108 条用例 / 覆盖全部 42 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 110 条用例 / 覆盖全部 43 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -4675,6 +4675,105 @@ test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目�
     assert.equal(rE.code, 0, `短路判据⑤ 后变异 E 应变绿（exit 0），实得 ${rE.code}\n${rE.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rE, '覆盖点集合 ≠ 规格 §二 那 6 个', 'mut'), undefined,
       '短路判据⑤ 后变异 E 竟然还报 ⇒ 那条正向断言没在测判据⑤');
+  } finally { rm(dir); }
+});
+
+// ── 12j. check-llm-call-sites.mjs（「LLM 调用点」，2026-10-08 建，第 43 个）──────────────────
+// ★ 本闸门**没有** env 覆盖点（扫描根按**脚本自身位置**推导，见它头注释 ⑥）⇒ 夹具按第 ② 种写法：
+//   把闸门拷进 `<夹具根>/scripts/`，再往 `<夹具根>/lib/` 放**真** `llm-api.mjs`（规范通路）与
+//   `triple-check.mjs`（已登记例外）⇒ 闸门扫的就是这棵夹具树，**不动真实仓**。
+const llmCallTree = (dir) => {
+  mk(path.join(dir, 'lib'));
+  fs.copyFileSync(path.join(TOOLS, 'lib', 'llm-api.mjs'), path.join(dir, 'lib', 'llm-api.mjs'));
+  fs.copyFileSync(path.join(TOOLS, 'lib', 'triple-check.mjs'), path.join(dir, 'lib', 'triple-check.mjs'));
+  return dir;
+};
+/** 一个**不走模块**的旁路（第 3 行就是「端点字面量 + fetch」）—— 判据① 的靶子。 */
+const BYPASS_SRC = [
+  '// 夹具：一个绕过 lib/llm-api.mjs 的旁路',
+  'export async function go(prompt) {',
+  "  const r = await fetch('https://api.openai.com/v1/chat/completions', {",
+  "    method: 'POST', headers: { 'content-type': 'application/json' },",
+  "    body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] }),",
+  '  });',
+  '  return r.json();',
+  '}',
+  '',
+].join('\n');
+
+test('check-llm-call-sites：阴性对照 + 判据① 旁路变异 + 判据③ 例外失效两变异 + 失明两态', async () => {
+  const dir = path.join(TMP, 'llmcs');
+  const N_BLIND = '本闸门已失明';
+  try {
+    // ① 阴性对照（规范通路 + 已登记例外）⇒ exit 0 且不含失明文案
+    const neg = llmCallTree(path.join(dir, 'neg'));
+    const r0 = await run(NODE, [copyGate('check-llm-call-sites.mjs', neg)]);
+    expectClean(r0, N_BLIND, 'check-llm-call-sites 阴性对照');
+    assert.ok(r0.out.includes('未登记的 LLM 端点直连'), `阴性对照应打印判据① ✓\n${r0.out.slice(0, 1400)}`);
+
+    // ② 变异 A（判据①）：`lib/bypass.mjs` 直接 fetch OpenAI 端点 ⇒ exit 1 并点名 `lib/bypass.mjs:3`
+    const a = llmCallTree(path.join(dir, 'a'));
+    wf(path.join(a, 'lib', 'bypass.mjs'), BYPASS_SRC);
+    const r1 = await run(NODE, [copyGate('check-llm-call-sites.mjs', a)]);
+    expectBlind(r1, '直接打 LLM 端点', 'check-llm-call-sites 变异A');
+    assert.ok(r1.out.includes('lib/bypass.mjs:3'), `变异A 应点名 lib/bypass.mjs:3\n${r1.out.slice(0, 1600)}`);
+
+    // ③ 变异 B（判据③）：把已登记例外的**文件删掉** ⇒ exit 1 并报「登记的文件不存在」
+    const b = llmCallTree(path.join(dir, 'b'));
+    rm(path.join(b, 'lib', 'triple-check.mjs'));
+    const r2 = await run(NODE, [copyGate('check-llm-call-sites.mjs', b)]);
+    expectBlind(r2, '已登记的例外失效', 'check-llm-call-sites 变异B');
+    assert.ok(r2.out.includes('lib/triple-check.mjs'), `变异B 应点名 lib/triple-check.mjs\n${r2.out.slice(0, 1600)}`);
+
+    // ④ 变异 C（判据③）：文件还在、但**端点字面量被改掉** ⇒ exit 1 并报「已找不到任何 LLM 端点字面量」
+    const c = llmCallTree(path.join(dir, 'c'));
+    const tcReal = fs.readFileSync(path.join(TOOLS, 'lib', 'triple-check.mjs'), 'utf8');
+    let csrc = tcReal.replace('${LM_BASE}/v1/chat/completions', '${LM_BASE}/v1/chatXcompletions');
+    assert.notEqual(csrc, tcReal, '夹具自身失效：变异C 第一步（去掉 chat/completions）没生效');
+    const cStep1 = csrc;
+    csrc = csrc.replace('http://127.0.0.1:12345', 'http://127.0.0.1:1234');
+    assert.notEqual(csrc, cStep1, '夹具自身失效：变异C 第二步（去掉 :12345）没生效');
+    wf(path.join(c, 'lib', 'triple-check.mjs'), csrc);
+    const r3 = await run(NODE, [copyGate('check-llm-call-sites.mjs', c)]);
+    expectBlind(r3, '已找不到**任何** LLM 端点字面量', 'check-llm-call-sites 变异C');
+
+    // ⑤ 失明①（扫到 0 个文件）：只放闸门副本，连 `lib/` 都没有 ⇒ exit 2 +「本闸门已失明」
+    const e1 = path.join(dir, 'empty'); mk(path.join(e1, 'scripts'));
+    const r4 = await run(NODE, [copyGate('check-llm-call-sites.mjs', e1)]);
+    expectBlind(r4, N_BLIND, 'check-llm-call-sites 失明①（0 文件）');
+    assert.equal(r4.code, 2, `失明应 exit 2（本闸门口径：2 = 已失明），实得 ${r4.code}\n${r4.out.slice(0, 900)}`);
+    assert.ok(!r4.out.includes('判据①·'), `失明时不该输出判据①\n${r4.out.slice(0, 900)}`);
+
+    // ⑥ 失明②（规范通路缺失）：`lib/` 里只有例外、没有 `llm-api.mjs` ⇒ exit 2 +「本闸门已失明」
+    const e2 = path.join(dir, 'nofile'); mk(path.join(e2, 'lib'));
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'triple-check.mjs'), path.join(e2, 'lib', 'triple-check.mjs'));
+    const r5 = await run(NODE, [copyGate('check-llm-call-sites.mjs', e2)]);
+    expectBlind(r5, N_BLIND, 'check-llm-call-sites 失明②（规范通路缺失）');
+    assert.equal(r5.code, 2, `失明应 exit 2，实得 ${r5.code}\n${r5.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+test('★自证 check-llm-call-sites：短路判据① / 判据③ 的比较后，对应变异必须重新变绿', async () => {
+  const dir = path.join(TMP, 'llmcs-mut');
+  try {
+    // 变异 A 夹具（lib/bypass.mjs 直接 fetch OpenAI 端点）
+    const a = llmCallTree(path.join(dir, 'a'));
+    wf(path.join(a, 'lib', 'bypass.mjs'), BYPASS_SRC);
+    // 变异 B 夹具（已登记例外的文件被删）
+    const b = llmCallTree(path.join(dir, 'b'));
+    rm(path.join(b, 'lib', 'triple-check.mjs'));
+
+    // ★ 短路判据① 的 `if (bypassReal.length) fails.push({ crit: '①', … })` ⇒ 变异 A 应**真变绿**（exit 0）
+    const gA = patchGate('check-llm-call-sites.mjs', path.join(a, 'scripts'),
+      [["if (bypassReal.length) fails.push({ crit: '①',", "if (false) fails.push({ crit: '①',"]]);
+    const rA = await run(NODE, [gA]);
+    assert.equal(rA.code, 0, `短路判据① 后变异 A 应变绿（exit 0），实得 ${rA.code}\n${rA.out.slice(0, 900)}`);
+
+    // ★ 短路判据③ 的 `if (stale.length) fails.push({ crit: '③', … })` ⇒ 变异 B 应**真变绿**（exit 0）
+    const gB = patchGate('check-llm-call-sites.mjs', path.join(b, 'scripts'),
+      [["if (stale.length) fails.push({ crit: '③',", "if (false) fails.push({ crit: '③',"]]);
+    const rB = await run(NODE, [gB]);
+    assert.equal(rB.code, 0, `短路判据③ 后变异 B 应变绿（exit 0），实得 ${rB.code}\n${rB.out.slice(0, 900)}`);
   } finally { rm(dir); }
 });
 

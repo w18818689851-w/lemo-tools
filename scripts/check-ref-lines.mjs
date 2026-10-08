@@ -229,7 +229,7 @@
  *   `:1273` / `:858` / `:1559-1563` / `:2716`）。
  *
  *   **扫描范围（新增）**：`lib/*.mjs`（根级）、工具仓根 `*.mjs`、`styles/<slug>/demo/**`、
- *   `core/**`、`tools/**`（后三者只收 `.mjs` / `.js` / `.py` / `.sh`）。
+ *   `core/**`、`tools/**`、`web/**`、`test/**`（后五者只收 `.mjs` / `.js` / `.py` / `.sh`；`web/**` 为 2026-10-08 扩扫描范围④、`test/**` 为扩扫描范围⑤，**排除夹具 `test/gate-blindness.test.mjs`** —— 同「本闸门不扫自己」之理据；⑤ 误报率实测：直接纳入首跑 **FAIL 27（a 23 / b 3 / d 1）、exit 1**（源码 849→870、引用 4845→4875、裸引用 344→379）⇒ 三项**改误报形态、不放宽判据**的收窄（① 排除夹具 ② `rootsFor` 补 `ROOT/web` ③ `REF` 扩展名**须以字母开头**，与 `BARE_REF` 既有规则一致）后剩 **10**、逐条人读**全为误报 / 真引用** ⇒ 按**写作侧**修净后 **源码 869 / 引用 4861 / (a)(b)(c)(d) 全 0 / exit 0**）。
  *   ★ **排除**（照本项目既有闸门的 `SKIP` 写法，见 `check-esm-import-paths.mjs` 的 `SKIP`）：
  *   `vendor/`、`node_modules/`、`.git/`、`*.min.js` —— 压缩产物/三方库里有
  *   `` `r.classId:0` `` / `` `r.length:0` `` 这种**不是引用**的东西（`REF` 认得出它，
@@ -708,8 +708,8 @@ const SRCS = [...new Set([
   ...styleSlugs.flatMap((s) => collectSrc(path.join(STYLES, s, 'demo'), SRC_EXT)),  // styles/*/demo/**
   ...collectSrc(path.join(OPUSCAR, 'core'), SRC_EXT),                 // core/**
   ...collectSrc(path.join(OPUSCAR, 'tools'), SRC_EXT),                // tools/**
-  // ★ 2026-10-07 扩扫描范围③：`scripts/**`（29 个闸门 + 工具脚本）—— **排除本闸门自己**（见头注释）。
-  ...collectSrc(path.join(ROOT, 'scripts'), SRC_EXT).filter((p) => p !== SELF_REF_GATE),
+  // ★ 2026-10-07 扩扫描范围③：`scripts/**`（29 个闸门 + 工具脚本）—— **排除本闸门自己**；★ 2026-10-08 扩扫描范围④：`web/**`（前端源码，此前是结构性盲区）；★ 2026-10-08 扩扫描范围⑤：`test/**`（测试源码；**排除夹具** `test/gate-blindness.test.mjs`，同「本闸门不扫自己」的理据，见头注释「扩扫描范围⑤」）。
+  ...collectSrc(path.join(ROOT, 'scripts'), SRC_EXT).filter((p) => p !== SELF_REF_GATE), ...collectSrc(path.join(ROOT, 'web'), SRC_EXT), ...collectSrc(path.join(ROOT, 'test'), SRC_EXT).filter((p) => p !== path.join(ROOT, 'test', 'gate-blindness.test.mjs')),
 ])].sort();
 
 /** 本次真正扫的文件 = 文档 + 源码 */
@@ -718,7 +718,7 @@ const SCAN = [...DOCS, ...SRCS];
 // ── 引用形态 ────────────────────────────────────────────────────────────────
 //   反引号包裹、路径带扩展名、`:行号`（可 `N` / `N-M` / `N/M/…` / 逗号分隔组 `N-M,K`）
 //   ★ 锚 `^…$`：整串必须刚好是「路径:行号组」，`a.js:1,b.js:2` / `x.js:1, 'a'` 都不会被误吃。
-const REF = /^((?:\.[A-Za-z][A-Za-z0-9_\-]*)|(?:[A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z0-9_]+)):(\d+)((?:[-/,]\d+)*)$/;
+const REF = /^((?:\.[A-Za-z][A-Za-z0-9_\-]*)|(?:[A-Za-z0-9_][A-Za-z0-9_./\\-]*\.[A-Za-z][A-Za-z0-9_]*)):(\d+)((?:[-/,]\d+)*)$/;
 /**
  * 反引号片段的**配对** —— 本闸门**唯一**的「掩码口径」，主判据与裸引用 backlog **共用同一套**。
  * ★ 2026-10-07（本轮）：由「**顺序配对**」（旧 `TICKS` 正则 `` `([^`\n]*)` `` —— 找「反引号…反引号」）
@@ -912,7 +912,7 @@ function rootsFor(file, lineNo = 0) {
   //   ⇒ 脚本里写 `<slug>/SKILL.md:N`（如 `paper-lantern/SKILL.md:114`）会被误判成「(a) 文件不存在」。
   //   实测（逐条对比 971 份语料 / 3824 处引用的解析结果）：**0 差异** ⇒ 纯误报修正，不动判据。
   out.push(DISTILL);
-  out.push(OPUSCAR, path.join(OPUSCAR, 'core'), path.join(OPUSCAR, 'tools'), STYLES);
+  out.push(OPUSCAR, path.join(OPUSCAR, 'core'), path.join(OPUSCAR, 'tools'), STYLES, path.join(ROOT, 'web'));
   return [...new Set(out)];
 }
 
@@ -1370,6 +1370,8 @@ console.log(`  源码：${topLevel(path.join(ROOT, 'lib'), /\.mjs$/).length} 份
   `${SRCS.filter((p) => /[\\/]demo[\\/]/.test(p)).length} 份 styles/*/demo/**、` +
   `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'core'))).length} 份 core/**、` +
   `${SRCS.filter((p) => p.includes(path.join(OPUSCAR, 'tools'))).length} 份 tools/**、` +
+  `${SRCS.filter((p) => p.startsWith(path.join(ROOT, 'web'))).length} 份 web/**（前端源码；2026-10-08 扩扫描范围④）、` +
+  `${SRCS.filter((p) => p.startsWith(path.join(ROOT, 'test'))).length} 份 test/**（测试源码；2026-10-08 扩扫描范围⑤，**已排除夹具 test/gate-blindness.test.mjs**）、` +
   `${SRCS.filter((p) => p.startsWith(path.join(ROOT, 'scripts'))).length} 份 scripts/**（.mjs/.js/.py/.sh；已排除 vendor/、node_modules/、*.min.js；**本闸门自己不扫自己**）`);
 console.log(`引用：${refCount} 处；解析到文件 ${resolvedCount} 处；其中 ${cApplied} 处进入 (c) 内容比对`);
 console.log(`★ 另有**裸引用**（正文里不带反引号）${bareCount} 处 —— 2026-10-07 起**已纳入判据 (a)(b)(d)**：`

@@ -299,7 +299,7 @@ test('过期槽接管 (b)：pid 是活着的进程 + 心跳新鲜 ⇒ 绝不接�
 test('过期槽接管 (c)：pid 活着但心跳超过 STALE_AFTER ⇒ 按源码 OR 语义会被接管', async () => {
   const dir = caseDir('stale-beat');
   const m = await loadSlot(dir);
-  // 这条记录的是**实现的真实语义**（见 slot.mjs:7 注释的"或"）：
+  // 这条记录的是**实现的真实语义**（见 core/render/slot.mjs:7 注释的"或"）：
   // 「进程不在」**或**「心跳超时」任一条成立 ⇒ 槽位过期。心跳冻结 120s 的活进程会被赶走。
   const s0 = forgeSlot(dir, 0, process.pid, { beatAgeMs: 120000, dirAgeMs: 120000 });
 

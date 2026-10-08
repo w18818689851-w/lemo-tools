@@ -23,6 +23,9 @@
  *   ④ validate() 三步（reachable / auth / shape）各自失败一条 + 全通过一条；
  *   ⑤ ★ 密钥不外泄（假 key 不出现在 listProfiles()/validate() 输出里，且响应体回显也被脱敏）；
  *   ⑥ listModels() 成功 / 失败；覆盖文件读写（§八）。
+ *   ⑦ ★ 多模态（2026-10-08 追加）：OpenAI 兼容 / Anthropic 两种图片块、`opts.images` 便利入参
+ *      （本地文件 / base64 / dataURL）、体积守卫（单图 + 总请求体）、图片内容不外泄、
+ *      以及 ★★ **纯文本请求体逐字节回归**（证明向后兼容）。
  *
  * 用法：node test/llm-api.test.mjs
  * 退出码：全绿 0，有失败 1，自身异常 2。
@@ -41,7 +44,7 @@ process.env.LEMO_FILM_DIR = TMP;
 // ★ 动态 import：让上面的 LEMO_FILM_DIR 先生效（静态 import 会被提升到文件顶部）。
 const {
   PROFILES, listProfiles, resolveConfig, validate, chat, listModels,
-  maskKey, overrideFilePath, readOverride, saveOverride, maskedConfig, previewProfile,
+  maskKey, overrideFilePath, readOverride, saveOverride, maskedConfig, previewProfile, IMAGE_LIMITS,
 } = await import('../lib/llm-api.mjs');
 
 const TTY = process.stdout.isTTY;
@@ -289,6 +292,30 @@ test('chat() anthropic：打 /v1/messages、带 x-api-key + anthropic-version，
       { profile: 'anthropic', baseUrl: stub.base, apiKey: 'sk-ant-1234567890', maxTokens: 1 });
     assert.equal(res.ok, true, `应当成功：${JSON.stringify(res.error || '')}`);
     assert.equal(res.text, 'claude says hi');
+  } finally { await stub.close(); }
+});
+
+test('chat() 显式 temperature ⇒ 透传进请求体；不给 ⇒ 请求体里不出现该键（逐字节不变）', async () => {
+  // ★ 2026-10-08 补（由来：`lib/triple-check.mjs` 迁移时发现「迁移清单 M1 的建议漏了 temperature:0」——
+  //   照抄会**不等价**；模块为此追加了 temperature 透传，但**当时没有模块侧单测**）。
+  //   ★ 语义：只在 `temperature !== undefined` 时写入 ⇒ 未给值的既有路径**逐字节不变**。
+  const seen = [];
+  const stub = await startStub(async (req, res) => {
+    seen.push(JSON.parse(await readBody(req)));
+    json200(res, { choices: [{ message: { content: 'ok' } }] });
+  });
+  try {
+    // (a) 显式给 0 ⇒ 必须写入（★ 0 是**有效值**，不能被 `||` 之类吞掉）
+    const a = await chat([{ role: 'user', content: 'hi' }],
+      { profile: 'openai-compatible', baseUrl: stub.base, apiKey: 'sk-test-1234567890', temperature: 0 });
+    assert.equal(a.ok, true, `应当成功：${JSON.stringify(a.error || '')}`);
+    assert.equal(seen[0].temperature, 0, '显式 temperature:0 必须透传（0 不能被当成「未给」）');
+    // (b) 不给 ⇒ 键**不存在**（不是 null / undefined / 默认值）
+    const b = await chat([{ role: 'user', content: 'hi' }],
+      { profile: 'openai-compatible', baseUrl: stub.base, apiKey: 'sk-test-1234567890' });
+    assert.equal(b.ok, true, `应当成功：${JSON.stringify(b.error || '')}`);
+    assert.equal(Object.prototype.hasOwnProperty.call(seen[1], 'temperature'), false,
+      '未给 temperature 时请求体**不得**出现该键（否则破坏既有路径的逐字节不变）');
   } finally { await stub.close(); }
 });
 
@@ -586,6 +613,175 @@ test('maskedConfig：含 hasKey 与 keyMask，绝不含明文', async () => {
     assert.equal(m.keyMask, 'sk-M…');
     assert.ok(!JSON.stringify(m).includes('sk-MASK-abcdefghijklmnop-0123456789'));
   });
+});
+
+// ── ⑦ 多模态（图片输入）—— 2026-10-08 追加 ────────────────────
+test('★ 多模态·OpenAI 兼容：显式 image_url 块原样序列化（桩断言 body 里有 image_url）', async () => {
+  const B64 = Buffer.from('openai-image-payload-bytes').toString('base64');
+  const stub = await startStub(async (req, res) => {
+    assert.equal(req.url, '/chat/completions');
+    const body = JSON.parse(await readBody(req));
+    const c = body.messages[0].content;
+    assert.ok(Array.isArray(c), 'content 应为内容块数组（★ 不再被 JSON.stringify 成字符串）');
+    assert.equal(c[0].type, 'text');
+    assert.equal(c[1].type, 'image_url');
+    assert.equal(c[1].image_url.url, `data:image/png;base64,${B64}`, '★ 图片块应原样到达服务端');
+    json200(res, { choices: [{ message: { content: 'seen' } }] });
+  });
+  try {
+    const res = await chat([{ role: 'user', content: [
+      { type: 'text', text: '看图' },
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${B64}` } },
+    ] }], { profile: 'openai-compatible', baseUrl: stub.base, apiKey: 'sk-test-1234567890' });
+    assert.equal(res.ok, true, `应当成功：${JSON.stringify(res.error || '')}`);
+    assert.equal(res.text, 'seen');
+  } finally { await stub.close(); }
+});
+
+test('★ 多模态·Anthropic：显式 image 块原样序列化（桩断言 content[1].source.data）', async () => {
+  const B64 = Buffer.from('anthropic-image-payload-bytes').toString('base64');
+  const stub = await startStub(async (req, res) => {
+    assert.equal(req.url, '/v1/messages');
+    const body = JSON.parse(await readBody(req));
+    const c = body.messages[0].content;
+    assert.ok(Array.isArray(c));
+    assert.equal(c[1].type, 'image');
+    assert.equal(c[1].source.type, 'base64');
+    assert.equal(c[1].source.media_type, 'image/png');
+    assert.equal(c[1].source.data, B64, '★ Anthropic 图片块应原样到达服务端');
+    json200(res, { content: [{ type: 'text', text: 'seen' }] });
+  });
+  try {
+    const res = await chat([{ role: 'user', content: [
+      { type: 'text', text: '看图' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: B64 } },
+    ] }], { profile: 'anthropic', baseUrl: stub.base, apiKey: 'sk-test-1234567890' });
+    assert.equal(res.ok, true, `应当成功：${JSON.stringify(res.error || '')}`);
+    assert.equal(res.text, 'seen');
+  } finally { await stub.close(); }
+});
+
+test('★ 多模态·便利入参①：本地文件路径 → 模块读成 base64（openai-compatible 自动转 image_url）', async () => {
+  const imgPath = path.join(TMP, 'frame-openai.png');
+  const raw = Buffer.from('local-png-file-bytes-1234567890');
+  fs.writeFileSync(imgPath, raw);
+  const expectB64 = raw.toString('base64');
+  const stub = await startStub(async (req, res) => {
+    const body = JSON.parse(await readBody(req));
+    const c = body.messages[body.messages.length - 1].content;
+    assert.ok(Array.isArray(c), '★ 便利图应注入最后一条 user 消息（content 变数组）');
+    assert.equal(c[0].type, 'text');
+    assert.equal(c[0].text, '看图', '原文本应保留为 text 块');
+    assert.equal(c[1].type, 'image_url');
+    assert.equal(c[1].image_url.url, `data:image/png;base64,${expectB64}`, '★ 本地文件应被读成 base64');
+    json200(res, { choices: [{ message: { content: 'ok' } }] });
+  });
+  try {
+    const res = await chat([{ role: 'user', content: '看图' }],
+      { profile: 'openai-compatible', baseUrl: stub.base, apiKey: 'sk-test-1234567890', images: [{ path: imgPath }] });
+    assert.equal(res.ok, true, `应当成功：${JSON.stringify(res.error || '')}`);
+  } finally { await stub.close(); }
+});
+
+test('★ 多模态·便利入参②：dataURL 直传 + base64 直传（anthropic 自动转 image/source）', async () => {
+  const B64A = Buffer.from('dataurl-image-bytes-abcdefgh').toString('base64');
+  const B64B = Buffer.from('rawbase64-image-bytes-1234567').toString('base64');
+  const stub = await startStub(async (req, res) => {
+    const body = JSON.parse(await readBody(req));
+    const c = body.messages[body.messages.length - 1].content;
+    assert.equal(c[1].type, 'image');
+    assert.equal(c[1].source.media_type, 'image/jpeg', '★ mediaType 应从 dataURL 前缀推得');
+    assert.equal(c[1].source.data, B64A);
+    assert.equal(c[2].source.media_type, 'image/webp', '★ 显式 mediaType 应生效');
+    assert.equal(c[2].source.data, B64B);
+    json200(res, { content: [{ type: 'text', text: 'ok' }] });
+  });
+  try {
+    const res = await chat([{ role: 'user', content: '看图' }], {
+      profile: 'anthropic', baseUrl: stub.base, apiKey: 'sk-test-1234567890',
+      images: [{ dataUrl: `data:image/jpeg;base64,${B64A}` }, { base64: B64B, mediaType: 'image/webp' }],
+    });
+    assert.equal(res.ok, true, `应当成功：${JSON.stringify(res.error || '')}`);
+  } finally { await stub.close(); }
+});
+
+test('★★ 纯文本回归：请求体与改动前逐字节相同（openai-compatible + anthropic 两条）', async () => {
+  // ★★ 这两条字面量 = **改动前** `buildRequest` 对纯文本的输出。逐字节比对即证明「多模态改动**没有**碰纯文本路径」。
+  const OPENAI_GOLDEN = '{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":false}';
+  const ANTHROPIC_GOLDEN = '{"model":"m","max_tokens":1024,"messages":[{"role":"user","content":"hi"}]}';
+  let gotOpenai = null; let gotAnthropic = null;
+  const stub = await startStub(async (req, res) => {
+    const raw = await readBody(req);
+    if (req.url === '/chat/completions') { gotOpenai = raw; return json200(res, { choices: [{ message: { content: 'ok' } }] }); }
+    gotAnthropic = raw; return json200(res, { content: [{ type: 'text', text: 'ok' }] });
+  });
+  try {
+    await chat([{ role: 'user', content: 'hi' }], { profile: 'openai-compatible', baseUrl: stub.base, model: 'm', apiKey: 'sk-test-1234567890' });
+    await chat([{ role: 'user', content: 'hi' }], { profile: 'anthropic', baseUrl: stub.base, model: 'm', apiKey: 'sk-test-1234567890' });
+    assert.equal(gotOpenai, OPENAI_GOLDEN, '★ openai-compatible 纯文本请求体必须逐字节不变');
+    assert.equal(gotAnthropic, ANTHROPIC_GOLDEN, '★ anthropic 纯文本请求体必须逐字节不变');
+  } finally { await stub.close(); }
+});
+
+test('★ 多模态·体积守卫：单图超限 ⇒ bad-shape；总请求体超限 ⇒ config（都不抛）', async () => {
+  const tooBigB64 = 'A'.repeat(Math.ceil((IMAGE_LIMITS.maxImageBytes + 4096) * 4 / 3));
+  const base = { profile: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'sk-test-1234567890' };
+
+  // ① 显式图片块超单图上限
+  let r = await chat([{ role: 'user', content: [
+    { type: 'text', text: 'x' },
+    { type: 'image_url', image_url: { url: `data:image/png;base64,${tooBigB64}` } },
+  ] }], base);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.kind, 'bad-shape', '单图超限应归一为 bad-shape');
+
+  // ② 便利入参路径同样受单图上限约束
+  r = await chat([{ role: 'user', content: 'x' }], { ...base, images: [{ base64: tooBigB64 }] });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.kind, 'bad-shape', '便利入参单图超限也应归一为 bad-shape');
+
+  // ③ 总请求体超限（纯文本巨体、无图 ⇒ 命中总请求体守卫）
+  const huge = 'A'.repeat(IMAGE_LIMITS.maxBodyBytes + 4096);
+  r = await chat([{ role: 'user', content: huge }], base);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.kind, 'config', '总请求体超限应归一为 config');
+});
+
+test('★ 多模态·入参非法 ⇒ 归一（bad-shape / config），一律不抛', async () => {
+  const base = { profile: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'sk-test-1234567890' };
+  const msg = [{ role: 'user', content: 'x' }];
+  const r1 = await chat(msg, { ...base, images: [{}] });
+  assert.equal(r1.error?.kind, 'bad-shape', '缺图片来源应 bad-shape');
+  const r2 = await chat(msg, { ...base, images: [{ dataUrl: 'not-a-data-url' }] });
+  assert.equal(r2.error?.kind, 'bad-shape', '非法 dataUrl 应 bad-shape');
+  const r3 = await chat(msg, { ...base, images: [{ base64: '!!!not-base64!!!' }] });
+  assert.equal(r3.error?.kind, 'bad-shape', '非法 base64 应 bad-shape');
+  const r4 = await chat(msg, { ...base, images: [{ path: path.join(TMP, 'no-such-file-xyz.png') }] });
+  assert.equal(r4.error?.kind, 'config', '读不到的本地文件应 config');
+  const r5 = await chat(msg, { ...base, images: 'nope' });
+  assert.equal(r5.error?.kind, 'bad-shape', 'images 非数组应 bad-shape');
+});
+
+test('★★ 多模态·图片内容不外泄：响应体回显图片 base64 ⇒ 被脱敏；密钥照旧', async () => {
+  const B64 = Buffer.from(`SECRET-IMAGE-CONTENT-${'x'.repeat(30)}`).toString('base64');
+  const FAKE = 'sk-IMG-abcdefghijklmnop-0123456789';
+  const stub = await startStub(async (req, res) => {
+    const body = await readBody(req);
+    let echoed = '';
+    try { echoed = JSON.parse(body).messages[0].content[1].image_url.url.split(',')[1]; } catch { /* ignore */ }
+    status(res, 500, JSON.stringify({ error: `bad image: ${echoed}` }));   // 故意把图片 base64 回显在错误体里
+  });
+  try {
+    const res = await chat([{ role: 'user', content: [
+      { type: 'text', text: '看' },
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${B64}` } },
+    ] }], { profile: 'openai-compatible', baseUrl: stub.base, apiKey: FAKE });
+    assert.equal(res.ok, false);
+    const all = JSON.stringify(res);
+    assert.ok(!all.includes(B64), '★ 图片内容**不得**出现在任何输出（含 detail）里');
+    assert.ok(!all.includes(FAKE), '★ 密钥照旧不外泄');
+    assert.match(res.error.detail, /bad image/, 'detail 应保留（非图片部分的）错误信息');
+  } finally { await stub.close(); }
 });
 
 // ── 运行器 ──────────────────────────────────────────────────

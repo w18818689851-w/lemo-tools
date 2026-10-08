@@ -448,7 +448,7 @@ export async function freshDeadPid() {
 // ── 配音锁「前置占用」检查（★ 与工具侧 core/tts/tts_indextts.py 的**过期接管**判据同源）──────────
 //
 // 背景：Index-TTS 的串行锁是**全局独占**的（编排器 / 控制台 / 手工跑共用一把）。工具侧
-//   `acquire_lock()`（`tts_indextts.py:807`）在抢锁时有一条**过期接管**判据：
+//   `acquire_lock()`（`core/tts/tts_indextts.py:807`）在抢锁时有一条**过期接管**判据：
 //       `if (same_host and not _pid_alive(owner)) or age > LOCK_STALE:`   ← 属主 pid 已死 **或** 锁龄超龄
 //   满足即视为残留、清掉重抢。而本套件原先的前置检查**只判「文件在不在」** ⇒ **比工具更严**：
 //   一次被中断的 TTS 留下的死锁（内容 `posix:<pid>`，宿主进程早已不在）会让 5 条现场 TTS 用例**假红**
@@ -458,8 +458,8 @@ export async function freshDeadPid() {
 //   ★ 绝不放宽「真占用就拒绝」的语义：查不动（WSL 起不来 / 解析不出属主）一律**保守拒绝** ——
 //     宁可拒绝，也不放行一个可能真在跑的 TTS（放行会造成**并发跑 TTS**，实测把单句从 6 秒拖到 4~7 分钟）。
 //
-// 锁文件格式（`tts_indextts.py:770`）：`<宿主>:<pid>`（如 `posix:437`）；兼容旧格式「裸 pid」。
-// ★ LOCK_STALE 与工具**同源同默认**：优先读 `INDEXTTS_LOCK_STALE`，缺省 21600s（= 6h，见 `tts_indextts.py:742`）。
+// 锁文件格式（`core/tts/tts_indextts.py:770`）：`<宿主>:<pid>`（如 `posix:437`）；兼容旧格式「裸 pid」。
+// ★ LOCK_STALE 与工具**同源同默认**：优先读 `INDEXTTS_LOCK_STALE`，缺省 21600s（= 6h，见 `core/tts/tts_indextts.py:742`）。
 const LOCK_STALE_SEC = Number(process.env.INDEXTTS_LOCK_STALE) > 0
   ? Number(process.env.INDEXTTS_LOCK_STALE)
   : 21600;
@@ -467,8 +467,8 @@ const LOCK_STALE_SEC = Number(process.env.INDEXTTS_LOCK_STALE) > 0
 /**
  * 判断某 pid 在指定宿主上是否还活着。返回 true=活着 / false=确定已死 / null=判不出（保守）。
  * ★ 跨宿主：Windows 与 WSL 是**两套 pid 命名空间**，`posix:<pid>` 必须去 WSL 里 `kill -0` 才准
- *   （与 `tts_indextts.py:772` 的注释同因：拿 Windows 的 pid 去 Linux 里查必然查不到，会误判残留）。
- * ★ 与工具侧 `_pid_alive`（`tts_indextts.py:745`）同口径：判不出来一律不抢（这里返回 null，由调用方按「占用」处理）。
+ *   （与 `core/tts/tts_indextts.py:772` 的注释同因：拿 Windows 的 pid 去 Linux 里查必然查不到，会误判残留）。
+ * ★ 与工具侧 `_pid_alive`（`core/tts/tts_indextts.py:745`）同口径：判不出来一律不抢（这里返回 null，由调用方按「占用」处理）。
  */
 async function pidAliveOn(hostKind, pid) {
   if (!Number.isInteger(pid) || pid <= 0) return null;      // 非法 pid ⇒ 未知
@@ -516,7 +516,7 @@ export async function checkIndexttsLock(lockPath) {
     note: `接管了残留的配音锁（${lockPath}，内容 "${raw || '?'}"，${why}）—— 本次按「残留」放行。`,
   });
 
-  // ── 判据一：锁龄 > LOCK_STALE ⇒ 残留（与 tts_indextts.py:807 的 `age > LOCK_STALE` 同源）──
+  // ── 判据一：锁龄 > LOCK_STALE ⇒ 残留（与 core/tts/tts_indextts.py:807 的 `age > LOCK_STALE` 同源）──
   if (ageSec > LOCK_STALE_SEC) {
     return takeover(`锁龄 ${Math.round(ageSec)}s > LOCK_STALE ${LOCK_STALE_SEC}s`);
   }
@@ -530,7 +530,7 @@ export async function checkIndexttsLock(lockPath) {
     return fail(`锁内容解析不出属主 pid（"${raw || '?'}"）—— 无法判定它是否还在跑，保守按「占用」处理。`);
   }
 
-  // ── 判据二：属主已死 ⇒ 残留（与 tts_indextts.py:807 的 `not _pid_alive(owner)` 同源）──
+  // ── 判据二：属主已死 ⇒ 残留（与 core/tts/tts_indextts.py:807 的 `not _pid_alive(owner)` 同源）──
   let alive;
   if (kind === '') {
     // 裸 pid：宿主未知。工具侧按「同宿主尽力判」；本套件跨宿主，取**最保守**口径 ——
@@ -2566,7 +2566,7 @@ export const FULL_CASES = [
       const lockPath = process.env.INDEXTTS_LOCK || path.join(ttsHome, '.indextts.lock');
       const readLock = () => { try { return fs.readFileSync(lockPath, 'utf8').trim(); } catch { return '?'; } };
       // ★ 判据不是「文件在不在」，而是工具的**过期接管**判据（属主已死 / 锁龄>LOCK_STALE ⇒ 残留放行）——
-      //   见本文件顶部 `checkIndexttsLock` 与 `tts_indextts.py:807`。
+      //   见本文件顶部 `checkIndexttsLock` 与 `core/tts/tts_indextts.py:807`。
       const lockGate = await checkIndexttsLock(lockPath);
       if (!lockGate.ok) assert.fail(lockGate.message);
       if (lockGate.takeover) console.log(`ℹ ${lockGate.note}`);

@@ -6,7 +6,7 @@
  * `setup.test.mjs`（安装纯逻辑 12 条）、`ui.test.mjs`（Web UI 21 条）各自一个数字、互不干扰。
  *   ★ 2026-10-08 复核：smoke 现为 **41** 条（`STATIC 9 + SERVER 27 + PROCESS 5`，`--full` 另加 9）——
  *     其中的「服务端」`SERVER_CASES` 现为 **27**；「36」是旧的 smoke **总数**（同 `_distill/RETRO-2026-10-07-b93.md`
- *     修掉的 `README.md:490` 那处）；`setup` 仍 **12**；`ui` 现为 **59**。
+ *     修掉的 `README.md` 第 490 行那处）；`setup` 仍 **12**；`ui` 现为 **59**。
  * 这一套只管「主题工单」：白名单 / 状态机 / 落盘 / 损坏降级 / processable / 出片全链路 / UI 锚点。
  *
  * 用法：

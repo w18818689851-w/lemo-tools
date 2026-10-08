@@ -48,6 +48,7 @@ const test = (name, fn) => cases.push({ name, fn });
 // ── 桩 LM Studio 服务器 ─────────────────────────────────────────
 // 端点契约（读 lib/triple-check.mjs 确认）：
 //   POST /v1/chat/completions                        → {choices:[{message:{content}}]}（内容由 state.mode 控制）
+//                                                      ★ mode='notext' / 'emptytext' 见下（用例⑪：取不到文本）
 //   GET  /api/v0/models/qwen2.5-vl-7b-official       → {state:'loaded'}（让 ensureModelLoaded 立刻返回）
 //   POST /api/v1/models/unload                       → 200 {}（主卸载路径，记录命中次数）
 //   POST /api/v0/models/qwen2.5-vl-7b-official/unload→ 200 {}（兜底路径）
@@ -109,6 +110,11 @@ function startStub() {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
         return res.end('stub: simulated 500');
       }
+      // ★ 用例⑪：200 但**取不到判定文本**。'notext' 模拟 LM Studio 那种「HTTP 200 + body 是
+      //   {"error":…}」的**假成功**形状（`lib/llm-api.mjs` 的 chat() 归一为 bad-shape）；
+      //   'emptytext' 是 200 + 空 content（归一为 empty-output）。二者都**必须**落成「存疑 + errors」。
+      if (state.mode === 'notext') return sendJson(res, 200, { error: 'Unexpected endpoint or method' });
+      if (state.mode === 'emptytext') return sendJson(res, 200, { choices: [{ message: { content: '   ' } }] });
       const content = state.mode === 'garbage'
         ? '我不知道'
         : JSON.stringify({ image_text: state.fixedText });
@@ -227,6 +233,16 @@ test('② ★ 每帧喂 2 张图：messages[1].content 里有 2 个 image_url，
 
     const prompt = content[0].text;
     assert.ok(prompt.includes(`【该时刻字幕文本】${FIXED}`), '★ 提示词里必须带上该帧字幕文本');
+
+    // ★ 迁移等价（2026-10-08）：请求体里的模型 / 采样参数 / 流式开关 / system 消息，必须与
+    //   迁移前 `askVlm` 自拼的**逐字段相同**（迁移前硬编码的就是这一组值）。
+    assert.equal(b.model, 'qwen2.5-vl-7b-official', '★ 只准用这个模型，不许换');
+    assert.equal(b.temperature, 0, '★ temperature:0 必须保留（迁移前硬编码该值）');
+    assert.equal(b.max_tokens, 400, '★ max_tokens:400 必须保留');
+    assert.equal(b.stream, false, 'stream:false 必须保留');
+    assert.equal(b.messages[0].role, 'system', 'system 消息必须仍在（迁移前同形）');
+    assert.equal(b.messages[0].content,
+      '你是严格的画面字幕抄录器，只输出 JSON 抄录结果，禁止任何创作、改写与判断。', 'system 文案必须逐字不变');
   }
 });
 
@@ -292,6 +308,31 @@ test('★ ⑩ 兜底：v1 卸载返回「200 + {"error":...}」假成功 ⇒ 回
   assert.ok(STUB_STATE.unloadV1 >= 1, 'v1 端点应被打过');
   assert.ok(STUB_STATE.unloadV0 >= 1, `★ v1 假成功 ⇒ 必须回落 v0，实得 unloadV0=${STUB_STATE.unloadV0}`);
   assert.equal(rep.vram.unloadOk, true);
+});
+
+test('★ ⑪ 取不到判定文本（200 + {"error":…} 的「假成功」形状 / 200 + 空 content）⇒ 该帧 存疑 + errors、ok=false（**绝不**静默当成一致）', async () => {
+  // ★ 这条钉的是「迁移不得把『取不到文本当失败』这个坑带丢」：
+  //   迁移前 askVlm 自己看 HTTP 码（200 就以为成功）；迁移后由 `lib/llm-api.mjs` 的 chat() 归一为
+  //   `bad-shape`（200 但响应里取不到文本路径）/ `empty-output`（取到空串）—— 二者都**必须**
+  //   在 verifyTriple 里落成「存疑 + errors[]」，**不得**变成「一致」。
+  //   ★ 与显存红线里那个实测坑同型：LM Studio 的端点会「HTTP 200 但 body 是 {"error":…}」⇒ 光看状态码会被骗。
+  for (const mode of ['notext', 'emptytext']) {
+    resetStub({ mode });
+    const rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true, maxFrames: 1 });
+
+    assert.equal(rep.frames.length, 1, `${mode}: maxFrames=1 ⇒ 恰好 1 帧`);
+    const f = rep.frames[0];
+    assert.equal(f.verdict, '存疑', `★ ${mode}: 取不到文本必须判「存疑」，实得 ${f.verdict}`);
+    assert.notEqual(f.verdict, '一致', `★ ${mode}: 绝不许把「取不到文本」静默当成「一致」`);
+    assert.ok(!f.imageText, `${mode}: 取不到文本 ⇒ 该帧不得有 OCR 文本（imageText 应为空/缺省）`);
+    assert.ok(f.error, `${mode}: 失败帧应记录 error`);
+    assert.match(f.error, /bad-shape|empty-output/,
+      `★ ${mode}: error 应来自 llm-api 的归一化（bad-shape / empty-output），实得 ${f.error}`);
+    assert.equal(rep.ok, false, `${mode}: 有 errors ⇒ ok=false`);
+    assert.ok(rep.errors.length >= 1, `${mode}: errors 应有记录`);
+    assert.equal(rep.overall, '存疑', `${mode}: overall 应为存疑，实得 ${rep.overall}`);
+    assert.equal(STUB_STATE.frameRequests, 2, `★ ${mode}: 应恰好 2 次 chat（1 次 + 1 次重试），实得 ${STUB_STATE.frameRequests}`);
+  }
 });
 
 test('⑦ 报告落盘：<outDir>/triple-check.json 存在、可 JSON.parse、含必需字段', async () => {

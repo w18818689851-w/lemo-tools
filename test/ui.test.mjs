@@ -2029,7 +2029,7 @@ async function main() {
     await runCase('F6 顶栏「演练」：点它进入演练态（URL+引导卡片），按 bare→partial→clean→关闭 循环', async () => {
       await ensurePage();
       if (await cdp.evalJs(`location.search.includes('simulate')`)) await cdp.goto(base + '/', 3500);
-      // ★ 这个按钮的实现是「改 URL 再刷新」（见 app.js:4369）——所以断言必须**跨导航**。
+      // ★ 这个按钮的实现是「改 URL 再刷新」（见 web/app.js 里 `#btnSimulate` 的 click 处理）——所以断言必须**跨导航**。
       // ★ 关键竞态：`location.search` 一变就代表「导航已提交」，但新文档的 app.js 可能还没跑完
       //   boot() 里的 bind() —— 此时再点 #btnSimulate 会点到一个**还没绑监听**的按钮（偶发 no-op，
       //   全量跑时复现过一次：bare→partial 之后卡在 partial）。所以点击前后都等 boot() 的产物就绪。
