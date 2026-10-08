@@ -298,13 +298,13 @@
              默认（workbuddy）显示「当前默认：WorkBuddy」；切到别的则显示「已切换：<label>」。 -->
         <span class="llm-current-pill" id="llmCurrentPill">当前默认：WorkBuddy</span>
         <div class="card-tools">
-          <button class="btn ghost" id="btnLlmRefresh" title="重新读 profile 清单与当前生效配置（GET /api/llm/*）">刷新</button>
+          <button class="btn ghost" id="btnLlmStandalone" title="在独立视图里打开本模块（只显示「LLM API 配置」，其余分区隐藏）">独立视图</button><button class="btn ghost" id="btnLlmRefresh" title="重新读 profile 清单与当前生效配置（GET /api/llm/*）">刷新</button>
         </div>
       </div>
       <div class="llm-intro" id="llmIntro">
-        软件内涉及 <b>LLM 推理</b>的任务<b>默认走 <code>workbuddy</code></b>；这里可换成任意
-        <b>OpenAI 兼容</b> / <b>Anthropic</b> / <b>厂商私有</b>接口 —— 不限云端 / 本地、不限厂商。
-        选中的 profile 与覆盖项落盘到 <code>D:\lemo-films\_llm-api.json</code>（<b>不在仓库内</b>，不进 git）。
+        软件内涉及 <b>LLM 推理</b>的任务<b>默认走 <code>workbuddy</code>（智能体 API）</b>；这里可换成任意
+        <b>智能体 API</b> 或 <b>底层基础大模型 API</b>（<b>OpenAI 兼容</b> / <b>Anthropic</b> / <b>厂商私有</b>）——
+        用「接入对象」选类型、用 profile 选厂商；选中项与覆盖落盘到 <code>D:\lemo-films\_llm-api.json</code>（<b>不在仓库内</b>，不进 git）。
       </div>
 
       <div class="form-grid llm-grid">
@@ -326,10 +326,10 @@
           <span class="lbl">Endpoint baseUrl</span>
           <input id="llmBaseUrl" class="input" placeholder="如 https://api.anthropic.com 或 http://127.0.0.1:1234/v1" autocomplete="off">
         </label>
-        <label class="field">
-          <span class="lbl">模型名 model</span>
-          <!-- ★ 多模型切换：① 点「拉取模型」从当前 Endpoint 拉可用清单（GET {baseUrl}/models）→
-               ② 下方下拉选择（选中即填入模型名）；③ 输入框仍可手填任意模型名（兜底）。 -->
+        <div class="field">
+          <span class="lbl">接入对象</span>
+          <select id="llmTarget" class="input llm-target" title="底层基础大模型 API：由模块在请求里下发 model 参数；智能体 API：模型名仅作本地备注，不强制下发"><option value="agent">智能体 API（模型名仅作本地备注）</option><option value="model">底层基础大模型 API（下发 model 参数）</option></select>
+          <span class="lbl" id="llmModelLabel">模型名 model</span>
           <div class="llm-model-row">
             <input id="llmModel" class="input" list="llmModelList" placeholder="如 gpt-4o-mini / claude-sonnet-4 / qwen2.5" autocomplete="off">
             <button type="button" class="btn ghost small" id="btnLlmModels"
@@ -339,7 +339,7 @@
                   title="从端点拉到的可用模型里挑一个（选中即填入模型名）"></select>
           <datalist id="llmModelList"></datalist>
           <span class="hint" id="llmModelHint">可从下拉切换，也可手填任意模型名</span>
-        </label>
+        </div>
         <label class="field">
           <span class="lbl">请求超时 timeoutMs</span>
           <input id="llmTimeout" class="input num" type="number" min="1000" max="600000" step="1000" placeholder="默认 30000（1000–600000）">

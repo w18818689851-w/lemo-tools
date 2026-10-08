@@ -4360,7 +4360,7 @@ function renderLlmModelOptions(models, sourceLabel) {
 /** 把生效配置填进表单（★ 不回显 key；headers 用打码后的值）。 */
 function renderLlmForm(cfg) {
   if (!cfg) return;
-  $('llmKind').value = cfg.kind || '';
+  $('llmKind').value = cfg.kind || ''; if ($('llmTarget')) $('llmTarget').value = (cfg.target === 'agent') ? 'agent' : 'model';
   $('llmBaseUrl').value = cfg.baseUrl || '';
   $('llmModel').value = cfg.model || '';
   $('llmTimeout').value = (cfg.timeoutMs !== undefined && cfg.timeoutMs !== null) ? String(cfg.timeoutMs) : '';
@@ -4378,9 +4378,8 @@ function renderLlmForm(cfg) {
   //   输入框仍可手填任意模型名（兜底）。清单为空 ⇒ 隐藏下拉，只留手填。
   const modelList = Array.isArray(cfg.models) ? cfg.models : [];
   renderLlmModelOptions(modelList, '端点 / 配置');
-  setLlmHint($('llmModelHint'), modelList.length
-    ? `共 ${modelList.length} 个候选模型（点「拉取模型」可从端点刷新）；也可手填任意模型名`
-    : '点「拉取模型」可从端点拉候选清单，也可手填任意模型名', false);
+  // ★ 模型名的语义与提示随「接入对象 target」变（模型 API ⇒ 下发 model；智能体 API ⇒ 仅本地备注）。
+  applyLlmTargetUi(cfg);
 
   const st = $('llmKeyState');
   st.textContent = cfg.hasKey ? '已配置' : '未配置';
@@ -4419,7 +4418,7 @@ function syncLlmCustomRows() {
 function llmFormPayload(includeKey) {
   const p = {
     profile: $('llmProfile').value || undefined,
-    kind: $('llmKind').value || '',
+    kind: $('llmKind').value || '', target: $('llmTarget') ? ($('llmTarget').value || 'model') : 'model',
     baseUrl: $('llmBaseUrl').value.trim(),
     model: $('llmModel').value.trim(),
     timeoutMs: $('llmTimeout').value.trim(),
@@ -4494,9 +4493,9 @@ async function fetchLlmModels() {
   if (d.ok === true) {
     const models = Array.isArray(d.models) ? d.models : [];
     renderLlmModelOptions(models, '端点');
-    setLlmHint($('llmModelHint'), models.length
-      ? `已从端点拉到 ${models.length} 个可用模型（下拉可选，也可手填）`
-      : '端点返回了空的模型清单（可手填模型名）', !models.length);
+    // ★ 拉取后仍走 applyLlmTargetUi ⇒ 保住「模型名语义」那句话（不被通用文案顶掉）；
+    //   候选数由它的 tail 体现（共 N 个候选模型）。setValue=false：别顶掉用户已经输入的值。
+    applyLlmTargetUi(llmState.cfg, false);
     toast(models.length ? `已拉取 ${models.length} 个模型` : '端点没有可用模型');
   } else {
     const e = (d && d.error) || {};
@@ -4664,6 +4663,78 @@ function gotoLlmCard() {
   setTimeout(() => card.classList.remove('flash'), 1600);
 }
 
+/**
+ * ★ 接入对象（target）联动：切换「模型名」的标签 / 语义 / 提示。
+ *   · `model`（底层基础大模型 API）：模型名 = 模块**主动下发**的 model 参数（请求必带）。
+ *   · `agent`（智能体 API）：模型名**仅作本地备注**，不用于指定智能体的底层模型；
+ *     请求时**不强制携带** model 参数（底层模型由智能体自行决定）。
+ *   ★ 智能体模式下**不把运行时解析出的底层模型名填进输入框**（那会给人「锁定了 WorkBuddy 的模型」的错觉）——
+ *     只回显**用户自己保存过的备注**（覆盖文件里的 model）。
+ * @param {object} cfg 面板配置视图（含 target / model / override）
+ * @param {boolean} [setValue] 是否顺带改写模型输入框的值（拉取模型后只更新提示时传 false，免得顶掉用户输入）
+ */
+function applyLlmTargetUi(cfg, setValue = true) {
+  const c = cfg || {};
+  const sel = $('llmTarget');
+  const isAgent = (sel ? sel.value : (c.target || 'model')) === 'agent';
+  const lb = $('llmModelLabel');
+  if (lb) lb.textContent = isAgent ? '模型名（本地备注）' : '模型名 model';
+  const mi = $('llmModel');
+  if (mi && setValue) {
+    const note = (c.override && c.override.model) ? String(c.override.model) : '';
+    mi.value = isAgent ? note : (c.model || '');
+    mi.placeholder = isAgent ? '本地备注，可留空（不会用来指定智能体的底层模型）'
+      : '如 gpt-4o-mini / claude-sonnet-4 / qwen2.5';
+  }
+  const n = Array.isArray(llmState.models) ? llmState.models.length : 0;
+  const tail = n ? ` 共 ${n} 个候选模型（点「拉取模型」刷新）。` : ' 点「拉取模型」可从端点拉候选清单。';
+  setLlmHint($('llmModelHint'), isAgent
+    ? `智能体模式：模型名仅作本地备注，不用于指定智能体的底层模型；请求时默认不下发 model（仅 Anthropic 协议强制要求时才带上作协议填充）。${tail}`
+    : `模型模式：发起请求时由模块携带 model 参数（即上面填的值）。${tail}`, false);
+}
+
+// ── ★ 独立视图：规格「模块拥有独立软件界面」—— 本模块可**独立打开**、只显示自己 ──
+//   ★ 实现：URL 带 `?view=llm`（或 `#llm`）⇒ body 加 `.view-llm` ⇒ CSS 隐藏其余分区（侧栏 + 别的卡片）。
+//     这样「独立界面」就是**同一份 DOM/JS**（不另造一套面板），可分享、可前进后退。
+const LLM_STANDALONE_CLASS = 'view-llm';
+
+/** 当前是否处于独立视图（看 URL）。 */
+function llmStandaloneOn() {
+  try {
+    const q = new URLSearchParams(location.search);
+    return q.get('view') === 'llm' || location.hash === '#llm';
+  } catch { return false; }
+}
+
+/** 应用独立视图状态：body 加类（CSS 隐藏其余分区）+ 按钮文案切换。 */
+function applyLlmStandalone(on) {
+  document.body.classList.toggle(LLM_STANDALONE_CLASS, !!on);
+  const btn = $('btnLlmStandalone');
+  if (btn) {
+    btn.textContent = on ? '返回控制台' : '独立视图';
+    btn.title = on ? '退出独立视图，回到完整控制台'
+      : '在独立视图里打开本模块（只显示「LLM API 配置」，其余分区隐藏）';
+  }
+  const card = $('llmCard');
+  if (on && card && card.scrollIntoView) {
+    try { card.scrollIntoView({ block: 'start' }); } catch { /* 忽略 */ }
+  }
+}
+
+/** 从 URL 同步独立视图状态（首屏 / 浏览器前进后退都走它）。 */
+function applyLlmStandaloneFromUrl() { applyLlmStandalone(llmStandaloneOn()); }
+
+/** 切换独立视图：改 URL（可分享 / 可后退）并立即生效。 */
+function toggleLlmStandalone() {
+  const on = !document.body.classList.contains(LLM_STANDALONE_CLASS);
+  try {
+    const u = new URL(location.href);
+    if (on) u.searchParams.set('view', 'llm'); else u.searchParams.delete('view');
+    history.pushState({}, '', u);
+  } catch { /* 改不了 URL 也照常切视图 */ }
+  applyLlmStandalone(on);
+}
+
 // ── 事件绑定 ────────────────────────────────────────────────
 function bind() {
   // ⚠️ 必须包一层：直接传 startRun 会把 MouseEvent 当成 force 参数（真值）→ 预检被跳过
@@ -4711,6 +4782,10 @@ function bind() {
     loadLlmConfig(e.target.value);
   });
   if ($('llmKind')) $('llmKind').addEventListener('change', syncLlmCustomRows);
+  // ★ 接入对象 target：切换「模型名」语义（本地备注 ⇄ 下发 model）+ 独立视图开关
+  if ($('llmTarget')) $('llmTarget').addEventListener('change', () => applyLlmTargetUi(llmState.cfg));
+  if ($('btnLlmStandalone')) $('btnLlmStandalone').addEventListener('click', toggleLlmStandalone);
+  window.addEventListener('popstate', applyLlmStandaloneFromUrl);
   if ($('llmTryText')) $('llmTryText').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); tryLlmChat(); }
   });
@@ -5029,6 +5104,7 @@ async function boot() {
   initTheme();          // ★ 默认深色；只有本机明确选过浅色才切（先于渲染，避免闪一下）
   loadVoicePref();      // ★ 先读本机声音偏好：它会进启动表单的命令预览（--voice / --speed）
   bind();
+  applyLlmStandaloneFromUrl();   // ★ 首屏就按 URL（?view=llm / #llm）决定是否进「独立视图」
   syncPreview();
   updateBatchBar();
   renderDubScriptHint();   // 文案字数提示（还没输入时也要显示「0 字」而不是空白）

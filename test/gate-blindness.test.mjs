@@ -4694,8 +4694,8 @@ test('check-llm-api：阴性对照 + 判据①~⑤、⑦ 八种变异（导出�
 
     // ⑧ 变异 F（判据①(c)）：把 `kind` 字面量改成枚举外的值 ⇒ FAIL 并点名
     const f = llmMut(path.join(dir, 'f'),
-      "kind: 'custom', baseUrl: '', model: '', headers: {},",
-      "kind: 'weird-kind', baseUrl: '', model: '', headers: {},");
+      "kind: 'custom', target: 'model', baseUrl: '', model: '', headers: {},",
+      "kind: 'weird-kind', target: 'model', baseUrl: '', model: '', headers: {},");
     const r7 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: f });
     expectBlind(r7, '出现了规格外的 kind 字面量', 'check-llm-api 变异F');
     assert.ok(r7.out.includes('weird-kind'), `变异F 应点名 weird-kind\n${r7.out.slice(0, 1400)}`);

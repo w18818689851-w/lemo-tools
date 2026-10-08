@@ -30,6 +30,13 @@
  *      智谱 GLM、月之暗面 Kimi、硅基流动 —— 每家断言 `listProfiles()` 含它、`previewProfile()`
  *      出**脱敏**配置、`resolveConfig` 解析出 endpoint 与模型；并断言**默认 profile 仍是 `workbuddy`**。
  *      ★ 全部离线（不打外网）：只解析内置表，不发任何网络请求。
+ *   ⑨ ★★ 接入对象类型 `target`（2026-10-08 追加）：`'model'`（默认，模型 API）| `'agent'`（智能体 API）。
+ *      · agent ⇒ 请求体**不下发 model**（openai-compatible / custom 两种）；model（默认）⇒ **照旧带**（逐字节金标回归）；
+ *      · agent ⇒ **缺 model 不报错**、`validate()` **不校验模型标识**；
+ *      · `PROFILES.target` 判定：`workbuddy` = agent，其余 11 个 = model（按**端点性质**）；
+ *      · ★ 例外：`agent` + `anthropic` **仍带 model**（协议必填；★ 实测本机中继不带 ⇒ HTTP 400）；
+ *      · `target` 覆盖优先级：显式 > 覆盖文件（面板） > 内置默认。
+ *      ★ 全部离线（桩服务），不打真实外网。
  *
  * 用法：node test/llm-api.test.mjs
  * 退出码：全绿 0，有失败 1，自身异常 2。
@@ -954,6 +961,167 @@ test('★★ workbuddy 运行时密钥不外泄：listProfiles / validate / 错�
       assert.ok(!cBlob.includes(SECRET), '★★ chat() 错误 detail / meta 不得含密钥明文');
     });
   } finally { await stub.close(); rmOverride(); }
+});
+
+// ── ⑨ ★★ 2026-10-08 追加：接入对象类型 `target`（`'model'` / `'agent'`）──────────────
+//   ★ 由来（规格原文）：要区分「底层基础大模型 API」（模块**主动指定** model）与「智能体 API」
+//     （WorkBuddy / Codex / ChatGPT / Claude Code / 豆包工作智能体 —— 模块**不感知、不指定、不干预**其内部底层模型）。
+//     · 模型 API ⇒ 请求体**正常携带 model**、准入**校验模型标识**；
+//     · 智能体 API ⇒ 面板 model **仅作本地备注**，请求体**默认不下发 model**、准入**不校验模型标识**
+//       （只校验连通 / 鉴权 / 返回文本合法性）。
+//   ★★ 唯一例外 `kind==='anthropic'`：Anthropic 协议**强制**要求请求体带 model
+//     —— ★ **本批实测**（本机中继 `http://43.139.159.106:3000`）：不带 model ⇒ **HTTP 400**
+//     「Model name not specified, model name cannot be empty」（`/v1/messages` 与 `/v1/chat/completions` 两条路径都如此）
+//     ⇒ `agent` + `anthropic` **仍带 model**（否则请求根本发不出去）。
+//   ★ 全部离线（桩服务），不打真实外网。
+
+test('★★ 接入对象类型·agent：请求体里**不出现 model**（openai-compatible / custom 两种；给了备注名也不发）', async () => {
+  const seen = [];
+  const stub = await startStub(async (req, res) => {
+    seen.push({ url: req.url, body: JSON.parse(await readBody(req)) });
+    if (req.url === '/chat/completions') return json200(res, { choices: [{ message: { content: 'ok' } }] });
+    return json200(res, { result: { outputs: [{ text: 'ok' }] } });
+  });
+  try {
+    // ① openai-compatible + agent：即便给了 model（本地备注）也**不下发**
+    const a = await chat([{ role: 'user', content: 'hi' }],
+      { profile: 'openai-compatible', target: 'agent', baseUrl: stub.base, model: 'just-a-note', apiKey: 'sk-test-1234567890' });
+    assert.equal(a.ok, true, `应当成功：${JSON.stringify(a.error || '')}`);
+    assert.equal(Object.prototype.hasOwnProperty.call(seen[0].body, 'model'), false,
+      '★ agent 模式请求体**不得**出现 model（防参数覆盖干扰智能体内部调度）');
+    assert.ok(Array.isArray(seen[0].body.messages), 'messages 仍应照常发出');
+
+    // ② custom + agent：同样不下发
+    const b = await chat([{ role: 'user', content: 'hi' }], {
+      profile: 'custom', target: 'agent', baseUrl: stub.base, path: '/v1/infer',
+      extract: 'result.outputs.0.text', model: 'note2', apiKey: 'sk-test-1234567890',
+    });
+    assert.equal(b.ok, true, `应当成功：${JSON.stringify(b.error || '')}`);
+    assert.equal(Object.prototype.hasOwnProperty.call(seen[1].body, 'model'), false,
+      '★ custom + agent 也不得出现 model');
+  } finally { await stub.close(); }
+});
+
+test('★ 接入对象类型·model（默认）：请求体**照旧带 model**（逐字节金标回归，证明向后兼容）', async () => {
+  const GOLDEN = '{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":false}';
+  let got = null;
+  const stub = await startStub(async (req, res) => {
+    got = await readBody(req);
+    json200(res, { choices: [{ message: { content: 'ok' } }] });
+  });
+  try {
+    // (a) 不传 target ⇒ 默认 'model' ⇒ 与既有行为逐字节相同
+    const r1 = await chat([{ role: 'user', content: 'hi' }],
+      { profile: 'openai-compatible', baseUrl: stub.base, model: 'm', apiKey: 'sk-test-1234567890' });
+    assert.equal(r1.ok, true, `应当成功：${JSON.stringify(r1.error || '')}`);
+    assert.equal(got, GOLDEN, '★ 默认（model）请求体必须逐字节不变');
+    // (b) 显式 target:'model' 亦然
+    const r2 = await chat([{ role: 'user', content: 'hi' }],
+      { profile: 'openai-compatible', target: 'model', baseUrl: stub.base, model: 'm', apiKey: 'sk-test-1234567890' });
+    assert.equal(r2.ok, true, `应当成功：${JSON.stringify(r2.error || '')}`);
+    assert.equal(got, GOLDEN, '★ 显式 model 模式同样逐字节不变');
+  } finally { await stub.close(); }
+});
+
+test('★ 接入对象类型·agent：**缺 model 不报错**（model 只是本地备注；chat 仍能成功）', async () => {
+  const stub = await startStub((req, res) => {
+    if (req.method === 'GET') return json200(res, { data: [] });
+    return json200(res, { choices: [{ message: { content: 'pong' } }] });
+  });
+  try {
+    await withEnv(CLEAN, async () => {
+      // lmstudio 内置 model 为空 ⇒ 干净环境下 model===''；再显式标 target:'agent'
+      const r = await chat([{ role: 'user', content: 'hi' }],
+        { profile: 'lmstudio', target: 'agent', baseUrl: stub.base });
+      assert.equal(r.ok, true, `★ agent 模式缺 model 不应报 config：${JSON.stringify(r.error || '')}`);
+      assert.equal(r.meta.model, '', '确认走的是「空 model」这条路径（不是被内置默认填上）');
+    });
+  } finally { await stub.close(); }
+});
+
+test('★ 接入对象类型·agent：validate() **不校验模型标识**（缺 model 也走探针、能过；对照 model 模式仍报缺）', async () => {
+  const stub = await startStub((req, res) => {
+    if (req.method === 'GET') return json200(res, { data: [] });
+    return json200(res, { choices: [{ message: { content: 'pong' } }] });
+  });
+  try {
+    await withEnv(CLEAN, async () => {
+      // ① agent 模式：缺 model ⇒ **不报 config**，三步走完（只校验连通/鉴权/返回文本）
+      const r = await validate({ profile: 'lmstudio', target: 'agent', baseUrl: stub.base });
+      assert.equal(r.ok, true, `★ agent 模式缺 model 仍应通过（不校验模型）：${JSON.stringify(r.errors)}`);
+      assert.deepEqual(r.errors, [], '★ 不得因缺 model 报 config');
+      assert.equal(r.steps.auth.ok, true, '鉴权/探针这一步应过');
+      // ② 对照：同一 profile 默认（model 模式）缺 model ⇒ **明确报 config**（现状不变）
+      const r2 = await validate({ profile: 'lmstudio', baseUrl: stub.base });
+      assert.equal(r2.ok, false, 'model 模式缺 model 应报错（对照）');
+      assert.equal(r2.errors.find((e) => e.step === 'auth').kind, 'config');
+    });
+  } finally { await stub.close(); }
+});
+
+test('★★ PROFILES.target 判定：workbuddy = agent；其余 11 个 = model（按**端点性质**判）', async () => {
+  rmOverride();
+  await withEnv(CLEAN, () => {
+    // ★ WorkBuddy 是智能体（规格点名）⇒ agent
+    assert.equal(PROFILES.workbuddy.target, 'agent', '★ WorkBuddy 是智能体 ⇒ target=agent');
+    assert.equal(resolveConfig({}).target, 'agent', '★ 默认 profile 解析出 agent（不传 profile ⇒ workbuddy）');
+    assert.equal(previewProfile('workbuddy').target, 'agent', 'previewProfile 也应带出 agent');
+    // ★ 其余一律 model —— 依据：它们都**直接对接基础模型本体**（请求体带 model 指定具体模型）
+    const expectModel = ['anthropic', 'openai-compatible', 'doubao', 'qwen', 'hunyuan',
+      'deepseek', 'zhipu', 'kimi', 'siliconflow', 'lmstudio', 'custom'];
+    for (const id of expectModel) {
+      assert.equal(PROFILES[id].target, 'model', `${id}: 应判为 model（端点性质 = 直接对接基础模型的模型 API）`);
+      assert.equal(resolveConfig({ profile: id }).target, 'model', `${id}: resolveConfig 的 target`);
+      assert.equal(previewProfile(id).target, 'model', `${id}: previewProfile 的 target`);
+    }
+    // listProfiles() 也带 target（供面板区分「模型 API / 智能体 API」）
+    const lp = listProfiles();
+    assert.equal(lp.find((p) => p.id === 'workbuddy').target, 'agent', 'listProfiles: workbuddy = agent');
+    assert.ok(lp.every((p) => p.target === 'agent' || p.target === 'model'),
+      'listProfiles 的 target 只能取 model / agent');
+    assert.equal(lp.filter((p) => p.target === 'agent').length, 1, '★ 恰一个 agent（workbuddy）');
+    assert.equal(lp.length, 12, '内置 profile 总数应为 12');
+  });
+});
+
+test('★ 接入对象类型·agent + anthropic：**仍带 model**（协议必填；实测不带 ⇒ HTTP 400）', async () => {
+  let got = null;
+  const stub = await startStub(async (req, res) => {
+    got = JSON.parse(await readBody(req));
+    json200(res, { content: [{ type: 'text', text: 'ok' }] });
+  });
+  try {
+    const r = await chat([{ role: 'user', content: 'hi' }],
+      { profile: 'workbuddy', target: 'agent', baseUrl: stub.base, model: 'wb-model', apiKey: 'sk-test-1234567890' });
+    assert.equal(r.ok, true, `应当成功：${JSON.stringify(r.error || '')}`);
+    assert.equal(got.model, 'wb-model',
+      '★ anthropic 协议强制要求 model ⇒ agent 模式仍带（本批实测：不带 ⇒ HTTP 400「Model name not specified」）');
+  } finally { await stub.close(); }
+});
+
+test('★ 接入对象类型·覆盖优先级：显式 > 覆盖文件（面板） > 内置默认；非法值归一为 model', async () => {
+  rmOverride();
+  await withEnv(CLEAN, () => {
+    // ⑤ 内置默认
+    assert.equal(resolveConfig({ profile: 'workbuddy' }).target, 'agent', '内置：workbuddy = agent');
+    assert.equal(resolveConfig({ profile: 'openai-compatible' }).target, 'model', '内置：openai-compatible = model');
+    try {
+      // ③ 覆盖文件（面板保存的配置）应压过内置默认
+      fs.writeFileSync(overrideFilePath(), JSON.stringify({ target: 'model' }), 'utf8');
+      assert.equal(resolveConfig({ profile: 'workbuddy' }).target, 'model', '★ 覆盖文件应压过内置默认');
+      fs.writeFileSync(overrideFilePath(), JSON.stringify({ profile: 'lmstudio', target: 'agent' }), 'utf8');
+      assert.equal(resolveConfig({}).target, 'agent', '★ 覆盖文件可把「模型 API」改成「智能体 API」');
+      // ① 显式传参应压过覆盖文件
+      assert.equal(resolveConfig({ target: 'model' }).target, 'model', '★ 显式应压过覆盖文件');
+      // 归一：非 'agent' 的**非空**值一律按 'model'
+      assert.equal(resolveConfig({ target: 'nonsense' }).target, 'model', '非法 target 值按默认 model 归一');
+      // ★ 空值语义与其它字段一致：`pick` 视 '' 为「未给」⇒ 落到下一个来源（此处 = 覆盖文件的 agent）
+      assert.equal(resolveConfig({ target: '' }).target, 'agent', '空 target 视为「未给」⇒ 落到覆盖文件');
+    } finally { rmOverride(); }
+    // 干净环境（无覆盖文件）下：空 target ⇒ 落到内置默认
+    assert.equal(resolveConfig({ profile: 'workbuddy', target: '' }).target, 'agent', '干净环境下空 target ⇒ 内置默认 agent');
+    assert.equal(resolveConfig({ profile: 'openai-compatible', target: '' }).target, 'model', '干净环境下空 target ⇒ 内置默认 model');
+  });
 });
 
 // ── 运行器 ──────────────────────────────────────────────────

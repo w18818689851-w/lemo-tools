@@ -1920,7 +1920,7 @@ function sanitizeLlmOverride(o) {
 function buildLlmOpts(body, prevHeaders) {
   const b = (body && typeof body === 'object') ? body : {};
   const o = {};
-  for (const k of ['profile', 'baseUrl', 'kind', 'model', 'path', 'extract']) {
+  for (const k of ['profile', 'baseUrl', 'kind', 'model', 'path', 'extract', 'target']) {
     if (typeof b[k] === 'string' && b[k].trim() !== '') o[k] = b[k].trim();
   }
   if (b.timeoutMs !== undefined && b.timeoutMs !== '' && b.timeoutMs !== null) {
@@ -1953,6 +1953,9 @@ function llmConfigPayload(mod, cfg, ov, keyInfo) {
     profile: cfg.id,
     label: cfg.label || '',
     kind: cfg.kind || '',
+    // ★ 接入对象（target）：'model'（底层基础大模型 API，请求必带 model）/ 'agent'（智能体 API，
+    //   模型名仅作本地备注、不强制携带 model）。★ 面板据此切换「模型名」的语义与提示（见 web/app.js）。
+    target: cfg.target === 'agent' ? 'agent' : 'model',
     baseUrl: cfg.baseUrl || '',
     model: cfg.model || '',
     models: Array.isArray(cfg.models) ? cfg.models : [],
@@ -2044,6 +2047,12 @@ async function apiLlmConfigSave(req, res) {
       if (body[k] === undefined) continue;
       const v = String(body[k]).trim();
       partial[k] = v === '' ? undefined : v;
+    }
+    // ★ 接入对象（target）：'model'（底层基础大模型 API）/ 'agent'（智能体 API）。
+    //   归一成这两个字面量（与模块 resolveConfig 同口径）；空串 ⇒ 删掉该项覆盖（回落 profile 内置默认）。
+    if (body.target !== undefined) {
+      const t = String(body.target).trim();
+      partial.target = t === '' ? undefined : (t === 'agent' ? 'agent' : 'model');
     }
     if (body.timeoutMs !== undefined) {
       if (body.timeoutMs === '' || body.timeoutMs === null) partial.timeoutMs = undefined;

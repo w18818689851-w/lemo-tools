@@ -1647,3 +1647,13 @@ html[data-theme="light"] {
 .llm-try-out .llm-out-meta { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; font-family: var(--mono); }
 .llm-try-out .llm-out-err { font-size: 12.5px; color: var(--err); line-height: 1.6; word-break: break-word; }
 .llm-try-out .llm-out-err .llm-out-hint { color: var(--warn); display: block; margin-top: 3px; }
+
+/* ── ★ 接入对象（target）：模型名语义随它变（见 app.js 的 applyLlmTargetUi） ── */
+.llm-target { margin-bottom: 6px; }
+
+/* ── ★ LLM 配置「独立视图」：规格「模块拥有独立软件界面」—— 本模块可独立打开、只显示自己 ──
+   URL 带 ?view=llm（或 #llm）时 body 加 .view-llm ⇒ 隐藏侧栏与其余卡片，只留 #llmCard。
+   ★ 同一份 DOM / JS（不另造一套面板）⇒ 不会出现两份实现各自漂移。 */
+body.view-llm .sidebar { display: none; }
+body.view-llm .main > .card { display: none; }
+body.view-llm .main > #llmCard { display: block; }
