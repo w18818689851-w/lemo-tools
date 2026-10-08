@@ -81,15 +81,24 @@
  *            `samplePeakDbfs` → +0.5 而 `clippedSamples` 仍 0）⇒ FAIL「物理不可能」；③ **失明**（0 个
  *            `ratio`/`clippedSamples`）⇒ FAIL +「本闸门已失明」。★ `selfCheck.size` **有意不加**（判据 D 已在做）。
  *          ★ 主夹具**整棵拷真实 43 份 `_distill.json`**（判据 F 反向守卫 / G / H 的失明守卫都要求同形语料）。
- *        · `check-demo-header`（2026-10-08 建，库仓 `styles/<slug>/DEMO.md` **头部行规格**的零覆盖区）：
+ *        · `check-demo-header`（2026-10-08 建；同日**订正真值源**，库仓 `styles/<slug>/DEMO.md` 头部行规格）：
+ *          ★ 真值源 = **已发布运行时** `style.json#dur`（**不是** `_distill.json#generatedVideo.durSec` ——
+ *            后者是对**本地样片副本**的测量，而 `MAINTAINING.md:339-347`「本地样片副本 ≠ 已发布影片」）；
+ *            分辨率用 `generatedVideo.width/height`；**帧率只报不判**（无「已发布」fps 来源）。
  *          ① **变异 A**（临时副本把 `hd-2d` 头部时长 `76.5 s` → `96.5 s`）⇒ FAIL 并点名 `hd-2d`；
- *          ② **变异 B**（把 `shadow-puppet` 的 `(54 s)` → `(56 s)`）⇒ FAIL 并点名 —— 钉住 **±0.5 s 容差
- *            「不是什么都不判」**（`54` vs 成片 `54.42` 是四舍五入、必须放行；`56` 差 1.58 ⇒ 判）；
- *          ③ **容差承重**（同夹具阴性侧：`54` → `54.4`，|Δ|=0.02 ≤ 0.5 ⇒ 放行）⇒ 证明 ② 的红来自超容差；
- *          ④ **失明三态**（0 风格 / 0 头部行 / 真值侧 0 份 `_distill.json`）⇒ FAIL +「本闸门已失明」，
- *            且失明时**不输出判据**；⑤ **★自证**：短路时长判据（`if (Math.abs(h.dur - gv.durSec) > DUR_TOL)`
- *            → `if (false)`）⇒ 变异 A/B **重新变绿**。
- *          ★ 主夹具**整棵拷真实 `DEMO.md` 头部行语料**（手写最小树 = 抄第二遍），真值侧指回**真实风格树**（只读）。
+ *          ② **变异 B**（把 `pictogram-motion` 头部时长 `163.6 s` → `161.6 s`，即**本地副本的值**）⇒
+ *            FAIL 并点名 —— 钉住**「已发布规格」这一维真的被守住**（已登记例外**不**覆盖头部 ↔ 已发布）；
+ *          ③ **容差承重**（同夹具阴性侧：`shadow-puppet` `54` → `54.4`，|Δ|=0 ⇒ 放行；头部写整数秒 `54`
+ *            对 `54.4` 的 Δ0.4 ≤ 0.5 也放行）⇒ 证明 ±0.5 不是「什么都不判」；
+ *          ④ **已登记例外显式打印**（阴性侧必须打出「已登记例外 1 条生效」+ slug，**不许静默通过**）；
+ *          ⑤ **例外机制承重**（清空 `KNOWN_EXCEPTIONS` ⇒ `pictogram-motion` 的**本地副本**分叉从 ℹ 变 FAIL）；
+ *          ⑥ **反向判据**（本地副本被正确重渲 ⇒ 登记"已消解"、报「待删登记 1 条」+「已登记例外 0 条」）；
+ *          ⑦ **失明四态**（0 风格 / 0 头部行 / 本地副本侧 0 份 `_distill.json` / **已发布运行时侧 0 份
+ *            `style.json#dur`**）⇒ FAIL +「本闸门已失明」，且失明时**不输出判据**；
+ *          ⑧ **★自证**：短路时长判据（`if (Math.abs(h.dur - styleDur) > DUR_TOL)` → `if (false)`）
+ *            ⇒ 变异 A/B **重新变绿**。
+ *          ★ 主夹具**整棵拷真实 `DEMO.md` + `style.json` 语料**（手写最小树 = 抄第二遍），
+ *            本地副本读数侧指回**真实风格树**（只读）。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -3605,8 +3614,12 @@ test('★自证 check-sources-paths：短路判据① 后，变异 A/B 必须重
 });
 
 // ── 12e. check-demo-header.mjs（库仓 `styles/<slug>/DEMO.md` 头部行规格，2026-10-08 建）──
-// ★ 主夹具**整棵拷真实 `DEMO.md` 头部行语料**（头部行规格是真实语料的事实，手写最小树 = 抄第二遍）；
-//   真值侧（`_distill.json#generatedVideo`）**指回真实风格树**（只读）—— 与 `check-sources-paths` 同口径。
+// ★ 主夹具**整棵拷真实 `DEMO.md` + `style.json` 语料**（头部行规格与**已发布运行时**都是真实语料的事实，
+//   手写最小树 = 抄第二遍）；本地副本读数（`_distill.json#generatedVideo`）**指回真实风格树**（只读）
+//   —— 与 `check-sources-paths` 同口径。
+// ★ 2026-10-08 订正：真值源由 `generatedVideo.durSec` 改为**已发布运行时** `style.json#dur`
+//   （`MAINTAINING.md:339-347`「本地样片副本 ≠ 已发布影片」）⇒ 夹具**必须一并拷 `style.json`**，
+//   否则真值侧 0 份 ⇒ 失明（这正是本闸门的失明④）。
 const copyRealDemo = (root) => {
   const src = path.join(OPUSCAR_REAL, 'styles');
   let n = 0;
@@ -3616,6 +3629,8 @@ const copyRealDemo = (root) => {
     if (!fs.existsSync(f)) continue;
     mk(path.join(root, 'styles', e.name));
     fs.copyFileSync(f, path.join(root, 'styles', e.name, 'DEMO.md'));
+    const sj = path.join(src, e.name, 'style.json');   // ★ 真值源（已发布运行时 `style.json#dur`）
+    if (fs.existsSync(sj)) fs.copyFileSync(sj, path.join(root, 'styles', e.name, 'style.json'));
     n++;
   }
   return n;
@@ -3631,18 +3646,22 @@ const setHeader = (opus, slug, from, to) => {
 };
 const DISTILL_REAL = path.join(TOOLS, 'lib', 'style-skills');
 
-test('check-demo-header：头部行规格不符 ⇒ FAIL 并点名；±0.5 容差放行取整值；失明三态', async () => {
+test('check-demo-header：头部行规格 ↔ 已发布运行时（style.json#dur）不符 ⇒ FAIL 并点名；已登记例外只列 ℹ；±0.5 容差放行取整值；失明四态', async () => {
   const dir = path.join(TMP, 'demo-header');
-  const N_FAIL = '头部行规格与成片不符';
+  const N_FAIL = '头部行规格与**已发布运行时**';
   const N_BLIND = '本闸门已失明';
   try {
-    // ① 阴性对照：真实头部行语料副本、**不改动** ⇒ exit 0，且判据真的跑过（打印头部行/真值计数）
+    // ① 阴性对照：真实头部行 + style.json 语料副本、**不改动** ⇒ exit 0，且判据真的跑过
     const neg = path.join(dir, 'neg');
     assert.ok(copyRealDemo(neg) >= 40, '夹具：真实 DEMO.md 头部行语料拷不到');
     const r0 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: neg, LEMO_DISTILL_ROOT: DISTILL_REAL });
     expectClean(r0, N_FAIL, 'check-demo-header 阴性对照');
     assert.ok(/头部行 \d+ 份 \/ 真值 \d+ 份/.test(r0.out),
       `阴性对照应打印头部行/真值计数（证明真的扫过语料）\n${r0.out.slice(0, 900)}`);
+    // ★★ 已登记例外必须**显式**打印（不许静默通过）—— 阴性侧 `pictogram-motion` 的**本地副本**分叉应只列 ℹ
+    assert.ok(/已登记例外 1 条生效/.test(r0.out),
+      `阴性对照应显式打印「已登记例外 1 条生效」（例外不许静默通过）\n${r0.out.slice(0, 1400)}`);
+    assert.ok(r0.out.includes('pictogram-motion'), `阴性对照应列出已登记例外的 slug\n${r0.out.slice(0, 1400)}`);
 
     // ② 变异 A：hd-2d 头部时长 76.5 → 96.5 ⇒ FAIL 并点名
     const a = path.join(dir, 'a'); copyRealDemo(a); setHeader(a, 'hd-2d', '76.5 s', '96.5 s');
@@ -3651,26 +3670,48 @@ test('check-demo-header：头部行规格不符 ⇒ FAIL 并点名；±0.5 容�
     assert.ok(r1.out.includes('hd-2d') && r1.out.includes('96.5'),
       `变异A 应点名 hd-2d + 96.5\n${r1.out.slice(0, 1200)}`);
 
-    // ③ 变异 B：shadow-puppet 头部 54 → 56 ⇒ FAIL（证明 ±0.5 容差**不是**「什么都不判」）
-    const b = path.join(dir, 'b'); copyRealDemo(b); setHeader(b, 'shadow-puppet', '(54 s)', '(56 s)');
+    // ③ 变异 B：pictogram-motion 头部时长 → 161.6（= **本地副本**的值）⇒ FAIL 并点名
+    //    ★ 钉住「已发布规格」这一维**真的被守住**：已登记例外只覆盖**本地副本 ↔ 已发布**的分叉，
+    //      **不**覆盖**头部 ↔ 已发布**；把头部写成 161.6（本地副本读数）必须红。
+    const b = path.join(dir, 'b'); copyRealDemo(b); setHeader(b, 'pictogram-motion', '163.6 s', '161.6 s');
     const r2 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: b, LEMO_DISTILL_ROOT: DISTILL_REAL });
     expectBlind(r2, N_FAIL, 'check-demo-header 变异B');
-    assert.ok(r2.out.includes('shadow-puppet') && r2.out.includes('56'),
-      `变异B 应点名 shadow-puppet + 56\n${r2.out.slice(0, 1200)}`);
+    assert.ok(r2.out.includes('pictogram-motion') && r2.out.includes('161.6'),
+      `变异B 应点名 pictogram-motion + 161.6\n${r2.out.slice(0, 1200)}`);
 
-    // ④ 容差**承重**（同夹具的阴性侧）：shadow-puppet 写成 54.4（|54.4−54.42| = 0.02 ≤ 0.5）⇒ 放行
-    //    —— 与 ③ 成对，证明 ③ 的红是「差 1.58 超容差」，不是「shadow-puppet 一律红」。
+    // ④ 容差**承重**（同夹具的阴性侧）：shadow-puppet 写成 54.4（|54.4−54.4| = 0）⇒ 放行
+    //    —— 与「头部写整数秒 54（vs 54.4，Δ0.4 ≤ 0.5）也放行」成对，证明 ±0.5 不是「什么都不判」。
     const t = path.join(dir, 'tol'); copyRealDemo(t); setHeader(t, 'shadow-puppet', '(54 s)', '(54.4 s)');
     const r3 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: t, LEMO_DISTILL_ROOT: DISTILL_REAL });
-    expectClean(r3, N_FAIL, 'check-demo-header 容差内（54.4 vs 54.42）');
+    expectClean(r3, N_FAIL, 'check-demo-header 容差内（54.4 vs 54.4）');
 
-    // ⑤ 失明①（0 风格）：空库仓根 ⇒ FAIL +「本闸门已失明」，且**不输出判据**
+    // ⑤ ★ 例外机制**承重**：清空 `KNOWN_EXCEPTIONS` ⇒ `pictogram-motion` 的本地副本分叉立刻从 ℹ 变 FAIL
+    //    （证明那张清单不是摆设、且例外真的"生效过"）。
+    const cleared = patchGate('check-demo-header.mjs', path.join(dir, 'cleared'),
+      [['const KNOWN_EXCEPTIONS = {', 'const KNOWN_EXCEPTIONS = {};\nconst _IGNORE_EXC = {']]);
+    const rc = await run(NODE, [cleared], { env: { LEMO_OPUSCAR: neg, LEMO_DISTILL_ROOT: DISTILL_REAL } });
+    expectBlind(rc, N_FAIL, 'check-demo-header 清空 KNOWN_EXCEPTIONS');
+    assert.ok(rc.out.includes('pictogram-motion'),
+      `清空 KNOWN_EXCEPTIONS 后应点名 pictogram-motion（本地副本分叉）\n${rc.out.slice(0, 1400)}`);
+
+    // ⑥ ★ 反向判据：本地副本被正确重渲（`generatedVideo.durSec` 回到 163.6）⇒ 登记"已消解"、提示可删
+    const dFix = path.join(dir, 'distill-fixed'); copyRealDistill(dFix);
+    const pmJson = path.join(dFix, 'pictogram-motion', '_distill.json');
+    const pmObj = JSON.parse(fs.readFileSync(pmJson, 'utf8'));
+    pmObj.generatedVideo.durSec = 163.6;
+    fs.writeFileSync(pmJson, `${JSON.stringify(pmObj, null, 2)}\n`, 'utf8');
+    const r4 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: neg, LEMO_DISTILL_ROOT: dFix });
+    expectClean(r4, N_FAIL, 'check-demo-header 例外已消解');
+    assert.ok(/待删登记 1 条/.test(r4.out) && /已登记例外 0 条/.test(r4.out),
+      `本地副本修好后应报「待删登记 1 条」且「已登记例外 0 条」\n${r4.out.slice(0, 1400)}`);
+
+    // ⑦ 失明①（0 风格）：空库仓根 ⇒ FAIL +「本闸门已失明」，且**不输出判据**
     const e1 = path.join(dir, 'empty'); mk(path.join(e1, 'styles'));
     const rb1 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: e1, LEMO_DISTILL_ROOT: DISTILL_REAL });
     expectBlind(rb1, N_BLIND, 'check-demo-header 失明①（0 风格）');
     assert.ok(!rb1.out.includes(N_FAIL), `失明时不该输出判据\n${rb1.out.slice(0, 900)}`);
 
-    // ⑥ 失明②（0 头部行）：把全部 `^Demo:` 改成 `demo:` ⇒ FAIL +「本闸门已失明」
+    // ⑧ 失明②（0 头部行）：把全部 `^Demo:` 改成 `demo:` ⇒ FAIL +「本闸门已失明」
     const e2 = path.join(dir, 'nohdr'); copyRealDemo(e2);
     for (const s of fs.readdirSync(path.join(e2, 'styles'))) {
       const f = path.join(e2, 'styles', s, 'DEMO.md');
@@ -3679,19 +3720,28 @@ test('check-demo-header：头部行规格不符 ⇒ FAIL 并点名；±0.5 容�
     const rb2 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: e2, LEMO_DISTILL_ROOT: DISTILL_REAL });
     expectBlind(rb2, N_BLIND, 'check-demo-header 失明②（0 头部行）');
 
-    // ⑦ 失明③（真值侧 0 份可读 `_distill.json#generatedVideo`）
+    // ⑨ 失明③（**本地副本**侧 0 份可读 `_distill.json#generatedVideo`）
     const e3 = path.join(dir, 'notruth'); mk(e3);
     const rb3 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: neg, LEMO_DISTILL_ROOT: e3 });
-    expectBlind(rb3, N_BLIND, 'check-demo-header 失明③（真值侧 0 份）');
+    expectBlind(rb3, N_BLIND, 'check-demo-header 失明③（本地副本侧 0 份）');
+
+    // ⑩ 失明④（**已发布运行时**侧 0 份可读 `style.json#dur`）—— 真值源改 `style.json#dur` 后新增的守卫
+    const e4 = path.join(dir, 'nodur'); copyRealDemo(e4);
+    for (const s of fs.readdirSync(path.join(e4, 'styles'))) {
+      const f = path.join(e4, 'styles', s, 'style.json');
+      if (fs.existsSync(f)) fs.rmSync(f);
+    }
+    const rb4 = await runGate('check-demo-header.mjs', { LEMO_OPUSCAR: e4, LEMO_DISTILL_ROOT: DISTILL_REAL });
+    expectBlind(rb4, N_BLIND, 'check-demo-header 失明④（已发布运行时侧 0 份）');
   } finally { rm(dir); }
 });
 
 test('★自证 check-demo-header：短路时长判据后，变异 A/B 必须重新变绿', async () => {
   const dir = path.join(TMP, 'mut-demo-header');
-  const N_FAIL = '头部行规格与成片不符';
+  const N_FAIL = '头部行规格与**已发布运行时**';
   try {
     // 短路判据：把「时长不符 ⇒ 记 FAIL」那一句换成 `if (false)`（**只改这一处**，不动其它结构）。
-    const subs = [['    if (Math.abs(h.dur - gv.durSec) > DUR_TOL) {', '    if (false) {']];
+    const subs = [['    if (Math.abs(h.dur - styleDur) > DUR_TOL) {', '    if (false) {']];
 
     // 变异 A：hd-2d 76.5 → 96.5
     const a = path.join(dir, 'a'); copyRealDemo(a); setHeader(a, 'hd-2d', '76.5 s', '96.5 s');
@@ -3700,8 +3750,8 @@ test('★自证 check-demo-header：短路时长判据后，变异 A/B 必须重
     assert.throws(() => expectBlind(ra, N_FAIL, 'mut'), undefined,
       '短路时长判据后变异A 竟然还报 ⇒ 那条正向断言没在测时长判据');
 
-    // 变异 B：shadow-puppet 54 → 56
-    const b = path.join(dir, 'b'); copyRealDemo(b); setHeader(b, 'shadow-puppet', '(54 s)', '(56 s)');
+    // 变异 B：pictogram-motion 163.6 → 161.6
+    const b = path.join(dir, 'b'); copyRealDemo(b); setHeader(b, 'pictogram-motion', '163.6 s', '161.6 s');
     const gb = patchGate('check-demo-header.mjs', path.join(dir, 'gb'), subs);
     const rb = await run(NODE, [gb], { env: { LEMO_OPUSCAR: b, LEMO_DISTILL_ROOT: DISTILL_REAL } });
     assert.throws(() => expectBlind(rb, N_FAIL, 'mut'), undefined,
