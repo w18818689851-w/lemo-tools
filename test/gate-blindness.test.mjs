@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 98 条用例 / 覆盖全部 39 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 101 条用例 / 覆盖全部 40 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -130,6 +130,22 @@
  *            本闸门的失明守卫（判据③）在「扫到风格、却 **0 条** `build.sh`」时报**失明**，而「**某个**风格
  *            没有 `build.sh`」正是判据① 要抓的 FAIL 形态 —— 不带锚整棵树就退化成失明、判据① 不输出
  *            （实测：不带锚时变异 A 只报失明、**没有**判据① 文案 ⇒ 那条正向断言根本没被测到）。
+ *        · `check-gate-self-claims`（2026-10-08 建；守「**闸门自己的头注释 ↔ 它的实际实现**」，
+ *          把一次人工审计（`_distill/闸门自陈-审计-2026-10-08.md`）变成持续机制）：
+ *          主夹具用**合成极小 `scripts/` 树**（本闸门的事实源就是「头注释的规范声明段 ↔ 代码体的
+ *          `process.exit*`」，手写最小树即可**精确摆出**每种组合）；覆盖点 **`LEMO_TOOLS_ROOT`**。
+ *          ① **阴性对照**（声明 `0/1`、代码 `? 1 : 0`、无 `判据<序号>` 标签、头不提失明）⇒ exit 0；
+ *          ② **变异 A（判据① 漏声明）**（代码另有 `process.exit(2)`）⇒ FAIL 并点名，报「实际 {0,1,2}」；
+ *          ③ **变异 B（判据① 多声明）**（头声明 `0/1/2`、代码只有 `? 1 : 0`）⇒ FAIL；
+ *          ④ **变异 C（判据① 缺声明）**（头**没有** `退出码：` 行）⇒ FAIL —— ★ 带**有声明**的锚，
+ *            否则整棵树「0 条声明」会走判据④ 失明、判据① 不输出（那条判据就测不到）；
+ *          ⑤ **变异 D（判据②）**（代码输出 `判据④·…`、头注释从不提 ④）⇒ FAIL 并点名；
+ *          ⑥ **变异 E（判据③）**（头称「失明」、**剥注释后**的代码体里既无 `失明` 也无 `blind`）⇒ FAIL；
+ *          ⑦ **失明三态**（空 `scripts/` / 全部缺声明 / 全部无 `process.exit*`）⇒ FAIL +「本闸门已失明」，
+ *            且失明时**不输出判据①②③**；⑧ **前置不可用**（`LEMO_TOOLS_ROOT` 指到没有 `scripts/` 的目录）⇒ **exit 2**；
+ *          ⑨ **真实语料只读**：必须 exit 0（0 FAIL；判据⑤ 的 1 条 ℹ 不算 FAIL）；
+ *          ⑩ **★自证**：分别**短路**判据①②③（含「缺声明」支）⇒ 对应变异**重新变绿**。
+ *          ★ 夹具**绝不碰真实闸门**：整棵树建在 `D:/lemo-tmp/…` 下，靠 `LEMO_TOOLS_ROOT` 重定向。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -4085,6 +4101,222 @@ test('★自证 check-repro-form：短路判据② 后变异 C 必须重新变�
     const rh = await run(NODE, [gh], { env: { LEMO_OPUSCAR: h.opus, LEMO_DISTILL_ROOT: h.dist } });
     expectBlind(rh, N_FAIL, '短路历史豁免后 fx-hist 应变红');
     assert.ok(rh.out.includes('fx-hist'), `短路豁免后应点名 fx-hist\n${rh.out.slice(0, 1400)}`);
+  } finally { rm(dir); }
+});
+
+// ── 12h. check-gate-self-claims.mjs（「闸门自己的头注释 ↔ 它的实现」，2026-10-08 建）──────
+// ★ 主夹具用**合成极小 `scripts/` 树**：本闸门的事实源就是「头注释的规范声明段 ↔ 代码体的
+//   `process.exit*`」这对关系，手写最小树即可**精确摆出**每一种组合（无需整棵拷真实语料）。
+// ★ 覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 `check-doc-coverage` / `check-line-endings` / `check-redline-md5`）。
+/** 造一棵「N 个夹具闸门」的极小树：<dir>/scripts/<name>.mjs。`specs` = { name: 源码 }。 */
+const gscTree = (dir, specs) => {
+  for (const [name, src] of Object.entries(specs)) wf(path.join(dir, 'scripts', `${name}.mjs`), src);
+  return dir;
+};
+/** 一个「合法」夹具闸门源码：头有规范 `退出码：` 声明、代码体有 `process.exit*`。 */
+const gscOk = () => `#!/usr/bin/env node
+/**
+ * scripts/check-fx-ok.mjs —— 阴性对照夹具闸门
+ * 退出码：0 = OK；1 = FAIL。
+ */
+const ok = true;
+process.exitCode = ok ? 0 : 1;
+`;
+// 变异 A（判据① 漏声明）：代码另有 process.exit(2)
+const GSC_A = `#!/usr/bin/env node
+/**
+ * scripts/check-mut-a.mjs
+ * 退出码：0 = OK；1 = FAIL。
+ */
+const ok = true;
+if (!ok) process.exit(2);
+process.exitCode = ok ? 0 : 1;
+`;
+// 变异 B（判据① 多声明）：头声明 2、代码里没有 2
+const GSC_B = `#!/usr/bin/env node
+/**
+ * scripts/check-mut-b.mjs
+ * 退出码：0 = OK；1 = FAIL；2 = 前置不可用。
+ */
+const ok = true;
+process.exitCode = ok ? 0 : 1;
+`;
+// 变异 C（判据① 缺声明）：头里没有规范「退出码：」行
+const GSC_C = `#!/usr/bin/env node
+/**
+ * scripts/check-mut-c.mjs —— 故意没有退出码声明行
+ */
+const ok = true;
+process.exitCode = ok ? 0 : 1;
+`;
+// 变异 D（判据②）：代码输出「判据④·…」，头注释从不提 ④
+const GSC_D = `#!/usr/bin/env node
+/**
+ * scripts/check-mut-d.mjs
+ * 退出码：0 = OK；1 = FAIL。
+ * 判据① 甲；判据② 乙；判据③ 丙。
+ */
+const ok = true;
+console.log('✓ 判据④·丁');
+process.exitCode = ok ? 0 : 1;
+`;
+// 变异 E（判据③）：头称「失明」、剥注释后的代码体里既无 失明 也无 blind
+const GSC_E = `#!/usr/bin/env node
+/**
+ * scripts/check-mut-e.mjs
+ * 退出码：0 = OK；1 = FAIL 或**本闸门已失明**。
+ */
+const ok = true;
+process.exitCode = ok ? 0 : 1;
+`;
+
+test('check-gate-self-claims：退出码声明≠实际 / 缺声明 / 判据序号没提 / 头称失明无失明线索 ⇒ FAIL 并点名；失明三态；前置不可用 exit 2；真实语料 0 FAIL', async () => {
+  const dir = path.join(TMP, 'gsc');
+  const N_BLIND = '本闸门已失明';
+  try {
+    // ① 阴性对照（1 个合法夹具闸门）：声明 {0,1} == 实际 {0,1}、无判据标签、头不提失明 ⇒ exit 0
+    const neg = gscTree(path.join(dir, 'neg'), { 'check-fx-ok': gscOk() });
+    const r0 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-gate-self-claims 阴性对照');
+    assert.ok(r0.out.includes('头注释自陈与实现一致'),
+      `阴性对照应打印「一致」✓ 行\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异 A（判据① 漏声明）：代码另有 process.exit(2) ⇒ 实际 {0,1,2} ≠ 声明 {0,1} ⇒ FAIL 并点名
+    const a = gscTree(path.join(dir, 'a'), { 'check-mut-a': GSC_A });
+    const r1 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: a });
+    expectBlind(r1, '实际有而声明没有', 'check-gate-self-claims 变异A');
+    assert.ok(r1.out.includes('check-mut-a') && /实际 \{0,1,2\}/.test(r1.out),
+      `变异A 应点名 check-mut-a + 报「实际 {0,1,2}」\n${r1.out.slice(0, 1400)}`);
+
+    // ③ 变异 B（判据① 多声明）：头声明 0/1/2、代码只有 ? 1 : 0 ⇒ FAIL（多声明）
+    const b = gscTree(path.join(dir, 'b'), { 'check-mut-b': GSC_B });
+    const r2 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: b });
+    expectBlind(r2, '声明有而实际没有', 'check-gate-self-claims 变异B');
+    assert.ok(r2.out.includes('check-mut-b'),
+      `变异B 应点名 check-mut-b\n${r2.out.slice(0, 1400)}`);
+
+    // ④ 变异 C（判据① 缺声明）：头**没有** `退出码：` 行 ⇒ FAIL
+    //    ★ 带**有声明**的锚（fx-ok）：否则整棵树「0 条声明」会走判据④ 失明、判据① 不输出（那条判据就测不到）。
+    const c = gscTree(path.join(dir, 'c'), { 'check-mut-c': GSC_C, 'check-fx-ok': gscOk() });
+    const r3 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: c });
+    expectBlind(r3, '判据① 头注释缺', 'check-gate-self-claims 变异C');
+    assert.ok(r3.out.includes('check-mut-c') && r3.out.includes('头注释里**没有**规范'),
+      `变异C 应点名 check-mut-c + 说明「没有规范 退出码： 声明行」\n${r3.out.slice(0, 1400)}`);
+
+    // ⑤ 变异 D（判据②）：代码输出 `判据④·…`、头注释从不提 ④ ⇒ FAIL 并点名
+    const d = gscTree(path.join(dir, 'd'), { 'check-mut-d': GSC_D });
+    const r4 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: d });
+    expectBlind(r4, '判据② 代码输出的判据序号头注释没提', 'check-gate-self-claims 变异D');
+    assert.ok(r4.out.includes('check-mut-d') && r4.out.includes('判据④'),
+      `变异D 应点名 check-mut-d + 报未提的 判据④\n${r4.out.slice(0, 1400)}`);
+
+    // ⑥ 变异 E（判据③）：头称「失明」、剥注释后的代码体里既无 失明 也无 blind ⇒ FAIL
+    const e = gscTree(path.join(dir, 'e'), { 'check-mut-e': GSC_E });
+    const r5 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: e });
+    expectBlind(r5, '判据③ 头注释称「失明」但代码里没有失明线索', 'check-gate-self-claims 变异E');
+    assert.ok(r5.out.includes('check-mut-e'),
+      `变异E 应点名 check-mut-e\n${r5.out.slice(0, 1400)}`);
+
+    // ⑦ 失明①（0 闸门）：空 scripts/ 目录 ⇒ FAIL +「本闸门已失明」，且**不输出判据①②③**
+    const e1 = path.join(dir, 'empty'); mk(path.join(e1, 'scripts'));
+    const rb1 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: e1 });
+    expectBlind(rb1, N_BLIND, 'check-gate-self-claims 失明①（0 闸门）');
+    assert.ok(!rb1.out.includes('判据① 退出码声明 ≠ 实际'), `失明时不该输出判据\n${rb1.out.slice(0, 900)}`);
+
+    // ⑧ 失明②（0 条退出码声明）：闸门在、但**一条** `退出码：` 声明都没有
+    const e2 = gscTree(path.join(dir, 'nodecl'), { 'check-fx-nodecl': GSC_C });
+    const rb2 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: e2 });
+    expectBlind(rb2, N_BLIND, 'check-gate-self-claims 失明②（0 条声明）');
+    assert.ok(!rb2.out.includes('判据① 退出码声明 ≠ 实际'), `失明时不该输出判据\n${rb2.out.slice(0, 900)}`);
+
+    // ⑨ 失明③（0 个实际退出码）：闸门有声明、但代码体里**一个** `process.exit*` 都没有
+    const e3 = gscTree(path.join(dir, 'noexit'), {
+      'check-fx-noexit': `#!/usr/bin/env node
+/**
+ * scripts/check-fx-noexit.mjs
+ * 退出码：0 = OK；1 = FAIL。
+ */
+const ok = true;
+console.log(ok);
+`,
+    });
+    const rb3 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: e3 });
+    expectBlind(rb3, N_BLIND, 'check-gate-self-claims 失明③（0 个实际退出码）');
+
+    // ⑩ 前置不可用：`LEMO_TOOLS_ROOT` 指到没有 `scripts/` 的目录 ⇒ exit 2（本项目惯例：2 = 前置不可用）
+    const nodir = path.join(dir, 'nodir'); mk(nodir);
+    const r6 = await runGate('check-gate-self-claims.mjs', { LEMO_TOOLS_ROOT: nodir });
+    assert.equal(r6.code, 2, `前置不可用应 exit 2，实得 ${r6.code}\n${r6.out.slice(0, 900)}`);
+    assert.ok(r6.out.includes('读不到'), `exit 2 时应说明读不到 scripts/\n${r6.out.slice(0, 900)}`);
+
+    // ⑪ 真实语料**只读**：本闸门在**当前语料上必须 0 命中**（那 14 条已由人工审计修掉）⇒ exit 0
+    const rr = await runGate('check-gate-self-claims.mjs', {});
+    assert.ok(!rr.out.includes(N_BLIND), `真实语料不该失明\n${rr.out.slice(0, 1200)}`);
+    assert.ok(/判据① FAIL 0 \/ 判据② FAIL 0 \/ 判据③ FAIL 0/.test(rr.out),
+      `真实语料判据①②③ 必须 0 FAIL（误报 0 是硬指标）\n${rr.out.slice(0, 1600)}`);
+    assert.equal(rr.code, 0, `真实语料应 exit 0，实得 ${rr.code}\n${rr.out.slice(0, 1600)}`);
+  } finally { rm(dir); }
+});
+
+test('★自证 check-gate-self-claims：短路判据① 的不等式支后，变异 A/B 必须重新变绿', async () => {
+  const dir = path.join(TMP, 'mut-gsc1');
+  try {
+    // 短路「声明 ≠ 实际 ⇒ FAIL」这一支（等价于「永不判退出码不一致」）
+    const subs = [['if (ds !== as) {', 'if (false) {']];
+    const a = gscTree(path.join(dir, 'a'), { 'check-mut-a': GSC_A });
+    const ga = patchGate('check-gate-self-claims.mjs', path.join(dir, 'ga'), subs);
+    const ra = await run(NODE, [ga], { env: { LEMO_TOOLS_ROOT: a } });
+    // ★ 先钉 exit 0（真变绿）—— 否则「失明」（也 exit≠0）会冒充「变绿」骗过下面的 assert.throws
+    assert.equal(ra.code, 0,
+      `短路判据① 不等式支后变异A 应**真变绿**（exit 0），实得 ${ra.code}\n${ra.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(ra, '实际有而声明没有', 'mut'), undefined,
+      '短路判据① 不等式支后变异A 竟然还报 ⇒ 那条正向断言没在测它');
+
+    const b = gscTree(path.join(dir, 'b'), { 'check-mut-b': GSC_B });
+    const gb = patchGate('check-gate-self-claims.mjs', path.join(dir, 'gb'), subs);
+    const rb = await run(NODE, [gb], { env: { LEMO_TOOLS_ROOT: b } });
+    assert.equal(rb.code, 0,
+      `短路判据① 不等式支后变异B 应**真变绿**（exit 0），实得 ${rb.code}\n${rb.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rb, '声明有而实际没有', 'mut'), undefined,
+      '短路判据① 不等式支后变异B 竟然还报 ⇒ 那条正向断言没在测它');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-gate-self-claims：短路判据① 缺声明支 / 判据② / 判据③ 后，变异 C/D/E 必须重新变绿', async () => {
+  const dir = path.join(TMP, 'mut-gsc2');
+  try {
+    // ① 短路判据① 的「缺声明 ⇒ FAIL」支（把那条 push 变成空语句）⇒ 变异 C 重新变绿
+    //    ★ 不能把 `if (D === null)` 改成 `if (false)` —— 那样会掉进 else 支、`[...D]` 对 null 抛错（闸门崩），
+    //      不是「变绿」。短路**那条 push** 才是真正把这一支摘掉。
+    const subsDecl = [[/fails\.push\(\{ gate: f, kind: 'exit-decl-missing'[\s\S]*?\}\);/,
+      '/* ★自证：短路「缺声明」支 */']];
+    const c = gscTree(path.join(dir, 'c'), { 'check-mut-c': GSC_C, 'check-fx-ok': gscOk() });
+    const gc = patchGate('check-gate-self-claims.mjs', path.join(dir, 'gc'), subsDecl);
+    const rc = await run(NODE, [gc], { env: { LEMO_TOOLS_ROOT: c } });
+    assert.equal(rc.code, 0,
+      `短路「缺声明」支后变异C 应**真变绿**（exit 0），实得 ${rc.code}\n${rc.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rc, '判据① 头注释缺', 'mut'), undefined,
+      '短路「缺声明」支后变异C 竟然还报 ⇒ 那条正向断言没在测它');
+
+    // ② 短路判据② 的 FAIL 支 ⇒ 变异 D 重新变绿
+    const subsLabel = [['if (unclaimed.length) {', 'if (false) {']];
+    const d = gscTree(path.join(dir, 'd'), { 'check-mut-d': GSC_D });
+    const gd = patchGate('check-gate-self-claims.mjs', path.join(dir, 'gd'), subsLabel);
+    const rd = await run(NODE, [gd], { env: { LEMO_TOOLS_ROOT: d } });
+    assert.equal(rd.code, 0,
+      `短路判据② 后变异D 应**真变绿**（exit 0），实得 ${rd.code}\n${rd.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rd, '判据② 代码输出的判据序号头注释没提', 'mut'), undefined,
+      '短路判据② 后变异D 竟然还报 ⇒ 那条正向断言没在测判据②');
+
+    // ③ 短路判据③ 的 FAIL 支 ⇒ 变异 E 重新变绿
+    const subsBlind = [['if (!/失明/.test(bodyNC) && !/\\bblind\\b/.test(bodyNC)) {', 'if (false) {']];
+    const e = gscTree(path.join(dir, 'e'), { 'check-mut-e': GSC_E });
+    const ge = patchGate('check-gate-self-claims.mjs', path.join(dir, 'ge'), subsBlind);
+    const re = await run(NODE, [ge], { env: { LEMO_TOOLS_ROOT: e } });
+    assert.equal(re.code, 0,
+      `短路判据③ 后变异E 应**真变绿**（exit 0），实得 ${re.code}\n${re.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(re, '判据③ 头注释称「失明」但代码里没有失明线索', 'mut'), undefined,
+      '短路判据③ 后变异E 竟然还报 ⇒ 那条正向断言没在测判据③');
   } finally { rm(dir); }
 });
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/fix-truepeak.mjs —— 把**已成片**的真峰值修进交付口径（真峰值 ≤ −1.5 dBTP）
+ * scripts/fix-truepeak.mjs —— 把**已成片**的真峰值修进**交付口径**（交付口径 = 真峰值 ≤ **−1.2 dBTP**，即 `TP_SPEC`；违反口径者**修到 ≤ −1.5 dBTP**，即 `TP_TARGET`，留 0.3 dB 余量吸收「改完再测」的波动）
  *
  * ★ 本工具做两件事，都只动**音频侧**、**绝不重渲**（视频流逐字节不变）：
  *   ① **修峰值**：真峰值 > −1.2 dBTP 的成片 ⇒ 音频重混（`alimiter`）压到 ≤ −1.5 dBTP；
