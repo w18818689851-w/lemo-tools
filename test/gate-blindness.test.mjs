@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-08 扩批后共 112 条用例 / 覆盖全部 43 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 129 条用例 / 覆盖全部 43 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -4895,6 +4895,313 @@ test('★自证 check-llm-call-sites：短路判据① / 判据③ 的比较后�
       [["if (stale.length) fails.push({ crit: '③',", "if (false) fails.push({ crit: '③',"]]);
     const rB = await run(NODE, [gB]);
     assert.equal(rB.code, 0, `短路判据③ 后变异 B 应变绿（exit 0），实得 ${rB.code}\n${rB.out.slice(0, 900)}`);
+  } finally { rm(dir); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// ★ 2026-10-09 扩批：给「**有失明用例、但缺 ★自证**」的 16 个闸门补「守卫钉住」用例。
+//   ★ 口径复核（本批实测，判据见 §「复核口径」）：43 个闸门**全部**已有「真值源不可达 ⇒ exit≠0 +
+//     该闸门特有失明文案」的正向用例（含阴性对照）—— 但其中 16 个**没有**「把它的失明守卫摘掉 ⇒
+//     原正向断言必须变红」的 ★自证。本批把这 16 个补齐（= 把审计用 `mutate('check-*')` ∪
+//     `copyGate('check-*')` ∪ `llmMut` 口径数出来的那批盲区闭环）。
+//   ★ 纪律同既有 ★自证：每条 = 拷闸门 + **精确替换掉守卫**（两道防空转断言）+ 触发失明的夹具 +
+//     `assert.throws(() => expectBlind(...))` —— 证明原正向断言真的在测那条守卫。
+//   ★★ **只改 `test/`**：**一个字节都不动 `scripts/check-*.mjs`**（那些文件被既有变异/自证用例按
+//     **文本锚点**引用，改一处就会让它们集体锚点失效、报「找不到待删的片段」）。
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 把真实 `lib/` 整棵拷进夹具根（给「脚本里 `import '../lib/…'`」的闸门用）。
+ * ★ 不拷会让拷来的闸门 `ERR_MODULE_NOT_FOUND` **当场崩掉** ⇒「守卫被摘掉 ⇒ 文案消失」会退化成
+ *   「脚本崩了 ⇒ 文案消失」的**假自证**（本项目最忌讳的「匹配判据可被无关代码满足」同源病）。
+ *   故这 4 个闸门（`check-aspect-declaration` / `check-aspect-prose` / `check-film-aspect` /
+ *   `check-dub-styles`）的夹具必须同时给出 `lib/`，并把拷来的闸门放在 `<root>/scripts/`（让 `../lib` 解析得到）。
+ */
+const copyLibTree = (root) => {
+  fs.cpSync(path.join(TOOLS, 'lib'), path.join(root, 'lib'), { recursive: true });
+  return root;
+};
+
+test('★自证 check-aspect-declaration：摘掉「枚举到 0 个风格」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-ad');
+  try {
+    const root = path.join(dir, 'r');
+    mk(root); copyLibTree(root); mk(path.join(root, 'styles'));
+    const gate = mutate('check-aspect-declaration.mjs', path.join(root, 'scripts'),
+      'if (slugs.length === 0) blindReasons.push(', 'if (false) blindReasons.push(');
+    const res = await run(NODE, [gate], { env: { LEMO_STYLES_ROOT: path.join(root, 'styles') } });
+    // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-aspect-prose：摘掉「枚举到 0 个风格」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-ap');
+  try {
+    const root = path.join(dir, 'r');
+    mk(root); copyLibTree(root);
+    mk(path.join(root, 'skills')); mk(path.join(root, 'styles'));
+    const gate = mutate('check-aspect-prose.mjs', path.join(root, 'scripts'),
+      'if (slugs.length === 0) blindReasons.push(', 'if (false) blindReasons.push(');
+    const res = await run(NODE, [gate],
+      { env: { LEMO_SKILL_ROOT: path.join(root, 'skills'), LEMO_STYLES_ROOT: path.join(root, 'styles') } });
+    // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-config-vs-doc：摘掉「0 个风格 / 全部无法比对」两条守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-cvd');
+  try {
+    const root = path.join(dir, 'r');
+    const cfg = path.join(root, 'cfg.json');
+    rj(cfg, { styles: [] });
+    // ★ 该闸门的失明有**两条**互斥分支（`0 个风格` / `全部风格都无法比对`），夹具 `styles:[]` 会先命中
+    //   第一条、删掉它后第二条**立刻接上** ⇒ 必须**两条一起摘**才能让「失明」真的消失（否则是假自证）。
+    const gate = patchGate('check-config-vs-doc.mjs', path.join(root, 'scripts'), [
+      ["if (cfg.styles.length === 0) blind.push('dub-styles.json 里 0 个风格');",
+        "if (false) blind.push('dub-styles.json 里 0 个风格');"],
+      ['else if (noSec.length === cfg.styles.length) blind.push(', 'else if (false) blind.push('],
+    ]);
+    const res = await run(NODE, [gate], { env: { LEMO_DUB_STYLES: cfg } });
+    // 两条守卫都摘掉后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-dna-coverage：摘掉「0 条字段路径」与「注册表空 ⇒ 第三节失明」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-dna');
+  try {
+    const root = path.join(dir, 'r');
+    const cfg = path.join(root, 'cfg.json');
+    // `_notes` 是给第三节「散文里找不到『声明但未实现』条目」那条失明守卫用的（夹具补上它，
+    // 使第三节的失明只来自「注册表空」这一条，本用例才好精确摘）。
+    rj(cfg, { _notes: ['★ textureRaw **声明但未实现**：（当前无）'], styles: [] });
+    const gate = patchGate('check-dna-coverage.mjs', path.join(root, 'scripts'), [
+      ['if (!dubStylesOk || dubPaths.length === 0) {', 'if (false) {'],
+      ['if (!dubStylesOk) texBlind.push(', 'if (false) texBlind.push('],
+    ]);
+    const res = await run(NODE, [gate], { env: { LEMO_DUB_STYLES: cfg } });
+    // 两条守卫都摘掉后：不再打印「**本闸门已失明**」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '**本闸门已失明**', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-doc-coverage：把 `blind`/`countBlind` 从退出码判据摘掉后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-doc');
+  try {
+    const root = path.join(dir, 'r');
+    // 假仓库根：`scripts/` 下只有非闸门非工具的 foo.mjs ⇒ 命中「过滤后闸门类 ∪ 工具类为 0」失明。
+    // ★ 拷来的闸门**不能**放进 `<root>/scripts/`（否则它自己会被扫进去、失明条件变了）⇒ 放 `<root>/gates/`。
+    wf(path.join(root, 'scripts', 'foo.mjs'), '// 非闸门、非工具\n');
+    // ★ 该闸门的失明有**两桶**（`blind` 与「计数声称锚点抽不到」的 `countBlind`），而任何触发 `blind`
+    //   的最小夹具都必然同时抽不到那些计数锚点 ⇒ 承载这两桶的**唯一一行**是退出码聚合行。摘掉它 =
+    //   摘掉「失明 ⇒ exit 1」这条守卫本身（文案仍在，但退出码不再被失明驱动）。
+    const gate = mutate('check-doc-coverage.mjs', path.join(root, 'gates'),
+      '(missing.length || unlisted.length || countBad.length || blind.length || countBlind.length) ? 1 : 0;',
+      '(missing.length || unlisted.length || countBad.length) ? 1 : 0;');
+    const res = await run(NODE, [gate], { env: { LEMO_TOOLS_ROOT: root } });
+    // 失明不再影响退出码 ⇒ exit 0 ⇒ 原正向断言（要求 exit≠0）必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
+      undefined, '把失明从退出码摘掉后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-dual-copy-sync：摘掉「任一侧 0 文件 ⇒ 失明」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-dual');
+  try {
+    const root = path.join(dir, 'r');
+    mk(root);
+    const gate = mutate('check-dual-copy-sync.mjs', path.join(root, 'scripts'),
+      'const blind = blindReasons.length > 0;', 'const blind = false;');
+    // ★ `--no-wsl`：只钉 WIN 侧那条守卫（WSL 侧另有其人，且省一次 wsl 启动）。
+    const res = await run(NODE, [gate, '--no-wsl'], { env: { LEMO_OPUSCAR: root } });
+    // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-dub-styles：摘掉「styles-root 未找到 / 全部 SKIP」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-dub');
+  try {
+    const root = path.join(dir, 'r');
+    mk(root); copyLibTree(root); mk(path.join(root, 'styles'));
+    // ★ 该闸门的注册表路径**写死在脚本 ROOT 下** ⇒ 拷来的闸门放在 `<root>/scripts/` 时，`ROOT/lib/dub-styles.json`
+    //   由 `copyLibTree()` 提供（否则闸门会因读不到注册表**崩掉** ⇒ 假自证）。
+    const gate = mutate('check-dub-styles.mjs', path.join(root, 'scripts'),
+      'if (!STYLES_ROOT || skipped === dub.styles.length) {', 'if (false) {');
+    const res = await run(NODE, [gate], { env: { LEMO_STYLES_ROOT: path.join(root, 'styles') } });
+    // 守卫被摘后：不再打印「失明：styles-root」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '失明：styles-root', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-esm-import-paths：摘掉「扫描根收集到 0 个文件」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-esm');
+  try {
+    const root = path.join(dir, 'r');
+    mk(root);
+    const gate = mutate('check-esm-import-paths.mjs', path.join(root, 'scripts'),
+      'if (files.length === 0) {', 'if (false) {');
+    const res = await run(NODE, [gate], { env: { LEMO_OPUSCAR: root } });
+    // 守卫被摘后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-film-aspect：摘掉「实际成片扫到 0 部」C 类失明守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-fa');
+  try {
+    const root = path.join(dir, 'r');
+    copyLibTree(root);
+    rj(path.join(root, 'distill', 'gb-fa', '_distill.json'), { generatedVideo: { width: 1920, height: 1080 } });
+    mk(path.join(root, 'styles', 'gb-fa')); mk(path.join(root, 'films'));
+    const gate = mutate('check-film-aspect.mjs', path.join(root, 'scripts'),
+      'if (filmsFound === 0)', 'if (false)');
+    const res = await run(NODE, [gate], {
+      env: {
+        LEMO_DISTILL_ROOT: path.join(root, 'distill'),
+        LEMO_STYLES_ROOT: path.join(root, 'styles'),
+        LEMO_FILMS_ROOT: path.join(root, 'films'),
+      },
+    });
+    // 守卫被摘后：不再打印「实际成片扫到 0 部」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '实际成片扫到 0 部', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-lexicon-coverage：摘掉「没有一个声明了 tag」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-lex');
+  try {
+    const root = path.join(dir, 'r');
+    copyLibTree(root);                                   // ★ 该闸门无覆盖点：路径基于脚本自身位置推导
+    rj(path.join(root, 'lib', 'dub-styles.json'),
+      { styles: [{ slug: 'a', tags: {} }, { slug: 'b', tags: { theme: [] } }] });
+    const gate = mutate('check-lexicon-coverage.mjs', path.join(root, 'scripts'),
+      'if (declaredTags === 0) {', 'if (false) {');
+    const res = await run(NODE, [gate]);
+    // 守卫被摘后：不再打印「没有一个声明了 tag」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '没有一个声明了 tag', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-mix-candidates：摘掉「全部风格无候选」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-mix');
+  try {
+    const root = path.join(dir, 'r');
+    mk(path.join(root, 'styles', 'gb-mix'));
+    const gate = mutate('check-mix-candidates.mjs', path.join(root, 'scripts'),
+      'if (slugs.length > 0 && none.length === slugs.length)', 'if (false)');
+    const res = await run(NODE, [gate], { env: { LEMO_STYLES_ROOT: path.join(root, 'styles') } });
+    // 守卫被摘后：不再打印「一个候选混音都没检查过」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '一个候选混音都没检查过', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-mux-selection：摘掉「扫到 0 个风格目录」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-muxsel');
+  try {
+    const root = path.join(dir, 'r');
+    mk(path.join(root, 'styles'));
+    const gate = mutate('check-mux-selection.mjs', path.join(root, 'scripts'),
+      'if (!blind.length && slugs.length === 0) blind.push(', 'if (false) blind.push(');
+    const res = await run(NODE, [gate], { env: { LEMO_OPUSCAR: root } });
+    // 守卫被摘后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-skill-artifacts：摘掉「全部 SKIP ⇒ 一个都没比对」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-art');
+  try {
+    const root = path.join(dir, 'r');
+    rj(path.join(root, 'game-show', '_distill.json'),
+      { generatedVideo: { bytes: 1, durSec: 1, width: 1920, height: 1080, frames: 10 }, evidenceFrames: [] });
+    const gate = mutate('check-skill-artifacts.mjs', path.join(root, 'scripts'),
+      'if (slugs.length > 0 && skipped === slugs.length) {', 'if (false) {');
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
+    // 守卫被摘后：不再打印「一个都没比对」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '一个都没比对', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-skill-scores：摘掉「枚举不到带 _distill.json 的风格」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-sco');
+  try {
+    const root = path.join(dir, 'r');
+    mk(root);
+    const gate = mutate('check-skill-scores.mjs', path.join(root, 'scripts'),
+      'if (!blind.length && slugs.length === 0) blind.push(', 'if (false) blind.push(');
+    const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
+    // 守卫被摘后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-venc-args：摘掉「抽到的编码器参数组合为 0」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-varg');
+  try {
+    const root = path.join(dir, 'r');
+    mk(root);
+    const gate = mutate('check-venc-args.mjs', path.join(root, 'scripts'),
+      'const blind = list.length === 0;', 'const blind = false;');
+    const res = await run(NODE, [gate], { env: { LEMO_OPUSCAR: root } });
+    // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-audio-chain：摘掉「候选清单解析为空」守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-ac');
+  try {
+    const root = path.join(dir, 'r');
+    wf(path.join(root, 'make.mjs'), '// 没有任何候选清单标记\n');
+    // ★ 放一个风格目录：否则「风格扫到 0 个」那条失明守卫会先命中、盖住本用例要测的那条
+    //   （夹具必须**只**让目标守卫命中 —— 这是「一条守卫一个用例」的前提）。
+    mk(path.join(root, 'styles', 'gb-ac'));
+    const gate = mutate('check-audio-chain.mjs', path.join(root, 'scripts'),
+      'if (!got || got.length === 0) {', 'if (false) {');
+    const res = await run(NODE, [gate],
+      { env: { LEMO_MAKE: path.join(root, 'make.mjs'), LEMO_STYLES_ROOT: path.join(root, 'styles') } });
+    // 守卫被摘后：不再打印「候选清单解析为空：混音脚本」⇒ 原正向断言必须**抛**
+    //   （该夹具此时仍因 A 类「无混音脚本」判 exit 1 ⇒ 本自证证明的正是「**exit 仍≠0 但文案消失**」，
+    //    与 `check-cli-docs` / `check-plate-pixel` 的既有自证同型 —— 只断言退出码的坏用例会照样绿）。
+    assert.throws(() => expectBlind(res, '候选清单解析为空：混音脚本', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
+  } finally { rm(dir); }
+});
+
+test('★自证 check-api-docs：摘掉「任一侧解析出 0 条 /api 路由」两条失明守卫后，正向断言必须变红', async () => {
+  const dir = path.join(TMP, 'mut-api');
+  try {
+    const root = path.join(dir, 'r');
+    // 两侧都解析出 0 条：server.mjs 无任何 /api 路由、README.md 无 `## HTTP 接口清单` 表。
+    // ★ 该闸门的失明有**两条**互斥分支（server 侧 / README 侧）⇒ 必须**两条一起摘**，否则另一条会接上。
+    wf(path.join(root, 'server.mjs'), '// 没有任何 /api 路由\n');
+    wf(path.join(root, 'README.md'), '# 文档（没有接口清单表）\n');
+    // ★ 该闸门路径**基于脚本自身位置推导**（`SERVER = <脚本>/../server.mjs`）⇒ 拷来的闸门放 `<root>/scripts/`。
+    const gate = patchGate('check-api-docs.mjs', path.join(root, 'scripts'), [
+      ['if (!serverSet.size) {', 'if (false) {'],
+      ['if (!readmeSet.size) {', 'if (false) {'],
+    ]);
+    const res = await run(NODE, [gate]);
+    // 两条守卫都摘掉后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
+      undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
 });
 

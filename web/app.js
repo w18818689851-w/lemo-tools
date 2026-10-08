@@ -4324,7 +4324,10 @@ function renderLlmProfileOptions() {
   for (const p of list) {
     const o = document.createElement('option');
     o.value = p.id;
-    o.textContent = `${p.label || p.id}${p.isDefault ? '（默认）' : ''}${p.hasKey ? ' · 已配 Key' : ''}`;
+    // ★ 2026-10-09 修：模块的 label 可能**已含**「（默认）」（如 workbuddy 的 label = 'WorkBuddy（默认）'）
+    //   ⇒ 这里再无条件拼一次会显示成「WorkBuddy（默认）（默认）」。改成**幂等**：已含就不再拼。
+    const _baseLabel = p.label || p.id;
+    o.textContent = `${_baseLabel}${(p.isDefault && !_baseLabel.includes('（默认）')) ? '（默认）' : ''}${p.hasKey ? ' · 已配 Key' : ''}`;
     if (p.id === cur) o.selected = true;
     sel.appendChild(o);
   }

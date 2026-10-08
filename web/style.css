@@ -1651,6 +1651,28 @@ html[data-theme="light"] {
 /* ── ★ 接入对象（target）：模型名语义随它变（见 app.js 的 applyLlmTargetUi） ── */
 .llm-target { margin-bottom: 6px; }
 
+/* ── ★ 2026-10-09 修两处观感缺陷（截图为证：D:/lemo-tmp/ui-proof/fix/）────────────
+   缺陷 ①「下拉文案被省略号截断」：`.llm-grid` 是 repeat(auto-fit, minmax(190px,1fr))，
+     面板宽 1542px 时每列仅 ~249px —— 而 #llmProfile 的选项文案（含「（默认）· 已配 Key」后缀）
+     实宽 ~258px、#llmTarget 的「智能体 API（模型名仅作本地备注）」实宽 ~223px，都贴到/超出列宽被省略号吃掉。
+   缺陷 ②「模型名提示折行拥挤」：#llmModelHint 有 96 字，挤在 249px 窄列里折成 5 行，
+     且 .hint 的 word-break:break-all 会把 model / Anthropic 从词中间折断，阅读吃力。
+   改法（纯布局，不改任何文案与逻辑）：
+     · Profile 字段占两列（1600px 下实测 433px）⇒ 下拉文案放得下；
+     · 接入对象字段独占一整行（列宽留够）⇒ 下拉文案放得下，96 字提示从 5 行降到 2 行；
+     · grid-auto-flow:dense 让「请求超时 / API Key」回填第一行空位，避免出现半空的稀疏行。 */
+.llm-grid { grid-auto-flow: row dense; }
+.llm-grid .llm-profile-field { grid-column: span 2; }
+.llm-grid .llm-target-field { grid-column: 1 / -1; }
+/* 独占整行只为「给下拉与提示留出宽度」；控件本身不必跟着拉到 1500px ⇒ 限一个舒适宽度。 */
+.llm-target-field > * { max-width: 760px; }
+/* 提示按「词」折行（同 .dub-params / #briefSizeField 的既有做法），不再从词中间折断。 */
+.llm-grid .hint { word-break: normal; overflow-wrap: anywhere; }
+/* 窄屏（面板列数 < 2）时 span 2 会撑出隐式列 ⇒ 退化为整行。 */
+@media (max-width: 560px) {
+  .llm-grid .llm-profile-field { grid-column: 1 / -1; }
+}
+
 /* ── ★ LLM 配置「独立视图」：规格「模块拥有独立软件界面」—— 本模块可独立打开、只显示自己 ──
    URL 带 ?view=llm（或 #llm）时 body 加 .view-llm ⇒ 隐藏侧栏与其余卡片，只留 #llmCard。
    ★ 同一份 DOM / JS（不另造一套面板）⇒ 不会出现两份实现各自漂移。 */
