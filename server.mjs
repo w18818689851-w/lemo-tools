@@ -1847,7 +1847,7 @@ function watchBriefJob(jobId, briefId) {
 
 // ── LLM API 配置（/api/llm/*）────────────────────────────────
 //
-// 面板「LLM API 配置」的后端。★ 契约：D:/lemo-tmp/llm-api-spec.md §七（接口）/ §八（落盘）。
+// 面板「LLM API 配置」的后端。★ 契约：_distill/llm-api-接口规格-2026-10-08.md §七（接口）/ §八（落盘）。
 //
 // 分工（本批）：
 //   · 适配器 / 配置解析 / **落盘** / 脱敏**全在 lib/llm-api.mjs**（见 §一~§六）—— 本文件只调它的导出：
@@ -2117,7 +2117,7 @@ async function apiLlmValidate(req, res) {
 }
 
 /**
- * POST /api/llm/chat —— 跑一次 chat()（面板上的「试一句」；§七）。
+ * POST /api/llm/chat —— 跑一次 chat()（**兼容保留**：面板「试跑」已改走 `/api/llm/invoke`；§七）。
  * body 可给 `prompt`（字符串）或 `messages`（数组）；可带临时配置。
  * 返回 `{ok:true, data:{ok:true,text,usage,meta} | {ok:false,error,meta}}`。
  */
@@ -2304,7 +2304,7 @@ const server = http.createServer(async (req, res) => {
     if (mm && m === 'PATCH') return await apiBriefPatch(req, res, mm[1]);
     if (mm && m === 'DELETE') return apiBriefDelete(req, res, mm[1]);
 
-    // ── LLM API 配置（/api/llm/*）—— 面板 + 「试一句」（契约与铁律见文件头说明）──
+    // ── LLM API 配置（/api/llm/*）—— 面板 + 「试跑」（通用调用走 invoke；/api/llm/chat 兼容保留）（契约与铁律见文件头说明）──
     if (p === '/api/llm/profiles' && m === 'GET') return await apiLlmProfiles(req, res);
     if (p === '/api/llm/config' && m === 'GET') return await apiLlmConfigGet(req, res, url);
     if (p === '/api/llm/config' && m === 'POST') return await apiLlmConfigSave(req, res);

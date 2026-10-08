@@ -213,7 +213,9 @@ const CONTRACT = path.join(ROOT, CONTRACT_REL);
 const REQUIRED_EXPORTS = ['PROFILES', 'listProfiles', 'resolveConfig', 'validate', 'chat', 'listModels'];
 const KIND_ENUM = ['unreachable', 'timeout', 'auth', 'rate-limit', 'http-error', 'bad-json',
   'bad-shape', 'empty-output', 'config', 'unknown'];
-const ADAPTER_KINDS = ['anthropic', 'openai-compatible', 'custom'];
+// ★ 2026-10-09 追加：新增适配器 kind `workbuddy-gateway`（本机智能体网关：POST /api/v1/runs → SSE 取结果，
+//   两段式，`custom` 的单次 POST+extract 表达不了）。★ 与契约 §十六 同步。
+const ADAPTER_KINDS = ['anthropic', 'openai-compatible', 'custom', 'workbuddy-gateway'];
 const ENV_EXPECTED = ['LEMO_LLM_PROFILE', 'LEMO_LLM_BASE', 'LEMO_LLM_KEY', 'LEMO_LLM_MODEL',
   'LEMO_LLM_HEADERS', 'LEMO_LLM_TIMEOUT_MS'];
 /** 密钥类标识符（**整标识符**匹配；`hasKey` / `monkey` 不算 —— `key` 前还有字母）。 */

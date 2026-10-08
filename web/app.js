@@ -4260,7 +4260,7 @@ function focusSearch() {
 
 // ── 通用 AI 算力 API 接入（/api/llm/*）─────────────────────────
 //
-// 面板逻辑。★ 契约：D:/lemo-tmp/llm-api-spec.md §七（接口）/ §八（落盘）/ §十三（通用算力入口 invoke）；
+// 面板逻辑。★ 契约：_distill/llm-api-接口规格-2026-10-08.md §七（接口）/ §八（落盘）/ §十三（通用算力入口 invoke）；
 // 后端见 server.mjs 的 /api/llm/* 组说明。
 //
 // ★ 三条纪律（本项目铁律）：

@@ -648,7 +648,7 @@ const OVERRIDES = {
     what: 'LM Studio 服务端点（夹具可指向假服务）',
   },
   // —— 开放式 LLM API 配置（`lib/llm-api.mjs`，2026-10-08 新增）——
-  //   ★ 规格 §二 的 6 个覆盖点（`D:/lemo-tmp/llm-api-spec.md`）；唯一读者是 `lib/llm-api.mjs` 的
+  //   ★ 规格 §二 的 6 个覆盖点（`_distill/llm-api-接口规格-2026-10-08.md`）；唯一读者是 `lib/llm-api.mjs` 的
   //     `resolveConfig()`。
   //   ★ 2026-10-08 订正：**不要**把 `server.mjs` 登记成读者 —— `/api/llm/*` 的 handler 是**委托**给
   //     `lib/llm-api.mjs` 的（`server.mjs` 自己不再读 `process.env.LEMO_LLM_PROFILE`）⇒ 登记它会立刻
@@ -720,9 +720,39 @@ const OVERRIDES = {
 //   所以不适用判据 ②（同 `check-render-venc.mjs` 的 B 类 backlog / `check-mux-parity.mjs` 的两层语义）。
 //   ★ 仍然登记 `readers`（「谁在读」）：判据 ③ 用它比「新读者」，免得这些变量每次都被报成未登记读者。
 const EXTERNAL = {
+  // ★ 2026-10-09 追加：**本机智能体网关**的三个外部约定（宿主/网关进程注入；本项目只读来拼 baseUrl 与鉴权，
+  //   **不重定向任何路径或工具**）⇒ 按本文件头注释 ③ 归 `EXTERNAL`（只登记、不判 FAIL）✓
+  //   ★★ `CODEBUDDY_GATEWAY_PASSWORD` 是**口令** ⇒ 这里登记的只是**变量名**，★ 值**绝不落盘/进日志** ✓
+  SERVER__PORT: {
+    readers: ['lib/llm-api.mjs'],
+    why: '本机智能体网关的**监听端口**（宿主注入；★ 端口**动态**，代码里**不硬编码**）',
+  },
+  SERVER__HOST: {
+    readers: ['lib/llm-api.mjs'],
+    why: '本机智能体网关的**监听地址**（宿主注入；缺省 127.0.0.1）',
+  },
+  CODEBUDDY_GATEWAY_PASSWORD: {
+    readers: ['lib/llm-api.mjs'],
+    why: '本机智能体网关的**鉴权口令**（宿主注入；★ 只从环境取，**绝不落盘/进日志**）',
+  },
   PATH: {
     readers: ['lemo-make.mjs'],
     why: '操作系统的 PATH（把 ffmpeg 目录前置进子进程环境；`process.env.PATH` 在模板串 ${} 里）',
+  },
+  // ★ 2026-10-09 追加：本机「智能体网关」（CodeBuddy Gateway）的三个外部约定。
+  //   ★ 它们是**宿主（网关进程）注入**的，本项目**只读**来拼 baseUrl 与鉴权头，**不重定向任何路径/工具**
+  //   ⇒ 按本闸门头注释 ③ 归 `EXTERNAL`（只登记、不判 FAIL）✓
+  SERVER__HOST: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：宿主注入的本机网关**监听地址**（缺省 127.0.0.1；★ 不重定向路径/工具，只用来拼 baseUrl）',
+  },
+  SERVER__PORT: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：宿主注入的本机网关**监听端口**（★ **动态读**，代码里**不硬编码**；重启可能变）',
+  },
+  CODEBUDDY_GATEWAY_PASSWORD: {
+    readers: ['lib/llm-api.mjs'],
+    why: '外部约定：本机网关的 **Bearer 口令**（★ **只从环境取**，**绝不**落盘 / 进日志 / 写进任何文件）',
   },
   WHISPER_MODEL: {
     readers: ['lib/dub-core.mjs'],

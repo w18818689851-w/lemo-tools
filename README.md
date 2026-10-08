@@ -125,7 +125,7 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/llm/config` | 当前生效配置（key 脱敏，只回 hasKey） | 同步 |
 | POST | `/api/llm/config` | 保存用户覆盖，落盘 `<成片根>/_llm-api.json` | 同步 |
 | POST | `/api/llm/validate` | 跑 validate()（可传临时配置，不必先保存） | 同步 |
-| POST | `/api/llm/chat` | 跑一次 chat()（面板上的「试一句」） | 同步 |
+| POST | `/api/llm/chat` | 跑一次 chat()（**兼容保留**：面板「试跑」已改走 `/api/llm/invoke`） | 同步 |
 | POST | `/api/llm/invoke` | 通用 AI 算力调用（chat / image / audio / embedding / custom，转发到模块 invoke()） | 同步 |
 | POST | `/api/llm/models` | 拉取当前 Endpoint 的可用模型清单（面板「多模型切换」用） | 同步 |
 
