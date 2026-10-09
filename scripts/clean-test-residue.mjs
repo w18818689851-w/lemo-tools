@@ -36,6 +36,8 @@
  *   5. **`index.json` 只摘条目、不删文件**（且摘除前整文件已进备份）；
  *   6. **回收站优先**：能送回收站就送（Windows + PowerShell 可用时）；**不可用则明确提示**并
  *      **要求额外的 `--allow-permanent-delete`** 才永久删，否则**中止**；
+ *      ★★ **2026-10-09 修**：原先这条路径用 `spawnSync` 调 PowerShell ⇒ 本环境 `spawnSync` **一律 EBUSY**
+ *      （项目硬规则）⇒ **回收站探测永远失败**，「回收站优先」形同虚设。已改为**异步 `spawn`** ⇒ 恢复可用 ✓
  *   7. **幂等**：跑两次结果一致（第二次「无事可做」）；不留临时文件（`index.json` 用 tmp+rename 原子写）。
  *
  * ★★ 用法（三段）：
@@ -57,7 +59,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 // ★★ 与 `lib/store.mjs` 共用同一把跨进程写锁（同一成片根 ⇒ 同一个 `.console/index.lock`）——
 //   本脚本 `--apply` 也要写 `.console/index.json`，必须与 `saveIndex` / `prune-jobs --apply` 串行化，
 //   否则整文件重写会盖掉并发 console 刚建的任务（lost update，见 `_distill/store丢失更新-2026-10-09.md`）。
@@ -294,15 +296,28 @@ log('✓ 备份校验通过。');
 log('');
 
 // ── 回收站能力探测（★ 不可用则要求第三道开关）──────────────────────────────
-function tryRecycle(absPath) {
+// ★★ 必须用**异步** `spawn`，**不许用 `spawnSync`** —— 本环境 `spawnSync` / `execFileSync` **一律 EBUSY**
+//   （项目硬规则：`spawnSync`/`execFileSync` 一律 EBUSY ⇒ 用异步 `spawn`；PowerShell 也躲不过）。
+//   ★ **2026-10-09 实测修**：本函数原先用 `spawnSync('powershell.exe', …)` ⇒ 探测**永远**失败
+//   （报错原文就是 `spawn 失败：spawnSync powershell.exe EBUSY`）⇒ 于是本工具的「**回收站优先**」这条
+//   **安全路径在本机根本走不通**，每次都被迫落到「拒绝永久删 / 要第三道开关」。改成异步后回收站恢复可用 ✓
+async function tryRecycle(absPath) {
   if (process.platform !== 'win32') return { ok: false, why: '非 Windows 平台' };
   const p = absPath.replace(/\//g, '\\');
   const isDir = (() => { try { return fs.statSync(absPath).isDirectory(); } catch { return false; } })();
   const fn = isDir ? 'DeleteDirectory' : 'DeleteFile';
   const ps = `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::${fn}('${p}','OnlyErrorDialogs','SendToRecycleBin')`;
-  let r;
-  try { r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', timeout: 20000 }); }
-  catch (e) { return { ok: false, why: `spawn 失败：${e.message}` }; }
+  // 异步跑 + 自己看门狗超时（spawn 的 timeout 选项只在 exec* 上有；这里手动 kill）
+  const r = await new Promise((resolve) => {
+    let child;
+    try { child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { stdio: ['ignore', 'pipe', 'pipe'] }); }
+    catch (e) { resolve({ error: e }); return; }
+    let stderr = '';
+    if (child.stderr) child.stderr.on('data', (d) => { stderr += d; });
+    const t = setTimeout(() => { try { child.kill(); } catch { /* ignore */ } }, 20000);
+    child.on('error', (e) => { clearTimeout(t); resolve({ error: e }); });
+    child.on('close', (code) => { clearTimeout(t); resolve({ status: code, stderr }); });
+  });
   if (r.error) return { ok: false, why: `spawn 失败：${r.error.message}` };
   if (r.status !== 0) return { ok: false, why: `powershell exit ${r.status}${r.stderr ? '：' + String(r.stderr).trim().slice(0, 120) : ''}` };
   let gone = false;
@@ -311,7 +326,7 @@ function tryRecycle(absPath) {
   return { ok: true };
 }
 
-function probeRecycle() {
+async function probeRecycle() {
   let dir;
   try {
     assertNonC(BACKUP_ROOT, 'LEMO_BACKUP_DIR');
@@ -319,7 +334,7 @@ function probeRecycle() {
     fs.mkdirSync(dir, { recursive: true });
     const f = path.join(dir, 'probe.tmp');
     fs.writeFileSync(f, 'x');
-    const r = tryRecycle(f);
+    const r = await tryRecycle(f);
     if (!r.ok) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } }
     try { fs.rmdirSync(dir); } catch { /* ignore */ }
     return r;
@@ -329,7 +344,7 @@ function probeRecycle() {
   }
 }
 
-const rec = probeRecycle();
+const rec = await probeRecycle();
 let via;
 if (rec.ok) {
   via = 'recycle';
@@ -345,9 +360,9 @@ if (rec.ok) {
 }
 log('');
 
-function removeOne(it) {
+async function removeOne(it) {
   if (via === 'recycle') {
-    const r = tryRecycle(it.abs);
+    const r = await tryRecycle(it.abs);
     if (!r.ok) return { ok: false, why: r.why };
     return { ok: true };
   }
@@ -363,7 +378,7 @@ let removed = 0;
 const removedIds = [];
 const failures = [];
 for (const it of [...briefs, ...logs, ...locks]) {
-  const r = removeOne(it);
+  const r = await removeOne(it);
   if (r.ok) { removed += 1; log(`  − ${it.rel}`); }
   else { failures.push(`${it.rel}：${r.why}`); log(`  ✘ ${it.rel}：${r.why}`); }
 }
