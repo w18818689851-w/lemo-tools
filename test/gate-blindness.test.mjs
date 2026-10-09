@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 131 条用例 / 覆盖全部 45 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 132 条用例 / 覆盖全部 46 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -196,6 +196,19 @@
  *          ② **变异（判据②）** `lib/` 里新增一个谁都不调用的导出 ⇒ FAIL 并点名 `lib/lemod.mjs:leProbe`；
  *          ③ **失明（判据③）** `lib/` 有导出、全根 **0 个调用点** ⇒ FAIL +「本闸门已失明」且不输出判据②；
  *          ④ **★自证**：短路判据②（`if (unregistered.length) {` → `if (false) {`）⇒ 变异**重新变绿**。
+ *        · `check-no-sync-spawn`（2026-10-09 建，第 46 个；守「**实调用** `spawnSync`/`execFileSync`」——
+ *          本环境同步子进程**一律 `EBUSY`** ⇒ 必须用**异步 `spawn`**；实测 `clean-test-residue` 的
+ *          「回收站优先」因此整条失效、已修）：
+ *          主夹具 = **合成极小树**（本闸门的事实源是「**剥注释后**的文本里有没有 `spawnSync(` /
+ *          `execFileSync(`」这一件事，最小树即可精确摆出两种形态）；覆盖点 **`LEMO_TOOLS_ROOT`**；
+ *          ★ 失明守卫要求「全根 ≥1 个 `child_process` 导入」，故各态树里都留一个异步 `spawn` 导入；
+ *          ① **阴性对照**（只有异步 `spawn`、零同步实调用）⇒ exit 0 且打印判据② ✓；
+ *          ② **变异（判据②）** `lib/` 里新增一行真的 `spawnSync(...)` ⇒ FAIL 并点名
+ *            `lib/lemod.mjs:3 spawnSync`；
+ *          ③ **★反向验证之二（本闸门特有）** 加一行**注释**写着 `spawnSync`（**不是调用**）⇒
+ *            **必须仍然 exit 0**（证明「剥注释」生效、不假阳）；
+ *          ④ **失明（判据③）** 全根 **0 个** `child_process` 导入 ⇒ FAIL +「本闸门已失明」且不输出判据②；
+ *          ⑤ **★自证**：短路判据②（`if (unregistered.length) {` → `if (false) {`）⇒ 变异**重新变绿**。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -5338,6 +5351,80 @@ test('check-lib-exports：阴性对照 + 新增零调用导出变异 + 失明（
     const gdir = path.join(dir, 'gmut');
     mk(path.join(gdir, 'scripts'));
     const g = patchGate('check-lib-exports.mjs', path.join(gdir, 'scripts'),
+      [['if (unregistered.length) {', 'if (false) {']]);
+    const rm1 = await run(NODE, [g], { env: { LEMO_TOOLS_ROOT: mut } });
+    assert.equal(rm1.code, 0, `短路判据② 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
+      '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测判据②');
+  } finally { rm(dir); }
+});
+
+// ── 12m. check-no-sync-spawn.mjs（「实调用 spawnSync/execFileSync」，2026-10-09 建，第 46 个）──────
+// ★ 主夹具 = **合成极小树**（本闸门的事实源是「剥注释后的文本里有没有 `spawnSync(` / `execFileSync(`」
+//   这一件事，最小树即可精确摆出「只有注释提及」与「真的实调用」两种形态；不必整棵拷真实 `lib/`）。
+// ★ 覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 check-resources / check-llm-api / check-lib-exports）。
+// ★ 失明守卫要求「全部扫描根加起来 ≥1 个 `child_process` 导入」，故阴性 / 变异 / 注释态树里**必须**
+//   留一个 `import { spawn } from 'node:child_process'`（异步 spawn，正是本闸门要的**正解**）——
+//   否则整棵树走失明、判据①② 不输出，那两条正向断言就测不到了。
+const nsTree = (dir, libBody) => {
+  wf(path.join(dir, 'lib', 'lemod.mjs'), libBody);
+  wf(path.join(dir, 'scripts', 'nsCaller.mjs'),
+    "import { leCalled } from '../lib/lemod.mjs';\nleCalled();\n");
+  return dir;
+};
+// 阴性 / 变异 / 注释态三种 lib 体（★ 都带一个 `child_process` 导入 ⇒ 不触发失明守卫）。
+const NS_NEG = "import { spawn } from 'node:child_process';\nexport function leCalled() { spawn('x'); return 1; }\n";
+// ★ 变异体里那行**真的**同步调用，其函数名**拆开拼装**（`'spawn' + 'Sync'`）：本闸门扫 `test/**`
+//   且**保留字符串字面量**（判据① 的剥注释只剥 `//` 与 `/* */`，见其头注释 ② / 已知盲区 ①）⇒
+//   若这里直接写出 `spawnSync(` 的**字面量**，闸门会把**本测试源码里的夹具字符串**当成实调用（假阳）。
+//   拆开拼装后，写进夹具文件的仍是**真的** `spawnSync(...)`（用例验证的正是它），而本文件里不出现该字面量。
+const SYNC_FN = 'spawn' + 'Sync';
+const NS_MUT = "import { spawn, " + SYNC_FN + " } from 'node:child_process';\n"
+  + "export function leCalled() { spawn('x'); return 1; }\n"
+  + "const r = " + SYNC_FN + "('git', ['--version']);\n";
+const NS_COMMENT = "import { spawn } from 'node:child_process';\n"
+  + "// spawnSync 不能用（本机 EBUSY）\n"
+  + "/* execFileSync 也不能用 */\n"
+  + "export function leCalled() { spawn('x'); return 1; }\n";
+
+test('check-no-sync-spawn：阴性对照 + 实调用变异 + 注释态仍绿 + 失明（0 child_process 导入）⇒ FAIL 并点名', async () => {
+  const dir = path.join(TMP, 'ns');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE = '未登记的实调用';            // 判据② 特有文案（逐字抄自闸门源码）
+  try {
+    // ① 阴性对照：只有异步 spawn、零同步实调用 ⇒ exit 0 且打印判据② ✓
+    const neg = nsTree(path.join(dir, 'neg'), NS_NEG);
+    const r0 = await runGate('check-no-sync-spawn.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-no-sync-spawn 阴性对照');
+    assert.ok(r0.out.includes('未登记的实调用 0 处'), `阴性对照应打印判据② ✓\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异（判据②）：lib/ 里新增一行真的 `spawnSync(...)` 调用 ⇒ exit 1 并点名
+    const mut = nsTree(path.join(dir, 'mut'), NS_MUT);
+    const r1 = await runGate('check-no-sync-spawn.mjs', { LEMO_TOOLS_ROOT: mut });
+    expectBlind(r1, NEEDLE, 'check-no-sync-spawn 变异（真调用 spawnSync）');
+    assert.ok(r1.out.includes('lib/lemod.mjs:3 spawnSync'), `变异应点名 lib/lemod.mjs:3 spawnSync\n${r1.out.slice(0, 1400)}`);
+
+    // ③ ★反向验证之二（本闸门特有）：加一行**注释**写着 `spawnSync`（**不是调用**）⇒ **必须仍然 exit 0**
+    //   （证明「剥注释」真的生效 —— 否则注释里的提及会被当实调用 ⇒ 假阳）。
+    const cmt = nsTree(path.join(dir, 'cmt'), NS_COMMENT);
+    const r2 = await runGate('check-no-sync-spawn.mjs', { LEMO_TOOLS_ROOT: cmt });
+    expectClean(r2, N_BLIND, 'check-no-sync-spawn 注释态（剥注释后仍绿）');
+    assert.ok(r2.out.includes('未登记的实调用 0 处'), `注释态应仍打印判据② ✓\n${r2.out.slice(0, 1200)}`);
+
+    // ④ 失明（判据③）：扫描根有文件、但**一个 `child_process` 导入都没有** ⇒ FAIL +「本闸门已失明」
+    const blind = path.join(dir, 'blind');
+    wf(path.join(blind, 'lib', 'lemod.mjs'), 'export function leOnly() { return 1; }\n');
+    wf(path.join(blind, 'scripts', 'nsCaller.mjs'), "import { leOnly } from '../lib/lemod.mjs';\nleOnly();\n");
+    const r3 = await runGate('check-no-sync-spawn.mjs', { LEMO_TOOLS_ROOT: blind });
+    expectBlind(r3, N_BLIND, 'check-no-sync-spawn 失明（0 个 child_process 导入）');
+    assert.ok(r3.out.includes('一个 `child_process` 导入都没看到'), `失明应点名「一个 child_process 导入都没看到」\n${r3.out.slice(0, 900)}`);
+    assert.ok(!r3.out.includes(NEEDLE), `失明时不该输出判据②\n${r3.out.slice(0, 900)}`);
+
+    // ⑤ ★反向验证之一：把「未登记 ⇒ FAIL」判定**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
+    //   （证明断言真的在测判据②，而不是在测「闸门有没有崩」）。
+    const gdir = path.join(dir, 'gmut');
+    mk(path.join(gdir, 'scripts'));
+    const g = patchGate('check-no-sync-spawn.mjs', path.join(gdir, 'scripts'),
       [['if (unregistered.length) {', 'if (false) {']]);
     const rm1 = await run(NODE, [g], { env: { LEMO_TOOLS_ROOT: mut } });
     assert.equal(rm1.code, 0, `短路判据② 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
