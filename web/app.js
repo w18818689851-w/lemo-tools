@@ -4477,50 +4477,27 @@ function focusSearch() {
   s.select?.();
 }
 
-// ── 通用 AI 算力 API 接入（/api/llm/*）─────────────────────────
+// ── AI 算力配置（/api/llm/*）─────────────────────────────────
 //
-// 面板逻辑。★ 契约：_distill/llm-api-接口规格-2026-10-08.md §七（接口）/ §八（落盘）/ §十三（通用算力入口 invoke）；
-// 后端见 server.mjs 的 /api/llm/* 组说明。
+// ★★ 2026-10-10 极简改版：面板只保留「WorkBuddy 连接」——
+//   · 默认 profile = workbuddy，其**端点与口令一律运行时自动发现**（SERVER__HOST / SERVER__PORT /
+//     CODEBUDDY_GATEWAY_PASSWORD，见 lib/llm-api.mjs 的 workbuddy profile）⇒ **无需手工填写**。
+//   · 界面上只留：一行状态（当前默认）/ 一行说明 / 「测试连接」按钮 / 三步校验显示。
+//   · 其余接入方式（切 profile / 适配器 kind / Endpoint / Key / model / 超时 / 自定义头 / 试跑…）
+//     的**后端能力保留**（server.mjs 的 /api/llm/* 一律未动），只是界面上暂不暴露，后期需要用再添加。
 //
 // ★ 三条纪律（本项目铁律）：
 //   ① **后端异常不得搞崩前端**：所有请求走 llmReq()，它把「网络失败 / 非 JSON / 结构异常」
 //      统统兜成 `{ok:false,error}`（本项目既有坑：异常返回把前端搞崩）。
-//   ② **key 永不回显**：界面只显示「已配置 / 未配置」；key 输入框留空 = 不改。
+//   ② **key 永不回显**：界面只显示「已配置 / 未配置」（只读诊断），没有 key 输入框。
 //   ③ 三步校验**逐步**点亮（可达 → 鉴权 → 返回体），失败给可操作中文提示。
-//
-// ★★ 2026-10-09（规格 v3「算力类型不限」）：面板加「**算力类型**」选择器（chat / image / audio /
-//   embedding / custom）；「试一句」改为「**试跑**」——按当前算力类型 POST /api/llm/invoke（转发模块
-//   `invoke()`）。术语对齐规格：「模型名」→「**服务名称标记**」（智能体模式下仍**仅作本地备注**）。
 
 const LLM_STEP_ORDER = ['reachable', 'auth', 'shape'];
 const LLM_STEP_ICO = { pending: '○', running: '⟳', ok: '✓', fail: '✗', skip: '–' };
-const llmState = { profiles: [], current: 'workbuddy', cfg: null, busy: false, models: [] };
-
-// ★★ 通用 AI 算力类型（★ 取值来自契约 §13.1：'chat'|'image'|'audio'|'embedding'|'custom'）。
-const LLM_TASKS = ['chat', 'image', 'audio', 'embedding', 'custom'];
-// 各类型的「试跑」输入框占位提示 + 一句说明（参数区随类型变）。
-const LLM_TASK_PLACEHOLDER = {
-  chat: '试一句：留空用默认示例句（最多 500 字）',
-  image: '图像 prompt（如：一只在星空下的猫）',
-  audio: '要合成的文字（如：你好，欢迎使用）',
-  embedding: '要向量化的文本（如：你好世界）',
-  custom: 'custom 请求体（JSON 或原样字符串；留空则用 {}）',
-};
-const LLM_TASK_HINT = {
-  chat: 'chat：走文本推理入口（模块 invoke("chat")，请求体与 chat() 逐字节相同）。',
-  image: 'image：走图像生成（OpenAI 兼容 /images/generations）；anthropic 适配器没有此接口 ⇒ 会明确报错，请用 openai-compatible 或 custom。',
-  audio: 'audio：走语音合成（OpenAI 兼容 /audio/speech，响应为音频字节流，结果以 base64 回传并可试听）。',
-  embedding: 'embedding：走向量计算（OpenAI 兼容 /embeddings，取 data[].embedding）。',
-  custom: 'custom：自定义出口 —— 用下方「请求路径 path / 取值路径 extract」，上面输入框的内容作请求体（JSON 或原样字符串）。',
-};
+const llmState = { current: 'workbuddy', cfg: null, busy: false };
 
 function llmSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 function llmSafeStr(o) { try { return JSON.stringify(o).slice(0, 200); } catch { return String(o); } }
-/** 当前选中的算力类型（缺省 chat）。 */
-function llmCurrentTask() {
-  const v = $('llmTask') ? $('llmTask').value : 'chat';
-  return LLM_TASKS.includes(v) ? v : 'chat';
-}
 
 /** 统一请求：把一切异常兜成 {ok,data|error}，**绝不抛**。 */
 async function llmReq(path, opts) {
@@ -4544,268 +4521,37 @@ function setLlmHint(node, text, isErr) {
   node.textContent = text || '';
   node.style.color = isErr ? 'var(--err)' : '';
 }
-function parseLlmHeaders(txt) {
-  const out = {};
-  for (const line of String(txt || '').split(/\r?\n/)) {
-    const s = line.trim();
-    if (!s || s.startsWith('#')) continue;
-    const i = s.indexOf(':');
-    if (i < 0) continue;
-    const k = s.slice(0, i).trim();
-    const v = s.slice(i + 1).trim();
-    if (k) out[k] = v;
-  }
-  return out;
-}
-
-/** 画 profile 下拉（清单来自 GET /api/llm/profiles；★ 不写死一份 profile 表）。 */
-function renderLlmProfileOptions() {
-  const sel = $('llmProfile');
-  if (!sel) return;
-  const cur = llmState.current;
-  const list = llmState.profiles.length
-    ? llmState.profiles
-    : [{ id: cur, label: cur, isDefault: cur === 'workbuddy' }];
-  sel.textContent = '';
-  for (const p of list) {
-    const o = document.createElement('option');
-    o.value = p.id;
-    // ★ 2026-10-09 修：模块的 label 可能**已含**「（默认）」（如 workbuddy 的 label = 'WorkBuddy（默认）'）
-    //   ⇒ 这里再无条件拼一次会显示成「WorkBuddy（默认）（默认）」。改成**幂等**：已含就不再拼。
-    const _baseLabel = p.label || p.id;
-    o.textContent = `${_baseLabel}${(p.isDefault && !_baseLabel.includes('（默认）')) ? '（默认）' : ''}${p.hasKey ? ' · 已配 Key' : ''}`;
-    if (p.id === cur) o.selected = true;
-    sel.appendChild(o);
-  }
-}
-
-/**
- * ★ 多模型切换：把可用模型清单灌进「下拉选择」+ datalist（两者同源）。
- *  · 清单来自端点（`POST /api/llm/models`）或配置；**前端不写死任何模型名**。
- *  · 选中下拉项 ⇒ 填入模型名输入框；输入框仍可手填任意模型名（兜底）。
- *  · 清单为空 ⇒ 隐藏下拉（只留手填），避免一个空的、点了没反应的控件误导用户。
- */
-function renderLlmModelOptions(models, sourceLabel) {
-  const list = Array.isArray(models) ? models.filter(Boolean).map(String) : [];
-  llmState.models = list;                    // ★ 记下来 ⇒ 保存时一并落盘（下拉在刷新后仍在）
-  const dl = $('llmModelList');
-  if (dl) {
-    dl.textContent = '';
-    for (const m of list) { const o = document.createElement('option'); o.value = m; dl.appendChild(o); }
-  }
-  const sel = $('llmModelSelect');
-  if (!sel) return;
-  sel.textContent = '';
-  if (!list.length) { sel.hidden = true; return; }
-  const ph = document.createElement('option');
-  ph.value = '';
-  ph.textContent = `— 从 ${list.length} 个可用服务里选（${sourceLabel || '端点'}）—`;
-  sel.appendChild(ph);
-  for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); }
-  sel.hidden = false;
-  sel.value = '';
-}
-
-/** 把生效配置填进表单（★ 不回显 key；headers 用打码后的值）。 */
-function renderLlmForm(cfg) {
-  if (!cfg) return;
-  $('llmKind').value = cfg.kind || ''; if ($('llmTarget')) $('llmTarget').value = (cfg.target === 'agent') ? 'agent' : 'model';
-  $('llmBaseUrl').value = cfg.baseUrl || '';
-  $('llmModel').value = cfg.model || '';
-  $('llmTimeout').value = (cfg.timeoutMs !== undefined && cfg.timeoutMs !== null) ? String(cfg.timeoutMs) : '';
-  $('llmPath').value = cfg.path || '';
-  $('llmExtract').value = cfg.extract || '';
-  // 输入框只放**用户覆盖**的头（后端已把敏感值打码成 ••••••；留占位符 = 不改）
-  $('llmHeaders').value = Object.entries(cfg.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n');
-  const eff = Array.isArray(cfg.effectiveHeaders) ? cfg.effectiveHeaders : [];
-  setLlmHint($('llmHeadersHint'),
-    eff.length
-      ? `每行一条「名称: 值」；留空该行 = 删除该头。当前生效头（profile 默认 + 覆盖）：${eff.join(', ')}`
-      : '每行一条「名称: 值」；留空该行 = 删除该头', false);
-
-  // ★ 多模型切换：候选清单（来自端点拉取 / 配置）同时灌进「下拉选择」与 datalist；
-  //   输入框仍可手填任意模型名（兜底）。清单为空 ⇒ 隐藏下拉，只留手填。
-  const modelList = Array.isArray(cfg.models) ? cfg.models : [];
-  renderLlmModelOptions(modelList, '端点 / 配置');
-  // ★ 模型名的语义与提示随「接入对象 target」变（模型 API ⇒ 下发 model；智能体 API ⇒ 仅本地备注）。
-  applyLlmTargetUi(cfg);
-
-  const st = $('llmKeyState');
-  st.textContent = cfg.hasKey ? '已配置' : '未配置';
-  st.className = 'llm-key-state ' + (cfg.hasKey ? 'ok' : 'missing');
-  const keyInp = $('llmKey');
-  keyInp.value = '';
-  // ★ 提示用 keyMask（如 `sk-K…`）—— 掩码不是明文，只是让用户知道「当前已配哪个 key」
-  const km = cfg.keyMask ? `（已配置 ${cfg.keyMask}）` : '（已配置）';
-  keyInp.placeholder = cfg.hasKey ? `留空 = 不改${km}` : '留空 = 不设置';
-
-  const pid = cfg.profile || llmState.current;
-  $('llmProfileBadge').textContent = pid;
-  $('llmProfile').value = pid;
-  const p = llmState.profiles.find((x) => x.id === pid);
-  $('llmProfileHint').textContent = p
-    ? `默认 profile = workbuddy；当前 ${p.label || p.id}${p.isDefault ? '（默认）' : ''}${p.note ? ' · ' + p.note : ''}`
-    : '默认 profile = workbuddy（软件默认走它）';
-  // ★ 规格「当前优先配置 WorkBuddy」：一眼看出当前默认走哪个；切到别的则明确显示「已切换」。
-  const pill = $('llmCurrentPill');
-  if (pill) {
-    const isDefault = pid === 'workbuddy';
-    pill.textContent = isDefault ? '当前默认：WorkBuddy' : `已切换：${(p && (p.label || p.id)) || pid}`;
-    pill.className = 'llm-current-pill ' + (isDefault ? 'is-default' : 'is-switched');
-  }
-  setLlmHint($('llmSaveHint'), `落盘：${cfg.overrideFile || 'D:\\lemo-films\\_llm-api.json'}`, false);
-  syncLlmTaskUi();
-}
-
-/** custom 适配器 或 custom 算力类型 才显示 path / extract（其余用不到，藏起来免得误导）。 */
-function syncLlmCustomRows() {
-  const box = $('llmCustomRows');
-  if (box) box.hidden = ($('llmKind').value !== 'custom' && llmCurrentTask() !== 'custom');
-}
-
-/**
- * ★ 算力类型联动（规格 v3）：切换 task ⇒ 更新「试跑」输入框占位提示 + 一句说明 + custom 行显隐。
- *   · 参数区随类型变：chat ⇒ messages；image ⇒ prompt；audio ⇒ input；embedding ⇒ input；
- *     custom ⇒ path + extract（复用下方 custom 行）+ 输入框当请求体。
- */
-function syncLlmTaskUi() {
-  const t = llmCurrentTask();
-  const inp = $('llmTryText');
-  if (inp) inp.placeholder = LLM_TASK_PLACEHOLDER[t] || LLM_TASK_PLACEHOLDER.chat;
-  setLlmHint($('llmTaskHint'), LLM_TASK_HINT[t] || '', false);
-  syncLlmCustomRows();
-}
-
-/** 表单 → 请求体（includeKey=false 时不带 key，用于校验 / 试一句的临时配置）。 */
-function llmFormPayload(includeKey) {
-  const p = {
-    profile: $('llmProfile').value || undefined,
-    kind: $('llmKind').value || '', target: $('llmTarget') ? ($('llmTarget').value || 'model') : 'model',
-    baseUrl: $('llmBaseUrl').value.trim(),
-    model: $('llmModel').value.trim(),
-    timeoutMs: $('llmTimeout').value.trim(),
-    path: $('llmPath').value.trim(),
-    extract: $('llmExtract').value.trim(),
-    headers: parseLlmHeaders($('llmHeaders').value),
-    // ★ 拉取到的候选模型清单随保存落盘（模块 resolveConfig 本就支持 models）⇒ 刷新后下拉仍在。
-    models: Array.isArray(llmState.models) ? llmState.models : [],
-  };
-  if (includeKey) { const k = $('llmKey').value; if (k) p.apiKey = k; }
-  return p;
-}
-
 // 竞态护栏：初次加载 / 点「刷新」/ 连点刷新可重叠，只让最后一次请求的结果上屏，
-// 免得旧响应盖掉 llmState.profiles / llmState.cfg（刷新后配置反而回退成旧值）。
-// ★ 两段 await（profiles → config）共享同一个序号：任何一次新的刷新都会让旧的整段作废。
+// 免得旧响应盖掉 llmState.cfg（刷新后配置反而回退成旧值）。
 let loadLlmSeq = 0;
 
-async function loadLlmProfiles(seq) {
-  const r = await llmReq('/api/llm/profiles');
-  if (seq !== undefined && seq !== loadLlmSeq) return;   // 旧响应不得覆盖新状态
-  if (r.ok) {
-    llmState.profiles = (r.data && r.data.profiles) || [];
-    llmState.current = (r.data && r.data.current) || 'workbuddy';
-  } else {
-    setLlmHint($('llmProfileHint'), '读 profile 清单失败：' + llmErrText(r.error)
-      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
-  }
-  renderLlmProfileOptions();
-}
-
-async function loadLlmConfig(profileId, seq) {
-  const q = profileId ? `?profile=${encodeURIComponent(profileId)}` : '';
-  const r = await llmReq('/api/llm/config' + q);
-  if (seq !== undefined && seq !== loadLlmSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
+/**
+ * 读当前**生效**配置（GET /api/llm/config）⇒ 刷新一行状态（当前默认）+ 只读诊断（口令是否就绪）。
+ * ★ 异常由 llmReq() 兜成 `{ok:false,error}` ⇒ 这里只更新一句中文提示，**绝不抛、绝不白屏**。
+ */
+async function loadLlm() {
+  const seq = ++loadLlmSeq;
+  const r = await llmReq('/api/llm/config');
+  if (seq !== loadLlmSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
   if (!r.ok) {
-    llmState.cfg = null;
     setLlmHint($('llmSaveHint'), '读配置失败：' + llmErrText(r.error)
       + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
     return;
   }
-  llmState.cfg = r.data;
-  renderLlmForm(r.data);
-}
-
-async function loadLlm() {
-  const seq = ++loadLlmSeq;
-  await loadLlmProfiles(seq);
-  if (seq !== loadLlmSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
-  // ★ 初次加载 / 点「刷新」：读**生效**配置（不带 ?profile=，才会把已保存的覆盖算进去）。
-  //   只有用户**手动切**下拉时才走 loadLlmConfig(id) 的「预览该 profile 默认值」分支。
-  await loadLlmConfig(null, seq);
-}
-
-/**
- * ★ 多模型切换：从当前 Endpoint 拉取可用模型清单（POST /api/llm/models → 模块 listModels()）。
- * 用**当前表单**的临时配置（不必先保存）。★ 异常接口（非 JSON / 5xx / 超时 / 空 body）由
- * llmReq() + 模块归一成 `{ok:false,error}` ⇒ 这里只更新一句中文提示，**绝不抛、绝不白屏**。
- */
-async function fetchLlmModels() {
-  if (llmState.busy) return;
-  llmState.busy = true;
-  const btn = $('btnLlmModels');
-  if (btn) btn.disabled = true;
-  setLlmHint($('llmModelHint'), '拉取中…（受配置的超时限制）', false);
-
-  const r = await llmReq('/api/llm/models', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(llmFormPayload(true)),
-  });
-  llmState.busy = false;
-  if (btn) btn.disabled = false;
-
-  if (!r.ok) {
-    setLlmHint($('llmModelHint'), '拉取模型失败：' + llmErrText(r.error)
-      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
-    toast('拉取模型失败', true);
-    return;
+  const cfg = r.data || {};
+  llmState.cfg = cfg;
+  llmState.current = cfg.profile || 'workbuddy';
+  // ★ 规格「当前优先配置 WorkBuddy」：一眼看出当前默认走哪个。
+  const pill = $('llmCurrentPill');
+  if (pill) {
+    const isDefault = llmState.current === 'workbuddy';
+    pill.textContent = isDefault ? '当前默认：WorkBuddy' : `当前：${cfg.label || llmState.current}`;
+    pill.className = 'llm-current-pill ' + (isDefault ? 'is-default' : 'is-switched');
   }
-  const d = r.data || {};
-  if (d.ok === true) {
-    const models = Array.isArray(d.models) ? d.models : [];
-    renderLlmModelOptions(models, '端点');
-    // ★ 拉取后仍走 applyLlmTargetUi ⇒ 保住「模型名语义」那句话（不被通用文案顶掉）；
-    //   候选数由它的 tail 体现（共 N 个候选模型）。setValue=false：别顶掉用户已经输入的值。
-    applyLlmTargetUi(llmState.cfg, false);
-    toast(models.length ? `已拉取 ${models.length} 个模型` : '端点没有可用模型');
-  } else {
-    const e = (d && d.error) || {};
-    setLlmHint($('llmModelHint'), '拉取模型失败：' + `[${e.kind || 'unknown'}] ${e.message || ''}`, true);
-    toast('拉取模型失败', true);
-  }
-}
-
-async function saveLlmConfig() {
-  if (llmState.busy) return;
-  llmState.busy = true;
-  setLlmHint($('llmSaveHint'), '保存中…', false);
-  const r = await llmReq('/api/llm/config', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(llmFormPayload(true)),
-  });
-  llmState.busy = false;
-  if (!r.ok) {
-    setLlmHint($('llmSaveHint'), '保存失败：' + llmErrText(r.error)
-      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
-    toast('保存失败', true);
-    return;
-  }
-  llmState.cfg = r.data;
-  renderLlmForm(r.data);
-  setLlmHint($('llmSaveHint'), `已保存 → ${(r.data && r.data.overrideFile) || 'D:\\lemo-films\\_llm-api.json'}`, false);
-  toast('LLM 配置已保存');
-}
-
-async function clearLlmKey() {
-  if (llmState.busy) return;
-  const r = await llmReq('/api/llm/config', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profile: $('llmProfile').value || undefined, clearKey: true }),
-  });
-  if (!r.ok) { toast('清除密钥失败：' + llmErrText(r.error), true); return; }
-  llmState.cfg = r.data;
-  renderLlmForm(r.data);
-  toast('已清除已保存的密钥');
+  // ★ 只读诊断：口令（运行时自动发现）是否已就绪 —— 界面**没有** key 输入框，这里只报状态。
+  const km = cfg.keyMask ? `（${cfg.keyMask}）` : '';
+  setLlmHint($('llmSaveHint'),
+    cfg.hasKey ? `运行时口令：已就绪${km}` : '运行时口令：未注入（测试连接会提示未配置）', !cfg.hasKey);
 }
 
 // ── 三步校验：逐步点亮 ───────────────────────────────────────
@@ -4844,10 +4590,9 @@ async function revealLlmSteps(data) {
   }
   const allOk = !!(data && data.ok === true);
   const hint = (data && data.hint) || '';
-  // ★ 顺手用后端 validate() 的 masked.keyMask 刷新「已配 key」提示（key 输入框为空时才刷，
-  //   免得把用户刚输入、还没保存的新 key 的掩码显示成「已保存的」）。
+  // ★ 顺手用后端 validate() 的 masked.keyMask 刷新只读诊断里的「口令已就绪」提示。
   const km = data && data.masked && data.masked.keyMask;
-  if (km && $('llmKey').value === '') $('llmKey').placeholder = `留空 = 不改（已配置 ${km}）`;
+  if (km) setLlmHint($('llmSaveHint'), `运行时口令：已就绪（${km}）`, false);
   const h = $('llmStepHint');
   h.textContent = allOk ? '' : (hint || '校验未通过，请按上面的提示调整。');
   h.style.color = allOk ? '' : 'var(--warn)';
@@ -4862,9 +4607,10 @@ async function validateLlm() {
   $('llmStepHint').textContent = '';
   for (const k of LLM_STEP_ORDER) setLlmStepState(k, 'running', '检测中…');
 
+  // ★ 极简版：不再有表单 ⇒ 后端用**默认 profile（workbuddy）**跑只读校验（GET /api/v1/health）。
   const r = await llmReq('/api/llm/validate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(llmFormPayload(true)),
+    body: JSON.stringify({}),
   });
   llmState.busy = false;
   $('btnLlmValidate').disabled = false;
@@ -4882,105 +4628,6 @@ async function validateLlm() {
   await revealLlmSteps(r.data);
 }
 
-// ── 试跑（按「算力类型」）─────────────────────────────────────
-/** 按当前算力类型把「试跑」输入框的内容拼成模块 invoke() 的 params（契约 §13.2）。 */
-function buildLlmTaskParams(task, raw) {
-  switch (task) {
-    case 'image': return { prompt: raw || '一只在星空下的猫（示例）' };
-    case 'audio': return { input: raw || '你好，这是一次语音合成试跑。' };
-    case 'embedding': return { input: raw || '你好世界' };
-    case 'custom': {
-      if (!raw) return { body: {} };
-      try { return { body: JSON.parse(raw) }; } catch { return { body: raw }; }   // 非 JSON ⇒ 原样字符串
-    }
-    case 'chat':
-    default: return { messages: [{ role: 'user', content: raw || '你好，请用一句话回复「pong」。' }] };
-  }
-}
-
-/**
- * ★ 试跑：按当前「算力类型」POST /api/llm/invoke（转发模块 invoke()）。
- * ★ 后端 llmReq() + 模块 invoke()（**永不抛**）⇒ 这里只渲染结果/错误，**绝不抛、绝不白屏**。
- */
-async function tryLlmInvoke() {
-  if (llmState.busy) return;
-  llmState.busy = true;
-  $('btnLlmTry').disabled = true;
-  const out = $('llmTryOut');
-  out.textContent = '请求中…（受配置的超时限制）';
-
-  const task = llmCurrentTask();
-  const params = buildLlmTaskParams(task, $('llmTryText').value.trim());
-  const r = await llmReq('/api/llm/invoke', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...llmFormPayload(true), task, params }),
-  });
-  llmState.busy = false;
-  $('btnLlmTry').disabled = false;
-  renderLlmTryOut(r);
-}
-
-/** 结果 → 一段可读文本（按 task 的 result 形状，契约 §13.2）。 */
-function llmResultText(d) {
-  const t = d.task || llmCurrentTask();
-  const res = d.result || {};
-  switch (t) {
-    case 'image': {
-      const imgs = Array.isArray(res.images) ? res.images : [];
-      if (!imgs.length) return '(没有图像)';
-      const head = imgs.slice(0, 3).map((s, i) => `  ${i + 1}. ${String(s).slice(0, 120)}${String(s).length > 120 ? '…' : ''}`);
-      return `图像 ${imgs.length} 张：\n${head.join('\n')}${imgs.length > 3 ? `\n  …（共 ${imgs.length} 张）` : ''}`;
-    }
-    case 'audio': {
-      const b64 = res.audio || '';
-      return `音频已返回（base64 ${b64.length} 字符${res.mime ? '，' + res.mime : ''}）`;
-    }
-    case 'embedding': {
-      const vs = Array.isArray(res.vectors) ? res.vectors : [];
-      if (!vs.length) return '(没有向量)';
-      const dim = Array.isArray(vs[0]) ? vs[0].length : 0;
-      const head = Array.isArray(vs[0]) ? vs[0].slice(0, 8).map((x) => (typeof x === 'number' ? x.toFixed(4) : x)).join(', ') : String(vs[0]);
-      return `向量 ${vs.length} 条，维度 ${dim}：\n  [${head}${dim > 8 ? ', …' : ''}]`;
-    }
-    case 'custom': return typeof res.value === 'string' ? res.value : llmSafeStr(res.value);
-    case 'chat':
-    default: return (typeof res.text === 'string') ? res.text : '(空回复)';
-  }
-}
-
-function renderLlmTryOut(r) {
-  const box = $('llmTryOut');
-  box.textContent = '';
-  if (!r.ok) {
-    const d = el('div', 'llm-out-err', '请求失败：' + llmErrText(r.error));
-    if (r.error && r.error.hint) d.appendChild(el('span', 'llm-out-hint', r.error.hint));
-    box.appendChild(d);
-    return;
-  }
-  const d = r.data || {};
-  if (d.ok === true) {
-    box.appendChild(el('div', 'llm-out-text', llmResultText(d) || '(空结果)'));
-    // ★ audio：附一个可试听的播放器（base64 data URL；空串则不建）
-    if (d.task === 'audio' && d.result && d.result.audio) {
-      const a = document.createElement('audio');
-      a.controls = true;
-      a.src = `data:${(d.result.mime || 'audio/mpeg')};base64,${d.result.audio}`;
-      box.appendChild(a);
-    }
-    const meta = [];
-    if (d.task) meta.push('task=' + d.task);
-    if (d.meta && d.meta.model) meta.push('model=' + d.meta.model);
-    if (d.meta && d.meta.httpStatus) meta.push('HTTP ' + d.meta.httpStatus);
-    if (d.meta && d.meta.ms !== undefined) meta.push(d.meta.ms + 'ms');
-    if (meta.length) box.appendChild(el('div', 'llm-out-meta', meta.join('  ')));
-  } else {
-    const e = (d && d.error) || {};
-    const err = el('div', 'llm-out-err', '调用失败：' + `[${e.kind || 'unknown'}] ${e.message || ''}`);
-    if (e.detail) err.appendChild(el('span', 'llm-out-hint', String(e.detail).slice(0, 300)));
-    box.appendChild(err);
-  }
-}
-
 /** ★ 界面入口：顶栏「LLM 配置」→ 滚到面板卡片并高亮一下（纯前端定位，不发请求）。 */
 function gotoLlmCard() {
   const card = $('llmCard');
@@ -4990,53 +4637,6 @@ function gotoLlmCard() {
   }
   card.classList.add('flash');
   setTimeout(() => card.classList.remove('flash'), 1600);
-}
-
-/**
- * ★ 接入对象（target）联动：切换「服务名称标记」的标签 / 语义 / 提示。
- *   · `model`（底层基础大模型 API）：服务名称标记 = 模块**主动下发**的 model 参数（请求必带）。
- *   · `agent`（智能体 API）：服务名称标记**仅作本地备注**，不用于指定智能体的底层模型；
- *     请求时**一律不下发** model 参数（三种适配器皆然，底层模型由智能体自行决定）。
- *   ★ 智能体模式下**不把运行时解析出的底层模型名填进输入框**（那会给人「锁定了 WorkBuddy 的模型」的错觉）——
- *     只回显**用户自己保存过的备注**（覆盖文件里的 model）。
- * @param {object} cfg 面板配置视图（含 target / model / override）
- * @param {boolean} [setValue] 是否顺带改写模型输入框的值（拉取模型后只更新提示时传 false，免得顶掉用户输入）
- */
-function applyLlmTargetUi(cfg, setValue = true) {
-  const c = cfg || {};
-  const sel = $('llmTarget');
-  const isAgent = (sel ? sel.value : (c.target || 'model')) === 'agent';
-  const lb = $('llmModelLabel');
-  // ★ 术语对齐规格 v3：面板上的「模型名」改为「**服务名称标记**」（智能体模式下仍**仅作本地备注**）。
-  if (lb) lb.textContent = isAgent ? '服务名称标记（本地备注）' : '服务名称标记 model';
-  const mi = $('llmModel');
-  if (mi && setValue) {
-    const note = (c.override && c.override.model) ? String(c.override.model) : '';
-    mi.value = isAgent ? note : (c.model || '');
-    mi.placeholder = isAgent ? '本地备注，可留空（不会用来指定智能体的底层模型）'
-      : '如 my-model-name（也可点「拉取服务清单」从端点选）';
-  }
-
-  // ★★ W2（规格 v3）：智能体模式下**不拉取端点模型清单**（那属「探查智能体内部模型」）——
-  //   隐藏「拉取服务清单」按钮。★ 后端 /api/llm/models 另有硬守卫（target=agent ⇒ 拒绝并说明）。
-  const pullBtn = $('btnLlmModels');
-  if (pullBtn) {
-    pullBtn.hidden = isAgent;
-    pullBtn.title = isAgent
-      ? '智能体模式下不拉取端点模型清单（规格 v3：软件不探查智能体内部模型信息）'
-      : '从当前 Endpoint 拉取可用服务清单（GET {baseUrl}/models），供下拉切换';
-  }
-
-  // ★★ W1（规格 v3 §十五）：智能体模式**一律不下发 model**（三种适配器皆然）——
-  //   若该端点其实「要求 model」（那更像**底层基础大模型 API**，不是智能体 API），准入会失败；
-  //   面板把这条出路**提前说清楚**（模块失败时还会给同一口径的可操作 hint，见 server.mjs / validate）。
-  const n = Array.isArray(llmState.models) ? llmState.models.length : 0;
-  const tail = n ? ` 共 ${n} 个候选服务（点「拉取服务清单」刷新）。` : (isAgent ? '' : ' 点「拉取服务清单」可从端点拉候选清单。');
-  setLlmHint($('llmModelHint'), isAgent
-    ? '智能体模式：服务名称标记仅作本地备注，不用于指定智能体的底层模型；请求时一律不下发 model（三种适配器皆然）。'
-      + '若该端点其实要求 model（那更像「底层基础大模型 API」而非智能体 API），准入会失败并给出提示 —— '
-      + '可改用该智能体的服务入口，或把「接入对象」改成「底层基础大模型 API」。' + tail
-    : `模型模式：发起请求时由模块携带 model 参数（即上面填的值）。${tail}`, false);
 }
 
 // ── ★ 独立视图：规格「模块拥有独立软件界面」—— 本模块可**独立打开**、只显示自己 ──
@@ -5059,7 +4659,7 @@ function applyLlmStandalone(on) {
   if (btn) {
     btn.textContent = on ? '返回控制台' : '独立视图';
     btn.title = on ? '退出独立视图，回到完整控制台'
-      : '在独立视图里打开本模块（只显示「LLM API 配置」，其余分区隐藏）';
+      : '在独立视图里打开本模块（只显示「AI 算力配置」，其余分区隐藏）';
   }
   const card = $('llmCard');
   if (on && card && card.scrollIntoView) {
@@ -5111,35 +4711,12 @@ function bind() {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) createBriefFromForm();
   });
   $('btnRefreshFilms').addEventListener('click', () => { loadFilms(); });
-  // LLM API 配置：刷新 / 保存 / 一键校验 / 试一句 / 清除密钥 / 切 profile / kind 联动
+  // AI 算力配置：刷新 / 测试连接 / 独立视图
   if ($('btnGotoLlm')) $('btnGotoLlm').addEventListener('click', gotoLlmCard);
   if ($('btnLlmRefresh')) $('btnLlmRefresh').addEventListener('click', loadLlm);
-  if ($('btnLlmModels')) $('btnLlmModels').addEventListener('click', (e) => { e.preventDefault(); fetchLlmModels(); });
-  if ($('llmModelSelect')) $('llmModelSelect').addEventListener('change', (e) => {
-    if (e.target.value) $('llmModel').value = e.target.value;   // 选中下拉项 ⇒ 填入模型名
-  });
-  if ($('btnLlmSave')) $('btnLlmSave').addEventListener('click', saveLlmConfig);
   if ($('btnLlmValidate')) $('btnLlmValidate').addEventListener('click', validateLlm);
-  if ($('btnLlmClearKey')) $('btnLlmClearKey').addEventListener('click', clearLlmKey);
-  if ($('btnLlmTry')) $('btnLlmTry').addEventListener('click', tryLlmInvoke);
-  if ($('llmProfile')) $('llmProfile').addEventListener('change', (e) => {
-    // 切 profile ⇒ 拉该 profile 的生效配置（默认值），避免「上一个 profile 的值挂在它名下」
-    llmState.current = e.target.value;
-    // ★ 手动切下拉也是一次「新请求」：推进共享序号 ⇒ 在途的初次加载 / 上一次刷新整段作废，
-    //   否则它的旧响应回来会把用户刚切的这个 profile 配置盖掉（旧响应覆盖新状态）。
-    loadLlmConfig(e.target.value, ++loadLlmSeq);
-  });
-  // ★ 适配器 kind 变 ⇒ custom 行显隐 + 重核「服务名称标记」的语义/提示（不覆盖用户已填的值）
-  if ($('llmKind')) $('llmKind').addEventListener('change', () => { syncLlmCustomRows(); applyLlmTargetUi(llmState.cfg, false); });
-  // ★ 接入对象 target：切换「服务名称标记」语义（本地备注 ⇄ 下发 model）+ 独立视图开关
-  if ($('llmTarget')) $('llmTarget').addEventListener('change', () => applyLlmTargetUi(llmState.cfg));
-  // ★ 算力类型 task：切换参数区（占位提示 / 说明 / custom 行）
-  if ($('llmTask')) $('llmTask').addEventListener('change', syncLlmTaskUi);
   if ($('btnLlmStandalone')) $('btnLlmStandalone').addEventListener('click', toggleLlmStandalone);
   window.addEventListener('popstate', applyLlmStandaloneFromUrl);
-  if ($('llmTryText')) $('llmTryText').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); tryLlmInvoke(); }
-  });
   // 声音（配音音色）：刷新清单 / 语速输入（改了要立刻反映到命令预览上）
   if ($('btnRefreshVoices')) $('btnRefreshVoices').addEventListener('click', () => loadVoices(false));
   if ($('btnVoiceTest')) $('btnVoiceTest').addEventListener('click', startVoiceTest);

@@ -125,9 +125,9 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/llm/config` | 当前生效配置（key 脱敏，只回 hasKey） | 同步 |
 | POST | `/api/llm/config` | 保存用户覆盖，落盘 `<成片根>/_llm-api.json` | 同步 |
 | POST | `/api/llm/validate` | 跑 validate()（可传临时配置，不必先保存） | 同步 |
-| POST | `/api/llm/chat` | 跑一次 chat()（**兼容保留**：面板「试跑」已改走 `/api/llm/invoke`） | 同步 |
+| POST | `/api/llm/chat` | 跑一次 chat()（**兼容保留**：该端点保留供后端/脚本调用。★ 2026-10-10 面板极简化前，面板「试跑」曾改走 `/api/llm/invoke`；极简化后面板已无「试跑」控件） | 同步 |
 | POST | `/api/llm/invoke` | 通用 AI 算力调用（chat / image / audio / embedding / custom，转发到模块 invoke()） | 同步 |
-| POST | `/api/llm/models` | 拉取当前 Endpoint 的可用模型清单（面板「多模型切换」用） | 同步 |
+| POST | `/api/llm/models` | 拉取当前 Endpoint 的可用模型清单（★ 2026-10-10 面板极简化后已无「多模型切换」控件；端点保留供后端/脚本调用） | 同步 |
 | GET | `/api/resources/scan` | 资源全量/子集扫描（返回 `lib/resources.mjs` 的 `scanAll()`；30s 缓存 + 并发合并） | 同步 |
 | GET | `/api/resources/dirplan` | 目录规划（纯函数、不碰 IO，直接透传） | 同步 |
 | POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
@@ -137,6 +137,14 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 其余 **52** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
 `DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
 ★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
+
+★ **2026-10-10：Web 控制台「AI 算力配置」面板已极简化。** 面板只保留「当前默认：WorkBuddy」+
+「端点与口令自动取自运行时（`SERVER__HOST` / `SERVER__PORT` / `CODEBUDDY_GATEWAY_PASSWORD`），无需手工填写」
+的说明 + 「测试连接」按钮（按 可达 → 鉴权 → 返回体 三步逐步显示）。
+原先的 profile 下拉 / 适配器 kind / Endpoint / API Key / 接入对象 / 模型（+清单）/ custom 的 path+extract /
+Headers / 超时 / 试跑任务 / 拉取服务清单 / 保存·清除密钥等控件**已从界面移除**（不是从来没有过）。
+后端 `/api/llm/*` 与 `lib/llm-api.mjs` **一字未动**，能力保留在后端、暂不暴露，后期需要用再添加 ——
+故上表列出的 `/api/llm/*` 端点**均仍在**，只是不再有对应的界面控件，仅供后端/脚本调用。
 
 ## 为什么需要这一层
 
@@ -540,7 +548,8 @@ test/consistency.test.mjs  一致性校验门的纯逻辑测试
 consistency-check.mjs  跨 Windows/WSL 的「字幕 ↔ 语义 ↔ 画面」一致性闸门
 originality-audit.mjs  原创性审计
 server.mjs             Web 控制台服务
-lib/                   控制台的服务端模块（env / setup / jobs / store / styles / briefs / langs / sizes / aspects / consistency / originality）
+lib/                   控制台的服务端模块（env / setup / jobs / store / styles / briefs / langs / sizes / aspects / consistency / originality 等）
+lib/llm-api.mjs        开放式 LLM 配置与调用模块：默认 profile 为 workbuddy（kind:'workbuddy-gateway'，端点/口令**运行时自动发现**）；★ 2026-10-10 面板已极简化为只接 WorkBuddy，其余 provider 已删，能力保留在后端
 lib/style-dna/         各风格的创作逻辑与作者契约
 web/                   控制台前端（index.html / app.js / style.css）
 ```

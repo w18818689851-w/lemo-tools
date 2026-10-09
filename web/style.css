@@ -1652,9 +1652,6 @@ html[data-theme="light"] {
   font-family: var(--mono); font-size: 12px;
   background: var(--bg-3); border-radius: 4px; padding: 1px 5px;
 }
-.llm-key-state { font-size: 11px; font-weight: 600; }
-.llm-key-state.ok { color: var(--ok); }
-.llm-key-state.missing { color: var(--warn); }
 /* 「当前默认走 WorkBuddy」状态胶囊（规格：当前优先配置 WorkBuddy ⇒ 界面要一眼可见）。 */
 .llm-current-pill {
   font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
@@ -1663,16 +1660,6 @@ html[data-theme="light"] {
 }
 .llm-current-pill.is-default { color: var(--ok); border-color: var(--ok); }
 .llm-current-pill.is-switched { color: var(--warn); border-color: var(--warn); }
-/* 多模型切换：模型名输入框 + 「拉取模型」按钮同一行；候选下拉在下一行。 */
-.llm-model-row { display: flex; gap: 8px; align-items: center; }
-.llm-model-row .input { flex: 1 1 auto; min-width: 0; }
-.llm-model-row .btn { flex: 0 0 auto; }
-.llm-model-select { margin-top: 6px; }
-.llm-headers-field { margin-top: 10px; }
-.llm-headers {
-  font-family: var(--mono); font-size: 12px; line-height: 1.5;
-  resize: vertical; min-height: 62px;
-}
 .llm-actions {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   margin-top: 12px;
@@ -1703,56 +1690,6 @@ html[data-theme="light"] {
 }
 .llm-step-hint:empty { display: none; }
 @keyframes llm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-/* 试跑（原「试一句」）：按「算力类型」选任务，参数区随类型变 */
-.llm-try {
-  margin-top: 12px; padding: 10px;
-  border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
-}
-.llm-try .llm-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.llm-try .llm-row .input { flex: 1 1 320px; min-width: 0; }
-/* ★ 算力类型选择器：窄列、不参与拉伸（其余输入框仍按 flex 撑开） */
-.llm-try .llm-task-pick { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.llm-try .llm-task-pick .lbl { white-space: nowrap; }
-.llm-try .llm-row .llm-task { flex: 0 0 auto; width: auto; min-width: 168px; }
-.llm-task-hint { font-size: 11.5px; color: var(--fg-faint); margin-top: 6px; line-height: 1.6; }
-.llm-try-out { margin-top: 8px; }
-.llm-try-out:empty { display: none; }
-.llm-try-out .llm-out-text {
-  font-size: 12.5px; color: var(--fg); line-height: 1.65;
-  white-space: pre-wrap; word-break: break-word;
-  background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px;
-  padding: 8px 10px; max-height: 220px; overflow: auto;
-}
-.llm-try-out .llm-out-meta { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; font-family: var(--mono); }
-.llm-try-out .llm-out-err { font-size: 12.5px; color: var(--err); line-height: 1.6; word-break: break-word; }
-.llm-try-out .llm-out-err .llm-out-hint { color: var(--warn); display: block; margin-top: 3px; }
-.llm-try-out audio { margin-top: 8px; width: 100%; max-width: 420px; display: block; }
-
-/* ── ★ 接入对象（target）：模型名语义随它变（见 app.js 的 applyLlmTargetUi） ── */
-.llm-target { margin-bottom: 6px; }
-
-/* ── ★ 2026-10-09 修两处观感缺陷（截图为证：D:/lemo-tmp/ui-proof/fix/）────────────
-   缺陷 ①「下拉文案被省略号截断」：`.llm-grid` 是 repeat(auto-fit, minmax(190px,1fr))，
-     面板宽 1542px 时每列仅 ~249px —— 而 #llmProfile 的选项文案（含「（默认）· 已配 Key」后缀）
-     实宽 ~258px、#llmTarget 的「智能体 API（模型名仅作本地备注）」实宽 ~223px，都贴到/超出列宽被省略号吃掉。
-   缺陷 ②「模型名提示折行拥挤」：#llmModelHint 有 96 字，挤在 249px 窄列里折成 5 行，
-     且 .hint 的 word-break:break-all 会把 model / Anthropic 从词中间折断，阅读吃力。
-   改法（纯布局，不改任何文案与逻辑）：
-     · Profile 字段占两列（1600px 下实测 433px）⇒ 下拉文案放得下；
-     · 接入对象字段独占一整行（列宽留够）⇒ 下拉文案放得下，96 字提示从 5 行降到 2 行；
-     · grid-auto-flow:dense 让「请求超时 / API Key」回填第一行空位，避免出现半空的稀疏行。 */
-.llm-grid { grid-auto-flow: row dense; }
-.llm-grid .llm-profile-field { grid-column: span 2; }
-.llm-grid .llm-target-field { grid-column: 1 / -1; }
-/* 独占整行只为「给下拉与提示留出宽度」；控件本身不必跟着拉到 1500px ⇒ 限一个舒适宽度。 */
-.llm-target-field > * { max-width: 760px; }
-/* 提示按「词」折行（同 .dub-params / #briefSizeField 的既有做法），不再从词中间折断。 */
-.llm-grid .hint { word-break: normal; overflow-wrap: anywhere; }
-/* 窄屏（面板列数 < 2）时 span 2 会撑出隐式列 ⇒ 退化为整行。 */
-@media (max-width: 560px) {
-  .llm-grid .llm-profile-field { grid-column: 1 / -1; }
-}
 
 /* ── ★ LLM 配置「独立视图」：规格「模块拥有独立软件界面」—— 本模块可独立打开、只显示自己 ──
    URL 带 ?view=llm（或 #llm）时 body 加 .view-llm ⇒ 隐藏侧栏与其余卡片，只留 #llmCard。

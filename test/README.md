@@ -789,7 +789,10 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（69 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条）
+## `test/ui.test.mjs` 覆盖了什么（75 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条）
+<!-- ★ 2026-10-10 订正：本标题原写「69 条」，与入口行不一致（**旧漂移**）。上列批次之和确为 69，
+     另 6 条来自其后未逐批列出的批次 ⇒ 总数改为 **75**（★ 以本文件「测试入口」表那一行为准）。
+     ★ 另：2026-10-10「AI 算力配置」面板极简化时，I 组 6 条被**同数重写**（6 换 6）⇒ 总数不变。 -->
 
 补的就是上面「没覆盖什么」里那条 —— **前端渲染出来对不对**。三种手段从弱到强：
 
@@ -927,23 +930,24 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 > ★ 按钮文案是 `改用 <该风格 supported[0]>`，**动态取**（现在恰好都是 16:9，但不依赖这个巧合）；若该比例不在 `#briefRatio` 的 options 里，**只提示不硬设**（不把 select 设成空值）。**不禁用出片**、**不改默认比例** —— 保持项目原则「用户有权坚持出，只是要知情」。
 > ★ **文案出片（`#dubCard`）故意没有画幅警告**，这不是漏了：它的背景由 `lib/dub-core.mjs` 的 `bgSource(spec,{W,H,dur})` **按请求尺寸程序化生成**（`gradients=s=${W}x${H}`），**无绝对像素常量、与风格样板片模块无关**，所以 `FILM_META.aspects` 那套能力**不适用**。已在 `web/app.js` 的对应代码段写明理由，防后人误修。
 
-**I. LLM API 配置面板（6 条，第十二批）**
+**I. AI 算力配置面板（极简版，6 条，第十二批）**
 
-这一批补的是**此前在 UI 层零覆盖**的 `LLM API 配置`面板（`#llmCard`，接口 `/api/llm/*`）—— 之前只有不进仓的探针（`D:/lemo-tmp/llm-integration/`）。
+这一批补的是**此前在 UI 层零覆盖**的 `AI 算力配置`面板（`#llmCard`，接口 `/api/llm/*`）。★ 2026-10-10 重写：委托方要求把面板**大幅简化** —— 只留 WorkBuddy 一条链接，**界面零输入控件**（profile / kind / Endpoint / Key / model / 超时 / 自定义头 / 试跑…全删）；后端 `/api/llm/*`（`server.mjs`）与 `lib/llm-api.mjs` **一字未动**。⇒ 本组断言随之改为**守「极简」这件事本身**（不再测已被删除的旧控件）。
 
 | 用例 | 动作 → 断言 |
 |---|---|
 | I1 | 顶栏 `#btnGotoLlm`「LLM 配置」**存在且点得动**：点它 → `#llmCard` 加 `.flash` 高亮、且卡片真的滚进视口（top 由视口外 → 视口内） |
-| I2 | 默认态胶囊 `#llmCurrentPill` = 「当前默认：WorkBuddy」（`.is-default`）；切到别的 profile → 「已切换：…」（`.is-switched`），再切回默认 |
-| I3 | 面板指向**本地 mock 上游** → 点「拉取模型」→ `#llmModelSelect` 出现 N 个候选 → 选中一项 **回填进 `#llmModel`**（手填兜底仍在：输入框非 disabled/readonly + `#llmModelList` 在） |
-| I4 | **坏后端不白屏**：页面内 patch `window.fetch` **只拦 `/api/llm/*`**，造 4 类坏响应（网络失败 / 500+HTML / 空 body / `{ok:false}` 结构异常）⇒ 逐个点「校验 / 试一句 / 拉取模型」⇒ 面板**仍在且有内容**、三类动作**各有可读反馈**、**未捕获异常 0** |
-| I5 | 落盘隔离：保存把候选清单写进**临时树**的 `_llm-api.json`（`LEMO_FILM_DIR` 隔离）→ 刷新页面后下拉**仍在**；★ 真实 `D:/lemo-films/_llm-api.json` 前后快照**逐字节不变** |
-| I6 | **`workbuddy-gateway` kind 认得**（补「默认 profile 已改走本机网关适配器」这一连带缺口）：默认态 `#llmKind` 的值就是 `workbuddy-gateway`（下拉里有这个 `<option>`，不是回落成「（用 profile 默认）」）+ `#llmKindHint` 解释它是「本机智能体网关」且**不含 markdown 星号**；试跑把端点指向**本地网关桩**（两段式 `POST /api/v1/runs` → `202 {data:{runId}}` → `GET …/stream` SSE）⇒ 面板取回文本「网关桩回复：你好」 |
+| I2 | 默认态胶囊 `#llmCurrentPill` 文案含「当前默认」+「WorkBuddy」、且带 `.is-default`（新面板已无 profile 下拉 ⇒ 不再有「切换」分支） |
+| I3 | ★★ **极简本身**（本批核心约束）：`#llmCard` 内 `<input>` / `<select>` / `<textarea>` 数量**全部 === 0**（将来谁把控件加回来，这条必红） |
+| I4 | `#llmIntro` 明说端点与口令**自动取自运行时**、**无需手工填写**，且用户可见文案**不含 markdown 星号** |
+| I5 | 骨架不白屏：`#llmCard` 有高度、页面文本 > 100 字、`#llmSteps`（三步容器）在且恰好含 3 个 `.llm-step` |
+| I6 | **测试连接**：页面内 patch `window.fetch` **只拦 `/api/llm/validate`**（其余照走真后端），桩一个「可达 ✓ / 鉴权 ✗ / 返回体 未执行」⇒ 点 `#btnLlmValidate` 后 `#llmSteps` 显示、三步**逐步**点亮（`ok`/`fail`/`skip` 各有反应）、未全过时 `#llmStepHint` 给一句中文提示、**未捕获异常新增 0** |
 
-> ★★ **绝不碰真实落盘**：I 组另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向 `D:\WSL\b4-ui-llm-*` 临时树）⇒ 覆盖文件写进临时树；用例里对真实 `D:/lemo-films/_llm-api.json` 取前后快照**逐字节比对**当红线（跑完随 `cleanupTmpDirs()` 删临时树）。
-> ★ **绝不打真实外网**：I3/I5 的上游是一个**本地 `node:http` mock**（只服务 `GET /v1/models`，回 3 个写死模型名）；I4 的四类坏响应全部在**页面内**造，请求根本到不了真后端。★★ **I6 绝不指向真实网关**：`workbuddy-gateway` 的试跑指向一个**本地网关桩**（`127.0.0.1:0`，两段式 `POST /api/v1/runs` → `202` + `GET …/stream` SSE）—— 真实网关的 `POST /api/v1/runs` 会**真正发起一次 Agent 执行**、且落到委托方当前会话 ⇒ **严禁**打它（桩的协议同 `test/llm-api.test.mjs` 的 `startGatewayStub`）。
-> ★ **「未捕获异常 0」怎么测**：双通道 —— ① CDP `Runtime.exceptionThrown`（`launchCdp` 里新记的 `events`，`exceptions()` 取差值）；② 页面内 `window.addEventListener('error'|'unhandledrejection')` 计数器。I4 断言**两路都为 0**（且页面打开时的基线就是 0）。
-> ★ **I2 的一处坑**（实测踩到）：别在「切 profile」之前点「刷新」—— `loadLlm()` 是异步的，晚回来的响应会把 pill 回填成默认态（假红）。现改为**等 `#llmProfileBadge` 非空**（它只在 `renderLlmForm` 里填 ⇒ 初始加载已结束）再切。
+> ★ **不再测已被删除的旧控件**（`llmProfile` / `llmKind` / `llmBaseUrl` / `llmKey` / `llmModel*` / `llmTimeout` / `llmCustomRows` / `llmTryOut` / `btnLlmModels` / `btnLlmSave` / `btnLlmClearKey` … 上一版面板的用例随之作废）。
+> ★ **落盘隔离仍保留**：I 组另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向 `D:\WSL\b4-ui-llm-*` 临时树）；★ 新面板**已无写盘动作**（没有保存 / 试跑按钮）⇒ 隔离属**纵深防御**，跑完随 `cleanupTmpDirs()` 删临时树。
+> ★ **绝不打真实网关**：I6 的 `POST /api/llm/validate` 在**页面内**换成桩，请求根本到不了真后端；★ 桩的响应形状与后端 `validate()` 逐字同构（`{ok:false,profile,steps:{reachable,auth,shape},errors,warnings,hint,masked}`）。
+> ★ **「未捕获异常 0」怎么测**：双通道 —— ① CDP `Runtime.exceptionThrown`（`exceptions()` 取**差值**）；② 页面内 `window.addEventListener('error'|'unhandledrejection')` 计数器。I6 断言**两路都为 0**（只看新增，不假设基线为 0）。
+> ★ **I2 的一处坑**（实测踩到）：新面板就绪条件不能只看 `#llmCurrentPill` —— 它的「当前默认：WorkBuddy」在 `index.html` 里就是**静态 HTML**；必须再等 `#llmSaveHint` 非空（它由 `loadLlm()` 的 `GET /api/llm/config` 回来后才填）才算初始加载结束。
 > ★ **变异验证**：把按钮的点击处理改空操作 ⇒ H2 变红（`#briefRatio=9:16，期望 16:9`）；去掉「先清空容器」⇒ H2/H3/H5 变红（按钮堆到 10 个）。还原后 4 个文件 md5 回基线。
 
 ---
@@ -956,7 +960,7 @@ test/cases.mjs      冒烟测试用例 + 共享常量（ORCH_MD5 / 期望风格�
                     + 测试产物登记与清理（ARTIFACTS / cleanupArtifacts）+ WSL 辅助（wsl / freshDeadPid）
 test/setup.test.mjs 首次运行安装的纯逻辑测试（独立入口，不起服务、不碰 WSL）
 test/setup-api.test.mjs 「首次运行向导」两个接口 `GET /api/setup/actions` / `POST /api/setup/run` 的 HTTP 契约测试（独立入口，零依赖，**绝不真安装**）：`?simulate=<场景>` 的 count/autoCount/manualCount 自算一致 + 每个动作走 `serializeAction`（auto 有 steps+manual:null、manual 反之）+ 未知场景 400 + 无 simulate ⇒ `simulated===null` + `POST` 的非法 JSON / actionId 缺·非串·空·非法字符（`../x`/`a b`/`a/b`/`a:b`/中文）⇒ 400 + 未知动作 404 + manual 动作 400 且响应带 `manual` + 已知已就绪 ⇒ 200 `{ok,skipped}`。★ **每条失败路径都断言「没有起任务」**，并断言两个固定入口（`.console-port` / `打开控制台.url`）跑前跑后逐字节一致。★ 场景清单取自 `GET /api/env` 的 `scenarios`（不硬编码）。★ 变异验证：把 `server.mjs` 的 actionId 字符正则加一个 `/` ⇒ 对应用例变红
-test/ui.test.mjs    Web UI 层测试（独立入口）：无头 Edge --dump-dom + CDP 真点击 + 颜色对比度 + 批量/ETA 的服务端语义 + 声音版块（音色渲染/试听请求/选用持久化/出片带 --voice）+ 文案出片面板（形态切换/断句逐字/分析/风格下拉/出片请求体契约/三条前端拦截）+ 播放器弹层/窄屏侧栏/顶栏按钮 + 限幅开关·成片库·声音三处·生成工单·任务取消·预设 + 画幅警告一键修复 + **LLM API 配置面板**（顶栏入口可达 / 默认·切换胶囊 / 多模型切换回填 + **agent 模式禁止拉取模型清单**（按钮不可见 + 强行触发被后端拒）/ **坏后端不白屏**（4 类坏响应 × 校验·试一句·拉取模型 ⇒ 面板仍在 + 未捕获异常 0）/ 落盘隔离 + 保存刷新后候选仍在，★ 专用服务把 LEMO_FILM_DIR 隔离到临时树、真实 _llm-api.json 逐字节不变）
+test/ui.test.mjs    Web UI 层测试（独立入口）：无头 Edge --dump-dom + CDP 真点击 + 颜色对比度 + 批量/ETA 的服务端语义 + 声音版块（音色渲染/试听请求/选用持久化/出片带 --voice）+ 文案出片面板（形态切换/断句逐字/分析/风格下拉/出片请求体契约/三条前端拦截）+ 播放器弹层/窄屏侧栏/顶栏按钮 + 限幅开关·成片库·声音三处·生成工单·任务取消·预设 + 画幅警告一键修复 + **AI 算力配置面板（极简版）**（顶栏入口可达 / 默认态胶囊含 WorkBuddy / ★ 面板内 input·select·textarea 数量**全为 0** / 运行时说明 / 骨架不白屏 / **测试连接**桩 `POST /api/llm/validate` ⇒ 三步「可达·鉴权·返回体」逐步点亮 + 未捕获异常新增 0，★ 专用服务把 LEMO_FILM_DIR 隔离到临时树作纵深防御）
 test/dub-semantic.test.mjs 语义解析 / 风格匹配的纯逻辑测试（独立入口）：四维打分 + **visual 维度（口播画面气质）的向后兼容与决胜** + 规则路的切段粗粒度 + 外部 `--analysis` 注入与它的硬判据（拼回≠原文即拒）
 test/briefs.test.mjs 「主题工单」的测试（独立入口，**16 条**）：数据层 + 接口 + UI，含全链路出片用例。★ ⑬ 钉住「控制台出片必须写进独立输出目录」这条红线 —— 控制台起任务时**从不传 `--out`**（`server.mjs` 只拼 `--skip-sync <runOpts>`），而编排器 `lemo-make.mjs` 的 `outDir = o.out || <exportDir>\<slug>` ⇒ 成片直写**样板片路径**、把样板片覆盖掉（实测 art-deco 的样板片被覆盖成 9:16）。现在 `lib/jobs.mjs` 在**最靠近 spawn 的那一处**（`buildOrchArgs`）注入 `--out <exportDir>\_jobs\<任务id>`；用例两层断言：① 命令行拼装（`--out` 在、是绝对路径、落在 `_jobs\<任务id>`、**不等于也不落在**样板片目录里、只出现一次、用户自带 `--out` 原样尊重）；② 真走一次控制台「主题出片」入口（`--dry-run`，秒级），断言接口回给 UI 的 `job.outDir` 就是 `_jobs\<任务id>`（证明注入真的接在控制台那条路上）。★ ⑮ 钉住「`--ratio` 的值判据」：`9:16` 含 `:`，而 `lib/briefs.mjs` 的 `OPT_RE` 字符白名单里**没有** `:` ⇒ 改前 `--ratio 9:16` 被 `/api/run` 以「非法字符」拒（上一轮做验证时只能回退等价的 `--size 1080x1920`）。现在**不放宽通用白名单**（shell 元字符 / 空白 / 反斜杠 / 非 ASCII 照旧全拒），只在 `--ratio` 的**值位**换成与编排器同源的语义判据（`lib/sizes.mjs:resolveSize` ⇒ 预设比例或合法 WxH）—— 比字符白名单**更严**（`--ratio 99:99` 被拒）；同时 `/api/eta` 原先自己抄了一份同样缺 `:` 的正则，改成复用 `validateOpts`（同一处判据）。★ ⑯ 钉住「`filmUrl` 指向**本次任务**的产物」：控制台出片写在 `_jobs\<任务id>\<slug>.mp4`，而旧拼法 `/api/films/<slug>/<file>` 指的是**样板片**目录（会打开样板片）；现在按产物**实际在不在** `_jobs\<任务id>\` 下判（复用 `lib/jobs.mjs:jobOutDir`，与 `findFilm` 同源），在则拼 `/api/films/_jobs/:jobId/:file` 并断言**真 GET 得到那份字节**，不在（`--dry-run` / 产物被清理 / 用户自带 `--out`）则退回样板片拼法（向后兼容）。
 test/originality.test.mjs 「从零原创」审计器的纯逻辑测试（独立入口，零依赖）
