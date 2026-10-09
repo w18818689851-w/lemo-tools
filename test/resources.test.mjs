@@ -31,6 +31,14 @@
  *      `ok:true` 但 `mounted:false` 且 `detail` 说明「挂载失败」（★ **不把「挂载失败」混成「导入失败」**，
  *      否则会误触发重新下载）。⑨ 只证「调用了 mount」，⑩ 才证「**mount 真的跑对了**」——
  *      `mount(id, opts)` 把 opts 透传给 `scanOne` ⇒ 注入合成 `envResult` 即可离线判定状态，**不起 WSL**。
+ *   ⑪ ★ **三条下载真路径（离线）**：`_dlHttp` 成功（本机 http ⇒ **先落 `_download/` → 校验 → 移入 `dirFor()`**、
+ *      字节一致）、0 字节坏来源 ⇒ `state:'corrupt'` 且**留在 `_download/` 未移入**、sha256 不符 ⇒ 同左；
+ *      `_dlExec`（**只用 `where:'win'`**）成功 ⇒ `ok:true`、`exit 1` ⇒ `ok:false` 且**不挂载**；
+ *      `importResource` 的**目录分支**（整目录含子目录递归复制）。
+ *      ★ 注册表条目 `Object.freeze` **不能运行时改** ⇒ 用「**整棵拷 `lib/` 到临时树 + 改副本源码 +
+ *      import 副本**」的办法装下载源（先例见 `test/gate-blindness.test.mjs` 的 `fs.cpSync`）。**绝不改真实模块**。
+ *   ★ **未覆盖（如实登记）**：`_dlGit`（`git clone` 需真联网 / 真仓库 ⇒ **无法离线**）与 `_dlExec` 的
+ *      `where:'wsl'` 分支（会**真起 WSL** ⇒ 离线用例一律不碰）。
  *
  * 用法：node test/resources.test.mjs
  * 退出码：全绿 0，有失败 1。
@@ -40,6 +48,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import http from 'node:http';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // ── ★ 先把资源根指到临时目录（**必须在 import 之前**：模块在求值期可能就解析了根）
 const TMP = `D:/lemo-tmp/res-test-${process.pid}-${Date.now().toString(36)}`;   // ★ 非 C 盘
@@ -250,4 +260,154 @@ test('★ 端到端（离线）：资源就绪 ⇒ 导入后**真的挂载**；�
   assert.equal(r2.ok, true, '导入本身成功 ⇒ ok 仍应是 true（★ 不得把「挂载失败」混成「导入失败」）');
   assert.equal(r2.mounted, false, `资源不可用 ⇒ 不应挂载成功，实测 ${JSON.stringify(r2.mount)}`);
   assert.match(String(r2.detail || ''), /挂载失败/, `detail 应说明「已导入但挂载失败」，实测 ${JSON.stringify(r2.detail)}`);
+});
+
+// ── ⑪ ★ 三条下载真路径（`_dlHttp` / `_dlExec` / 目录导入）—— **全部离线** ──────────────
+//   ★ 为什么必须有这一批：`lib/resources.mjs` 的**三条下载真路径**此前**零覆盖** —— `_dlHttp`
+//     （含 **sha256 校验** 与 **0 字节 ⇒ corrupt**）、`_dlGit`、`_dlExec` 在 test/ 下**搜不到函数名**；
+//     现有用例只覆盖 `runDownload` 的「**无 download 规格**」分支。这正是「**有导出 ≠ 有功能**」的盲区：
+//     `_dlHttp` 的「**先落 `_download/` → 校验 → 才移入 `dirFor()`**」是契约 §九.3 的硬承诺，必须钉死。
+//   ★ 注册表条目是 `Object.freeze` 的、**不能运行时改** ⇒ 用「**整棵拷 `lib/` 到临时树 + 改副本源码 +
+//     import 副本**」给某条资源装上 http / script 下载源（`test/gate-blindness.test.mjs` 有 `fs.cpSync`
+//     整棵拷 `lib/` 的先例）。**绝不改真实模块**。
+//   ★ 全部**不真下载外网、不起 WSL、不跑 apt**：http 源 = 本机 `node:http` 临时服务（只回已知字节）；
+//     script 只用 `where:'win'` 的 `exit 0` / `exit 1`（`_dlExec` 的 `where:'wsl'` 会**真起 WSL** ⇒ 不碰）。
+//   ★ 临时树建在 `TMP`（`D:/lemo-tmp/res-test-*`）之下、前缀 `rv-` ⇒ 随既有 `exit` 钩子递归删除。
+
+const LIB_SRC = fileURLToPath(new URL('../lib', import.meta.url));
+
+/** 整棵拷 `lib/` 到临时树 → 在副本 `resources.mjs` 的 `_entries` 末尾插入自定义条目 → 返回副本模块路径。 */
+function copyLibWith(entriesSrc) {
+  const root = path.join(TMP, `rv-tree-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
+  fs.mkdirSync(root, { recursive: true });
+  fs.cpSync(LIB_SRC, path.join(root, 'lib'), { recursive: true });   // ★ 整棵拷（不动真实模块）
+  const mod = path.join(root, 'lib', 'resources.mjs');
+  const src = fs.readFileSync(mod, 'utf8');
+  const anchor = '];\n\nexport const RESOURCES';                    // `_entries` 数组的收尾（唯一）
+  assert.ok(src.includes(anchor), '副本变异锚点应存在（真实模块源码已变？）');
+  fs.writeFileSync(mod, src.replace(anchor, `${entriesSrc}\n];\n\nexport const RESOURCES`), 'utf8');
+  return mod;
+}
+
+/** 造一条 **http** 下载规格的临时资源条目（`sha256` 传 null 表示不校验）。 */
+const httpEntrySrc = (id, url, sha256) => `  {
+    id: ${JSON.stringify(id)}, kind: 'dep', label: 'rv http 夹具', bundled: false, required: false,
+    dir: null, version: {}, detect: { via: 'custom', probe: async () => ({ found: false }) },
+    download: { kind: 'http', url: ${JSON.stringify(url)}, sha256: ${sha256 ? JSON.stringify(sha256) : 'null'}, into: null },
+    import: null, mount: { how: 'path', detail: 'rv 夹具' }, impact: '', fix: '',
+  },`;
+
+/** 造一条 **script** 下载规格的临时资源条目（**只用 `where:'win'`**，绝不碰 WSL）。 */
+const scriptEntrySrc = (id, cmd) => `  {
+    id: ${JSON.stringify(id)}, kind: 'dep', label: 'rv script 夹具', bundled: false, required: false,
+    dir: null, version: {}, detect: { via: 'custom', probe: async () => ({ found: false }) },
+    download: { kind: 'script', where: 'win', asRoot: false, into: null, sha256: null, estBytes: 0, cmd: ${JSON.stringify(cmd)} },
+    import: null, mount: { how: 'path', detail: 'rv 夹具' }, impact: '', fix: '',
+  },`;
+
+/** 本机临时 http 服务：一律 200 + 给定字节。→ { url, close }。 */
+function serveOnce(payload) {
+  return new Promise((resolve, reject) => {
+    const srv = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      res.end(payload);
+    });
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      resolve({ url: `http://127.0.0.1:${port}/pkg.tar`, close: () => new Promise((r) => srv.close(r)) });
+    });
+  });
+}
+
+test('★ runDownload/_dlHttp：本机 http 成功 ⇒ 先落 _download/ → 校验 → 移入 dirFor()，字节一致', async () => {
+  const bytes = Buffer.from(`rv-http-payload-${'x'.repeat(80)}`, 'utf8');
+  const { url, close } = await serveOnce(bytes);
+  const id = 'rv-http-ok';
+  const mod = copyLibWith(httpEntrySrc(id, url, null));
+  try {
+    const { runDownload: rd, dirFor: df, resourceRoot: rr } = await import(pathToFileURL(mod).href);
+    const logs = [];
+    const res = await rd(id, (m) => logs.push(m), { mount: false });   // ★ 不挂载 ⇒ 不起 WSL
+    assert.equal(res.ok, true, `本机 http 下载应成功，实测 ${JSON.stringify(res)}`);
+    assert.equal(res.kind, 'http', '应走 http 分派');
+    assert.equal(res.bytes, bytes.length, `落盘字节数应等于服务端字节数（实测 ${res.bytes} vs ${bytes.length}）`);
+    // ① 先落 _download/：日志里记的 tmp 就在 _download/ 下（★「先落中转目录」的唯一可观测点）
+    assert.ok(logs.some((l) => l.includes('_download')),
+      `日志应显示先落 _download/ 中转目录，实测 ${JSON.stringify(logs)}`);
+    // ② 校验通过后移入 dirFor()
+    const destDir = df('dep', id);
+    assert.equal(path.dirname(res.path), destDir, `移入位置应是 dirFor('dep','${id}')，实测 ${res.path}`);
+    assert.ok(fs.existsSync(res.path), `文件应已移入 dirFor()：${res.path}`);
+    assert.deepEqual(fs.readFileSync(res.path), bytes, '落盘字节应与服务端字节逐字节一致');
+    // ③ _download/ 不残留（= 真的「移入」而不是「另存一份」）
+    const dlDir = path.join(rr(), '_download');
+    const leftover = fs.existsSync(dlDir) ? fs.readdirSync(dlDir).filter((n) => n.includes(id)) : [];
+    assert.deepEqual(leftover, [], `校验通过后 _download/ 不应残留该资源的临时文件，实测 ${JSON.stringify(leftover)}`);
+  } finally { await close(); }
+});
+
+test('★ runDownload/_dlHttp：0 字节坏来源 ⇒ ok:false、state:corrupt、留在 _download/、未移入', async () => {
+  const { url, close } = await serveOnce(Buffer.alloc(0));
+  const id = 'rv-http-empty';
+  const mod = copyLibWith(httpEntrySrc(id, url, null));
+  try {
+    const { runDownload: rd, dirFor: df } = await import(pathToFileURL(mod).href);
+    const res = await rd(id, () => {}, { mount: false });
+    assert.equal(res.ok, false, `0 字节应失败，实测 ${JSON.stringify(res)}`);
+    assert.equal(res.state, 'corrupt', `0 字节 ⇒ state 应为 'corrupt'，实测 ${res.state}`);
+    assert.ok(String(res.tmp || '').includes('_download'), `失败文件应留在 _download/，实测 tmp=${res.tmp}`);
+    assert.ok(fs.existsSync(res.tmp), '0 字节文件应仍留在 _download/（便于排查 / 重下）');
+    assert.equal(fs.existsSync(df('dep', id)), false, '校验不通过**不得**污染规划目录 dirFor()');
+  } finally { await close(); }
+});
+
+test('★ runDownload/_dlHttp：sha256 不符 ⇒ ok:false、state:corrupt、留在 _download/、未移入', async () => {
+  const bytes = Buffer.from('rv-sha-payload', 'utf8');
+  const { url, close } = await serveOnce(bytes);
+  const id = 'rv-http-sha';
+  const wrongSha = 'f'.repeat(64);   // 真实哈希不可能全 f ⇒ 必错
+  const mod = copyLibWith(httpEntrySrc(id, url, wrongSha));
+  try {
+    const { runDownload: rd, dirFor: df } = await import(pathToFileURL(mod).href);
+    const res = await rd(id, () => {}, { mount: false });
+    assert.equal(res.ok, false, `sha256 不符应失败，实测 ${JSON.stringify(res)}`);
+    assert.equal(res.state, 'corrupt', `sha256 不符 ⇒ state 应为 'corrupt'，实测 ${res.state}`);
+    assert.match(String(res.detail || ''), /校验和/, `detail 应说明校验和不符，实测 ${JSON.stringify(res.detail)}`);
+    assert.ok(String(res.tmp || '').includes('_download'), `失败文件应留在 _download/，实测 tmp=${res.tmp}`);
+    assert.equal(fs.existsSync(df('dep', id)), false, '校验不通过**不得**污染规划目录 dirFor()');
+  } finally { await close(); }
+});
+
+test('★ runDownload/_dlExec：本机 script 成功 ⇒ ok:true；exit 1 ⇒ ok:false 且不挂载', async () => {
+  const idOk = 'rv-script-ok', idBad = 'rv-script-bad';
+  const mod = copyLibWith(`${scriptEntrySrc(idOk, 'exit 0')}\n${scriptEntrySrc(idBad, 'exit 1')}`);
+  const { runDownload: rd } = await import(pathToFileURL(mod).href);
+  // ① where:'win' 的 script 跑通 ⇒ ok:true（★ 绝不碰 where:'wsl'，那会真起 WSL）
+  const r1 = await rd(idOk, () => {}, { mount: false });
+  assert.equal(r1.ok, true, `where:'win' 的 script 应成功，实测 ${JSON.stringify(r1)}`);
+  assert.equal(r1.kind, 'script', '应走 script 分派');
+  assert.equal(r1.code, 0, '退出码应为 0');
+  // ② exit 1 ⇒ ok:false，且**不挂载**。★ 故意**不传** opts.mount:false —— 失败必须在 mount **之前**短路；
+  //    若它竟去 mount，就会真起 WSL（用例会暴露，而不是悄悄变绿）。
+  const r2 = await rd(idBad);
+  assert.equal(r2.ok, false, `exit 1 应失败，实测 ${JSON.stringify(r2)}`);
+  assert.notEqual(r2.mounted, true, '脚本失败 ⇒ 不得挂载');
+  assert.equal('mount' in r2, false, `失败结果应是分派原样返回（不含 mount 字段），实测键 ${Object.keys(r2).join(',')}`);
+});
+
+test('★ importResource：目录 srcPath ⇒ 整目录（含子目录）递归复制到 dirFor()（离线，不起 WSL）', async () => {
+  const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
+  const e = list.find((x) => x.detect && x.detect.via === 'env');
+  assert.ok(e, '注册表应至少有一条 via:env 资源（用于目录导入演练）');
+  const srcDir = path.join(TMP, 'rv-import-src', 'bundle');
+  fs.mkdirSync(path.join(srcDir, 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(srcDir, 'a.txt'), 'A');
+  fs.writeFileSync(path.join(srcDir, 'sub', 'b.txt'), 'B');
+  const res = await importResource(e.id, srcDir, { mount: false });   // ★ 不挂载 ⇒ 不起 WSL
+  assert.equal(res.ok, true, `目录导入应成功，实测 ${JSON.stringify(res)}`);
+  const dest = path.join(dirFor(e.kind, e.id), 'bundle');
+  assert.equal(res.path, dest, `导入落点应是 dirFor(kind,id)/bundle，实测 ${res.path}`);
+  assert.equal(fs.readFileSync(path.join(dest, 'a.txt'), 'utf8'), 'A', '顶层文件应被复制');
+  assert.equal(fs.readFileSync(path.join(dest, 'sub', 'b.txt'), 'utf8'), 'B', '★ 子目录文件应一并复制（递归）');
 });

@@ -693,6 +693,16 @@ function renderResources(data) {
     + `路径异常 ${sum['path-abnormal'] || 0}。`
     + '「就绪」的条目直接使用、不重复下载；其余按提示一键下载或手动导入。';
 
+  // ★ 目录规范（委托方规格第 7 条「目录结构提前规划设计」）：把「自动下载的资源落到哪」显示出来。
+  //   ★ 数据来自**同一次 `/api/resources/scan` 响应里内嵌的 `dirPlan`** —— 不额外打
+  //     `/api/resources/dirplan`（那个接口留给**脚本 / 外部消费者**单独取规划，见契约 §八）。
+  //   ★ 防御：夹具 / 老响应可能没有 `dirPlan` ⇒ 拿不到就**不渲染**，绝不报错。
+  const dp = data && data.dirPlan;
+  if (dp && dp.root) {
+    $('resIntro').textContent += ` 下载落盘规划：${dp.root}`
+      + '（按资源类型分目录；下载先落 `_download/` 中转，校验通过才移入）。';
+  }
+
   if (!rs.length) {
     list.appendChild(el('div', 'res-empty', '没有可检测的资源（注册表为空）。'));
     return;

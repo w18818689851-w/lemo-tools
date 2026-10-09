@@ -3336,6 +3336,14 @@ async function main() {
         checkedAt: '2026-10-09T12:00:00.000Z',
         cached: false,
         summary: { total: 6, ready: 2, missing: 1, corrupt: 1, 'version-mismatch': 1, 'path-abnormal': 1 },
+        // ★ 2026-10-09 追加：`dirPlan` —— 面板要把「自动下载的资源落到哪」渲染出来
+        //   （委托方规格第 7 条「目录规范」在界面上的落点；数据来自 /scan 响应内嵌字段）。
+        dirPlan: {
+          root: 'D:/lemo-res',
+          kinds: { env: 'D:/lemo-res/env', dep: 'D:/lemo-res/dep', model: 'D:/lemo-res/model', asset: 'D:/lemo-res/asset', plugin: 'D:/lemo-res/plugin' },
+          download: 'D:/lemo-res/_download',
+          note: '夹具',
+        },
         resources: [
           { id: 'ffmpeg', label: 'FFmpeg', state: 'ready', version: '6.1', required: true, path: 'D:/lemo-res/ffmpeg.exe' },
           { id: 'model-x', label: '模型 X', state: 'missing', required: true, detail: '未找到模型文件',
@@ -3384,7 +3392,11 @@ async function main() {
           need(sum === '4 项需处理', `#resSum 是「${sum}」，期望「4 项需处理」`);
           const sumCls = await cdp.evalJs(`document.getElementById('resSum').className`);
           need(/warn/.test(sumCls), `有 4 项待处理时 #resSum 应带 .warn，实际 className=「${sumCls}」`);
-          notes.push(`J1 路线①（CDP addScriptToEvaluateOnNewDocument 注入 fetch 补丁）⇒ boot→loadResources→renderResources 端到端渲染 ${n} 条；#resCount「${count}」#resSum「${sum}」`);
+          // ★ 2026-10-09 追加：目录规范（规格第 7 条）必须在界面上**看得见** —— 渲染 `dirPlan.root`。
+          const intro = await cdp.evalJs(`document.getElementById('resIntro').textContent`);
+          need(intro.includes(RES_FIXTURE.dirPlan.root),
+            `#resIntro 里应渲染出目录规划根「${RES_FIXTURE.dirPlan.root}」，实际「${intro}」`);
+          notes.push(`J1 路线①（CDP addScriptToEvaluateOnNewDocument 注入 fetch 补丁）⇒ boot→loadResources→renderResources 端到端渲染 ${n} 条；#resCount「${count}」#resSum「${sum}」；#resIntro 含目录规划根 ✓`);
         });
 
         await runCase('J2 5 种 state 各自渲染出对应徽标（res-badge 文案）', async () => {

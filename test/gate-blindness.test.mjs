@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 130 条用例 / 覆盖全部 44 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 131 条用例 / 覆盖全部 45 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -187,6 +187,15 @@
  *          FAIL 并点名 `STATES`；④ **失明（判据⑦）** `RESOURCES` 置空 ⇒ FAIL +「本闸门已失明」，
  *          且失明时不输出判据；⑤ **★自证**：短路判据② 的「不一致」判定（`if (got.join('|') !==
  *          expected.join('|'))` → `if (false)`）⇒ 变异 B **重新变绿**（证明断言承重）。
+ *        · `check-lib-exports`（2026-10-09 建，第 45 个；守「`lib/**` 可调用导出**零调用点**」，
+ *          堵 `mount` 那类「有导出 ≠ 有功能」的假绿）：
+ *          主夹具 = **合成极小树**（本闸门的事实源是「`lib/**` 的导出 ↔ 各扫描根里的调用点」这一对
+ *          关系，最小树即可精确摆出两种形态；且失明守卫要求「全根 ≥1 个调用点」，故树里必须留一个
+ *          真调用点）；覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 check-resources / check-llm-api）；
+ *          ① **阴性对照**（唯一导出 `leCalled` 被 `scripts/` 调用）⇒ exit 0 且打印判据② ✓；
+ *          ② **变异（判据②）** `lib/` 里新增一个谁都不调用的导出 ⇒ FAIL 并点名 `lib/lemod.mjs:leProbe`；
+ *          ③ **失明（判据③）** `lib/` 有导出、全根 **0 个调用点** ⇒ FAIL +「本闸门已失明」且不输出判据②；
+ *          ④ **★自证**：短路判据②（`if (unregistered.length) {` → `if (false) {`）⇒ 变异**重新变绿**。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -5281,6 +5290,58 @@ test('check-resources：阴性对照 + 判据①/② 变异 + 失明（RESOURCES
     const rm1 = await run(NODE, [mut], { env: { LEMO_TOOLS_ROOT: b } });
     assert.equal(rm1.code, 0, `短路判据② 后变异 B 应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rm1, NEEDLE_STATES, 'mut'), undefined,
+      '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测判据②');
+  } finally { rm(dir); }
+});
+
+// ── 12l. check-lib-exports.mjs（「lib/** 可调用导出零调用点」，2026-10-09 建，第 45 个）──────────
+// ★ 主夹具 = **合成极小树**（本闸门的事实源是「`lib/**` 的导出 ↔ 各扫描根里的调用点」这一对关系，
+//   最小树即可精确摆出「有导出、被调用」与「有导出、零调用」两种形态；不必整棵拷真实 `lib/`）。
+// ★ 覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 check-resources / check-llm-api / check-doc-coverage）。
+// ★ 失明守卫要求「全部扫描根加起来 ≥1 个调用点」，故阴性 / 变异树里**必须**留一个真调用点
+//   （`lib/lemod.mjs` 的 `leCalled` 被 `scripts/lecaller.mjs` 调用）—— 否则整棵树走失明、
+//   判据①② 不输出，那条正向断言就测不到了。
+const leTree = (dir, extra = '') => {
+  wf(path.join(dir, 'lib', 'lemod.mjs'), `export function leCalled() { return 1; }\n${extra}`);
+  wf(path.join(dir, 'scripts', 'lecaller.mjs'),
+    "import { leCalled } from '../lib/lemod.mjs';\nleCalled();\n");
+  return dir;
+};
+
+test('check-lib-exports：阴性对照 + 新增零调用导出变异 + 失明（0 调用点）⇒ FAIL 并点名', async () => {
+  const dir = path.join(TMP, 'le');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE = '未登记的零调用导出';        // 判据② 特有文案（逐字抄自闸门源码）
+  try {
+    // ① 阴性对照：唯一导出 leCalled 被 scripts/ 调用 ⇒ exit 0 且不含失明文案
+    const neg = leTree(path.join(dir, 'neg'));
+    const r0 = await runGate('check-lib-exports.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-lib-exports 阴性对照');
+    assert.ok(r0.out.includes('未登记的零调用导出 0 条'), `阴性对照应打印判据② ✓\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异（判据②）：lib/ 里新增一个谁都不调用的导出 leProbe ⇒ exit 1 并点名 lib/lemod.mjs:leProbe
+    const mut = leTree(path.join(dir, 'mut'), 'export function leProbe() { return 2; }\n');
+    const r1 = await runGate('check-lib-exports.mjs', { LEMO_TOOLS_ROOT: mut });
+    expectBlind(r1, NEEDLE, 'check-lib-exports 变异（新增零调用导出）');
+    assert.ok(r1.out.includes('lib/lemod.mjs:leProbe'), `变异应点名 lib/lemod.mjs:leProbe\n${r1.out.slice(0, 1400)}`);
+
+    // ③ 失明（判据③）：lib/ 有导出、但全部扫描根**一个调用点都没有** ⇒ FAIL +「本闸门已失明」
+    const blind = path.join(dir, 'blind');
+    wf(path.join(blind, 'lib', 'lemod.mjs'), 'export function leOnly() { return 1; }\n');
+    const r2 = await runGate('check-lib-exports.mjs', { LEMO_TOOLS_ROOT: blind });
+    expectBlind(r2, N_BLIND, 'check-lib-exports 失明（0 调用点）');
+    assert.ok(r2.out.includes('一个调用点都没数到'), `失明应点名「一个调用点都没数到」\n${r2.out.slice(0, 900)}`);
+    assert.ok(!r2.out.includes(NEEDLE), `失明时不该输出判据②\n${r2.out.slice(0, 900)}`);
+
+    // ★自证：把「未登记 ⇒ FAIL」判定**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
+    //   （证明断言真的在测判据②，而不是在测「闸门有没有崩」）。
+    const gdir = path.join(dir, 'gmut');
+    mk(path.join(gdir, 'scripts'));
+    const g = patchGate('check-lib-exports.mjs', path.join(gdir, 'scripts'),
+      [['if (unregistered.length) {', 'if (false) {']]);
+    const rm1 = await run(NODE, [g], { env: { LEMO_TOOLS_ROOT: mut } });
+    assert.equal(rm1.code, 0, `短路判据② 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
       '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测判据②');
   } finally { rm(dir); }
 });
