@@ -175,7 +175,8 @@ const ROOT = path.resolve(path.join(HERE, '..'));
 const SELF = 'check-env-overrides.mjs';
 const JSON_OUT = process.argv.includes('--json');
 /**
- * ★ 库仓（**另一个仓**）根：用覆盖点 `LEMO_OPUSCAR`（同名同义，与 `check-ref-lines.mjs:630` /
+ * ★ 库仓（**另一个仓**）根：用覆盖点 `LEMO_OPUSCAR`（同名同义，与 `check-ref-lines.mjs` 里
+ *   `const OPUSCAR = path.resolve(process.env.LEMO_OPUSCAR || …)` 那处 /
  *   `check-render-venc.mjs:165` 一致），**不硬编码** `D:/lemo-opuscar`（否则夹具树里没法重定向）。
  *   默认与 `check-line-endings.mjs:137` 同款：`<本仓>/../lemo-opuscar`。
  */

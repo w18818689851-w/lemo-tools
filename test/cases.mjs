@@ -242,7 +242,7 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //         传的 `--size WxH` 会被**静默丢掉**、按 1920x1080 出片（9:16 尤其明显）。
 //     (a2) ★ 端到端跑出来的**第 4 条硬伤**：`video_png.mjs:42` 的拼接 `execFileSync` **没传 stdio**，
 //         而 `core/render/video.mjs:108` 的同名调用传了 `['ignore','inherit','inherit']`（副本漂移）。
-//         本机 Node 的 spawnSync/execFileSync **只要走 pipe 就 EBUSY**（lemo-make.mjs:261 早记过）⇒
+//         本机 Node 的 spawnSync/execFileSync **只要走 pipe 就 EBUSY**（lemo-make.mjs 里「本环境 spawnSync 一律 EBUSY」那处注释早记过）⇒
 //         960 帧全渲完后在拼接处 exit 1、**全部白渲**。已照 core 版补齐同一个 stdio 选项。
 //         这条不是本轮引入的：改前 video_png.mjs 也长这样 ⇒ 该 demo 自己的 build.sh 在本机也跑不到底。
 //     (b) 编排器渲染段改成**候选探测**（`demoRenderRel`，形状照 `demoMuxRel` 的 `.find()`；
@@ -2685,7 +2685,7 @@ export const FULL_CASES = [
 
       // ── 断言 1：TTS 真的跑了（不是复用预生成配音）──
       //   ★ 判据不能是「_tts/*.wav 还在不在」：dub.mjs 在**成功后**会清掉 _tts/ 与 _program*.wav
-      //     这些中间产物（dub.mjs:943-947）。改用 TTS 脚本自己逐条打印的那一行（由 dub.mjs
+      //     这些中间产物（dub.mjs 里「清理中间产物（成功才清）」那处）。改用 TTS 脚本自己逐条打印的那一行（由 dub.mjs
       //     原样 echo）—— 它只在**真的合成过**才存在，且带真实时长。
       assert.match(r.stdout, /TTS_DONE/,
         `stdout 里没有 TTS_DONE —— 现场 TTS 没跑完\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
@@ -3428,11 +3428,11 @@ export const FULL_CASES = [
   },
   {
     // ★ 为什么必须有这条：`⑤+++++++` 只覆盖了 `--fit` 的**一个方向**（素材 2.0s < 旁白 ~8.4s）。
-    //   而 `dub.mjs` 的 fitFilter（dub.mjs:1096-1115）里每一条分支都写着**两个方向**：
+    //   而 `dub.mjs` 的 fitFilter（`dub.mjs` 里 `const fitFilter = (() => {` 那段）里每一条分支都写着**两个方向**：
     //     · slow —— 只有 `srcDur < total-0.05` 才 `setpts=PTS*(total/srcDur)`；否则**掉进 loop 分支的 return**（只 `geom`）
     //     · trim —— 只有 `srcDur < total-0.05` 才 `tpad=stop_mode=clone` 冻结末帧；否则只 `geom`
     //     · loop —— 短则给输入加 `-stream_loop -1`；长则只 `geom`
-    //   而裁切一律由 mux 的 `-t total` 完成（dub.mjs:1142）
+    //   而裁切一律由 mux 的 `-t total` 完成（`dub.mjs` 里 mux 命令的 `-map "[v]" -map 1:a -t ${f3(total)}` 那行）
     //   ⇒ **反向（素材 ≥ 旁白）时三者的画面滤镜链其实等价**：都只 `geom`，成片 = 素材的**前 total 秒**。
     //   这条用例把这个「等价」**钉死**（而不是写成恒真断言）：三者的剖面都必须等于「素材前缀」这一条模型，
     //   且**必须与 slow 的「整体拉长」模型差 4 倍以上**。若有人去掉 slow/trim 的方向守卫
@@ -3503,7 +3503,7 @@ export const FULL_CASES = [
           `--fit ${fit}：素材 ${srcDur}s 竟然短于旁白 ${total}s —— 本用例要测的是**反向分支**，`
           + ' 文案/素材时长配比不对（TTS 时长抖动），请把文案改短或素材加长。');
 
-        //   ★ 结构判据：走的是**反向**那一支（「Xs ≥ 配音 Ys」这句只在反向打印，dub.mjs:1108/1113）
+        //   ★ 结构判据：走的是**反向**那一支（「Xs ≥ 配音 Ys」这句只在反向打印 —— `dub.mjs` 的 fitFilter 里 trim / loop 两个反向分支各有一句 `say`）
         assert.match(r.stdout, /\d+\.\d+s ≥ 配音 \d+\.\d+s/,
           `--fit ${fit}：stdout 里没有「素材 Xs ≥ 配音 Ys」—— 走的不是反向分支？\n`
           + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
@@ -3560,7 +3560,7 @@ export const FULL_CASES = [
   },
   {
     // ★ 为什么必须有这条：`--fit slow` 在 `--keep-original-audio` 下要把素材**原声**一起放慢，
-    //   走的是 `atempoChain(1/ratio)`（dub.mjs:1023-1035）。而**单级 atempo 的合法范围只有 [0.5, 100]**
+    //   走的是 `atempoChain(1/ratio)`（`dub.mjs` 里 `const atempoChain = (x) => {` 那段）。而**单级 atempo 的合法范围只有 [0.5, 100]**
     //   （实测：`atempo=0.25` / `atempo=0.119` 直接报 `Value … out of range [0.5 - 100]`）
     //   ⇒ ratio = total/srcDur > 2 时需要的 tempo < 0.5，**一级放不下，必须串多级**。
     //   这条链此前**零覆盖**：`⑤+++++++` 不传 --keep-original-audio；`⑤+++`/`⑤++++` 走 --keep-original
@@ -3574,7 +3574,7 @@ export const FULL_CASES = [
     //   ④ 成片 15 kHz 带内电平整体**远高于** TTS 自身（`⑤++++++` 实测 TTS 在该带 ≈ −57 dB）
     //      —— 证明素材原声真的被混进来了，而不是只打印了一行「已混入」。
     // ★ 期望值推导：ratio = total/srcDur ⇒ 素材音调起点 0.6s 应移到成片 ≈ 0.6·total 处；
-    //   `--keep-original-audio` 的混音链把原声压 −20 dB 后 atrim 到 total 再 amix（dub.mjs:1036-1039）。
+    //   `--keep-original-audio` 的混音链把原声压 −20 dB 后 atrim 到 total 再 amix（`dub.mjs` 里 `const mix = [` 那段）。
     name: '⑤+++++++++ --fit slow 的 atempo 链（--keep-original-audio）：多级 atempo、连乘 = srcDur/total、原声真的被放慢并混进成片',
     run: async (ctx) => {
       const ttsPy = path.join(CFG.winLib, 'core', 'tts', 'tts_indextts.py');
@@ -3621,7 +3621,7 @@ export const FULL_CASES = [
         `--fit slow --keep-original-audio 出片退出码 ${r.code}（期望 0）\n`
         + `--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
 
-      //   ★ 结构判据：真的走了「原声混入」那一支（这句 ok() 只在 dub.mjs:1044 打印）
+      //   ★ 结构判据：真的走了「原声混入」那一支（这句 ok() 只在 `dub.mjs` 里打印 `素材原声已压到 -20 dB 混入（--keep-original-audio）` 那处）
       assert.match(r.stdout, /素材原声已压到 -20 dB 混入（--keep-original-audio）/,
         `stdout 里没有「素材原声已压到 -20 dB 混入」—— --keep-original-audio 没生效？\n`
         + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
@@ -3642,7 +3642,7 @@ export const FULL_CASES = [
         + `（素材 ${srcDur}s / 旁白 ${total}s；把文案加长或素材改短。）`);
 
       // ── 判据 ①：取出真实的 atempo 链并逐级校验 ──
-      //   链在 `--echo-cmd` 打到 **stderr** 的 dub-mix 脚本里（lib/dub-core.mjs:526 的 echo 分支）。
+      //   链在 `--echo-cmd` 打到 **stderr** 的 dub-mix 脚本里（lib/dub-core.mjs 的 `runWsl()` 里 `if (echo) process.stderr.write(...)` 那个 echo 分支）。
       const cm = /((?:atempo=[\d.]+,)+atempo=[\d.]+)/.exec(r.stderr);
       assert.ok(cm,
         `--echo-cmd 的 stderr 里找不到 atempo 链 —— --keep-original-audio 下没给素材原声做变速？\n`

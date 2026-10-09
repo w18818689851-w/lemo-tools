@@ -170,7 +170,7 @@ test('★ sampleTimes：maxFrames=1 ⇒ 唯一一帧是「中位那一帧」（�
   assert.equal(r.filter((x) => x === undefined).length, 0, '★ 数组里绝不许出现 undefined');
 });
 
-// ★ 可达性回归：这不是理论边界 —— `--max-frames 1` 经 lib/triple-check.mjs:392 的
+// ★ 可达性回归：这不是理论边界 —— `--max-frames 1` 经 lib/triple-check.mjs 的
 //   `Math.max(1, Number(o.maxFrames) || DEFAULT_MAX_FRAMES)` 夹取后正好 === 1，
 //   而 :406-409 的抽帧循环会对每个 pick 取 `p.t.toFixed(2)` ⇒ 元素为 undefined 时**直接抛**。
 test('★ sampleTimes：maxFrames=1 是**可达输入**（--max-frames 1）⇒ 每个元素都必须有有限 t', () => {

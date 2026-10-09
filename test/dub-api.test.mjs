@@ -5,8 +5,8 @@
  * 为什么单独一个入口：沿用本项目已有的分工 —— smoke.mjs / setup.test.mjs / ui.test.mjs /
  * briefs.test.mjs 各自一个数字、互不干扰。这一套只管 `/api/dub/*` 这 **7 个接口**：
  *   upload / sources / source-meta / styles / preview / analyze / run。
- * ★ 另含 ⑰：`GET/HEAD /api/films/dub/:dir/:file`（「文案出片」成片字节，server.mjs:1818-1820 →
- *   apiDubFilmFile）—— 它是成片库播放的落点，此前服务端**零断言**（ui.test.mjs 只查 video.src 属性）。
+ * ★ 另含 ⑰：`GET/HEAD /api/films/dub/:dir/:file`（「文案出片」成片字节，`server.mjs` 的 `apiDubFilmFile`）——
+ *   它是成片库播放的落点，此前服务端**零断言**（ui.test.mjs 只查 video.src 属性）。
  *   覆盖 200/206/416/HEAD 与**路径穿越防护**；纯只读，不写盘。
  * 它们承担着上传安全（防目录穿越）、请求形状校验、语义结果注入等关键逻辑，
  * 此前**没有任何测试**（全仓 grep 只在 README 里提到 /api/dub/analyze 一次）。
@@ -197,7 +197,7 @@ function parseRawHttp(buf) {
 /**
  * 只发请求头、**声明**一个超大 Content-Length、不发 body —— 验「预检 413」。
  * 用裸 socket 而不是 node:http 客户端：后者会按真实 body 长度校正 Content-Length，
- * 发不出「声明得比实际大」的请求，也就碰不到 `server.mjs:1090-1097` 的预检分支。
+ * 发不出「声明得比实际大」的请求，也就碰不到 `server.mjs` 里按 `Content-Length` 提前判 413 的预检分支（`sendJson(res, 413, …)` 那处）。
  */
 function headerOnlyRequest(port, p, contentLength) {
   return new Promise((resolve, reject) => {
@@ -457,7 +457,7 @@ async function main() {
         // ② ★★ 落盘基名必须**恰好**是 `<token><ext>` —— 这是「用户给的名字完全不参与拼路径」的
         //    充分必要条件，而且**与随机 token 无关**。
         //    ★ 2026-10-04 修正：这里原先是**子串启发式** —— 「用户名字的多字符片段不得出现在路径里」。
-        //      它是 flaky 的：`newToken() = Date.now().toString(36) + randHex(8)`（lib/dub.mjs:142-144），
+        //      它是 flaky 的：`newToken() = Date.now().toString(36) + randHex(8)`（`lib/dub.mjs` 的 `newToken()`），
         //      **末位是十六进制字符**，于是末位恰好为 `b` 的概率 = 1/16 = 6.25%，
         //      此时路径 `…<token>b.mp4` 命中片段 `b.mp4` ⇒ **误报**（实测连跑 8 次红 1 次、14 次红 1 次）。
         //      ⇒ 教训：**断言不要拿随机值做子串匹配**，要断言精确相等（见下面这行）。
@@ -729,9 +729,9 @@ async function main() {
     // ══ ⑰ ★ 文案出片成片字节：GET/HEAD /api/films/dub/:dir/:file ════════
     //
     // 覆盖审计里**唯一该补而没补**的自动化缺口：`GET`+`HEAD` `/api/films/dub/:dir/:file`
-    // （server.mjs:1818-1820 → apiDubFilmFile，定义在 :793-803）。它发的是「文案出片」的**成片字节**
+    // （`server.mjs` 的 `apiDubFilmFile`，路由注册与函数定义同在一处）。它发的是「文案出片」的**成片字节**
     // （D:\lemo-films\dub\<dir>\film.mp4，比一级目录深一层），支持 Range —— 成片库里点「文案出片」成片播放
-    // 走的就是它（url 由 apiFilms/dubFilms 给，server.mjs:721）。此前 ui.test.mjs 的 F1 只断言了
+    // 走的就是它（url 由 `server.mjs` 的 `apiFilms` / `dubFilms()` 给）。此前 ui.test.mjs 的 F1 只断言了
     // `video.src` 的**属性值**，**不校验响应** ⇒ 服务端零断言（坏了＝成品点不开，无兜底）。
     await runCase('⑰ ★ GET/HEAD /api/films/dub/:dir/:file：200/206/416/HEAD + ★路径穿越必须被拒（不泄露其它文件）', async () => {
       // ── 发现目标：从 /api/films 里找 dub 成片（url 形如 /api/films/dub/<dir>/film.mp4）

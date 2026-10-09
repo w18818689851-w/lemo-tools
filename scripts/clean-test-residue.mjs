@@ -14,9 +14,9 @@
  *   `^(bfill|bcorrupt|bmuz|jmuzz|__fp|_smoke)` —— 逐条来历（都可机械核实）：
  *     · `bfill-*`   —— `test/briefs.test.mjs:759` 的写死夹具（`bfill-${i+1}`，容量测试用）；
  *     · `bcorrupt-*`—— `test/briefs.test.mjs:679` 的坏 JSON 夹具（`bcorrupt-1`）；
- *     · `bmuz*-*`   —— `lib/briefs.mjs:471 newId()` = `b<base36 时间戳>-<序号>`：★ **被中断的 briefs 测试**
+ *     · `bmuz*-*`   —— `lib/briefs.mjs` 的 `newId()` = `b<base36 时间戳>-<序号>`：★ **被中断的 briefs 测试**
  *                      在真根上 `makeBrief` 留下的在飞工单（实测 24 个，`createdAt` 与当轮 `bfill` 同窗）；
- *     · `jmuzz*-*`  —— `lib/jobs.mjs:60 nowId()` = `j<base36 时间戳>-<序号>`：★ **测试批量起的任务** id；
+ *     · `jmuzz*-*`  —— `lib/jobs.mjs` 的 `nowId()` = `j<base36 时间戳>-<序号>`：★ **测试批量起的任务** id；
  *     · `__fp-*`    —— `test/cases.mjs:1984/2071` 的探针文件（`__fp-rot-*` / `__fp-total-*`）；
  *     · `_smoke-*`  —— `test/cases.mjs:375 TEST_DIR_PREFIX`：测试专用命名（本机真根上**当前命中 0 个**）。
  *

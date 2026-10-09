@@ -580,7 +580,7 @@ function copyLibWithRv2(entriesSrc) {
   return mod;
 }
 
-test('★ mount 的 endpoint 分支（lib/resources.mjs:790）：端点可达 ⇒ ok:true；端点不可达 ⇒ ok:false 且 detail 说明「端点不可达」', async () => {
+test('★ mount 的 endpoint 分支（lib/resources.mjs 的 mount() 里 endpoint 分支）：端点可达 ⇒ ok:true；端点不可达 ⇒ ok:false 且 detail 说明「端点不可达」', async () => {
   const live = await rv2Listen((_q, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ data: [] }));

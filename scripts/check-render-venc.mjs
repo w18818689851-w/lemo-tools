@@ -293,7 +293,7 @@ const aFails = aRows.filter((r) => !r.ok);
 
 // ── B 类：手工脚本（只列 backlog）───────────────────────────────────────────
 // ★ 2026-10-07（b85-a）：由 15 项缩为 14 项 —— `styles/risograph/demo/tools/video_png.mjs`
-//   已**在出片路径上**（编排器渲染段候选探测 `demoRenderRel`，见 lemo-make.mjs:1484）
+//   已**在出片路径上**（编排器渲染段候选探测 `demoRenderRel`，见 lemo-make.mjs 里 `const demoRenderRel = [...]` 那处）
 //   且**已支持 `LEMO_VENC`** ⇒ 按分类纪律挪进 **A 类**（`pushA`，判 FAIL 的那一类），
 //   不再列在此处。其余 14 项经逐项核实**确不在出片路径**（编排器与 dub.mjs 都不执行它们）。
 const B_FILES = [

@@ -111,11 +111,11 @@ const JSON_MODE = process.argv.includes('--json');
 //   键 = `<相对仓根的路径>:<导出名>`；值 = 「为什么保留」。
 //   ★ 2026-10-09 **处置批**（本闸门初立后逐条处置，登记 ≠ 处置）：
 //     ① **已删 5 条**（真死代码 —— 与在用实现语义重复 / 已被更通用函数覆盖），条目一并移出：
-//        · `lib/dub.mjs:isAllowedExt`         —— 等价于 `kindOfExt(ext) === 'video'`（kindOfExt 在 server.mjs:1462 在用）；
+//        · `lib/dub.mjs:isAllowedExt`         —— 等价于 `kindOfExt(ext) === 'video'`（kindOfExt 在 `server.mjs` 里 `dub.kindOfExt(ext)` 那处用）；
 //        · `lib/dub.mjs:isAllowedUploadExt`   —— 逐字等于 `kindOfExt(ext) !== ''`；
 //        · `lib/dub-core.mjs:analyzeText`     —— `loadSemantic()` + `sem.analyze()` 的薄包装，签名缺 `analysis`/`visual`
 //                                                 ⇒ 两条真通路（仓根 dub.mjs 的 runAnalyze / lib/dub.mjs:analyzeScript）都用不上它；
-//        · `lib/setup.mjs:indexActions`       —— 按 id 建 Map，被 server.mjs:441 的 `actions.find((a)=>a.id===id)` 完全覆盖；
+//        · `lib/setup.mjs:indexActions`       —— 按 id 建 Map，被 `server.mjs` 里 `actions.find((a) => a.id === actionId)` 完全覆盖；
 //        · `lib/style-dna-reader.mjs:hasStyleDna` —— 逐字等于 `!!readStyleDna(slug)`，而 readStyleDna 才是唯一在用读取入口。
 //        （删前已全仓 grep：`lib/` `scripts/` 仓根 `*.mjs` `web/` `test/` `*.md` 均**零引用**。）
 //     ② **保留 1 条**（有真实用途 / 是模块 API，理由写在下面对应值里）。

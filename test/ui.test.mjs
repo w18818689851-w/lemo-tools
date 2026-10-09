@@ -847,7 +847,7 @@ async function main() {
   try {
     // ★★ 主测试服务也**显式注入隔离落盘根**（尊重外部 LEMO_FILM_DIR；见文件顶部 TEST_FILM_ROOT 说明）——
     //   否则它读真实 `.console/index.json` / `.briefs`，按条数/行数判定的用例被历史残留干扰（D4/B8/B7/C3）。
-    //   ★ 同时把编排器的**并发锁目录**（`LEMO_LOCK_DIR`，lemo-make.mjs:1568 原生支持）也指到隔离根 ——
+    //   ★ 同时把编排器的**并发锁目录**（`LEMO_LOCK_DIR`，lemo-make.mjs 里 `const lockDir = process.env.LEMO_LOCK_DIR || ...` 原生支持）也指到隔离根 ——
     //     否则 dry-run 任务仍会在**真实** `D:\lemo-films\.<slug>.lock` 上与本机其它 lemo-make 抢锁，
     //     那正是 C2/C3「art-deco dry-run 跑成 failed/exit=1」这类**环境性假红**的一个来源。
     //     两个变量都只是「控制台侧」的覆盖点，**没有**改红线文件 `lemo-make.mjs`。
@@ -2641,7 +2641,7 @@ async function main() {
                  toast: document.getElementById('toast').textContent };
       })()`);
       need(after.ok, `#voiceCurrent 里没有 .vc-reset 按钮：${JSON.stringify(after)}`);
-      // ★ 实现是 saveVoicePref(key,'') → localStorage.removeItem(key)（app.js:1018）
+      // ★ 实现是 saveVoicePref(key,'') → localStorage.removeItem(key)（web/app.js 的 saveVoicePref()：val 为空即 removeItem）
       need(after.ls === null,
         `点「重置为内容文件默认」后 localStorage['lemo.voice'] 应被清掉（null），实际 ${JSON.stringify(after.ls)}`);
       need(after.speed === null, `localStorage['lemo.speed'] 也应被清掉，实际 ${JSON.stringify(after.speed)}`);

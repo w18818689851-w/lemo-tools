@@ -84,7 +84,7 @@ const SITES = [
   {
     id: '_distill/AGENT-BRIEF.md',
     file: path.join(ROOT, '_distill', 'AGENT-BRIEF.md'),
-    what: '「本次改了什么」段的历史箭头（**只列不判**：与 test/README.md:243 同型的历史记录）',
+    what: '「本次改了什么」段的历史箭头（**只列不判**：与 `test/README.md` 里「红线三处同步」段那条 `→` 历史箭头同型）',
     re: /md5 `[^`]+` → \*\*`([0-9a-f]{32})`\*\*/,
     judge: false,
   },

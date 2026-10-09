@@ -322,7 +322,7 @@ async function main() {
       need(miss.status === 404, `不存在的产物应 404，实际 ${miss.status}：${miss.text.slice(0, 160)}`);
       need(miss.json && /不存在/.test(miss.json.error || ''), `404 理由没说清「不存在」：${miss.text.slice(0, 160)}`);
 
-      // ★ 路径越界分支（server.mjs:1010 的 403）**经 HTTP 不可达**：
+      // ★ 路径越界分支（server.mjs 的 apiVoiceTestAudio() 里那个 403「路径越界」）**经 HTTP 不可达**：
       //   路由正则 `([^/]+)` 不允许 `/`，而 `..` / `%2e%2e` 会被 `new URL()` 的
       //   dot-segment 归一化**在到达 handler 前**消掉 → 落到「未知接口」的通用 404。
       //   所以这里如实断言「不是 403、也不是 400」，且不泄漏任何越界文件。
