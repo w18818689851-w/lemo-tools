@@ -246,6 +246,39 @@ test('② ★ 每帧喂 2 张图：messages[1].content 里有 2 个 image_url，
   }
 });
 
+test('★ ②b profile 名不再影响 VLM 调用：LEMO_LLM_PROFILE 换成已删名 / 垃圾名，帧请求体逐字不变', async () => {
+  // 回归（2026-10-09）：`askVlm()` 曾显式传 `profile:'lmstudio'`，而该内置 profile 已按委托方指令
+  // 「只接 WorkBuddy」从 `PROFILES` 删除 ⇒ resolveConfig 走「未知 profile」兜底、名字**悬空**。
+  // 现改为「不挂 profile、只钉 kind/baseUrl/model/target:'model'」的纯显式配置 ⇒
+  // 本用例证明这次调用**完全不受 profile 名影响**（换任何 profile 名，请求体逐字相同）。
+  // ★ 顺带钉死 `target:'model'` 的必要性：若漏给 target，id 会落到默认 profile workbuddy 的 'agent'
+  //   ⇒ body 里的 model 被丢 ⇒ 下面的 `b.model` 断言会失败。
+  const prev = process.env.LEMO_LLM_PROFILE;
+  const run = async (val) => {
+    if (val === undefined) delete process.env.LEMO_LLM_PROFILE; else process.env.LEMO_LLM_PROFILE = val;
+    resetStub({ mode: 'consistent' });
+    const rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true, maxFrames: 1 });
+    assert.equal(rep.frames.length, 1, 'maxFrames=1 ⇒ 恰好 1 帧');
+    assert.equal(STUB_STATE.chatBodies.length, 1, '应恰好 1 条帧请求体');
+    return JSON.stringify(STUB_STATE.chatBodies[0]);
+  };
+  try {
+    const base = await run(undefined);        // 未设 ⇒ 内部落到默认 profile（workbuddy）
+    const deleted = await run('lmstudio');    // 已删的内置 profile 名
+    const junk = await run('__no_such_profile__');
+    assert.equal(deleted, base, '★ LEMO_LLM_PROFILE=lmstudio（已删名）时帧请求体必须与默认逐字相同');
+    assert.equal(junk, base, '★ 任意未知 profile 名都不得改变帧请求体');
+    const b = JSON.parse(base);
+    assert.equal(b.model, 'qwen2.5-vl-7b-official',
+      '★ model 必须显式钉死（不随 profile 漂）—— 若这里为空说明 target 没钉成 model');
+    assert.equal(b.temperature, 0, '★ temperature:0 必须保留');
+    assert.equal(b.max_tokens, 400, '★ max_tokens:400 必须保留');
+    assert.equal(b.stream, false, 'stream:false 必须保留');
+  } finally {
+    if (prev === undefined) delete process.env.LEMO_LLM_PROFILE; else process.env.LEMO_LLM_PROFILE = prev;
+  }
+});
+
 test('③ 篡改必被抓：tamper 第 1 帧 ⇒ 该帧 不一致 + tampered，overall=不一致、mismatches 非空', async () => {
   resetStub({ mode: 'consistent' });   // 桩仍回填「真实烧录字幕」，与被篡改的「字幕文本」不同
   const rep = await verifyTriple({

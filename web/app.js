@@ -5014,7 +5014,7 @@ function applyLlmTargetUi(cfg, setValue = true) {
     const note = (c.override && c.override.model) ? String(c.override.model) : '';
     mi.value = isAgent ? note : (c.model || '');
     mi.placeholder = isAgent ? '本地备注，可留空（不会用来指定智能体的底层模型）'
-      : '如 gpt-4o-mini / claude-sonnet-4 / qwen2.5';
+      : '如 my-model-name（也可点「拉取服务清单」从端点选）';
   }
 
   // ★★ W2（规格 v3）：智能体模式下**不拉取端点模型清单**（那属「探查智能体内部模型」）——

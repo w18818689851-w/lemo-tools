@@ -164,7 +164,10 @@
  *          ② **变异 A（判据①(a)）** 删掉 `chat` 的 `export` ⇒ FAIL 并点名 `chat`；
  *          ③ **变异 B（判据②）** 在 `chat` 函数体里塞一行裸 `throw` ⇒ FAIL（**剥注释后**判，别被注释骗）；
  *          ④ **变异 C1（判据③）** `isDefault: true` → `false` ⇒ FAIL「没有默认 profile」；
- *          ⑤ **变异 C2（判据③）** 把 `isDefault: true` 从 `workbuddy` 挪到 `anthropic` ⇒ FAIL「不在 workbuddy 条目里」；
+ *          ⑤ **变异 C2（判据③）** 把 `isDefault: true` 从 `workbuddy` 挪到**夹具里合成的**第二 profile
+ *            （★ 2026-10-09：真实 `PROFILES` 只剩 `workbuddy` 一个 ⇒ 原「挪到 `anthropic`」的目标条目已删、
+ *            该 `replace` 成空操作 ⇒ 改为**合成**一条最小合法的 `fixture-other`，仍测「不在 workbuddy 条目里」）
+ *            ⇒ FAIL「不在 workbuddy 条目里」；
  *          ⑥ **变异 D（判据④）** 加一行 `console.log(apiKey)` ⇒ FAIL 并点名密钥类标识符；
  *          ⑦ **变异 E（判据⑤）** 加一个规格外的 `process.env.LEMO_LLM_ZZZ` ⇒ FAIL 并点名差额；
  *          ⑧ **变异 F（判据①(c)）** 把 `kind:` 字面量改成枚举外的值 ⇒ FAIL 并点名；
@@ -4729,6 +4732,36 @@ const contractMut = (dir, from, to) => {
   mutateFile(path.join(TOOLS, LLM_CONTRACT_REL), path.join(dir, LLM_CONTRACT_REL), from, to);
   return dir;
 };
+/**
+ * ★ 变异 C2 夹具源码（判据③）：把 `isDefault: true` 从 `workbuddy` **挪到另一个 profile**。
+ *   ★ 2026-10-09 修（本批）：`lib/llm-api.mjs` 按委托方指令删到**只剩 `workbuddy` 一个** profile ⇒
+ *     「挪到别的**真实** profile」**无法用真实条目表达**（原夹具挪到 `anthropic`，该条目已删 ⇒ 第二处
+ *     `replace` 变成**空操作**、`assert.ok(...)` 失败 ⇒ 夹具自身失效、用例假红）。
+ *   ⇒ **正解**：在夹具里**合成**一个最小合法的第二 profile（`id:'fixture-other'`，照 profile 字段结构
+ *     `id`/`label`/`kind`/`target`/`baseUrl`/`model`/`headers`）把 `isDefault: true` 挪过去 ——
+ *     **仍然精确命中**判据③ 的「`isDefault: true` 不在 `workbuddy` 条目里」那一支（**覆盖强度不减**）。
+ *   ★ 合成条目**最小且合法**：`kind:'custom'` 在 `ADAPTER_KINDS` 内（不触发判据①(c)）、文案不含 `**`
+ *     （不触发判据⑧）⇒ 除判据③ 外**不多报**任何判据。
+ */
+const c2Src = () => {
+  const real = realLlm();
+  let s = real.replace('headers: {}, isDefault: true,', 'headers: {},');
+  assert.notEqual(s, real, '夹具自身失效：C2 第一步（摘掉 workbuddy 的 isDefault）没生效');
+  const anchor = 'export const PROFILES = Object.freeze({\n  workbuddy: {';
+  const injected = 'export const PROFILES = Object.freeze({\n'
+    + "  'fixture-other': {\n"
+    + "    id: 'fixture-other', label: '夹具（第二 profile）', kind: 'custom', target: 'model',\n"
+    + "    baseUrl: '', model: '', headers: {}, isDefault: true,\n"
+    + '  },\n'
+    + '  workbuddy: {';
+  assert.ok(s.includes(anchor), '夹具自身失效：C2 第二步（找不到 PROFILES 里 workbuddy 条目的锚点）没生效');
+  s = s.replace(anchor, injected);
+  assert.ok(s.includes("id: 'fixture-other'"),
+    '夹具自身失效：C2 第二步（合成第二 profile）没生效');
+  assert.equal((s.match(/isDefault: true/g) || []).length, 1,
+    '夹具自身失效：C2 第二步后 `isDefault: true` 不恰为 1 处');
+  return s;
+};
 
 test('check-llm-api：阴性对照 + 判据①~⑤、⑦ 八种变异（导出缺失 / chat 里 throw / isDefault 缺或挪走 / 密钥外泄 / 多余环境变量 / 枚举外 kind / 代码次序倒置 / 契约声明倒置）⇒ FAIL 并点名；失明三态', async () => {
   const dir = path.join(TMP, 'cla');
@@ -4761,15 +4794,9 @@ test('check-llm-api：阴性对照 + 判据①~⑤、⑦ 八种变异（导出�
     const r3 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: c1 });
     expectBlind(r3, '没有默认 profile', 'check-llm-api 变异C1');
 
-    // ⑤ 变异 C2（判据③）：把 `isDefault: true` 从 `workbuddy` 挪到 `anthropic` ⇒ FAIL「不在 workbuddy 条目里」
-    let c2src = realLlm().replace('headers: {}, isDefault: true,', 'headers: {},');
-    assert.notEqual(c2src, realLlm(), '夹具自身失效：C2 第一步（摘掉 workbuddy 的 isDefault）没生效');
-    c2src = c2src.replace(
-      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {},",
-      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {}, isDefault: true,");
-    assert.ok(c2src.includes("headers: {}, isDefault: true,") && c2src !== realLlm(),
-      '夹具自身失效：C2 第二步（给 anthropic 加上 isDefault）没生效');
-    const c2 = llmTree(path.join(dir, 'c2'), c2src);
+    // ⑤ 变异 C2（判据③）：把 `isDefault: true` 从 `workbuddy` 挪到**合成的**第二 profile
+    //   （★ 真实表只剩一个 profile ⇒ 见 `c2Src()` 说明）⇒ FAIL「不在 workbuddy 条目里」
+    const c2 = llmTree(path.join(dir, 'c2'), c2Src());
     const r4 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: c2 });
     expectBlind(r4, '不在 `workbuddy` 条目里', 'check-llm-api 变异C2');
 
@@ -4845,13 +4872,8 @@ test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目�
     const b = llmMut(path.join(dir, 'b'),
       '    meta.profile = cfg.id;',
       "    throw new Error('boom');\n    meta.profile = cfg.id;");
-    // 变异 C2 夹具（isDefault 从 workbuddy 挪到 anthropic）
-    let c2src = realLlm().replace('headers: {}, isDefault: true,', 'headers: {},');
-    assert.notEqual(c2src, realLlm(), '夹具自身失效：C2 第一步没生效');
-    c2src = c2src.replace(
-      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {},",
-      "baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', headers: {}, isDefault: true,");
-    const c2 = llmTree(path.join(dir, 'c2'), c2src);
+    // 变异 C2 夹具（isDefault 从 workbuddy 挪到**合成的**第二 profile；见 `c2Src()`）
+    const c2 = llmTree(path.join(dir, 'c2'), c2Src());
     // 变异 E 夹具（规格外的 LEMO_LLM_ZZZ）
     const e = llmMut(path.join(dir, 'e'), "const OVERRIDE_BASENAME = '_llm-api.json';",
       "const OVERRIDE_BASENAME = '_llm-api.json';\nconst _probe = process.env.LEMO_LLM_ZZZ;");

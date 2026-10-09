@@ -3041,24 +3041,37 @@ async function main() {
         need(/is-default/.test(await cdp.evalJs(`document.getElementById('llmCurrentPill').className`)),
           '默认态胶囊没有 .is-default 类');
 
-        // 切到一个非默认 profile（从下拉里挑一个 ≠ workbuddy 的，**不写死 id**）
+        // ★ 新现实（委托方已删除 workbuddy 之外的 11 个内置 profile ⇒ 下拉只剩 workbuddy 一条）：
+        //   pill 的「已切换」分支（pid !== 'workbuddy'）在真实清单下**够不到**了。为**继续覆盖该分支**
+        //   （不删用例、不削弱断言），这里**合成**一个非默认 profile 注入下拉：切过去仍走完整链路
+        //   （change → loadLlmConfig(id) → 后端 previewProfile(id) → renderLlmForm → pill）。
+        //   ★ 后端对未知 profile 有正式兜底（resolveConfig ⇒ kind:'custom' + unknownProfile）⇒ 预览照常返回。
+        //   ★ 若日后清单恢复多条，则**优先用真项**（不写死 id）。
         const sw = await cdp.evalJs(`(() => {
           const s = document.getElementById('llmProfile');
-          const o = [...s.options].find((x) => x.value && x.value !== 'workbuddy');
-          if (!o) return { ok: false };
+          let o = [...s.options].find((x) => x.value && x.value !== 'workbuddy');
+          let synthetic = false;
+          if (!o) {
+            o = document.createElement('option');
+            o.value = 'ui-synthetic-other'; o.textContent = 'ui-synthetic-other';
+            s.appendChild(o); synthetic = true;
+          }
           s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true }));
-          return { ok: true, id: o.value };
+          return { ok: true, id: o.value, synthetic };
         })()`);
-        need(sw.ok, '#llmProfile 下拉里没有 workbuddy 之外的 profile（profile 清单读不到？）');
+        need(sw.ok && sw.id !== 'workbuddy',
+          `未能把 #llmProfile 切到非 workbuddy（下拉无第二项、合成项也失败）：${JSON.stringify(sw)}`);
         await waitFor(cdp.evalJs, `/已切换/.test(document.getElementById('llmCurrentPill').textContent)`, { timeoutMs: 15000 });
         const pill1 = await cdp.evalJs(`document.getElementById('llmCurrentPill').textContent`);
         need(/is-switched/.test(await cdp.evalJs(`document.getElementById('llmCurrentPill').className`)),
           `切走后胶囊没有 .is-switched 类：${pill1}`);
         need(pill1.startsWith('已切换：'), `切到 ${sw.id} 后胶囊文案是「${pill1}」，期望以「已切换：」开头`);
-        notes.push(`I2 胶囊：默认「${pill0}」→ 切到 ${sw.id} 后「${pill1}」`);
+        notes.push(`I2 胶囊：默认「${pill0}」→ 切到 ${sw.id}${sw.synthetic ? '（合成项）' : ''} 后「${pill1}」`);
 
-        // 切回 workbuddy，免得影响后面的用例
+        // 切回 workbuddy（并移除上面合成的临时项），免得影响后面的用例
         await cdp.evalJs(`(() => { const s = document.getElementById('llmProfile');
+          const syn = [...s.options].find((o) => o.value === 'ui-synthetic-other');
+          if (syn) syn.remove();
           if ([...s.options].some((o) => o.value === 'workbuddy')) {
             s.value = 'workbuddy'; s.dispatchEvent(new Event('change', { bubbles: true }));
           } return true; })()`);
