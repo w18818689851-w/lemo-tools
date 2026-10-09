@@ -98,7 +98,16 @@ const KNOWN_DIVERGENCES = {
       + '`music/music.wav`（已做到 TP −1.12 dBTP / I −14.11 LUFS），**从来没有 `mix.wav` 概念**，'
       + '所以它的 mux 阶段**不做 loudnorm**、也就没有 `LN_TP`。'
       + '依据：`lib/style-skills/pictogram-motion/SKILL.md:173`（音频架构分叉，2026-10-05 已用新增 `demo/mix.py` 给编排器通路补壳）。'
-      + '**待办**：若要让手工通路与 core 同口径，须给它加「两遍 loudnorm + 编码后复核闭环」或直接委托 `core/render/mux.sh`。',
+      + '**待办**：若要让手工通路与 core 同口径，须给它加「两遍 loudnorm + 编码后复核闭环」或直接委托 `core/render/mux.sh`。'
+      + '★★ **2026-10-09 复核（新证据，本闸门与主线的共同结论）**：'
+      + '① **交付成片实际口径是达标的** —— 实测 `D:/lemo-films/pictogram-motion/pictogram-motion.mp4` '
+      + '= `I −14.50 LUFS / TP −1.63 dBTP`（交付线 −14±1 LUFS、TP ≤ −1.2）⇒ 交付走的是**编排器通路**、没受影响；'
+      + '② **这条手工通路当前是「休眠」的** —— 它的默认输入 `demo/out_ej/list.txt` **已不存在**（`ls -d out_ej` 无此目录）'
+      + '⇒ `./mux.sh` 直接跑不起来；'
+      + '③ 因此**决定：不改库仓脚本**（改它要动双副本同步 + `SKILL.md` + 本条登记，而**价值极低**且**无法用现成输入复跑验证**）。'
+      + '④ **残留风险如实登记**：它的响度由上游 `music.py` 母带负责（设计如此），但**没有编码后复核闭环** ⇒ '
+      + '理论上仍可能被 **AAC 过冲**顶过 TP 线（本项目真踩过：`−1.7 + 1.98 = +0.28 dBTP`）。'
+      + '★ **若将来要复活这条手工通路** ⇒ 必须**同时**给它补上闭环（那时才值得动库仓）。',
     LN_TP_STEP: '同上 —— 没有 loudnorm 就没有 TP 目标，也就没有步长。待办见 `LN_TP` 条。',
     LN_TP_TRIES: '同上 —— 没有复核闭环就没有档数。待办见 `LN_TP` 条。',
     CLOSED_LOOP: '同上 —— 缺「编码后复核 + 逐档下调重编」这道闭环。'

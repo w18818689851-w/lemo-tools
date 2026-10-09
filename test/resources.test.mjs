@@ -49,6 +49,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // ── ★ 先把资源根指到临时目录（**必须在 import 之前**：模块在求值期可能就解析了根）
@@ -60,7 +61,7 @@ process.on('exit', () => { try { fs.rmSync(TMP, { recursive: true, force: true }
 // ★ 动态 import：让上面的 LEMO_RES_DIR 先生效（静态 import 会被提升到文件顶部）。
 const {
   KINDS, STATES, resourceRoot, dirFor, dirPlan, RESOURCES,
-  classify, satisfies, planDownloads, scanAll, runDownload, importResource,
+  classify, satisfies, planDownloads, scanAll, scanOne, mount, runDownload, importResource,
 } = await import('../lib/resources.mjs');
 
 test('KINDS / STATES 常量逐字冻结（契约 §二 / §四）', () => {
@@ -410,4 +411,202 @@ test('★ importResource：目录 srcPath ⇒ 整目录（含子目录）递归�
   assert.equal(res.path, dest, `导入落点应是 dirFor(kind,id)/bundle，实测 ${res.path}`);
   assert.equal(fs.readFileSync(path.join(dest, 'a.txt'), 'utf8'), 'A', '顶层文件应被复制');
   assert.equal(fs.readFileSync(path.join(dest, 'sub', 'b.txt'), 'utf8'), 'B', '★ 子目录文件应一并复制（递归）');
+});
+
+// ── ⑫ ★ 5 个探针/解析函数的**间接**覆盖（零导出 ⇒ 只能靠它们服务的资源来打）──────────────
+//   ★ 为什么必须有这一批：`probeEndpoint` / `probeIndexTts` / `probeStyleSkills` / `probeDir` /
+//     `resolveProbe` 在 test/ 下**零引用**（它们**未导出**，只能间接通过 `scanAll` / `scanOne` 打到）。
+//     覆盖点（模块级常量，**import 期求值** ⇒ 必须在 import 之前设好环境变量）：
+//       · `model.index-tts`  看 `LEMO_INDEX_TTS_DIR`（探目录）
+//       · `model.lmstudio`   看 `LEMO_LMSTUDIO_URL`（探 HTTP 端点）
+//       · `plugin.style-skills` 看 `lib/style-skills/`（真实树，只读）
+//   ★ 怎么拿到「不同环境变量下的独立模块实例」：给 import 的 file: URL 挂**唯一 query** 击穿 ESM 缓存
+//     （`fileURLToPath` 会丢掉 query ⇒ 模块内部的 `import.meta.url` 仍解析到真实路径；已实测）。
+//   ★ 全部**离线**：不真下载、不起 WSL（`scanOne`/`mount` 一律注入桩 `envResult`）、不碰真实 `D:\lemo-res`。
+//   ★ **未覆盖（如实登记）**：`resolveProbe` 的 `d.via` 既非 env 也非 custom 的兜底分支（返回
+//     `{found:false,_detail:'未配置探测方式'}`）—— 注册表里**没有任何**这样的条目，且 `_entries` 是冻结的、
+//     又无法在不改真实模块的前提下注入（能注入的只有「新增条目」，改不了现有条目的 via）⇒ 不硬凑。
+
+const RES_MOD_URL = new URL('../lib/resources.mjs', import.meta.url).href;
+let _rv2seq = 0;
+/** 取一个**全新求值**的 resources.mjs 实例（query 击穿缓存 ⇒ 重新读取当前环境变量）。 */
+const freshRes = (tag) => import(`${RES_MOD_URL}?rv2=${tag}-${++_rv2seq}`);
+/** 桩 envResult：形状对齐 lib/env.mjs 的 checkEnv()，`scanAll` 拿到它就不起 WSL。 */
+const rv2EnvStub = () => ({
+  groups: [], summary: { total: 0, ok: 0, warn: 0, fail: 0 },
+  runnable: true, drift: [], checkedAt: new Date().toISOString(),
+});
+/** 本机临时 http 服务：按给定 handler 响应。→ { port, close }。 */
+function rv2Listen(handler) {
+  return new Promise((resolve, reject) => {
+    const srv = http.createServer(handler);
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => resolve({
+      port: srv.address().port,
+      close: () => new Promise((r) => srv.close(r)),
+    }));
+  });
+}
+/** 一个**确定没人监听**的本机端口（先 bind 0 拿到号再立刻关掉）。 */
+function rv2ClosedPort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.on('error', reject);
+    s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
+}
+/** 设 / 还原一个环境变量（模块级常量在 import 期求值 ⇒ 用例结束必须还原，免得污染后续用例）。 */
+function rv2WithEnv(name, value, fn) {
+  const saved = process.env[name];
+  if (value == null) delete process.env[name]; else process.env[name] = value;
+  return Promise.resolve().then(fn).finally(() => {
+    if (saved == null) delete process.env[name]; else process.env[name] = saved;
+  });
+}
+
+test('★ 探针·model.index-tts（间接）：临时目录逼出 missing / corrupt / ready / path-abnormal 四态', async () => {
+  const root = path.join(TMP, `rv2-idx-${process.pid}-${Date.now().toString(36)}`);
+  fs.mkdirSync(root, { recursive: true });
+  const stub = rv2EnvStub();
+  try {
+    // ① 目录**不存在** ⇒ missing（probeDir 的 catch 分支）
+    const missDir = path.join(root, 'nope-v2.5');
+    assert.equal(fs.existsSync(missDir), false, '前置：该目录确实不存在');
+    let st = await rv2WithEnv('LEMO_INDEX_TTS_DIR', missDir, async () => {
+      const m = await freshRes('idx-miss');
+      return m.scanOne('model.index-tts', { envResult: stub });
+    });
+    assert.equal(st.state, 'missing', `目录不存在 ⇒ missing，实测 ${JSON.stringify(st)}`);
+
+    // ② 目录存在但**为空** ⇒ corrupt
+    //   ★ 以实现的真实判定为准：`probeIndexTts` 只把「目录为空（0 项）」判 corrupt，
+    //     **并不**检查「缺哪些关键权重文件」（那属实现未做之事，不能按猜测断言）。
+    const emptyDir = path.join(root, 'empty-v2.5');
+    fs.mkdirSync(emptyDir, { recursive: true });
+    st = await rv2WithEnv('LEMO_INDEX_TTS_DIR', emptyDir, async () => {
+      const m = await freshRes('idx-empty');
+      return m.scanOne('model.index-tts', { envResult: stub });
+    });
+    assert.equal(st.state, 'corrupt', `空目录 ⇒ corrupt，实测 ${JSON.stringify(st)}`);
+    assert.match(String(st.detail || ''), /为空/, `detail 应说明目录为空，实测 ${JSON.stringify(st.detail)}`);
+
+    // ③ 目录存在且**非空** ⇒ ready（版本从目录名 basename 抽：'full-v2.5' ⇒ 2.5，满足 >=2.0）
+    const fullDir = path.join(root, 'full-v2.5');
+    fs.mkdirSync(fullDir, { recursive: true });
+    fs.writeFileSync(path.join(fullDir, 'config.yml'), 'x');
+    st = await rv2WithEnv('LEMO_INDEX_TTS_DIR', fullDir, async () => {
+      const m = await freshRes('idx-full');
+      return m.scanOne('model.index-tts', { envResult: stub });
+    });
+    assert.equal(st.state, 'ready', `非空目录 ⇒ ready，实测 ${JSON.stringify(st)}`);
+    assert.equal(st.version, '2.5', `版本应从目录名 basename 抽到 2.5，实测 ${JSON.stringify(st.version)}`);
+
+    // ④ 该位置是**文件**（应目录却是文件）⇒ path-abnormal（probeDir 的 expectDir 分支）
+    const asFile = path.join(root, 'afile-v2.5');
+    fs.writeFileSync(asFile, 'x');
+    st = await rv2WithEnv('LEMO_INDEX_TTS_DIR', asFile, async () => {
+      const m = await freshRes('idx-file');
+      return m.scanOne('model.index-tts', { envResult: stub });
+    });
+    assert.equal(st.state, 'path-abnormal', `应目录却是文件 ⇒ path-abnormal，实测 ${JSON.stringify(st)}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('★ 探针·model.lmstudio（间接）：本机桩端点逼出 ready / corrupt / missing 三态（离线，不真连 LM Studio）', async () => {
+  const stub = rv2EnvStub();
+  const ok = await rv2Listen((_q, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ data: [{ id: 'm1' }, { id: 'm2' }] }));
+  });
+  const bad = await rv2Listen((_q, res) => { res.writeHead(500); res.end('boom'); });
+  const dead = await rv2ClosedPort();
+  try {
+    // ① 200 + JSON ⇒ ready（probeEndpoint 成功分支，detail 带上模型数）
+    let st = await rv2WithEnv('LEMO_LMSTUDIO_URL', `http://127.0.0.1:${ok.port}/v1/models`, async () => {
+      const m = await freshRes('lm-ok');
+      return m.scanOne('model.lmstudio', { envResult: stub });
+    });
+    assert.equal(st.state, 'ready', `200 ⇒ ready，实测 ${JSON.stringify(st)}`);
+    assert.match(String(st.detail || ''), /2 个模型/, `detail 应带上模型数，实测 ${JSON.stringify(st.detail)}`);
+
+    // ② 500 ⇒ corrupt（找到但不可用）
+    st = await rv2WithEnv('LEMO_LMSTUDIO_URL', `http://127.0.0.1:${bad.port}/v1/models`, async () => {
+      const m = await freshRes('lm-bad');
+      return m.scanOne('model.lmstudio', { envResult: stub });
+    });
+    assert.equal(st.state, 'corrupt', `500 ⇒ corrupt，实测 ${JSON.stringify(st)}`);
+    assert.match(String(st.detail || ''), /HTTP 500/, `detail 应说明 HTTP 500，实测 ${JSON.stringify(st.detail)}`);
+
+    // ③ 端口**不监听** ⇒ fetch 拒绝 ⇒ missing（★ 实测确认：Node 的 fetch 不走 http_proxy，本机端口直连）
+    st = await rv2WithEnv('LEMO_LMSTUDIO_URL', `http://127.0.0.1:${dead}/v1/models`, async () => {
+      const m = await freshRes('lm-dead');
+      return m.scanOne('model.lmstudio', { envResult: stub });
+    });
+    assert.equal(st.state, 'missing', `端点不可达 ⇒ missing，实测 ${JSON.stringify(st)}`);
+  } finally {
+    await ok.close();
+    await bad.close();
+  }
+});
+
+test('★ 探针·plugin.style-skills（间接）：真实 lib/style-skills 树 ⇒ ready（只读，不落盘）', async () => {
+  const st = await scanOne('plugin.style-skills', { envResult: rv2EnvStub() });
+  assert.ok(st, 'scanOne(plugin.style-skills) 应有结果');
+  assert.equal(st.state, 'ready', `真实风格包树应 ready，实测 ${JSON.stringify(st)}`);
+  assert.match(String(st.detail || ''), /个风格包/, `detail 应报告风格包数，实测 ${JSON.stringify(st.detail)}`);
+  const n = Number((String(st.detail).match(/(\d+)\s*个风格包/) || [])[1]);
+  assert.ok(n >= 1, `风格包数应 >= 1，实测 ${JSON.stringify(st.detail)}`);
+});
+
+/** 造一条 **endpoint 挂载** 的临时资源条目：自定义探针恒 ready（不做网络），mount.how='endpoint'。 */
+const rv2EndpointEntrySrc = (id, url) => `  {
+    id: ${JSON.stringify(id)}, kind: 'model', label: 'rv2 endpoint 夹具', bundled: false, required: false,
+    dir: ${JSON.stringify(id)}, version: {}, detect: { via: 'custom', probe: async () => ({ found: true, executable: true, path: ${JSON.stringify(url)} }) },
+    download: null, import: null, mount: { how: 'endpoint', detail: ${JSON.stringify(url)} }, impact: '', fix: '',
+  },`;
+
+/** 整棵拷 `lib/` 到 `rv2-` 临时树 → 在副本 `_entries` 末尾插入条目 → 返回副本模块路径。 */
+function copyLibWithRv2(entriesSrc) {
+  const root = path.join(TMP, `rv2-tree-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
+  fs.mkdirSync(root, { recursive: true });
+  fs.cpSync(LIB_SRC, path.join(root, 'lib'), { recursive: true });   // ★ 整棵拷（不动真实模块）
+  const mod = path.join(root, 'lib', 'resources.mjs');
+  const src = fs.readFileSync(mod, 'utf8');
+  const anchor = '];\n\nexport const RESOURCES';
+  assert.ok(src.includes(anchor), '副本变异锚点应存在（真实模块源码已变？）');
+  fs.writeFileSync(mod, src.replace(anchor, `${entriesSrc}\n];\n\nexport const RESOURCES`), 'utf8');
+  return mod;
+}
+
+test('★ mount 的 endpoint 分支（lib/resources.mjs:790）：端点可达 ⇒ ok:true；端点不可达 ⇒ ok:false 且 detail 说明「端点不可达」', async () => {
+  const live = await rv2Listen((_q, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ data: [] }));
+  });
+  const deadPort = await rv2ClosedPort();
+  const idLive = 'rv2-ep-live', idDead = 'rv2-ep-dead';
+  const liveUrl = `http://127.0.0.1:${live.port}/v1/models`;
+  const deadUrl = `http://127.0.0.1:${deadPort}/v1/models`;
+  const mod = copyLibWithRv2(`${rv2EndpointEntrySrc(idLive, liveUrl)}\n${rv2EndpointEntrySrc(idDead, deadUrl)}`);
+  try {
+    const { scanOne: so, mount: mt } = await import(pathToFileURL(mod).href);
+    const stub = rv2EnvStub();
+    // 前置：两条都 ready（自定义探针恒 ready、不做网络）—— 这样 mount 才会**越过** state 检查、
+    //   真的走到「endpoint 复探」那一段（否则只会返回「当前状态 X，未挂载」）。
+    assert.equal((await so(idLive, { envResult: stub })).state, 'ready', '前置：live 夹具应 ready');
+    assert.equal((await so(idDead, { envResult: stub })).state, 'ready', '前置：dead 夹具应 ready（探针不做网络）');
+
+    // ① 端点可达 ⇒ 挂载成功
+    const r1 = await mt(idLive, { envResult: stub });
+    assert.equal(r1.ok, true, `端点可达 ⇒ ok:true，实测 ${JSON.stringify(r1)}`);
+    assert.equal(r1.how, 'endpoint', `how 应为 endpoint，实测 ${r1.how}`);
+
+    // ② 端点不可达 ⇒ ok:false，且 detail 说明「端点不可达」（★ 而不是「当前状态 … 未挂载」）
+    const r2 = await mt(idDead, { envResult: stub });
+    assert.equal(r2.ok, false, `端点不可达 ⇒ ok:false，实测 ${JSON.stringify(r2)}`);
+    assert.equal(r2.how, 'endpoint', `how 应为 endpoint，实测 ${r2.how}`);
+    assert.match(String(r2.detail || ''), /端点不可达/, `detail 应说明「端点不可达」，实测 ${JSON.stringify(r2.detail)}`);
+  } finally { await live.close(); }
 });

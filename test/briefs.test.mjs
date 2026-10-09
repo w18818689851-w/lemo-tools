@@ -817,7 +817,7 @@ async function main() {
     // ══ ⑬ 控制台出片必须写进独立输出目录（不碰样板片）═══════
     //
     // ★ 这条钉的是一个**真发生过的覆盖事故**：控制台起任务时从不传 `--out`
-    //   （server.mjs:1675 只拼 `--skip-sync <runOpts>`），而编排器
+    //   （`server.mjs` 里拼 `--skip-sync <runOpts>` 的那处），而编排器
     //   `lemo-make.mjs` 的 `outDir = o.out || <exportDir>\<slug>` ⇒ 成片直写**样板片路径**，
     //   把样板片覆盖掉（实测 art-deco 的样板片被覆盖成 9:16）。
     //   ⇒ 现在 lib/jobs.mjs 在**最靠近 spawn 的那一处**（buildOrchArgs）注入 `--out <exportDir>\_jobs\<任务id>`。

@@ -3327,7 +3327,7 @@ async function main() {
     log('');
     log(C.b('  J. 资源检测面板（把 /api/resources/scan 响应换成夹具，端到端渲染）'));
 
-    const J_NAMES = ['J1 资源检测面板', 'J2 5 种 state', 'J3 ready 条目', 'J4 非 ready'];
+    const J_NAMES = ['J1 资源检测面板', 'J2 5 种 state', 'J3 ready 条目', 'J4 非 ready', 'J5 一键下载', 'J6 手动导入'];
     const jWillRun = !OPT.filter || J_NAMES.some((n) => n.includes(OPT.filter));
     if (jWillRun) {
       // 夹具：覆盖 5 种 state；一个 ready（required）、一个 ready（bundled）；一个 missing 且
@@ -3359,10 +3359,23 @@ async function main() {
           const fixture = ${JSON.stringify(RES_FIXTURE)};
           const orig = window.fetch;
           window.__resPatched = true;
+          // ★ 记录**所有**被本补丁拦下的 /api/resources/* 请求（URL / method / body）——
+          //   供 J5/J6 断言「点按钮后**真的**发出了哪个请求、body 是什么」，并做反空转（点前计数为 0）。
+          window.__resReqs = [];
           window.fetch = async (input, opts) => {
             const url = String(input && input.url ? input.url : input);
+            const method = String((opts && opts.method) || (input && input.method) || 'GET').toUpperCase();
+            const body = opts && typeof opts.body === 'string' ? opts.body : null;
+            if (url.includes('/api/resources/')) window.__resReqs.push({ url, method, body });
             if (url.includes('/api/resources/scan')) {
               return new Response(JSON.stringify(fixture), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+            if (url.includes('/api/resources/download')) {
+              // 合法假响应：runResourceDownload 认 r.skipped ⇒ 早返回（不入队、不挂 SSE，避免打到不存在的任务）。
+              return new Response(JSON.stringify({ skipped: true, reason: '（夹具）已就绪，跳过下载' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+            if (url.includes('/api/resources/import')) {
+              return new Response(JSON.stringify({ ok: true, path: 'D:/lemo-res/_fixture/imported' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
             }
             return orig(input, opts);
           };
@@ -3482,6 +3495,90 @@ async function main() {
             rows.push(`${id} ✓`);
           }
           notes.push(`J4 model-x 有「一键下载」+「手动导入」；无下载源的 ${noDl.join(', ')} 只有「无自动下载源」提示、无下载按钮`);
+        });
+
+        // ── J5/J6 ★ 按钮**点击链路**（此前 J4 只断言按钮「存在」，从不点击 ⇒ 「点后发哪个请求」无人验）──
+        //   手法：把 CDP 注入的 fetch 补丁**扩展成也拦** POST /api/resources/download 与 /import，
+        //   并把每个被拦请求记进 `window.__resReqs` ⇒ 用 CDP **真点击**按钮，再断言「发出的请求 URL + body」。
+        //   ★ 反空转：断言 `window.__resReqs` 是数组且补丁生效；★ 「点之前没发过、点之后才发」：
+        //     点前先读该端点的计数必须为 0，点后再等它 >= 1（否则「没点击也通过」）。
+        await runCase('J5 点「一键下载」→ **真的**发出 POST /api/resources/download，且 body.id == 被点那条的 id', async () => {
+          need(await cdp.evalJs(`Array.isArray(window.__resReqs)`),
+            '反空转：window.__resReqs 不是数组（扩展后的 fetch 补丁没生效）');
+          const pre = await cdp.evalJs(`window.__resReqs.filter(r => r.url.includes('/api/resources/download')).length`);
+          need(pre === 0, `反空转：点击**之前**不该有 download 请求，实测 ${pre} 个`);
+          // 真点击 model-x（missing + download）的「一键下载」按钮
+          const clicked = await cdp.evalJs(`(() => {
+            const it = document.querySelector('#resList .res-item[data-res-id="model-x"]');
+            if (!it) return false;
+            const b = [...it.querySelectorAll('button')].find((x) => x.textContent.includes('一键下载'));
+            if (!b) return false;
+            b.click();
+            return true;
+          })()`);
+          need(clicked, '没找到 model-x 的「一键下载」按钮（点击失败）');
+          await waitFor(cdp.evalJs,
+            `window.__resReqs.filter(r => r.url.includes('/api/resources/download')).length >= 1`,
+            { timeoutMs: 8000 });
+          const reqs = await cdp.evalJs(`window.__resReqs.filter(r => r.url.includes('/api/resources/download'))`);
+          const req = reqs[reqs.length - 1];
+          need(req, '点击后仍未记录到 download 请求');
+          need(req.method === 'POST', `下载请求 method 应是 POST，实测 ${req.method}`);
+          need(String(req.url).endsWith('/api/resources/download'),
+            `下载请求 URL 应是 /api/resources/download，实测 ${JSON.stringify(req.url)}`);
+          let body = null;
+          try { body = JSON.parse(req.body); } catch { /* 下面统一报错 */ }
+          need(body && body.id === 'model-x',
+            `★ 下载请求 body 应含 {id:'model-x'}，实测 body=${JSON.stringify(req.body)}`);
+          notes.push(`J5 真点击「一键下载」⇒ 拦截到 ${req.method} ${req.url}，body.id=${body.id}（点前 0 个 / 点后 ${reqs.length} 个）`);
+        });
+
+        await runCase('J6 点「手动导入」→ 展开 + 填路径 + 点「导入」⇒ **真的**发出 POST /api/resources/import，body 含 {id, path}', async () => {
+          const IMPORT_PATH = 'D:/lemo-tmp/rv2-import-pkg.zip';
+          const pre = await cdp.evalJs(`window.__resReqs.filter(r => r.url.includes('/api/resources/import')).length`);
+          need(pre === 0, `反空转：点击**之前**不该有 import 请求，实测 ${pre} 个`);
+          // ① 点「手动导入」展开折叠行
+          const opened = await cdp.evalJs(`(() => {
+            const it = document.querySelector('#resList .res-item[data-res-id="model-x"]');
+            if (!it) return false;
+            const b = [...it.querySelectorAll('button')].find((x) => x.textContent.includes('手动导入'));
+            if (!b) return false;
+            b.click();
+            return true;
+          })()`);
+          need(opened, '没找到 model-x 的「手动导入」按钮（点击失败）');
+          await waitFor(cdp.evalJs,
+            `!!document.querySelector('#resList .res-item[data-res-id="model-x"] .res-import-row')`,
+            { timeoutMs: 5000 });
+          // ② 往输入框填一个本机路径
+          await cdp.evalJs(`(() => {
+            const inp = document.querySelector('#resList .res-item[data-res-id="model-x"] .res-import-input');
+            inp.value = ${JSON.stringify(IMPORT_PATH)};
+          })()`);
+          // ③ 点该行里的「导入」按钮
+          const confirmed = await cdp.evalJs(`(() => {
+            const row = document.querySelector('#resList .res-item[data-res-id="model-x"] .res-import-row');
+            if (!row) return false;
+            const b = [...row.querySelectorAll('button')].find((x) => x.textContent.trim() === '导入');
+            if (!b) return false;
+            b.click();
+            return true;
+          })()`);
+          need(confirmed, '没找到导入行里的「导入」按钮（点击失败）');
+          await waitFor(cdp.evalJs,
+            `window.__resReqs.filter(r => r.url.includes('/api/resources/import')).length >= 1`,
+            { timeoutMs: 8000 });
+          const reqs = await cdp.evalJs(`window.__resReqs.filter(r => r.url.includes('/api/resources/import'))`);
+          const req = reqs[reqs.length - 1];
+          need(req, '点击后仍未记录到 import 请求');
+          need(req.method === 'POST', `导入请求 method 应是 POST，实测 ${req.method}`);
+          need(String(req.url).endsWith('/api/resources/import'),
+            `导入请求 URL 应是 /api/resources/import，实测 ${JSON.stringify(req.url)}`);
+          let body = null;
+          try { body = JSON.parse(req.body); } catch { /* 下面统一报错 */ }
+          need(body && body.id === 'model-x' && body.path === IMPORT_PATH,
+            `★ 导入请求 body 应含 {id:'model-x', path:'${IMPORT_PATH}'}，实测 body=${JSON.stringify(req.body)}`);
+          notes.push(`J6 真点击「手动导入」→ 展开+填路径+点「导入」⇒ 拦截到 ${req.method} ${req.url}，body={id:${body.id}, path:${body.path}}（点前 0 个 / 点后 ${reqs.length} 个）`);
         });
       } finally {
         // 移除注入脚本（避免影响后续导航）；页面内已生效的 fetch 补丁随下次导航自然失效。

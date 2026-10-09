@@ -846,6 +846,7 @@ function apiConsole(req, res) {
     simulateEnv: ARGV.simulateEnv || null,   // 非 null = 演练模式（/api/env 返回合成结果）
     store: store.storeStatus(),     // 任务历史/日志落盘位置与上限（见 lib/store.mjs）
     briefs: briefs.briefsStatus(),  // 主题工单落盘位置与上限（见 lib/briefs.mjs）
+    voices: voices.voicesStatus(),  // 音色库状态快照：源脚本/内容目录/试听目录 + 清单缓存（见 lib/voices.mjs）
     // 语言版本注册表（只读代理，见 lib/langs.mjs）：清单来自库侧 core/lang/lang.mjs 的 LANGS
     langs: { codes: langs.langCodes(), source: langs.langSource, error: langs.langsRegistryError },
     // 输出尺寸注册表（只读代理，见 lib/sizes.mjs）：清单来自库侧 core/render/size.mjs 的 RATIOS

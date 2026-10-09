@@ -118,11 +118,17 @@ const JSON_MODE = process.argv.includes('--json');
 //        · `lib/setup.mjs:indexActions`       —— 按 id 建 Map，被 server.mjs:441 的 `actions.find((a)=>a.id===id)` 完全覆盖；
 //        · `lib/style-dna-reader.mjs:hasStyleDna` —— 逐字等于 `!!readStyleDna(slug)`，而 readStyleDna 才是唯一在用读取入口。
 //        （删前已全仓 grep：`lib/` `scripts/` 仓根 `*.mjs` `web/` `test/` `*.md` 均**零引用**。）
-//     ② **保留 2 条**（有真实用途 / 是模块 API，理由写在下面对应值里）。
+//     ② **保留 1 条**（有真实用途 / 是模块 API，理由写在下面对应值里）。
 //     ③ 末 1 条 `styleDetail` 是本闸门**复核补登**：它实际以**回调**形式被使用。
+//     ④ ★ **已接线 1 条**（2026-10-09）：`lib/voices.mjs:voicesStatus` 已从 `BACKLOG` **移出** ——
+//        它此前被登记为「暂未接线」（server.mjs 当时属禁改），本批已照 store/briefs 的既有模式
+//        接进 `/api/console`（server.mjs 的 `apiConsole`）⇒ 现在**有真实调用点**，不再是零调用导出。
+//        （历史保留在此，不抹掉；对应 BACKLOG 条目见下方注释。）
 const BACKLOG = new Map(Object.entries({
   'lib/style-skill-reader.mjs:clearStyleSkillCache': '★ 保留（2026-10-09 复核）：模块级读取缓存（`_cache`）的**失效入口**。当前消费者都是**短命进程**（仓根 dub.mjs / lemo-make.mjs），进程退出即重建缓存 ⇒ 现无调用方；但它是「**长驻消费者读到重新蒸馏后的 SKILL.md**」所必需的口子（写侧 = scripts/style-distill.mjs）⇒ 有意保留为模块 API，不删。',
-  'lib/voices.mjs:voicesStatus': '★ 保留（2026-10-09 复核）：音色库**状态快照**，与 lib/store.mjs:storeStatus / lib/briefs.mjs:briefsStatus **同型** —— `/api/console`（server.mjs:838 `apiConsole`）正是逐模块聚合这些 `*Status()` 的地方，本函数是该模式里**缺的那一条**。真实消费者 = `/api/console`，只是本批任务书把 server.mjs 划为禁改 ⇒ **暂未接线**（不是「没有该接的位置」）。',
+  // ★ 已移出（2026-10-09 已接线到 `/api/console`，见 server.mjs 的 `apiConsole`）：
+  //   `lib/voices.mjs:voicesStatus` —— 原登记理由「与 storeStatus/briefsStatus 同型、只是暂未接线」
+  //   已成事实：现已接线 ⇒ 有调用点，故从本表移出（历史保留于上方 ④ 与本注释）。
   'lib/briefs.mjs:styleDetail': '★ 复核补登：以**回调**形式 `slugs.map(styleDetail)` 被使用（不是「直接调用」形态）⇒ 实际在用，仅调用形态判据看不见。',
 }));
 

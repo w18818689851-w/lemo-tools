@@ -438,6 +438,37 @@ async function main() {
       notes.push(`⑧ import：file=${first.file} + name=../evil → 400「name 非法」（在写脚本/起 ffmpeg **之前**被拒）`);
     });
 
+    // ══ ⑩ console：/api/console 必须含 voices 字段，且与 store/briefs **同型** ══
+    //   ★ 编号说明：⑨ 是 finally 里的「无残留」守卫（不在本 try 里按序跑），故这里用 ⑩。
+    //   背景：lib/voices.mjs 的 `voicesStatus()` 是**纯函数**，此前**零调用点**（闸门 BACKLOG 里
+    //   登记为「暂未接线」）；本套件钉住它**真的接到了** `/api/console` —— 与 store/briefs 同型。
+    await runCase('⑩ GET /api/console → 含 voices 字段，且与 store/briefs 同型（钉住 voicesStatus 已接线）', async () => {
+      const r = await get('/api/console');
+      need(r.status === 200, `console 应 200，实际 ${r.status}：${r.text.slice(0, 160)}`);
+      need(r.json && typeof r.json === 'object' && !Array.isArray(r.json), `响应应是对象：${r.text.slice(0, 160)}`);
+
+      // ★ 同型基线：store / briefs 是「逐模块聚合 *Status()」模式里既有的两条 —— 一并钉住，防回归
+      for (const k of ['store', 'briefs']) {
+        need(r.json[k] && typeof r.json[k] === 'object' && !Array.isArray(r.json[k]), `console 缺 ${k} 对象：${r.text.slice(0, 160)}`);
+      }
+
+      // ★ 本批新增的那一条：voices 必须存在，且形状与 store/briefs 同型（对象，值是标量）
+      const v = r.json.voices;
+      need(v && typeof v === 'object' && !Array.isArray(v), `console 缺 voices 对象（voicesStatus 未接线？）：${r.text.slice(0, 200)}`);
+      need(typeof v.source === 'string' && v.source.length > 0, `voices.source 不是非空字符串：${JSON.stringify(v.source)}`);
+      need(typeof v.contentDir === 'string' && v.contentDir.length > 0, `voices.contentDir 不是非空字符串：${JSON.stringify(v.contentDir)}`);
+      need(typeof v.testDir === 'string' && v.testDir.length > 0, `voices.testDir 不是非空字符串：${JSON.stringify(v.testDir)}`);
+      need(typeof v.cached === 'boolean', `voices.cached 不是布尔：${JSON.stringify(v.cached)}`);
+      need(v.cacheAgeMs === null || typeof v.cacheAgeMs === 'number', `voices.cacheAgeMs 应为 null 或数字：${JSON.stringify(v.cacheAgeMs)}`);
+      // ★ 取值来自实现：试听目录必须与服务端常量一致（不硬编码路径）
+      need(v.testDir === VOICE_TEST_DIR, `voices.testDir 与 VOICE_TEST_DIR 不一致：${v.testDir} ≠ ${VOICE_TEST_DIR}`);
+      // ★ 同型：voices 的每个值都是标量（对象/数组 = 与 store/briefs 不同型）
+      for (const [k, val] of Object.entries(v)) {
+        need(val === null || ['string', 'number', 'boolean'].includes(typeof val), `voices.${k} 不是标量，与 store/briefs 不同型：${JSON.stringify(val)}`);
+      }
+      notes.push(`⑩ console：voices 已接线（source/contentDir/testDir/cached/cacheAgeMs），与 store/briefs 同型；testDir=${v.testDir}`);
+    });
+
     // ★ 成功路径**故意不测**：/api/voices/import 与 /api/voices/test 的合法请求都会
     //   jobs.enqueueSetup 一条真任务（起 ffmpeg / 加载 TTS 模型），违反本套件「零 ffmpeg、零 TTS」的硬约束。
     //
