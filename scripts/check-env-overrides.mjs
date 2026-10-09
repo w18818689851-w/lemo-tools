@@ -39,8 +39,11 @@
  *      「本闸门已失明」**（否则「0 处未登记」会被读成「都登记了」—— 本项目反复治过的「0 对象却全绿」）。
  *
  * ★★ ③ 「剥注释」的核法（**本项目踩过的坑，两处都踩过**）：
- *   · 坑一：**把解释某变量没人读的注释当成消费者** ⇒ 必须剥注释。实证：`lib/env.mjs:48` 的 `//`
+ *   · 坑一：**把解释某变量没人读的注释当成消费者** ⇒ 必须剥注释。实证：`lib/env.mjs` 的 `//`
  *     注释里写着 `process.env.LEMO_LIB_WSL` / `LEMO_LIB_WIN`（那是**说明文字**，不是读者）。
+ *     ★ 2026-10-09 补：同日「库根两口径」收敛后，`lib/env.mjs` 的 `CFG.wslLib` / `CFG.winLib`
+ *     **也真的读**这两个变量了（真代码在 `CFG` 定义处）⇒ 该文件现在是它们的**真读者**（已登记）；
+ *     但上面这条实证仍成立 —— 该注释本身**不是**读者，**剥注释的判据必须保留**。
  *   · 坑二：**粗剥会把真代码吃掉**。实测：`test/cases.mjs` 同款的三步粗剥（先正则删块注释、再删
  *     行尾 `//`）在本仓会**吃掉 12 处真命中** —— 其中 6 处是**真代码**
  *     （`dub.mjs:64` 的 `LEMO_VENC`、`lemo-make.mjs` 的 `INDEXTTS_MIN_FREE_MIB`、`style-scan.mjs`
@@ -538,12 +541,15 @@ const OVERRIDES = {
     what: 'WSL 侧风格源码根',
   },
   LEMO_LIB_WIN: {
-    readers: ['consistency-check.mjs', 'lemo-make.mjs'],
-    what: '库根（Windows 侧，编排器 CFG.winLib / consistency-check 的 LIB）',
+    // ★ 2026-10-09 收敛「库根两口径」：`lib/env.mjs` 的 `CFG.winLib` 也改认这个变量（原先硬编码）；
+    //   `consistency-check.mjs` 的 `LIB` 改为**读 `CFG.winLib`**（不再自己读 env）⇒ 从读者里**移除**它。
+    readers: ['lib/env.mjs', 'lemo-make.mjs'],
+    what: '库根（Windows 侧；编排器 CFG.winLib 与 lib/env.mjs 的 CFG.winLib 同名同义）',
   },
   LEMO_LIB_WSL: {
-    readers: ['lemo-make.mjs'],
-    what: '库根（WSL 侧，编排器 CFG.wslLib）',
+    // ★ 2026-10-09：同上，`lib/env.mjs` 的 `CFG.wslLib` 也改认这个变量（原先硬编码）。
+    readers: ['lib/env.mjs', 'lemo-make.mjs'],
+    what: '库根（WSL 侧；编排器 CFG.wslLib 与 lib/env.mjs 的 CFG.wslLib 同名同义）',
   },
   LEMO_FILM_DIR: {
     readers: ['lib/env.mjs', 'scripts/check-selfcheck-claims.mjs', 'scripts/prune-jobs.mjs'],

@@ -12,7 +12,8 @@
  *   这就是「**有导出 ≠ 有功能**」：导出只证明符号在，不证明任何入口真的用它。
  *   ★ 已修 `mount`、并给那条闸门加了「调用点」判据；但**同类病会再长出来** ——
  *     侦察（`_distill/新缺口狩猎-第4轮-2026-10-08.md` 面 4 / `总进度复盘…-2026-10-09.md` T1）
- *     发现 `lib/**` 里还有一批「**完全零调用**」的可调用导出（如 `dub-core.analyzeText`）。
+ *     发现 `lib/**` 里还有一批「**完全零调用**」的可调用导出（如 `dub-core.analyzeText` —— ★ 该导出已于
+ *     2026-10-09 处置批判定「与在用实现重复」并删除，此处仅作**建闸门时的历史举例**）。
  *   ⇒ 立此闸门，把「**lib 的导出到底有没有人调用**」从**人工 grep** 变成**机制**。
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -108,16 +109,20 @@ const JSON_MODE = process.argv.includes('--json');
 
 // ── BACKLOG：已登记的「零调用导出」（只列 ℹ、不判 FAIL）──────────────────────
 //   键 = `<相对仓根的路径>:<导出名>`；值 = 「为什么保留」。
-//   ★ 7 条来自侦察（`_distill/总进度复盘与剩余任务计划-2026-10-09.md` T1）；
-//     末 1 条（`styleDetail`）是本闸门**复核补登**：它实际以**回调**形式被使用。
+//   ★ 2026-10-09 **处置批**（本闸门初立后逐条处置，登记 ≠ 处置）：
+//     ① **已删 5 条**（真死代码 —— 与在用实现语义重复 / 已被更通用函数覆盖），条目一并移出：
+//        · `lib/dub.mjs:isAllowedExt`         —— 等价于 `kindOfExt(ext) === 'video'`（kindOfExt 在 server.mjs:1462 在用）；
+//        · `lib/dub.mjs:isAllowedUploadExt`   —— 逐字等于 `kindOfExt(ext) !== ''`；
+//        · `lib/dub-core.mjs:analyzeText`     —— `loadSemantic()` + `sem.analyze()` 的薄包装，签名缺 `analysis`/`visual`
+//                                                 ⇒ 两条真通路（仓根 dub.mjs 的 runAnalyze / lib/dub.mjs:analyzeScript）都用不上它；
+//        · `lib/setup.mjs:indexActions`       —— 按 id 建 Map，被 server.mjs:441 的 `actions.find((a)=>a.id===id)` 完全覆盖；
+//        · `lib/style-dna-reader.mjs:hasStyleDna` —— 逐字等于 `!!readStyleDna(slug)`，而 readStyleDna 才是唯一在用读取入口。
+//        （删前已全仓 grep：`lib/` `scripts/` 仓根 `*.mjs` `web/` `test/` `*.md` 均**零引用**。）
+//     ② **保留 2 条**（有真实用途 / 是模块 API，理由写在下面对应值里）。
+//     ③ 末 1 条 `styleDetail` 是本闸门**复核补登**：它实际以**回调**形式被使用。
 const BACKLOG = new Map(Object.entries({
-  'lib/dub-core.mjs:analyzeText': '★ 已登记（侦察 C2）：文本分析链路预留接口，当前无调用方；保留为对外能力。',
-  'lib/style-skill-reader.mjs:clearStyleSkillCache': '★ 已登记（侦察 C2）：缓存失效接口，供测试 / 将来热重载；当前无调用方。',
-  'lib/dub.mjs:isAllowedExt': '★ 已登记：扩展名白名单判定，当前无调用方（保留为校验 API）。',
-  'lib/dub.mjs:isAllowedUploadExt': '★ 本批新登记（此前从未登记）：上传扩展名白名单判定，当前无调用方。',
-  'lib/setup.mjs:indexActions': '★ 本批新登记（此前从未登记）：安装计划按 id 建索引，当前无调用方。',
-  'lib/style-dna-reader.mjs:hasStyleDna': '★ 本批新登记（此前从未登记）：风格 DNA 存在性判定，当前无调用方。',
-  'lib/voices.mjs:voicesStatus': '★ 本批新登记（此前从未登记）：音色库状态汇总，当前无调用方。',
+  'lib/style-skill-reader.mjs:clearStyleSkillCache': '★ 保留（2026-10-09 复核）：模块级读取缓存（`_cache`）的**失效入口**。当前消费者都是**短命进程**（仓根 dub.mjs / lemo-make.mjs），进程退出即重建缓存 ⇒ 现无调用方；但它是「**长驻消费者读到重新蒸馏后的 SKILL.md**」所必需的口子（写侧 = scripts/style-distill.mjs）⇒ 有意保留为模块 API，不删。',
+  'lib/voices.mjs:voicesStatus': '★ 保留（2026-10-09 复核）：音色库**状态快照**，与 lib/store.mjs:storeStatus / lib/briefs.mjs:briefsStatus **同型** —— `/api/console`（server.mjs:838 `apiConsole`）正是逐模块聚合这些 `*Status()` 的地方，本函数是该模式里**缺的那一条**。真实消费者 = `/api/console`，只是本批任务书把 server.mjs 划为禁改 ⇒ **暂未接线**（不是「没有该接的位置」）。',
   'lib/briefs.mjs:styleDetail': '★ 复核补登：以**回调**形式 `slugs.map(styleDetail)` 被使用（不是「直接调用」形态）⇒ 实际在用，仅调用形态判据看不见。',
 }));
 
