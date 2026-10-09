@@ -60,6 +60,8 @@ if (OWNS_FILM_ROOT) {
 }
 // ★ 动态 import：让上面的 LEMO_FILM_DIR 先生效（静态 import 会被提升到文件顶部）。
 const dub = await import('../lib/dub.mjs');   // 只借常量 / 路径；dub.mjs 顶层无副作用
+// ★ D2 真峰值判据（纯函数，无副作用）—— 见 lib/dub-core.mjs 的 judgeTruePeak()
+const { judgeTruePeak } = await import('../lib/dub-core.mjs');
 
 // ★ ⑰ 要一条真实「文案出片」成片（>200KB、含 ftyp 头）来验 Range/HEAD/穿越 —— 本套件**只读**真实成片根、
 //   把一条复制进隔离根当夹具（不写真实盘）。真实库里没有成片时 ⑰ 照旧明确失败（与隔离前行为一致）。
@@ -813,10 +815,146 @@ async function main() {
         + `穿越防护共 ${TRAVERSAL.length + 1} 种写法全部被拒（dir=.. → 403 路径越界；反斜杠·冒号·NUL → 400；字面 ../ 与 %2e%2e → 404），且无字节泄露`);
     });
 
+    // ══ ⑲ ★ 成片流：客户端中途断开 / 文件在 stat↔open 之间被删 ⇒ 服务**不得崩** ══
+    //
+    // 为什么要有这条：成片/播放器接口（`apiFilmFile` / `serveRangeFile` / `serveStatic`）原先都是
+    //   `fs.createReadStream(full).pipe(res)` —— 源流**既不 destroy、也没有 'error' 监听**。两个后果：
+    //     ① 客户端中途断开（拖进度条 / 关页面）⇒ `res` 被 destroy 但**源流不停** ⇒ fd 挂到 GC 才释放
+    //        （反复拖动可累积到 EMFILE）。实测：60 次中断 ⇒ 服务进程句柄数 +60。
+    //     ② 文件在 `stat` 与 `createReadStream` 之间被删（出片/清理竞态）⇒ 源流发 'error' 而**没人接**
+    //        ⇒ unhandled 'error' ⇒ **长驻服务直接退出**。
+    //   ⇒ 修复见 `server.mjs` 的 `streamFile()`（源流挂 error；res 'close' 时 destroy 源流；吞 res 自身 error；
+    //     头延迟到源流 'open' 后才发 ⇒ 竞态下能干净回 404 而不是崩）。
+    //   ★ 本用例抓的是 ②（**崩进程**）—— 它在**服务外部可观测且可复现**（实测未修复时扫延迟到 1~2ms 即命中，
+    //     进程随即消失）；① 的 fd 计数需读服务进程句柄数、不便在套件里断言，故本用例只钉 ②。
+    //   ★ 反向验证：把 `streamFile()` 里的 `src.on('error', …)` 去掉 ⇒ 本用例必红（服务崩）。
+    await runCase('⑲ ★ 成片流：客户端中途断开 30 次 / 文件在 stat↔open 之间被删 ⇒ 服务进程不得崩（Range 仍 206）', async () => {
+      const slug = 'fx2race';   // 白名单字符；在隔离成片根内自建目录，跑完删净
+      const dir = path.join(TEST_FILM_ROOT, slug);
+      const f = path.join(dir, 'race.mp4');
+      const url = `/api/films/${slug}/race.mp4`;
+      const alive = () => server.child.exitCode === null && server.child.signalCode === null;
+      fs.mkdirSync(dir, { recursive: true });
+      try {
+        // ── (a) 客户端中途断开 30 次：服务必须仍存活（源流被销毁，fd 不留）──
+        for (let i = 0; i < 30 && alive(); i++) {
+          fs.writeFileSync(f, Buffer.alloc(1 << 20, 0x41));    // 1MB：断开时服务端还在读
+          await getPartial(P, url, { maxBytes: 4096 });         // 收 4KB 就主动 destroy（模拟拖进度条）
+        }
+        need(alive(), '客户端中途断开 30 次后服务进程退出了');
+
+        // ── (b) ★ 文件在 stat 与 open 之间被删 ⇒ 不得崩（扫延迟以命中那个窗口）──
+        //   ★ 每轮**并发压 32 条**：把服务端 libuv 线程池（默认 4）压到排队 ⇒ 显著拉宽
+        //     「stat 已成功、open 还没做」的窗口；否则单条请求的窗口只有几十微秒、1ms 粒度扫不中（实测）。
+        let hits404 = 0, hits500 = 0, trials = 0;
+        for (let delay = 0; delay <= 10 && alive(); delay++) {
+          for (let k = 0; k < 12 && alive(); k++) {
+            trials++;
+            fs.writeFileSync(f, Buffer.alloc(1 << 18, 0x42));   // 256KB，够大能开出流即可
+            // 请求**立即发出**（getPartial 的 executor 同步 req.end()），随后按 delay 删文件
+            const ps = [];
+            for (let c = 0; c < 32; c++) ps.push(getPartial(P, url).catch(() => ({ status: 0 })));
+            await sleep(delay);
+            try { fs.unlinkSync(f); } catch { /* 已被前一轮删掉也无妨 */ }
+            for (const r of await Promise.all(ps)) {
+              if (r.status === 404) hits404++;
+              else if (r.status === 500) hits500++;
+            }
+          }
+        }
+        need(alive(),
+          `文件在 stat↔open 之间被删（${trials} 轮）后服务进程退出了 —— 源流的 'error' 无人接（unhandled 'error' 崩进程）。`
+          + `（修复点：server.mjs 的 streamFile() 必须给源流挂 'error'）`);
+        need(hits404 > 0,
+          `扫了 ${trials} 轮都没命中「stat 成功、open 时文件已不在」的窗口（404=0）—— 竞态窗口没被真正压到，这条用例没验到东西`);
+
+        // ── (c) 反复中断 + 竞态之后，Range 仍必须正常（别把播放器改坏）──
+        fs.writeFileSync(f, Buffer.alloc(1 << 18, 0x43));
+        const r206 = await getPartial(P, url, { headers: { Range: 'bytes=100-199' } });
+        need(r206.status === 206, `竞态之后 Range 应 206，实际 ${r206.status}`);
+        need(r206.headers['content-range'] === `bytes 100-199/${1 << 18}`,
+          `竞态之后 Content-Range=${r206.headers['content-range']}`);
+        need(r206.bytes === 100, `竞态之后 Range 收到 ${r206.bytes} 字节（期望 100）`);
+        notes.push(`⑲ 成片流：客户端中途断开 30 次服务未崩；删文件竞态 ${trials} 轮未崩（命中 404×${hits404} / 500×${hits500}）；`
+          + `之后 Range 仍 206 + Content-Range 正确`);
+      } finally {
+        try { fs.unlinkSync(f); } catch { /* ignore */ }
+        try { fs.rmdirSync(dir); } catch { /* ignore */ }
+      }
+    });
+
     // ★ 成功路径**故意不测**：/api/dub/run 的合法请求会 jobs.enqueueSetup 一条真出片任务
     //   （调 GPU/TTS/真渲染，可能跑几十分钟），违反本套件「零 GPU、零 TTS、零真渲染」的硬约束。
     //   且核心工具 dub.mjs **确实存在**（D:\lemo-tools\dub.mjs），不存在「工具缺失 → 503 短路」的
     //   安全窗口，所以任何「合法 body 不被拒」的尝试都会真的起任务 —— 故整条成功路径跳过。
+
+    // ══ ⑲ saveIndex 原子写：写盘失败/中断 ⇒ index.json 不被截断（D1）═════
+    // 缺陷：`lib/dub.mjs` 的 `saveIndex()` 曾用**裸 writeFileSync**（先截断再写）⇒ 控制台被 Ctrl+C /
+    //   被杀恰逢写索引 ⇒ index.json 留**半截** ⇒ loadIndex 解析失败降级空表 ⇒ 下拉里素材全消失。
+    // 修法：照 `lib/store.mjs` 的范式「先写 tmp（带 pid+序号）→ rename」。
+    // ★ 本用例用**真实 fs 单例**注入失败点：把 writeFileSync 换成「写一半就抛 ENOSPC」——
+    //   旧代码直接写 INDEX_FILE 会留下半截（用例变红），新代码写的是 tmp（INDEX_FILE 纹丝不动）。
+    await runCase('⑲ saveIndex 原子写：模拟写盘失败(ENOSPC) ⇒ index.json 逐字节不变、无 .tmp 残留', async () => {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      // 前置：造一份已知的「旧文件」当基线
+      const oldBytes = Buffer.from('[\n {"token":"fx1-old","name":"old.mp4","size":1,"path":"X","at":1,"kind":"video"}\n]', 'utf8');
+      fs.writeFileSync(INDEX_FILE, oldBytes);
+
+      const realWrite = fs.writeFileSync;
+      let touched = 0;
+      fs.writeFileSync = function (p, data, ...rest) {
+        const s = String(p);
+        // 命中「新代码的 tmp」或「旧代码直接写的 INDEX_FILE」⇒ 写一半就抛，模拟磁盘满/被中断
+        if (s === INDEX_FILE || (s.startsWith(INDEX_FILE + '.') && s.endsWith('.tmp'))) {
+          touched++;
+          const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data), 'utf8');
+          realWrite.call(fs, s, buf.subarray(0, Math.floor(buf.length / 2)));   // 半截
+          throw Object.assign(new Error('ENOSPC: no space left on device（模拟）'), { code: 'ENOSPC' });
+        }
+        return realWrite.call(fs, p, data, ...rest);
+      };
+      try {
+        // registerUpload 内部：loadIndex → push → saveIndex（落盘）
+        dub.registerUpload({ token: 'fx1-new', name: 'new.mp4', size: 2, path: path.join(UPLOAD_DIR, 'fx1-new.mp4'), at: 2, kind: 'video' });
+      } finally {
+        fs.writeFileSync = realWrite;
+      }
+
+      need(touched > 0, '注入点未被触发 —— 说明 saveIndex 没走 writeFileSync（用例自身失效，需检查实现）');
+      // ★ 硬判据①：磁盘上的 index.json 必须还是「旧文件」逐字节原样（没被截断成半截）
+      const after = fs.readFileSync(INDEX_FILE);
+      need(Buffer.compare(after, oldBytes) === 0,
+        `index.json 被破坏（原子写失效）：期望 ${oldBytes.length}B，实际 ${after.length}B / ${after.toString('utf8').slice(0, 80)}`);
+      // ★ 硬判据②：不许留半个 .tmp 垃圾
+      const tmps = listDir(UPLOAD_DIR).filter((n) => n.startsWith('index.json.') && n.endsWith('.tmp'));
+      need(tmps.length === 0, `留下了 tmp 垃圾：${JSON.stringify(tmps)}`);
+      // 清理注入产生的影响（磁盘已还原；登记表最终由收尾段逐字节还原）
+      EXTRA_PATHS.add(path.join(UPLOAD_DIR, 'fx1-new.mp4'));
+      notes.push(`⑲ 模拟写盘失败（半截 + ENOSPC）：index.json 仍逐字节等于旧文件（${after.length}B），无 .tmp 残留`);
+    });
+
+    // ══ ⑳ D2 真峰值判据：无 input_tp ⇒ 不可判定，**绝不**回落 astats 采样峰值谎报达标 ═════
+    // 缺陷：判据曾写成 `mf.truePeak !== null ? mf.truePeak : mf.peak` —— 拿不到真峰值就回落**采样峰值**，
+    //   而采样峰值比真峰值小最多 1.62 dB ⇒ 「真峰值 −0.2 dBTP、采样 −1.3 dBTP」会被误报**达标**
+    //   （交付线 TP ≤ −1.2 dBTP）。本用例钉住「只有 astats 峰值、没有 input_tp ⇒ 不得达标」。
+    await runCase('⑳ judgeTruePeak：无 input_tp（只有 astats 峰值）⇒ unknown 不可判定，绝不达标；真峰值照常判', async () => {
+      // ★ 核心判据：无 input_tp（truePeak=null），采样峰值 −1.3 落在交付线内 —— 回落旧写法会判「达标」
+      const onlyAstats = judgeTruePeak({ truePeak: null, peak: -1.3 });
+      need(onlyAstats.verdict === 'unknown',
+        `无 input_tp 时必须判「不可判定」，绝不能判达标；实际 verdict=${onlyAstats.verdict}（若为 pass ⇒ 回落采样峰值的老 bug 复发）`);
+      need(onlyAstats.verdict !== 'pass', '★ 无真峰值读数 ⇒ 不得宣称达标（这正是 D2）');
+      need(onlyAstats.value === null, `不可判定时 value 必须为 null，实际 ${onlyAstats.value}`);
+
+      // 有真峰值且 ≤ 交付线 ⇒ 达标
+      need(judgeTruePeak({ truePeak: -1.5, peak: -3.0 }).verdict === 'pass', '真峰值 −1.5 ≤ −1.2 应达标');
+      // 边界：恰等于交付线 ⇒ 达标（≤）
+      need(judgeTruePeak({ truePeak: -1.2, peak: -3.0 }).verdict === 'pass', '真峰值恰等于 −1.2 应达标（判据是 ≤）');
+      // 真峰值超标（即使采样峰值看着达标）⇒ 必须 fail —— 采样峰值 −1.3 不得救场
+      need(judgeTruePeak({ truePeak: -0.2, peak: -1.3 }).verdict === 'fail', '真峰值 −0.2 > −1.2 必须 fail（不被采样峰值掩盖）');
+
+      notes.push('⑳ judgeTruePeak：{truePeak:null,peak:-1.3}⇒unknown（旧回落写法会误判 pass）；−1.5/−1.2⇒pass；−0.2⇒fail');
+    });
+
   } finally {
     // ── 收尾 ──
     if (server && !OPT.keepServer) { await stopServer(server.child); log(C.dim(`  测试服务已停止（pid ${server.child.pid}）`)); }

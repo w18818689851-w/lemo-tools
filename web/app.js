@@ -115,8 +115,12 @@ function fmtTime(ts) {
 function fmtDur(a, b) {
   if (!a) return '';
   const s = ((b || Date.now()) - a) / 1000;
-  if (s < 60) return `${s.toFixed(1)}s`;
-  return `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}s`;
+  // ★ 先把**总秒数**取整、再拆分 —— 否则 `Math.round(s % 60)` 在 s%60 ∈ [59.5,60)
+  //   时会算出 60（如 119.6s ⇒ floor=1、round(59.6)=60 ⇒ 「1m60s」）。取整后再取模，
+  //   秒位永远落在 0~59。分支也按取整后的总秒数判：59.6s 归到「1m00s」，不再卡在 59.x。
+  const total = Math.round(s);
+  if (total < 60) return `${s.toFixed(1)}s`;
+  return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, '0')}s`;
 }
 /** 毫秒 → 人话时长（给「预计还需」用；粗到分钟即可，不做假精度）。 */
 function fmtMs(ms) {
@@ -388,13 +392,20 @@ function focusSetupItem(actionId) {
   }
 }
 
+// 竞态护栏：60 秒轮询（boot 里的 setInterval）与手动「重新检测」可重叠，
+// 只让最后一次请求的结果上屏，免得旧响应盖掉 state.env（刷新后环境反而回退成旧值）。
+let loadEnvSeq = 0;
+
 async function loadEnv(force) {
+  const seq = ++loadEnvSeq;
   $('envText').textContent = '环境检测中…';
   $('envDot').className = 'env-dot';
   try {
     const d = await api('/api/env' + (force ? `?force=1${simQuery('&')}` : simQuery('?')));
+    if (seq !== loadEnvSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
     renderEnv(d);
   } catch (e) {
+    if (seq !== loadEnvSeq) return;   // 同上：旧的失败信息也不得盖掉新状态
     $('envDot').className = 'env-dot fail';
     $('envText').textContent = '环境检测失败：' + e.message;
   }
@@ -745,11 +756,18 @@ function renderResourcesError(e) {
   list.appendChild(box);
 }
 
+// 竞态护栏：手动「重新扫描」可连点（或与一键下载后的刷新重叠），
+// 只让最后一次请求的结果上屏，免得旧扫描结果盖掉新状态。
+let loadResourcesSeq = 0;
+
 async function loadResources(force) {
+  const seq = ++loadResourcesSeq;
   try {
     const d = await api('/api/resources/scan' + (force ? '?force=1' : ''));
+    if (seq !== loadResourcesSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
     renderResources(d);
   } catch (e) {
+    if (seq !== loadResourcesSeq) return;   // 同上：旧的失败信息也不得盖掉新状态
     renderResourcesError(e);
   }
 }
@@ -1491,19 +1509,27 @@ function renderVoices() {
   addGroup('其它', list.filter((v) => !seen.has(v.name)).map((v) => v.name));
 }
 
+// 竞态护栏：手动「刷新」与导入完成后的刷新（loadVoices(true)）可重叠，
+// 只让最后一次请求的结果上屏，免得旧音色清单盖掉刚导入的新状态。
+let loadVoicesSeq = 0;
+
 async function loadVoices(force) {
+  const seq = ++loadVoicesSeq;
   state.voices = null;               // → 骨架屏
   state.voicePlaying = '';
   if (voiceAudio && !voiceAudio.paused) voiceAudio.pause();
   renderVoices();
+  let d;
   try {
     // ★ force：导入完成后服务端清单可能被缓存过，强制现读一次（?force=1）
-    const d = await api('/api/voices' + (force ? '?force=1' : ''));
-    state.voices = d || { ok: false, error: '接口返回空' };
+    const r = await api('/api/voices' + (force ? '?force=1' : ''));
+    d = r || { ok: false, error: '接口返回空' };
   } catch (e) {
     // 接口还没就绪 / 出错：把原始信息留给界面显示（renderVoices 会原样展示 error）
-    state.voices = { ok: false, error: e.message, voices: [], groups: [] };
+    d = { ok: false, error: e.message, voices: [], groups: [] };
   }
+  if (seq !== loadVoicesSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
+  state.voices = d;
   renderVoices();
   renderVoiceCurrent();
   renderDubVoices();     // 「文案出片」的音色下拉也来自同一份清单，一起刷（两处选项必须一致）
@@ -4668,8 +4694,14 @@ function llmFormPayload(includeKey) {
   return p;
 }
 
-async function loadLlmProfiles() {
+// 竞态护栏：初次加载 / 点「刷新」/ 连点刷新可重叠，只让最后一次请求的结果上屏，
+// 免得旧响应盖掉 llmState.profiles / llmState.cfg（刷新后配置反而回退成旧值）。
+// ★ 两段 await（profiles → config）共享同一个序号：任何一次新的刷新都会让旧的整段作废。
+let loadLlmSeq = 0;
+
+async function loadLlmProfiles(seq) {
   const r = await llmReq('/api/llm/profiles');
+  if (seq !== undefined && seq !== loadLlmSeq) return;   // 旧响应不得覆盖新状态
   if (r.ok) {
     llmState.profiles = (r.data && r.data.profiles) || [];
     llmState.current = (r.data && r.data.current) || 'workbuddy';
@@ -4680,9 +4712,10 @@ async function loadLlmProfiles() {
   renderLlmProfileOptions();
 }
 
-async function loadLlmConfig(profileId) {
+async function loadLlmConfig(profileId, seq) {
   const q = profileId ? `?profile=${encodeURIComponent(profileId)}` : '';
   const r = await llmReq('/api/llm/config' + q);
+  if (seq !== undefined && seq !== loadLlmSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
   if (!r.ok) {
     llmState.cfg = null;
     setLlmHint($('llmSaveHint'), '读配置失败：' + llmErrText(r.error)
@@ -4694,10 +4727,12 @@ async function loadLlmConfig(profileId) {
 }
 
 async function loadLlm() {
-  await loadLlmProfiles();
+  const seq = ++loadLlmSeq;
+  await loadLlmProfiles(seq);
+  if (seq !== loadLlmSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
   // ★ 初次加载 / 点「刷新」：读**生效**配置（不带 ?profile=，才会把已保存的覆盖算进去）。
   //   只有用户**手动切**下拉时才走 loadLlmConfig(id) 的「预览该 profile 默认值」分支。
-  await loadLlmConfig(null);
+  await loadLlmConfig(null, seq);
 }
 
 /**
@@ -5090,7 +5125,9 @@ function bind() {
   if ($('llmProfile')) $('llmProfile').addEventListener('change', (e) => {
     // 切 profile ⇒ 拉该 profile 的生效配置（默认值），避免「上一个 profile 的值挂在它名下」
     llmState.current = e.target.value;
-    loadLlmConfig(e.target.value);
+    // ★ 手动切下拉也是一次「新请求」：推进共享序号 ⇒ 在途的初次加载 / 上一次刷新整段作废，
+    //   否则它的旧响应回来会把用户刚切的这个 profile 配置盖掉（旧响应覆盖新状态）。
+    loadLlmConfig(e.target.value, ++loadLlmSeq);
   });
   // ★ 适配器 kind 变 ⇒ custom 行显隐 + 重核「服务名称标记」的语义/提示（不覆盖用户已填的值）
   if ($('llmKind')) $('llmKind').addEventListener('change', () => { syncLlmCustomRows(); applyLlmTargetUi(llmState.cfg, false); });

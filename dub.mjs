@@ -26,7 +26,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   CFG, run, runWsl, shq, winToWsl,
-  splitSentences, buildTimeline, buildSrt, buildAss, probe, measure,
+  splitSentences, buildTimeline, buildSrt, buildAss, probe, measure, judgeTruePeak,
   TARGET_PEAK_PCM, TARGET_LUFS, HARD_PEAK_LIMIT,
   PLAIN_DARK, loadStyleRegistry, resolveStyle, listStyles, styleSpec, bgSource, bgFilters,
   parseSrt, alignCuesToSentences, buildItemsFromSpans, distributeByProportion, detectSpeech,
@@ -430,22 +430,24 @@ async function runKeepOriginal(ctx) {
   say(`  峰值(astats 6位) 素材/成片：${pk.length >= 2 ? `${pk[0].toFixed(6)} / ${pk[1].toFixed(6)}` : 'n/a'}`);
 
   const mf = await measure(winToWsl(path.join(outDir, 'film.mp4')));
-  // ★ 2026-10-03：判据改用**真峰值**（`loudnorm input_tp`，4× 过采样）。
+  // ★ 2026-10-03 / 2026-10-09 修 D2：判据改用**真峰值**（`loudnorm input_tp`，4× 过采样）。
   //   原先拿 astats 的**采样峰值**当真峰值判达标，而实测全量 43 部里两者最大差 1.62 dB，
   //   会**漏报**（采样达标但真峰值超标）。`peak`（采样峰值）只作参考，不再当判据、也不标成「真峰值 dBTP」。
-  const mfTP = mf.truePeak !== null ? mf.truePeak : mf.peak;
-  say(`  ${C.b}成片实测：真峰值 ${f3(mf.truePeak)} dBTP · 采样峰值(astats) ${f3(mf.peak)} dBFS · 集成响度 ${mf.lufs === null ? 'n/a' : f3(mf.lufs)} LUFS${C.x}`);
+  // ★ 不再回落 `mf.peak`：拿不到 `input_tp` ⇒ `judgeTruePeak` 判「不可判定」（见 lib/dub-core.mjs）。
+  const tp = judgeTruePeak(mf);
+  say(`  ${C.b}成片实测：真峰值 ${mf.truePeak === null ? 'n/a（无 input_tp 读数）' : f3(mf.truePeak) + ' dBTP'} · 采样峰值(astats，仅参考) ${f3(mf.peak)} dBFS · 集成响度 ${mf.lufs === null ? 'n/a' : f3(mf.lufs)} LUFS${C.x}`);
   const ms = await measure(srcWsl);
   say(`  素材实测：真峰值 ${f3(ms.truePeak)} dBTP · 采样峰值 ${f3(ms.peak)} dBFS · 响度 ${ms.lufs === null ? 'n/a' : f3(ms.lufs)} LUFS`);
-  if (mfTP === null) {
-    warn('真峰值测不到（loudnorm 未给出 input_tp）—— 无法判定是否达标');
-  } else if (mfTP <= HARD_PEAK_LIMIT) {
-    ok(`真峰值 ${f3(mfTP)} ≤ ${HARD_PEAK_LIMIT} dBTP，达标${applyLimit ? '（限幅后）' : ''}`);
+  if (tp.verdict === 'unknown') {
+    warn('无真峰值读数（loudnorm 未给出 input_tp）—— **无法判定是否达标**；采样峰值(astats)偏小最多 1.62 dB，**不作判据**，请人工复核');
+    bad('成片真峰值不可判定（无 input_tp 读数）—— 不得据此宣称达标');
+  } else if (tp.verdict === 'pass') {
+    ok(`真峰值 ${f3(tp.value)} ≤ ${HARD_PEAK_LIMIT} dBTP，达标${applyLimit ? '（限幅后）' : ''}`);
   } else if (limited) {
     // ★ 开了开关就**应该**达标；仍超 ⇒ 真失败（判据是开启后必须 ≤ 交付线）。
-    bad(`真峰值 ${f3(mfTP)} > ${HARD_PEAK_LIMIT} dBTP —— 已开 --keep-original-limit 仍未达标，请调低限幅目标（TARGET_PEAK_PCM）`);
+    bad(`真峰值 ${f3(tp.value)} > ${HARD_PEAK_LIMIT} dBTP —— 已开 --keep-original-limit 仍未达标，请调低限幅目标（TARGET_PEAK_PCM）`);
   } else {
-    warn(`真峰值 ${f3(mfTP)} > ${HARD_PEAK_LIMIT} dBTP —— ★ 这是**素材自身**的峰值；--keep-original 明令不改声音，故不做归一（要达标只能不用 --keep-original，或先自行压素材，或用 --keep-original-limit 限幅）`);
+    warn(`真峰值 ${f3(tp.value)} > ${HARD_PEAK_LIMIT} dBTP —— ★ 这是**素材自身**的峰值；--keep-original 明令不改声音，故不做归一（要达标只能不用 --keep-original，或先自行压素材，或用 --keep-original-limit 限幅）`);
   }
 
   // 抽帧：成片 vs 素材同时间点
@@ -1165,12 +1167,18 @@ async function main() {
   else bad(`时长差超标（视频 ${f3(dv)}s / 音频 ${f3(da)}s）`);
 
   const mf = await measure(winToWsl(path.join(outDir, 'film.mp4')));
-  // ★ 2026-10-03：同上，判据用**真峰值**（loudnorm input_tp），不用 astats 采样峰值。
-  const mfTP = mf.truePeak !== null ? mf.truePeak : mf.peak;
-  say(`  ${C.b}成片实测：真峰值 ${f3(mf.truePeak)} dBTP · 采样峰值(astats) ${f3(mf.peak)} dBFS · 集成响度 ${mf.lufs === null ? 'n/a' : f3(mf.lufs)} LUFS${C.x}`);
-  if (mfTP === null) bad('量不到成片峰值');
-  else if (mfTP <= HARD_PEAK_LIMIT) ok(`真峰值 ${f3(mfTP)} ≤ ${HARD_PEAK_LIMIT} dBTP，达标`);
-  else bad(`真峰值 ${f3(mfTP)} > ${HARD_PEAK_LIMIT} dBTP —— 超标，请把目标 PCM 峰值再降`);
+  // ★ 2026-10-03 / 2026-10-09 修 D2：同上，判据用**真峰值**（loudnorm input_tp），不用 astats 采样峰值。
+  //   ★ 不再回落 `mf.peak`：拿不到 `input_tp` ⇒ `judgeTruePeak` 判「不可判定」，**不得谎报达标**。
+  const tp = judgeTruePeak(mf);
+  say(`  ${C.b}成片实测：真峰值 ${mf.truePeak === null ? 'n/a（无 input_tp 读数）' : f3(mf.truePeak) + ' dBTP'} · 采样峰值(astats，仅参考) ${f3(mf.peak)} dBFS · 集成响度 ${mf.lufs === null ? 'n/a' : f3(mf.lufs)} LUFS${C.x}`);
+  if (tp.verdict === 'unknown') {
+    warn('无真峰值读数（loudnorm 未给出 input_tp）⇒ **无法判定是否达标**；采样峰值(astats)偏小最多 1.62 dB，**不作判据**，请人工复核');
+    bad('成片真峰值不可判定（无 input_tp 读数）—— 不得据此宣称达标');
+  } else if (tp.verdict === 'pass') {
+    ok(`真峰值 ${f3(tp.value)} ≤ ${HARD_PEAK_LIMIT} dBTP，达标`);
+  } else {
+    bad(`真峰值 ${f3(tp.value)} > ${HARD_PEAK_LIMIT} dBTP —— 超标，请把目标 PCM 峰值再降`);
+  }
 
   // 抽帧（写到 out 的兄弟目录，不污染交付目录）
   const verifyDir = path.join(CFG.outRoot, '_verify', path.basename(outDir));

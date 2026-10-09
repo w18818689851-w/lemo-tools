@@ -403,6 +403,31 @@ test('G15 ★checkStyleChanges：baseline → no-change → changed → error，
   assert.equal(r6.status, 'error');
 });
 
+// ── G16 ★写基线失败必须可见（D3）──────────────────────────────
+// 此前：写基线失败仍返回 ok:true + status:'baseline' + 一个**全仓 0 处消费**的 writeError
+// ⇒ 消费方（dub.mjs 的 warnStyleChanges）照打绿字「首次建立基线」⇒ 基线没落盘却报成功
+// ⇒ 之后每次出片都 !prev ⇒ 永远停在 baseline、永不进 changed ⇒ 风格漂移检测**永久失明**。
+test('G16 ★checkStyleChanges 写基线失败：ok=false + status 如实反映失败（不得静默报 baseline 成功）', async () => {
+  buildStylesRoot();
+  // ★ 可注入的真实 IO 失败点：让 fpFile 的**父路径是一个文件** ⇒ writeFingerprintFile 的
+  //   `mkdirSync(dirname, {recursive:true})` 必然失败（ENOTDIR/EEXIST）。不 monkeypatch，纯真实 IO。
+  const blocker = path.join(TMP, 'fp-blocker');
+  fs.writeFileSync(blocker, 'not a directory\n');
+  const fpFile = path.join(blocker, 'sub', 'baseline.json');
+
+  const r = await checkStyleChanges({ stylesRoot: STYLES, fpFile });
+  // ★ 硬判据①：写失败**不得**再伪装成「已建基线」成功
+  assert.equal(r.ok, false, '写基线失败时 ok 必须为 false（此前是 true ⇒ 消费方打绿字成功话术）');
+  // ★ 硬判据②：status 必须如实反映失败，不能再是成功态 'baseline'
+  assert.equal(r.status, 'baseline-write-failed', `写失败应报 baseline-write-failed，实际 ${r.status}`);
+  // ★ 硬判据③：必须带出失败原因，且 error 是面向用户的**可见**文案（含「基线」）
+  assert.ok(r.writeError, '必须带 writeError（写失败原因）');
+  assert.ok(typeof r.error === 'string' && /基线/.test(r.error) && /失败/.test(r.error),
+    `error 文案必须可见且说明基线写失败，实际：${r.error}`);
+  // ★ 仍守「永不抛、不阻断出片」：基线确实没落盘，但调用**正常返回**（没有 throw）
+  assert.equal(fs.existsSync(fpFile), false, '基线确实没落盘（本用例就是在验这一点）');
+});
+
 // ── 运行器 ──────────────────────────────────────────────────
 async function main() {
   const t0 = Date.now();

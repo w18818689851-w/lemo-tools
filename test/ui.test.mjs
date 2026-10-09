@@ -3587,6 +3587,195 @@ async function main() {
         }
       }
     }
+
+    // ══ K. 本轮「排查后修 BUG」的回归钉（D1 竞态护栏 · D2 时长格式）══
+    //
+    // 为什么补这一节：这两处是本轮改的**核心逻辑**，按纪律必须补测试，且必须是「有牙」的。
+    //   · D2：fmtDur 在 `s % 60 ∈ [59.5,60)` 时 `Math.round` 会算出 60 ⇒ 渲染「1m60s」
+    //         （如 119.6s ⇒ floor(119.6/60)=1、round(59.6)=60）。修法是**先取整总秒数再拆分**。
+    //   · D1：4 个 loader（loadEnv / loadResources / loadVoices / loadLlm）缺「请求序号护栏」⇒
+    //         60 秒轮询与手动刷新重叠、或连点刷新时，**旧响应后到**会盖掉新状态（界面「越刷越旧」）。
+    //   ★ 手法：注入 fetch 补丁，让**第 1 次（旧）请求晚返回、第 2 次（新）请求先返回**，
+    //     断言最终上屏的是**第 2 次**的数据 —— 无护栏时旧响应会把它盖回旧值（用例变红）。
+    log('');
+    log(C.b('  K. 竞态护栏（D1）· 时长格式（D2）回归钉'));
+
+    const K_NAMES = ['K1 fmtDur 边界', 'K2 loadEnv 竞态', 'K3 loadResources 竞态', 'K4 四个 loader 都装了护栏'];
+    const kWillRun = !OPT.filter || K_NAMES.some((n) => n.includes(OPT.filter));
+    if (kWillRun) {
+      await runCase('K1 fmtDur 边界：119.6s ⇒ 2m00s（绝不 1m60s）；59.6s ⇒ 1m00s；59.4s ⇒ 59.4s；60.0s ⇒ 1m00s', async () => {
+        await ensurePage();
+        need(await cdp.evalJs(`typeof fmtDur === 'function'`),
+          '页面全局里拿不到 fmtDur（app.js 没加载完 / 函数名变了？）—— 这条用例失去意义');
+        // 纯函数级：直接调页面里的真函数（不经过任何渲染），拿真实返回值。
+        const got = await cdp.evalJs(`(() => {
+          const a = 1000;
+          return {
+            '119.6': fmtDur(a, a + 119600),
+            '119.4': fmtDur(a, a + 119400),
+            '60.0':  fmtDur(a, a + 60000),
+            '59.6':  fmtDur(a, a + 59600),
+            '59.4':  fmtDur(a, a + 59400),
+            '5.2':   fmtDur(a, a + 5200),
+          };
+        })()`);
+        // ★ 既有格式是「Xm + 两位补零秒」（padStart(2,'0')）⇒ 整分显示成「2m00s」而非「2m0s」。
+        const want = { '119.6': '2m00s', '119.4': '1m59s', '60.0': '1m00s', '59.6': '1m00s', '59.4': '59.4s', '5.2': '5.2s' };
+        const bad = [];
+        for (const [k, v] of Object.entries(want)) if (got[k] !== v) bad.push(`${k}s: 期望「${v}」实际「${got[k]}」`);
+        need(bad.length === 0, `fmtDur 边界不符：\n  ${bad.join('\n  ')}`);
+        // ★ 核心判据：任何输入的秒位都不许是 60（「1m60s」这类非法形态一个都不许有）
+        for (const [k, v] of Object.entries(got)) {
+          need(!/\d+m60s/.test(v), `fmtDur(${k}) = 「${v}」出现非法的 60 秒位（D2 回归）`);
+        }
+        notes.push(`K1 fmtDur：${Object.entries(want).map(([k, v]) => `${k}s→「${got[k]}」`).join(' / ')}（均无 1m60s）`);
+      });
+
+      await runCase('K2 loadEnv 竞态：并发两次刷新，旧响应（晚到 1200ms）不得覆盖新状态', async () => {
+        // ★ 先**重新导航**：60 秒轮询计时器随新文档重启，跑这几秒不会触发它（否则它会插一脚）。
+        //   并等 boot 自己那次 loadEnv 落地后再动手，免得它消耗补丁的第 1 次配额。
+        await cdp.goto(base + '/', 4000);
+        await waitFor(cdp.evalJs,
+          `!!document.getElementById('envSum') && !/环境检测中/.test(document.getElementById('envText').textContent)`,
+          { timeoutMs: 20000 });
+        // 注入 fetch 补丁：只拦 /api/env —— 第 1 次（旧）晚 1200ms、第 2 次（新）50ms。
+        await cdp.evalJs(`(() => {
+          window.__envRace = { on: false, n: 0 };
+          if (!window.__envRacePatched) {
+            window.__envRacePatched = true;
+            const of = window.fetch;
+            const mk = (obj) => ({ ok: true, status: 200, text: async () => JSON.stringify(obj) });
+            const common = { groups: [], drift: [], checkedAt: Date.now(), cached: false, simulated: null };
+            const resp = (tag, summary) => Object.assign({}, common, { ok: true, summary, __tag: tag });
+            window.fetch = function (u, o) {
+              try {
+                const s = String(u && u.url ? u.url : u);
+                if (window.__envRace && window.__envRace.on && s.indexOf('/api/env') >= 0) {
+                  const n = ++window.__envRace.n;
+                  if (n === 1) {
+                    // 旧响应：晚到
+                    return new Promise((res) => setTimeout(() => res(mk(resp('OLD', { ok: 1, warn: 0, fail: 0, total: 1 }))), 1200));
+                  }
+                  // 新响应：先到
+                  return new Promise((res) => setTimeout(() => res(mk(resp('NEW', { ok: 9, warn: 8, fail: 7, total: 24 }))), 50));
+                }
+              } catch (e) { /* 拦不住就走真网络 */ }
+              return of.apply(this, arguments);
+            };
+          }
+          return true;
+        })()`);
+        // 同时发起两次刷新（第一次不 await）—— 模拟「轮询 / 手动刷新重叠」或「连点刷新」。
+        await cdp.evalJs(`(() => {
+          window.__envRace.on = true; window.__envRace.n = 0;
+          window.__envRaceP1 = loadEnv(true);
+          window.__envRaceP2 = loadEnv(true);
+          return true;
+        })()`);
+        // 等慢的那次（1200ms）也回来 —— 若无护栏，它此刻会把新状态盖回旧值。
+        await sleep(1700);
+        await cdp.evalJs(`window.__envRace.on = false; true`);
+        need(await cdp.evalJs(`window.__envRace.n === 2`),
+          '反空转：两次 /api/env 没都被补丁拦下（__envRace.n ≠ 2）');
+        const tag = await cdp.evalJs(`(state.env && state.env.__tag) || null`);
+        const sum = await cdp.evalJs(`document.getElementById('envSum').textContent`);
+        need(tag === 'NEW', `★ 最终 state.env 是「${tag}」，期望「NEW」—— 旧响应（晚到）盖掉了新状态（护栏失效）`);
+        need(/^9 ok . 8 warn . 7 fail$/.test(sum),
+          `★ 最终 #envSum 是「${sum}」，期望新数据「9 ok · 8 warn · 7 fail」`);
+        notes.push(`K2 loadEnv 并发两次（旧晚 1200ms / 新早 50ms）⇒ 最终 __tag=NEW、#envSum「${sum}」（旧响应被丢弃，未覆盖新状态）`);
+      });
+
+      await runCase('K3 loadResources 竞态：并发两次刷新，旧响应（晚到 1200ms）不得覆盖新状态', async () => {
+        // ★ 用 CDP 在**文档创建前**注入补丁：boot 的 loadResources 也走补丁（回「BOOT」夹具，
+        //   不触发真·WSL 扫描，快且稳）；同时提供 __resRace 开关给本用例做竞态注入。
+        const resRacePatch = await cdp.cmd('Page.addScriptToEvaluateOnNewDocument', {
+          source: `(() => {
+            const mk = (obj) => ({ ok: true, status: 200, text: async () => JSON.stringify(obj) });
+            const scan = (tag, n) => ({
+              checkedAt: '2026-10-09T12:00:00.000Z', cached: false,
+              summary: { total: n, ready: n, missing: 0, corrupt: 0, 'version-mismatch': 0, 'path-abnormal': 0 },
+              resources: Array.from({ length: n }, (_, i) => ({ id: tag + i, label: tag + i, state: 'ready' })),
+              __tag: tag,
+            });
+            const orig = window.fetch;
+            window.__resRace = { on: false, n: 0 };
+            window.fetch = function (u, o) {
+              try {
+                const s = String(u && u.url ? u.url : u);
+                if (s.indexOf('/api/resources/scan') >= 0) {
+                  const R = window.__resRace;
+                  if (!R.on) return Promise.resolve(mk(scan('BOOT', 3)));
+                  const n = ++R.n;
+                  if (n === 1) return new Promise((res) => setTimeout(() => res(mk(scan('OLD', 2))), 1200));
+                  return new Promise((res) => setTimeout(() => res(mk(scan('NEW', 5))), 50));
+                }
+              } catch (e) { /* 拦不住就走真网络 */ }
+              return orig.apply(this, arguments);
+            };
+          })();`,
+        });
+        try {
+          await cdp.goto(base + '/', 4000);
+          await waitFor(cdp.evalJs, `document.getElementById('resCount').textContent === '3 项'`, { timeoutMs: 20000 });
+          await cdp.evalJs(`(() => {
+            window.__resRace.on = true; window.__resRace.n = 0;
+            window.__resRaceP1 = loadResources(true);
+            window.__resRaceP2 = loadResources(true);
+            return true;
+          })()`);
+          await sleep(1700);
+          await cdp.evalJs(`window.__resRace.on = false; true`);
+          need(await cdp.evalJs(`window.__resRace.n === 2`),
+            '反空转：两次 /api/resources/scan 没都被补丁拦下（__resRace.n ≠ 2）');
+          const tag = await cdp.evalJs(`(state.resources && state.resources.__tag) || null`);
+          const count = await cdp.evalJs(`document.getElementById('resCount').textContent`);
+          need(tag === 'NEW', `★ 最终 state.resources 是「${tag}」，期望「NEW」—— 旧响应（晚到）盖掉了新状态（护栏失效）`);
+          need(count === '5 项', `★ 最终 #resCount 是「${count}」，期望新数据「5 项」`);
+          notes.push(`K3 loadResources 并发两次（旧晚 1200ms / 新早 50ms）⇒ 最终 __tag=NEW、#resCount「${count}」（旧响应被丢弃）`);
+        } finally {
+          if (resRacePatch && resRacePatch.identifier) {
+            try { await cdp.cmd('Page.removeScriptToEvaluateOnNewDocument', { identifier: resRacePatch.identifier }); } catch { /* ignore */ }
+          }
+        }
+      });
+
+      await runCase('K4 4 个 loader（loadEnv/loadResources/loadVoices/loadLlm）都装了护栏，且护栏在「写状态」之前', async () => {
+        const src = fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8');
+        // 抽「async function NAME(」到下一个**顶格** `}` 的函数体（嵌套块都是缩进的 `  }`）。
+        const bodyOf = (name) => {
+          const start = src.indexOf(`async function ${name}(`);
+          need(start >= 0, `app.js 里找不到 async function ${name}(`);
+          const end = src.indexOf('\n}', start);
+          need(end > start, `app.js 里 ${name} 的函数体没有正常闭合`);
+          return src.slice(start, end);
+        };
+        const bad = [];
+        // 三个「写状态就在本函数里」的 loader：护栏必须在写状态调用之前。
+        const targets = [
+          { name: 'loadEnv', seq: 'loadEnvSeq', write: 'renderEnv(' },
+          { name: 'loadResources', seq: 'loadResourcesSeq', write: 'renderResources(' },
+          { name: 'loadVoices', seq: 'loadVoicesSeq', write: 'state.voices = d' },
+        ];
+        for (const t of targets) {
+          const body = bodyOf(t.name);
+          if (!new RegExp(`\\+\\+${t.seq}\\b`).test(body)) bad.push(`${t.name}: 函数体里没有「++${t.seq}」`);
+          const guard = body.indexOf(`!== ${t.seq}`);
+          if (guard < 0) bad.push(`${t.name}: 函数体里没有「!== ${t.seq}」护栏`);
+          const w = body.indexOf(t.write);
+          if (w < 0) bad.push(`${t.name}: 函数体里找不到写状态调用「${t.write}」`);
+          if (guard >= 0 && w >= 0 && guard > w) bad.push(`${t.name}: 护栏出现在写状态（${t.write}）之后 —— 等于没护栏`);
+        }
+        // loadLlm 的写状态在两个子函数里（profiles / config），三处共享同一个序号。
+        const llm = bodyOf('loadLlm');
+        if (!/\+\+loadLlmSeq\b/.test(llm)) bad.push('loadLlm: 函数体里没有「++loadLlmSeq」');
+        if (!/!== loadLlmSeq/.test(llm)) bad.push('loadLlm: 函数体里没有「!== loadLlmSeq」护栏');
+        for (const sub of ['loadLlmProfiles', 'loadLlmConfig']) {
+          if (!/!== loadLlmSeq/.test(bodyOf(sub))) bad.push(`${sub}: 写状态前没有「!== loadLlmSeq」护栏`);
+        }
+        need(bad.length === 0, `护栏缺失 / 位置不对：\n  ${bad.join('\n  ')}`);
+        notes.push('K4 4 个 loader 均带「进入 ++seq / await 后 !== seq 才写状态」护栏（loadLlm 经 profiles+config 两段共享序号）');
+      });
+    }
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）

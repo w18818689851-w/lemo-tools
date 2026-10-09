@@ -895,12 +895,30 @@ export const STATIC_CASES = [
         `以下覆盖点缺失（无法用临时树做非破坏变异验证）：\n  ${missing.join('\n  ')}`,
       );
 
+      // ⑥ ★ 2026-10-09 修（与生产 D2 同型）：**真峰值判据的唯一真相源 = `judgeTruePeak()`**，
+      //   且**无 input_tp 时不得回落采样峰值**（采样峰值偏小最多 1.62 dB ⇒ 会掩盖超标）。
+      //   `dub.mjs` 的两处（`:437`/`:1173`）与本文件 ⑤++ / ⑤++++++ 两处，现在**都直接调这个函数**
+      //   ⇒ 这里钉住它，就等于钉住那 4 处（防将来任一处又写回 `?: peak` 的回落）。
+      //   ★ 反向验证：把 `judgeTruePeak` 改回回落 `mf.peak` ⇒ 本断言与 `test/dub-api.test.mjs` 的 ⑳ 双双变红。
+      {
+        const noTp = dc.judgeTruePeak({ truePeak: null, peak: -1.3 });
+        assert.notStrictEqual(noTp.verdict, 'pass',
+          '★ 无 input_tp 时 judgeTruePeak 判成了「达标」—— 回落采样峰值的老 bug 复发（采样峰值偏小最多 1.62 dB，不作判据）');
+        assert.strictEqual(noTp.verdict, 'unknown', '无 input_tp 时必须判 unknown（不可判定），不得判达标');
+        assert.strictEqual(noTp.value, null, '不可判定时 value 必须为 null');
+        assert.strictEqual(dc.judgeTruePeak({ truePeak: -1.5, peak: -3.0 }).verdict, 'pass', '真峰值 −1.5 ≤ −1.2 应达标');
+        assert.strictEqual(dc.judgeTruePeak({ truePeak: -0.2, peak: -1.3 }).verdict, 'fail',
+          '真峰值 −0.2 > −1.2 必须 fail（不被「看着达标」的采样峰值掩盖）');
+      }
+
       ctx.note('③+ 两条根已收敛：dub-core.outRoot 派生自 exportDir；server / consistency-check / '
         + 'style-distill / unblock-placeholder-audio / fix-truepeak / patch-style-mux / style-skill-check '
         + '去注释后无残留字面量；check-shell-structure 与 unblock 的 WSL 侧覆盖点齐备'
         + '；★ 2026-10-07：覆盖点守卫**扩到 lib/** —— `lib/voices.mjs` 的 `LEMO_VOICE_TEST_TMP` '
         + '（它是应用目录 D:/WSL/voicetest 的**唯一**口子：那个目录由 server 的 /api/voices/test 真写盘、'
-        + '而测试会对它做 before/after 差集并删「新增项」⇒ 没有口子就没法在夹具树/并发下隔离）');
+        + '而测试会对它做 before/after 差集并删「新增项」⇒ 没有口子就没法在夹具树/并发下隔离）'
+        + '；★ 2026-10-09：真峰值判据也收敛到唯一真相源 `lib/dub-core.mjs` 的 `judgeTruePeak()`'
+        + '（无 input_tp ⇒ unknown，**不得**回落采样峰值）—— dub.mjs 两处 + 本套件 ⑤++/⑤++++++ 两处都直接调它');
     },
   },
 ];
@@ -2620,7 +2638,7 @@ export const FULL_CASES = [
     //   （core/tts/tts_indextts.py），所以「锁 / 显存预检 / 看门狗」这三条也一并覆盖到了。
     name: '⑤++ 现场 TTS（真跑 Index-TTS）+ style-dna 响度目标 → 锁取了又放，成片响度按 DNA 归一',
     run: async (ctx) => {
-      const { TARGET_PEAK_PCM, TARGET_LUFS } = await import('../lib/dub-core.mjs');
+      const { TARGET_PEAK_PCM, TARGET_LUFS, judgeTruePeak } = await import('../lib/dub-core.mjs');
       const TTS_SLUG = 'engraving';   // 有 style-dna、且其 targetLufs ≠ 通用默认（-16）的风格
       const TTS_TEXT = '这是一次真实的配音合成测试。';
       const reEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2731,10 +2749,16 @@ export const FULL_CASES = [
       const lastJson = (r.stdout.match(/^\{.*"lufs".*\}$/m) || [])[0];
       assert.ok(lastJson, 'stdout 末尾没有机器可读的结果 JSON 行');
       const fin = JSON.parse(lastJson);
-      // ★ 2026-10-03：判据改用**真峰值**（dub.mjs 现在会在 JSON 里给 truePeak，来自 loudnorm input_tp，
-      //   4× 过采样）。此前用的是 `peak`（astats **采样峰值**）却标成「真峰值」——
-      //   实测全量 43 部里两者最大差 1.62 dB，用采样峰值会**漏报**。
-      const finTP = typeof fin.truePeak === 'number' ? fin.truePeak : fin.peak;
+      // ★ 2026-10-03 / 2026-10-09 修（与生产 D2 同型）：判据**只认真峰值**（dub.mjs 的 JSON `truePeak`，
+      //   来自 loudnorm input_tp，4× 过采样）。此前是 `?: fin.peak` —— **无 input_tp 时回落采样峰值**，
+      //   而采样峰值偏小最多 1.62 dB ⇒ 会**掩盖**超标（与 `lib/dub-core.mjs` 的 D2 完全同型）。
+      //   ★ 口径**单一真相源**：直接调 `lib/dub-core.mjs` 的 `judgeTruePeak()`（两处不再各写一份、防漂）。
+      //   ★ 无 input_tp ⇒ `verdict==='unknown'` ⇒ **不得判达标**（断言直接失败并说明）。
+      const tpJ = judgeTruePeak({ truePeak: fin.truePeak, peak: fin.peak });
+      assert.notStrictEqual(tpJ.verdict, 'unknown',
+        `成片 JSON 无真峰值读数（truePeak 缺失）⇒ **不可判定是否达标**，不得判达标`
+        + `（采样峰值 ${fin.peak} dBFS 不作判据；口径见 lib/dub-core.mjs 的 judgeTruePeak）`);
+      const finTP = tpJ.value;
       assert.ok(finTP <= TARGET_PEAK_PCM + TOL,
         `成片真峰值 ${finTP} dBTP（采样峰值 ${fin.peak} dBFS）超过上限 ${TARGET_PEAK_PCM}（含 AAC 编码余量 ${TOL}）`);
       const hitLoud = Math.abs(fin.lufs - wantLufs) <= TOL;
@@ -3115,7 +3139,7 @@ export const FULL_CASES = [
     //   ⇒ 「素材比配音短 ⇒ `-stream_loop -1` 循环播放」这条分支第一次被真出片验证。
     name: '⑤++++++ 形态 B + 现场 TTS 真出片（默认 --fit loop）：尺寸按 --ratio / 音轨来自 TTS 不是素材原声 / 字幕逐字等于文案 / 响度 −14±1 / 素材被循环',
     run: async (ctx) => {
-      const { HARD_PEAK_LIMIT, TARGET_LUFS } = await import('../lib/dub-core.mjs');
+      const { HARD_PEAK_LIMIT, TARGET_LUFS, judgeTruePeak } = await import('../lib/dub-core.mjs');
       const { readStyleDna, summarizeStyleDna } = await import('../lib/style-dna-reader.mjs');
 
       // ── 前置 1：本机真的具备 Index-TTS 执行体 ──
@@ -3233,7 +3257,14 @@ export const FULL_CASES = [
       // ── 断言 6：★ 真峰值 ≤ 交付线 · 响度落在风格目标 ±1 LU（需求口径）──
       //   容差 0.25 dB 与 `⑤++` 同口径：成片是 AAC 有损编码，实测会把真峰值挪 0.08~0.22 dB。
       const TOL = 0.25;
-      const finTP = typeof fin.truePeak === 'number' ? fin.truePeak : fin.peak;
+      // ★ 2026-10-09 修（与生产 D2 同型）：口径与 `lib/dub-core.mjs` 的 `judgeTruePeak()` **同一真相源**
+      //   （直接调用）。此前 `?: fin.peak` 在无 input_tp 时**回落采样峰值** ⇒ 会掩盖超标。
+      //   ★ 无 input_tp ⇒ `unknown` ⇒ **不得判达标**。
+      const tpJ2 = judgeTruePeak({ truePeak: fin.truePeak, peak: fin.peak });
+      assert.notStrictEqual(tpJ2.verdict, 'unknown',
+        `成片 JSON 无真峰值读数（truePeak 缺失）⇒ **不可判定是否达标**，不得判达标`
+        + `（采样峰值 ${fin.peak} dBFS 不作判据；口径见 lib/dub-core.mjs 的 judgeTruePeak）`);
+      const finTP = tpJ2.value;
       assert.ok(finTP <= HARD_PEAK_LIMIT + TOL,
         `成片真峰值 ${finTP} dBTP 超过交付线 ${HARD_PEAK_LIMIT}（含 AAC 编码余量 ${TOL}）`);
       assert.ok(Math.abs(Number(fin.lufs) - wantLufs) <= 1.0,

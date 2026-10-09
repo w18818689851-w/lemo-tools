@@ -139,6 +139,40 @@ const MIME = {
   '.srt': 'text/plain; charset=utf-8',
 };
 
+// ── 通用：把文件安全地流给响应（★ 防 fd 泄漏 + 防未捕获 error 崩进程）────
+//
+// ★ 为什么必须有它：`fs.createReadStream(f).pipe(res)` 有两个坑，在成片/播放器接口上**都真实存在**：
+//   ① **fd 泄漏**：客户端中途断开（拖进度条 / 关页面 / 取消下载）时 Node 会 destroy `res`，
+//      但**源流不会跟着停** —— 它会一路读到文件尾才关闭 fd。反复拖动即可累积到 EMFILE。
+//      （实测：客户端 req.destroy() 后 1.2s，被 pipe 的 fs.ReadStream 仍 destroyed=false、fd 未释放；
+//        60 次中断 ⇒ 服务进程句柄数 +60。）
+//   ② **未捕获 'error' 崩进程**：文件在 `stat` 与 `createReadStream` 之间被删（出片/清理竞态）时，
+//      源流会发 'error'，而 `pipe` 只给**目标**（res）挂 error 监听，源流上没人接
+//      ⇒ unhandled 'error' ⇒ 长驻服务直接退出（实测：删文件竞态可稳定命中，进程随即消失）。
+//   ⇒ 统一在这里收口：源流挂 'error'；res 断开时销毁源流；吞掉 res 自身的 'error'（EPIPE/ECONNRESET 很常见）。
+//   ★ Range / 状态码 / 响应头仍由各调用方**自己算**（本函数只管「流的安全接管」）⇒ 各处行为不变。
+//   ★ 头延迟到源流 'open' 之后才发：这样「stat 成功、open 失败」能干净地回 404/500，而不是崩进程；
+//     若错误发生在**已经开流之后**（头已发），就只能 `res.destroy()`（也**不能**让它变 unhandled）。
+function streamFile(res, full, { status = 200, headers = {}, start, end } = {}) {
+  const src = fs.createReadStream(full, (start === undefined && end === undefined) ? {} : { start, end });
+  let headWritten = false;
+  src.on('error', (err) => {
+    if (headWritten) { try { res.destroy(); } catch { /* ignore */ } return; }
+    const code = err && err.code === 'ENOENT' ? 404 : 500;
+    try { sendJson(res, code, { error: code === 404 ? '文件不存在' : '读取文件失败' }); } catch { /* ignore */ }
+  });
+  src.once('open', () => {
+    headWritten = true;
+    try { res.writeHead(status, headers); } catch { /* ignore */ }
+    src.pipe(res);
+  });
+  // ★ 修 ① 的关键：客户端断开（或响应正常结束）⇒ 立刻销毁源流，fd 不再挂到 GC。
+  res.on('close', () => { if (!src.destroyed) src.destroy(); });
+  // 目标自身的 error（EPIPE / ECONNRESET / ERR_STREAM_DESTROYED…）吞掉，别让它变成 unhandled。
+  res.on('error', () => { /* 收尾交给上面的 'close' */ });
+  return src;
+}
+
 // ── 静态文件（只服务 web/ 目录，防目录穿越）───────────────
 function serveStatic(req, res, urlPath) {
   const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
@@ -148,12 +182,14 @@ function serveStatic(req, res, urlPath) {
   }
   fs.stat(full, (err, st) => {
     if (err || !st.isFile()) return sendJson(res, 404, { error: '文件不存在' });
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
-      'Content-Length': st.size,
-      'Cache-Control': 'no-cache',
+    streamFile(res, full, {
+      status: 200,
+      headers: {
+        'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
+        'Content-Length': st.size,
+        'Cache-Control': 'no-cache',
+      },
     });
-    fs.createReadStream(full).pipe(res);
   });
 }
 
@@ -1010,23 +1046,22 @@ function apiFilmFile(req, res, slug, file) {
         res.writeHead(416, { 'Content-Range': `bytes */${st.size}` });
         return res.end();
       }
-      res.writeHead(206, {
+      // ★ 改用 streamFile：源流 'open' 后才真正发头；客户端断开即销毁源流；源流 error 不再崩进程。
+      return streamFile(res, full, { status: 206, headers: {
         'Content-Type': type,
         'Content-Length': end - start + 1,
         'Content-Range': `bytes ${start}-${end}/${st.size}`,
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'no-cache',
-      });
-      return fs.createReadStream(full, { start, end }).pipe(res);
+      }, start, end });
     }
 
-    res.writeHead(200, {
+    streamFile(res, full, { status: 200, headers: {
       'Content-Type': type,
       'Content-Length': st.size,
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-cache',
-    });
-    fs.createReadStream(full).pipe(res);
+    } });
   });
 }
 
@@ -1104,23 +1139,22 @@ function serveRangeFile(req, res, full, type, notFoundMsg) {
         res.writeHead(416, { 'Content-Range': `bytes */${st.size}` });
         return res.end();
       }
-      res.writeHead(206, {
+      // ★ 改用 streamFile：源流 'open' 后才真正发头；客户端断开即销毁源流；源流 error 不再崩进程。
+      return streamFile(res, full, { status: 206, headers: {
         'Content-Type': type,
         'Content-Length': end - start + 1,
         'Content-Range': `bytes ${start}-${end}/${st.size}`,
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'no-cache',
-      });
-      return fs.createReadStream(full, { start, end }).pipe(res);
+      }, start, end });
     }
 
-    res.writeHead(200, {
+    streamFile(res, full, { status: 200, headers: {
       'Content-Type': type,
       'Content-Length': st.size,
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-cache',
-    });
-    fs.createReadStream(full).pipe(res);
+    } });
   });
 }
 

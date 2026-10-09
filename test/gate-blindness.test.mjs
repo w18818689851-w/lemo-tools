@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 132 条用例 / 覆盖全部 46 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 133 条用例 / 覆盖全部 46 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -769,7 +769,10 @@ test('check-doc-coverage：失明守卫（scripts/ 只有非闸门非工具的 f
     //   **不判失明**」处理（与 `check-env-overrides.mjs` 的库仓口径一致）⇒ 只需配平 `上表共 N 条` 这 1 条。
     const neg = path.join(dir, 'neg');
     wf(path.join(neg, 'scripts', 'check-x.mjs'), '// 一个闸门\n');
-    wf(path.join(neg, 'test', 'gb-doc.test.mjs'), '// 一个测试入口\n');
+    // ★ 2026-10-09：`check-doc-coverage.mjs` 新增判据④（「测试入口条数」声称 ↔ 实测）⇒ 最小合法夹具
+    //   还须给一个「写了条数」的入口行（否则该判据解析到 0 个入口 ⇒ 判失明）。这里让 `gb-doc.test.mjs`
+    //   真的含 1 条 `test(` 用例、README 写「1 条」⇒ 该判据正向命中（条数一致、不报失明）。
+    wf(path.join(neg, 'test', 'gb-doc.test.mjs'), "test('夹具入口用例', () => {});\n");
     wf(path.join(neg, 'test', 'gate-blindness.test.mjs'),
       '// 合成回归套件（2 条用例 / 1 条 ★自证）\n'
       + "test('a', () => {});\n"
@@ -783,6 +786,7 @@ test('check-doc-coverage：失明守卫（scripts/ 只有非闸门非工具的 f
       '# 测试\n\n'
       + '回归套件（独立入口，零依赖，**2 条**）：覆盖 **1/1** 个闸门，另含 **1** 个**故意破坏自证**。\n'
       + '（2 条：**全部 1 个闸门**的守卫，另含 1 个「改坏守卫或判据必须变红」自证）\n\n'
+      + 'node test/gb-doc.test.mjs  # 夹具入口（1 条）\n\n'
       + '| `scripts/check-x.mjs` | 说明 |\n'
       + '| `test/gb-doc.test.mjs` | 说明 |\n'
       + '| `test/gate-blindness.test.mjs` | 说明 |\n');
@@ -798,6 +802,63 @@ test('check-doc-coverage：失明守卫（scripts/ 只有非闸门非工具的 f
       LEMO_STYLES_ROOT: path.join(neg, 'no-such-lib', 'styles'),
     });
     expectClean(r2, '本闸门已失明', 'check-doc-coverage 阴性对照');
+  } finally { rm(dir); }
+});
+
+// ── 4b. check-doc-coverage.mjs —— 判据④「测试入口条数」声称 ↔ 实测（2026-10-09 新增）──
+//   这一支盯的是**新缺口**：`test/README.md` 每个写了条数的测试入口（`…（N 条…）`）此前**没有任何闸门核**，
+//   已系统性漂了（ui 69→75 / dub-api 18→21 / … / llm-api 28→72）。用例钉三态：
+//   ① 条数写错 ⇒ FAIL 且**点名该入口**（<入口>：文档写 N、实测 M）；② README 里**一个入口都没有** ⇒ 判失明；
+//   ③ 条数正确 ⇒ exit 0（阴性对照，防「永远 exit 1」的坏断言）。
+test('check-doc-coverage：测试入口条数判据（写错 ⇒ 点名 FAIL；无入口 ⇒ 已失明；正确 ⇒ exit 0）', async () => {
+  const dir = path.join(TMP, 'doc-entry');
+  try {
+    // 最小合法夹具：1 个闸门 + 1 个「写了条数」的测试入口（gb-doc.test.mjs 真含 1 条 `test(`）。
+    const build = (root, entryLine) => {
+      wf(path.join(root, 'scripts', 'check-x.mjs'), '// 一个闸门\n');
+      wf(path.join(root, 'test', 'gb-doc.test.mjs'), "test('夹具入口用例', () => {});\n");
+      wf(path.join(root, 'test', 'gate-blindness.test.mjs'),
+        '// 合成回归套件（2 条用例 / 1 条 ★自证）\n'
+        + "test('a', () => {});\n"
+        + "test('★自证 b', () => {});\n"
+        // ★ 这一行必须拼接：判据③ 的「gate-blindness·用例数」锚点要求该句在文件里恰好命中 1 处。
+        + '// 共 2 条用例' + ' / 覆盖全部 1 个闸门\n');
+      wf(path.join(root, 'test', 'README.md'),
+        '# 测试\n\n'
+        + '回归套件（独立入口，零依赖，**2 条**）：覆盖 **1/1** 个闸门，另含 **1** 个**故意破坏自证**。\n'
+        + '（2 条：**全部 1 个闸门**的守卫，另含 1 个「改坏守卫或判据必须变红」自证）\n\n'
+        + entryLine + '\n\n'
+        + '| `scripts/check-x.mjs` | 说明 |\n'
+        + '| `test/gb-doc.test.mjs` | 说明 |\n'
+        + '| `test/gate-blindness.test.mjs` | 说明 |\n');
+      wf(path.join(root, '_distill', 'AGENT-BRIEF.md'), '# 简报\n\nnode D:/x/scripts/check-x.mjs\n');
+      wf(path.join(root, 'README.md'),
+        '# 夹具 README\n\n上表共 **1** 条\n\n'
+        + '| 方法 | 路径 | 用途 | 类型 |\n|---|---|---|---|\n| GET | `/api/x` | 夹具接口 | 同步 |\n');
+    };
+    const go = (root) => runGate('check-doc-coverage.mjs', {
+      LEMO_TOOLS_ROOT: root, LEMO_STYLES_ROOT: path.join(root, 'no-such-lib', 'styles'),
+    });
+
+    // ① 变异：入口条数**写错**（1 → 999）⇒ FAIL 并点名该入口（判据④ 真的在判）。
+    const wrong = path.join(dir, 'wrong');
+    build(wrong, 'node test/gb-doc.test.mjs  # 夹具入口（999 条）');
+    const r1 = await go(wrong);
+    assert.notEqual(r1.code, 0, `条数写错应 exit≠0\n${r1.out.slice(0, 700)}`);
+    assert.ok(r1.out.includes('测试入口条数·gb-doc.test.mjs：文档写 **999**、实测 **1**'),
+      `条数写错却没点名该入口\n${r1.out.slice(0, 700)}`);
+
+    // ② 失明：README 里**一个「node test/…（N 条）」入口都没有** ⇒ 判失明（不许静默放行）。
+    const blind = path.join(dir, 'blind');
+    build(blind, '// 没有任何「node test/…（N 条）」入口');
+    const r2 = await go(blind);
+    expectBlind(r2, '判据已失明', 'check-doc-coverage 判据④失明');
+
+    // ③ 阴性对照：条数正确（1 条）⇒ exit 0、无失明。
+    const ok = path.join(dir, 'ok');
+    build(ok, 'node test/gb-doc.test.mjs  # 夹具入口（1 条）');
+    const r3 = await go(ok);
+    expectClean(r3, '本闸门已失明', 'check-doc-coverage 判据④阴性对照');
   } finally { rm(dir); }
 });
 

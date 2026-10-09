@@ -205,7 +205,23 @@ export async function checkStyleChanges(opts = {}) {
     if (!prev) {
       if (autoBaseline) {
         try { writeFingerprintFile(fpFile, cur); }
-        catch (e) { return { ok: true, status: 'baseline', styleCount, fpFile, writeError: e?.message || String(e), ms: Date.now() - t0 }; }
+        catch (e) {
+          // ★ 写基线失败**必须可见**（2026-10-09 修 D3）：
+          //   此前这里返回 `ok:true, status:'baseline'` + 一个 `writeError`，而那个 writeError
+          //   **全仓 0 处消费** ⇒ 消费方（`dub.mjs` 的 `warnStyleChanges`）照打绿字
+          //   「首次建立基线，纳入 N 个风格」，可基线**其实没落盘** ⇒ 之后每次出片都 `!prev`
+          //   ⇒ 永远停在 baseline 分支、永不进 changed ⇒ **风格漂移检测永久失明**，而用户只看到成功提示。
+          // ★ 仍守本模块纪律「**永不抛、不阻断出片**」（见文件头 190-191 行）：不 throw，只把
+          //   `ok` 置 false + 用 status/error **如实反映失败**。消费方的 `if (!r.ok) warn(...)` 分支
+          //   据此打出**可见警告**（不再走绿字成功话术）。
+          const msg = e?.message || String(e);
+          return {
+            ok: false, status: 'baseline-write-failed', styleCount, fpFile,
+            writeError: msg,
+            error: `写指纹基线失败（${fpFile}）：${msg} —— 基线未落盘，本次及后续风格漂移检测不可用`,
+            ms: Date.now() - t0,
+          };
+        }
         return { ok: true, status: 'baseline', styleCount, fpFile, ms: Date.now() - t0 };
       }
       return { ok: true, status: 'no-baseline', styleCount, fpFile, ms: Date.now() - t0 };

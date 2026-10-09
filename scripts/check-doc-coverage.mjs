@@ -239,7 +239,59 @@ for (const [doc, re, gi, truth, label] of CLAIMS) {
   if (got !== truth) countBad.push(`${label}：文档写 **${got}**、实测 **${truth}**（${doc}）`);
 }
 
+// ── ★★ 2026-10-09 延伸④：`test/README.md` 的**测试入口条数**声称 ↔ 实测 ──────────────────────
+//   由来（实测的系统性漂移）：README 的「测试入口」清单里，每个**写了条数**的入口（形如
+//   `node test/x.test.mjs # …（69 条…）`）都**没有闸门核** ⇒ 已经整体漂了（实测对照：
+//   ui 69→**75**、dub-api 18→**21**、style-scan 15→**16**、voices-api 9→**10**、
+//   triple-check-flow 11→**12**、llm-api 28→**72**、resources 19→**23**）。
+//   ★ 与判据③ 同一病症（「用例加了、文档数字没跟」，且静默）⇒ 归到本闸门，不新开。
+//   ★★ 计数口径（先反推、再钉死）：一律用「**该入口自己报告出来的用例数**」——
+//     · 自研 `runCase` 运行器（ui / dub-api / voices-api / setup-api / briefs）报 `N passed`；
+//       N = `await runCase(` 调用数 + 收尾「无残留」守卫用例数；守卫用例数 =
+//       (`results.push(` 出现数 − 2) / 2（−2 = `runCase` 助手自身 ok/fail 两次 push；每处守卫是 if/else 两次）。
+//       实测：ui 75、dub-api 21、voices-api 10、setup-api 9、briefs 16（= 15 + 1）。
+//     · 行首 `test(` 声明（node:test 或自研 `const test = (…) => cases.push`）：数 `^test(`。
+//       实测对照：consistency 17 / dub-split 10 / style-scan 16 / llm-api 72 —— 与 `N passed` / `# pass` 逐字相等。
+//     · `CASES` 数组（setup）：数 `^\s{2,}name: '` 条目（12）。
+//   ★ 反推依据：两个「已知对」入口 setup（声称 12）/ briefs（声称 16，= 15 runCase + 1 守卫），
+//     只有上面这套口径能同时给出 12 与 16（其余写法都会少算/多算）。
+//   ★ 静态计数（**不真跑 23 个套件** —— 那要几分钟，闸门会被骂）。形态不认识 / 静态数不准（用例在循环里
+//     动态生成）⇒ **只列不判**（不 FAIL），避免误报。
+//   ★ 失明守卫：**一个入口都没解析到** ⇒ 判失明（同既有纪律：形态变了不许静默放行）。
+//   ★ 判定结果并入既有 `countBad` / `countBlind` 两桶 ⇒ 退出码聚合行不变（`gate-blindness` 的
+//     「摘掉 blind/countBlind」★自证仍逐字生效）。
+const ENTRY_CLAIM_RE = /^node\s+test\/(\S+\.test\.mjs)\b[^\n]*?（(\d+)\s*条/gm;
+// 该入口「自己报告的用例数」的静态等价式（见上：runCase / test() / CASES 三种形态）。
+const countCasesStatic = (src) => {
+  const rc = (src.match(/await runCase\(/g) || []).length;
+  if (rc > 0 || /async function runCase\s*\(/.test(src)) {
+    const pushes = (src.match(/results\.push\(\{/g) || []).length;
+    // 形态不标准（助手 2 次 push + 每个守卫 if/else 2 次 ⇒ 必为偶数）⇒ 只列不判，不硬算。
+    if (pushes < 2 || (pushes - 2) % 2 !== 0) return null;
+    return rc + (pushes - 2) / 2;
+  }
+  const t = (src.match(/^test\(/gm) || []).length;
+  if (t > 0) return t;
+  const c = (src.match(/^\s{2,}name: '/gm) || []).length;
+  return c > 0 ? c : null;                       // null ⇒ 只列不判（静态数不准）
+};
+const entryClaims = [...readme.matchAll(ENTRY_CLAIM_RE)].map((m) => ({ file: m[1], n: Number(m[2]) }));
+const entryListOnly = [];
+let entryBad = 0;
+if (entryClaims.length === 0) {
+  countBlind.push('`test/README.md` 里一个「`node test/…（N 条）」入口都解析不到 ⇒ 「测试入口条数」这条**判据已失明**（清单形态变了？）');
+} else {
+  for (const { file, n } of entryClaims) {
+    const p = path.join(testDir, file);
+    const src = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
+    const truth = src === null ? null : countCasesStatic(src);
+    if (truth === null) { entryListOnly.push(`${file}（${src === null ? '文件读不到' : '静态数不准'}）`); continue; }
+    if (n !== truth) { countBad.push(`测试入口条数·${file}：文档写 **${n}**、实测 **${truth}**（test/README.md）`); entryBad++; }
+  }
+}
+
 if (stylesNote) console.log(`\nℹ ${stylesNote}`);
+if (entryListOnly.length) console.log(`\nℹ 「测试入口条数」只列不判（静态数不准）：${entryListOnly.join('、')}`);
 
 if (countBad.length) {
   console.log(`\n✘ 文档里的计数声称与实测不符 ${countBad.length} 处：`);
@@ -248,6 +300,7 @@ if (countBad.length) {
 } else if (!countBlind.length) {
   const extra = README_CLAIMS.length ? `、顶层 README ${README_CLAIMS.length} 条声称` : '';
   console.log(`\n✓ 文档里的计数声称与实测一致（闸门 ${gateCount} 个、用例 ${caseCount} 条、★自证 ${selfCount} 条${extra}）。`);
+  if (entryClaims.length) console.log(`✓ ${entryClaims.length} 个「写了条数」的测试入口，条数都与实测一致。`);
 }
 
 if (missing.length) {
