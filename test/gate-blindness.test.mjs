@@ -5,7 +5,9 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 139 条用例 / 覆盖全部 52 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 140 条用例 / 覆盖全部 52 个闸门）
+ *   ★★ 2026-10-10 订正：`check-llm-api` 的**判据⑧** 补一条回归用例（原只由闸门头注释「手工」验证，
+ *     且其点名的 `doubao`/`siliconflow` 已删）⇒ 用例总数 **139 → 140**（覆盖闸门数不变，仍 52）。
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -5000,6 +5002,62 @@ test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目�
     assert.equal(rG.code, 0, `短路判据⑦(b) 后变异 G 应变绿（exit 0），实得 ${rG.code}\n${rG.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rG, '契约声明「覆盖文件（面板）」在「运行时线索', 'mut'), undefined,
       '短路判据⑦(b) 后变异 G 竟然还报 ⇒ 那条正向断言没在测判据⑦(b)');
+
+    // ★ 短路判据⑧ 的 `if (hits) bad.push(…)` ⇒ 变异 I′ 应**真变绿**（exit 0）
+    const i8 = llmMut(path.join(dir, 'i8'),
+      "label: 'WorkBuddy（默认）'", "label: 'WorkBuddy**（默认）'");
+    const g8 = patchGate('check-llm-api.mjs', path.join(dir, 'g8'),
+      [['\n        if (hits) bad.push(', '\n        if (false) bad.push(']]);
+    const r8 = await run(NODE, [g8], { env: { LEMO_TOOLS_ROOT: i8 } });
+    assert.equal(r8.code, 0, `短路判据⑧ 后变异 I′ 应变绿（exit 0），实得 ${r8.code}\n${r8.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(r8, 'workbuddy.label', 'mut'), undefined,
+      '短路判据⑧ 后变异 I′ 竟然还报 ⇒ 那条正向断言没在测判据⑧');
+  } finally { rm(dir); }
+});
+
+test('check-llm-api 判据⑧：用户可见字段塞 `**` ⇒ FAIL 并点名（含跨拼接边界）；`note` 已移出集合 ⇒ 塞 `**` 不报', async () => {
+  // ★ 2026-10-10（本批）：判据⑧ 此前只由闸门头注释「手工」验证（变异 I~L），且 I~L 点名的
+  //   `doubao` / `siliconflow` / `deepseek` **已随减法批次删除** ⇒ 原变异**无对象可改**。本用例用**现存**
+  //   `workbuddy` 复跑「可执行的替代变异」I′/J′/K′，并把本批「`note` 移出 `USER_TEXT_FIELDS`」这一改动钉住
+  //   （覆盖点 `LEMO_TOOLS_ROOT`，全程不动真实模块；夹具 = 真实模块整份拷进临时树 + 契约文档）。
+  const dir = path.join(TMP, 'cla-c8');
+  const N_BLIND = '本闸门已失明';
+  try {
+    // ① 阴性对照：真实模块 ⇒ exit 0、无失明文案；且判据⑧ 覆盖集合现为 **4** 个字段（`note` 已移出）。
+    const neg = llmTree(path.join(dir, 'neg'), realLlm());
+    const r0 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-llm-api 判据⑧ 阴性对照');
+    assert.ok(r0.out.includes('用户可见字段 4 个'),
+      `判据⑧ 覆盖集合应为 4 个字段（note 已移出）\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异 I′（判据⑧·`label`）：给 `workbuddy.label` 加 `**` ⇒ FAIL 并点名 `workbuddy.label`
+    const i = llmMut(path.join(dir, 'i'),
+      "label: 'WorkBuddy（默认）'", "label: 'WorkBuddy**（默认）'");
+    const r1 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: i });
+    expectBlind(r1, 'workbuddy.label', 'check-llm-api 变异I′（判据⑧·label）');
+
+    // ③ 变异 J′（判据⑧·输入框字段）：给 `workbuddy.baseUrl` 加 `**` ⇒ FAIL 并点名 `workbuddy.baseUrl`
+    //   （替代原变异 J 的 `note` —— `note` 本批已移出集合）。
+    const j = llmMut(path.join(dir, 'j'), "\n    baseUrl: '',\n", "\n    baseUrl: '**',\n");
+    const r2 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: j });
+    expectBlind(r2, 'workbuddy.baseUrl', 'check-llm-api 变异J′（判据⑧·baseUrl）');
+
+    // ④ 变异 K′（判据⑧·跨拼接边界）：把 `**` 拆到**两段拼接的边界两侧**（`'WorkBuddy*' + '*（默认）'`）
+    //   ⇒ FAIL 并点名 `workbuddy.label`。★ 承重：两段**各只有一个 `*`**，**拼接后**才有 `**`
+    //   ⇒ 逐串各查会漏，只有「拼接后再查」才抓得到（这正是判据⑧ 的 `stringContents()` 存在的理由）。
+    const k = llmMut(path.join(dir, 'k'),
+      "label: 'WorkBuddy（默认）'", "label: 'WorkBuddy*' + '*（默认）'");
+    const r3 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: k });
+    expectBlind(r3, 'workbuddy.label', 'check-llm-api 变异K′（判据⑧·跨拼接边界）');
+
+    // ⑤ `note` 已移出 `USER_TEXT_FIELDS`：给 `PROFILES.workbuddy.note` 塞 `**` ⇒ **exit 0**（不再被抓）。
+    //   ★ 钉住本批的判据⑧ 覆盖集合改动 —— 若有人把 `note` 加回集合，本断言会红（= 那次改动必须显式重审）。
+    const n = llmMut(path.join(dir, 'n'),
+      '软件内所有 LLM 推理任务默认走它', '软件内所有 **LLM** 推理任务默认走它');
+    const r4 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: n });
+    expectClean(r4, N_BLIND, 'check-llm-api 判据⑧·note 已移出集合');
+    assert.ok(!r4.out.includes('workbuddy.note'),
+      `note 已移出集合 ⇒ 塞 ** 不得被点名\n${r4.out.slice(0, 1200)}`);
   } finally { rm(dir); }
 });
 

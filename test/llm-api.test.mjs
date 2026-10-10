@@ -997,6 +997,26 @@ test('★★ PROFILES 只剩 workbuddy：listProfiles() 恰 1 条、默认就是
   });
 });
 
+test('★ 判据⑧ 前提 + 文档锚：`note` 无读者（`resolveConfig()` 不暴露 note）；`PROFILES.workbuddy.note` 仍在', async () => {
+  // ★ 2026-10-10（本批）：`scripts/check-llm-api.mjs` 判据⑧ 把 `note` **移出**「用户可见字段」集合 ——
+  //   依据是「`note` 到不了用户眼前」。本用例把那句**前提**变成可执行断言：`resolveConfig()` 的返回
+  //   **不含 `note`**（默认 profile 与未知 profile 都一样）⇒ 该字段**无读者** ⇒ 不是用户可见文案。
+  //   ★ 同时钉住 `PROFILES.workbuddy.note` **仍在** —— 它被 `lib/llm-api.mjs` 的一处注释当「文档锚」引用
+  //   （搜 `见 PROFILES.workbuddy.note`）；本批**只把它移出判据⑧ 的覆盖集合，不删字段** ——
+  //   若有人删它，那条注释会悬空 ⇒ 本断言即拦下（届时须先处理那条注释）。
+  rmOverride();
+  await withEnv(CLEAN, () => {
+    // ① 文档锚仍在：`workbuddy.note` 是非空字符串
+    assert.equal(typeof PROFILES.workbuddy.note, 'string', '★ PROFILES.workbuddy.note 应是字符串（文档锚）');
+    assert.ok(PROFILES.workbuddy.note.length > 0, '★ PROFILES.workbuddy.note 不得为空（文档锚）');
+    // ② 前提：resolveConfig() 的返回**不含 note**（默认 / 未知 profile 都一样）
+    assert.equal(Object.prototype.hasOwnProperty.call(resolveConfig({}), 'note'), false,
+      '★ resolveConfig() 返回对象不得含 `note`（note 无读者 ⇒ 非用户可见文案 ⇒ 判据⑧ 不收它）');
+    assert.equal(Object.prototype.hasOwnProperty.call(resolveConfig({ profile: 'no-such-profile' }), 'note'), false,
+      '★ 未知 profile 的 resolveConfig() 返回同样不得含 `note`');
+  });
+});
+
 test('★ PROFILES.target 判定：workbuddy = agent；未知 profile 归一为 model（保守：模型 API 校验最严）', async () => {
   rmOverride();
   await withEnv(CLEAN, () => {

@@ -121,6 +121,14 @@
  *       ★ 2026-10-10 订正：面板极简化后，上面这些渲染路径（profile/模型下拉项、`llmProfileHint` 提示行、
  *         各输入框）**已删** —— 现仅 `label` 仍渲染（`llmCurrentPill`）。完整订正见下方
  *         `USER_TEXT_FIELDS` 定义处的「2026-10-10 订正」段。
+ *       ★★ 2026-10-10 二次订正（**本批**；**原句照留**，只补订正）：上一条里 `note` 的**理由**
+ *         （`` `note`（`llmProfileHint.textContent`） ``）**前提已陈旧** —— `llmProfileHint` **已随面板重建
+ *         删除**，且 `PROFILES[*].note` / `base.note` **实测没有任何读者**（`resolveConfig()` 返回对象不含
+ *         `note`）⇒ `note` **到不了用户眼前**、**不是**「用户可见字段」⇒ 本批**把它从 `USER_TEXT_FIELDS`
+ *         移除**（判据 = 哪种行为更正确/更安全；完整理由见 `USER_TEXT_FIELDS` 定义处的「2026-10-10 订正
+ *         （本批）」段）。★ 仍保留 `label` / `kind` / `baseUrl` / `model` / `models` / `path` / `extract`
+ *         —— 面板**重建为开放式**后已有 `#llmKind` / `#llmBaseUrl` / `#llmModel` / `#llmPath` / `#llmExtract`
+ *         等输入控件（服务表单），这几类字段**仍是用户可见的字面文本**。
  *     · 判法：**静态解析**（**不用动态 import** —— 夹具树里模块的相对依赖常缺，import 抛错会被
  *       当成「失明」而把 `test/gate-blindness.test.mjs` 全打红，上一批踩过）。结构（条目边界 /
  *       字段值区间）取自**剥注释+字符串**的代码体（文案里的 `{}` `,` 会干扰配平），文案取自
@@ -157,6 +165,9 @@
  *     `path`+`extract`）⇒ 逐字段查 `**` **命中 0 / 误报 0**；扩覆盖前的旧实现**只扫 `note` 一个字段**
  *     （共 12 个），且 profile 名取自 `^\s{2}([a-z0-9-]+):\s*\{` ⇒ **带引号的键** `'openai-compatible'`
  *     会被**错记成上一个 profile 的名字**（`label` / `models` 等字段则**完全不查**）⇒ 本批补齐。
+ *     ★★ 2026-10-10 订正（**原句照留**，只补现状 —— 上面是 **2026-10-08** 的实测快照）：`PROFILES` 经减法
+ *       批次**只剩 `workbuddy` 一个** ⇒ 上面「12 个 profile / 69 个字段」**已非现值**；且本批把 `note` 移出
+ *       集合 ⇒ 现值 = **1 个 profile / 实抽 4 个字段**（`label`/`kind`/`baseUrl`/`model`），**命中 0 / 误报 0**。
  *   · 真实模块上 **exit 0**（0 FAIL）。
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -184,10 +195,10 @@
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ⑤ 验证（**临时副本 + 覆盖点，全程不动真实模块**）
- *   ★ 判据①~⑤、⑦ 的那套断言**也写在** `test/gate-blindness.test.mjs` 的 `check-llm-api` 用例里
- *     （本批**未改** `test/**`）。
- *   ★ 判据⑧ 扩覆盖面的变异验证由**本批手工**跑（临时夹具树，不进仓；见下 变异 I~L）——
- *     `test/**` 归别的批次，本批不动。
+ *   ★ 判据①~⑤、⑦ 的那套断言**也写在** `test/gate-blindness.test.mjs` 的 `check-llm-api` 用例里。
+ *   ★ 判据⑧ 的变异验证：原为**本批手工**跑（临时夹具树，不进仓；见下 变异 I~L）；★★ 2026-10-10 订正
+ *     （本批）：`check-llm-api` 的**判据⑧** 现**也进了** `test/gate-blindness.test.mjs`（新增一条回归用例 +
+ *     在既有 `★自证` 用例里补短路证明）⇒ 下面 I′/J′/K′ 三条**在仓内可复跑**。
  * ══════════════════════════════════════════════════════════════════════════════
  *   · **阴性对照**（真实 `lib/llm-api.mjs` 整棵拷进夹具树）⇒ **exit 0** 且不含失明文案。
  *   · **变异 A（判据①）**：删掉 `export` 关键字（`export async function chat` → `async function chat`）
@@ -201,19 +212,32 @@
  *     （= 旧序）⇒ **exit 1** 并点名「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」。
  *   · **变异 H（判据⑦(a)）**：把**契约文档**的顺序声明改成旧序（`覆盖文件` 与 `运行时线索` 对调）
  *     ⇒ **exit 1** 并点名「契约文档的顺序声明与闸门常量不一致」。
- *   · **变异 I（判据⑧·`label`）**：给**非默认** profile `doubao` 的 `label` 加 `**`
- *     ⇒ **exit 1** 并点名 `doubao.label`（证明不再只测「默认」那一个 profile）。
- *   · **变异 J（判据⑧·`note`）**：给 `doubao` 的 `note` 加 `**` ⇒ **exit 1** 并点名 `doubao.note`。
- *   · **变异 K（判据⑧·跨拼接边界）**：把 `**` 拆到**两段拼接的边界两侧**（`…才能调*' + '*（未开通…`）
- *     ⇒ **exit 1** 并点名 `doubao.note`（证明「拼接后再查」承重 —— 逐串各查会漏）。
- *   · **变异 L（判据⑧·另一 profile + 数组项 + 输入框字段）**：给 `siliconflow` 的 `label` 加 `**`
- *     ⇒ 点名 `siliconflow.label`；给 `doubao` 的 `models[]` 数组项加 `**` ⇒ 点名 `doubao.models`；
- *     给 `deepseek` 的 `baseUrl` 加 `**` ⇒ 点名 `deepseek.baseUrl`（证明**遍历全部 profile × 全部字段**）。
+ *   · ★★ **变异 I~L（判据⑧·扩覆盖面）—— 2026-10-10 订正：今天跑不起来**（**原句照留**，只补订正）。
+ *     原句：**变异 I（判据⑧·`label`）** 给**非默认** profile `doubao` 的 `label` 加 `**` ⇒ exit 1 点名
+ *     `doubao.label`；**变异 J（判据⑧·`note`）** 给 `doubao` 的 `note` 加 `**` ⇒ exit 1 点名 `doubao.note`；
+ *     **变异 K（判据⑧·跨拼接边界）** 把 `**` 拆到**两段拼接的边界两侧**（`…才能调*' + '*（未开通…`）
+ *     ⇒ exit 1 点名 `doubao.note`；**变异 L（另一 profile + 数组项 + 输入框字段）** 给 `siliconflow` 的
+ *     `label` / `doubao` 的 `models[]` / `deepseek` 的 `baseUrl` 加 `**` ⇒ 分别点名。
+ *     **为什么跑不起来**：I~L 点名的 `doubao` / `siliconflow` / `deepseek` 三个 profile **已随减法批次整体
+ *     删除**（`PROFILES` 现只剩 `workbuddy`）⇒ 它们的锚点在真实模块里**已不存在**，原变异**无对象可改**。
+ *     **可执行的替代变异**（用现存 profile `workbuddy`；`LEMO_TOOLS_ROOT` 指向临时夹具树）：
+ *       · **I′（`label`）**：给 `workbuddy.label` 加 `**` ⇒ **exit 1** 并点名 `workbuddy.label`；
+ *       · **J′（输入框字段）**：给 `workbuddy.baseUrl` 加 `**` ⇒ **exit 1** 并点名 `workbuddy.baseUrl`
+ *         （证明「填进输入框」那类字段仍被覆盖 —— 替代原 J 的 `note`，因 `note` 本批**已移出集合**，见下）；
+ *       · **K′（跨拼接边界）**：把 `workbuddy.label` 改成**两段拼接** `'Work*' + '*Buddy'`（`**` 跨边界）
+ *         ⇒ **exit 1** 并点名 `workbuddy.label`（证明「拼接后再查」承重 —— 逐串各查会漏）；
+ *       · **L′（数组项）**：`workbuddy` **没有** `models[]` ⇒ 「数组项」覆盖**当前无真实样本**（如实登记）；
+ *         可在夹具里给 `workbuddy` 临时加 `models: ['m**1']` ⇒ 点名 `workbuddy.models`（证集合项仍在）。
+ *     ★★ 2026-10-10 订正（判据⑧ 覆盖集合收窄）：`note` **已从 `USER_TEXT_FIELDS` 移除**（它**无任何读者**、
+ *       到不了用户眼前 ⇒ 收录它属**陈旧前提**；完整理由见 `USER_TEXT_FIELDS` 定义处订正）⇒ 原「变异 J
+ *       （`note`）」**已不再是判据⑧ 的覆盖对象**，改由上面 **J′（`baseUrl`）** 承担「输入框字段」那一格。
  *   · **失明三态**（模块文件缺失 / 模块里一条 `LEMO_LLM_*` 都没有 / 契约文档缺失或顺序声明切不出）
  *     ⇒ **exit 1 + 「本闸门已失明」**，且**不输出判据①~⑤、⑦、⑧**。
  *   · **★自证**：分别**短路**判据①/②/③/⑤/⑦/⑧ 的比较 ⇒ 对应变异**重新变绿**（证明判据**承重**，
  *     不是摆设）。★ 判据⑦ 的短路点选「代码侧严格递增」那一步（真的能让变异 G 变绿）；
- *     判据⑧ 的短路点选 `if (hits) bad.push(…)`（真的能让变异 I~L 变绿）。
+ *     判据⑧ 的短路点选**命中收集那一行**（`if (hits)` 分支里的 `bad.push(...)` —— ★ 这里**故意不写成连续
+ *     字面量**，否则头注释会与代码争夺「首次出现」，naive 替换会误补注释；真的能让变异 I′/J′/K′ 变绿
+ *     —— 已写入 `test/gate-blindness.test.mjs` 的 `★自证 check-llm-api` 用例）。
  *
  * 用法：node scripts/check-llm-api.mjs
  * 环境变量：
@@ -283,8 +307,29 @@ const KEY_IDENT = new Set(['apikey', 'api_key', 'key', 'secret', 'token', 'passw
  *   · 现状核对（2026-10-10）：`PROFILES` 只剩 `workbuddy`，实抽 **5** 个字段
  *     （`label`/`note`/`kind`/`baseUrl`/`model`）；`models`/`path`/`extract` **当前无任何 profile 提供**
  *     ⇒ 遍历时被跳过（**集合项未删**，理由见上「有意保守」）。
+ *   · ★★ 2026-10-10 **本批再订正**：上面这条「**判据逻辑一字未改 / 集合全不动 / 仍按原集合遍历**」
+ *     已被**本批取代** —— `note` 因**实测无任何读者**已从 `USER_TEXT_FIELDS` **移除**（完整理由见
+ *     **下段**订正；★ 原句照留，不抹，只加此交叉引用，免得读者按「集合全不动」误读现值）。
+ *
+ * ★★ 2026-10-10 订正（本批，**`note` 从集合移除**；判据 = **哪种行为更正确/更安全**）：
+ *   · **事实**：`PROFILES[*].note` **没有任何读者**（`resolveConfig()` 返回对象**不含 `note`**；`base` 只被读
+ *     `.label`/`.kind`/`.target`/`.baseUrl`/`.model`/`.headers`/`.path`/`.extract`/`.models`/`.isDefault`，
+ *     **从无 `.note`**；面板 `llmProfileHint` **已删**）⇒ 它**永远到不了用户眼前**。
+ *   · ⇒ 把 `note` 列进「**用户可见字段**」是**基于陈旧前提**的判据（前提 = 上面那句 `llmProfileHint.textContent`，
+ *     已失效）—— 本仓明令要修的一类。**故从集合移除**（`USER_TEXT_FIELDS` 不再含 `note`）。
+ *   · **为什么不「留着防御」**：① 该集合的**语义契约**是「用户可见字段」⇒ 收录一个**无读者**的字段 = 让集合
+ *     **自陈失实**；② `note` 在本模块里实为**开发者文档锚**（`lib/llm-api.mjs` 有一处注释引用
+ *     「见 PROFILES.workbuddy.note」）⇒ 开发者文档**合法地**可以用 markdown `**` ⇒ 收进「用户可见」判据会
+ *     在**未来某次正当的文档性改写**里**误报**（本仓硬指标是「误报 0」）。
+ *   · **将来若真有读者怎么办**（如实登记处置）：**新增一个面向用户的 `note` 渲染路径 = 一次「重新把字段暴露给
+ *     用户」的改动**，做那次改动的人**必须回头把 `note` 重新登记进本集合** —— 本段即是那句提示；★ 判据⑧ 的
+ *     失明守卫（`c8Checked === 0`）仍会在集合被抽空时报失明，不会静默空转。
+ *   · ★ 现状核对（2026-10-10，本批后）：`PROFILES` 只剩 `workbuddy`，实抽 **4** 个字段
+ *     （`label`/`kind`/`baseUrl`/`model`）；`note`/`models`/`path`/`extract` **当前无任何 profile 提供或已移除**。
+ *   · ★ `PROFILES.workbuddy.note` **不删** —— 它被 `lib/llm-api.mjs` 的注释当文档锚引用；本批只把它
+ *     **移出判据⑧ 的覆盖集合**，**不动字段本身**。
  */
-const USER_TEXT_FIELDS = ['label', 'note', 'kind', 'baseUrl', 'model', 'models', 'path', 'extract'];
+const USER_TEXT_FIELDS = ['label', 'kind', 'baseUrl', 'model', 'models', 'path', 'extract'];
 
 // ── 判据⑦ 的顺序真值（契约）────────────────────────────────────────────────────
 /**

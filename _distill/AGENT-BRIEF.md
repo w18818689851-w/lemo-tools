@@ -492,6 +492,38 @@ node D:/lemo-tools/scripts/prune-jobs.mjs --keep 20    # 换保留条数（默�
 `ls package.json`（无）、`ls .git/hooks/ | grep -v .sample`（空）、
 `Get-ScheduledTask | ? { $_.Actions.Arguments -match 'lemo|prune' }`（计划任务 **196** 个、命中 **0**）。
 
+### ★ 文案出片产物 `dub/` 也会累积：定期跑 `prune-dub.mjs`（2026-10-10 立，RISK-10）
+
+**为什么需要它**：`dub.mjs` 每出一片就在 `<dubRoot>/<时间戳>-<短id>/` 落一份
+`film.mp4` + `audio.wav` + `.srt`；校验抽帧另有 `<dubRoot>/_verify/<同名目录>/` ——
+这两类目录**没有任何自动化在清**，⇒ **只增不减**（本次实测 `D:/lemo-films/dub/` 已有
+**87** 个条目 / **1016950017 B**）。既有 `scripts/prune-jobs.mjs` **只管 `_jobs/`**；
+`lib/dub.mjs` 的 `dubDiskUsage()` 只**如实上报占用、绝不删除**（RISK-10 的只读半边）
+⇒ 清理交本工具（**写侧**）。
+
+```bash
+node D:/lemo-tools/scripts/prune-dub.mjs                          # 默认**只报告（dry-run）**，不删任何东西
+node D:/lemo-tools/scripts/prune-dub.mjs --older-than 30          # 报告「超 30 天」的产物目录（仍不删）
+node D:/lemo-tools/scripts/prune-dub.mjs --older-than 30 --apply  # 确认无误后才真删（产物目录 + _verify 同名抽帧）
+```
+
+语义（判据机械、可解释）：
+- **只处理产物形态目录**（`YYYYMMDD-HHMMSS-<4hex>`，与 `lib/dub.mjs` 的 `newOutDir()` 同形）
+  与 `_verify/` 下的**同名抽帧目录**；其余一律不碰（`_fonts` 等只读辅助目录**跳过并逐条说明**）；
+- 按目录 `mtime`：`now - mtime >= --older-than <天>` 才入选；★ **缺 `--older-than` ⇒ 不选任何一项**
+  （**绝不**「不带阈值就删全部」），带 `--apply` 却缺阈值 ⇒ **报错退出**；
+- ★ **安全闸（两条，缺一不可）**：删前 ① 规范化绝对路径必须**确实在 dubRoot 之内**
+  （照 `lib/resources.mjs` 的 `dirFor` 穿越防护口径）；② `lstat` 判定**不是符号链接/junction**
+  （本机踩过「junction 的 `rm -rf` 会穿透删真实目标」）⇒ 命中即**拒绝并 exit 1**；
+- `_uploads/`（**用户上传的素材**）默认不动，仅 `--include-uploads` 才纳入且**醒目提示**，
+  `index.json` 登记表**永远保留**（删了会孤立其余素材）；
+- **逐个列出**将删/已删**完整路径 + 字节数**，末尾给汇总（条数 / 总字节）—— 不许只报总数。
+- ★ **覆盖点 `--root <dir>`**（默认 = `lib/dub.mjs` 的 `DUB_ROOT`，**不新增环境变量**）
+  ⇒ 设它即可在**临时树**上非破坏地演练 `--apply`（`test/prune-dub.test.mjs` 就是这么做的）。
+
+★ **核法**（本条断言「没有自动化在跑它」）：同 `prune-jobs` 那条的核法（无 CI 配置 / 无 npm script /
+无 git hook / 计划任务 0 命中）。
+
 ### ★ 注册表写入是「跨进程读-改-写」，拿不到锁**也仍会合并**（2026-10-09 订正表述 + 补测试）
 
 **背景**：`lib/store.mjs` 的控制台**只在启动时读一次**注册表，之后整个生命周期都拿内存副本写盘
