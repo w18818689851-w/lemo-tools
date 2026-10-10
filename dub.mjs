@@ -690,8 +690,6 @@ async function main() {
     for (const s of (Array.isArray(r.segments) ? r.segments : [])) {
       say(`    ${String(s.i).padStart(3)}  [${String(s.role || '其他').padEnd(4)}]  ${s.text}`);
     }
-    if (r.llmRaw) say(`  llmRaw:  ${String(r.llmRaw).slice(0, 300)}`);
-    if (r.llmRawSeg) say(`  llmRawSeg:  ${String(r.llmRawSeg).slice(0, 300)}`);
     return;
   }
 
