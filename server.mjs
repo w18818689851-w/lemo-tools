@@ -2100,6 +2100,13 @@ function watchBriefJob(jobId, briefId) {
 //      的值一律打码成**固定**占位符 `••••••`；POST 时收到该占位符 ⇒ 保留原值（= 前端「留空=不改」）。
 //      ★ 为什么用固定占位符、而不是模块 maskKey 的 `abcd…`：面板要把头**回填**到输入框，
 //        只有固定串才能被**无歧义**识别成「未改动」—— 否则用户一保存就把密钥替换成了它自己的掩码。
+//      ★★ 2026-10-10 订正（标准 §10「安全与信息边界」· 委托方 P0/P1 缺陷）—— 上面「按**名字**打码」的
+//        **旧口径作废**（原句照留，只补现状）：它只对**名字**含敏感词的头的值打码，而**名字**不含敏感词的
+//        **自定义头**（如 `X-My-Credential`）的值会**原样回传** ⇒ 明文外泄。现**请求头内容（头名与头值）
+//        一律不外传**，`/api/llm/config` 与 `/api/llm/services` **同口径只回布尔** `hasHeaders`。
+//        ★ 同理，`/api/llm/config` 回显的覆盖里 **`services` 数组**（多套算力服务）也**逐项脱敏**（复用模块
+//        `listServices()`，不写第二份脱敏实现）—— 旧写法对数组 `out[k]=v` **整体原样**回传 ⇒ 每项 `apiKey`
+//        明文外泄（P0 根因）。
 //   ② **HTTP 一律 200**，错误放 body（`{ok:false,error:{kind,message,hint?}}`）—— 免得前端把 4xx/5xx
 //      当网络故障（本项目 web/app.js 的既有 `api()` 就是按 `!r.ok` 抛错的）。
 //   ③ **模块没就绪 / 抛异常都不崩服务**：动态 import + try/catch 兜底（模块缺失 ⇒ 一句中文提示）。
@@ -2108,8 +2115,9 @@ function watchBriefJob(jobId, briefId) {
 // `data` 里（模块自己的 ok/steps/errors 原样保留，前端读 `data.ok` / `data.steps`）——
 // 这样「请求是否被处理」与「校验是否通过」两件事不会混在一个 `ok` 上。
 
-const LLM_KEY_MASK = '••••••';   // 固定占位符（见上文①）
-const LLM_SECRET_HEADER_RE = /authorization|api[-_]?key|token|secret|bearer|cookie/i;
+// ★★ 2026-10-10（标准 §10）：`LLM_KEY_MASK` / `LLM_SECRET_HEADER_RE` / `redactLlmHeaders()` 已**整体删除**
+//   —— 它们承载的是「按**名字**猜敏感词、其余值原样回传」的**旧口径**（正是 P1 明文外泄的来源）。
+//   现在请求头**只回布尔** `hasHeaders`（见 `llmConfigPayload` / `sanitizeLlmOverride`），不再有「打码对象」。
 
 // ★★ 2026-10-10 收紧（委托方指令「**收紧 HTTP 层，不接受覆盖**」）—— `/api/llm/config` 落盘的 **kind 白名单**。
 //   · 委托方已明令「**只接 WorkBuddy，其他 provider 一律彻底删除**」⇒ 让面板把 `kind` 覆盖成
@@ -2157,20 +2165,55 @@ async function loadLlmApi() {
   return _llmMod;
 }
 
-/** 敏感头的值打码（★ key 永不出现在响应里）。 */
-function redactLlmHeaders(h) {
-  if (!h || typeof h !== 'object') return {};
-  const out = {};
-  for (const [k, v] of Object.entries(h)) out[k] = LLM_SECRET_HEADER_RE.test(k) ? LLM_KEY_MASK : v;
-  return out;
+/**
+ * ★★ 2026-10-10（标准 §10）：覆盖里的 `services` 数组 → **逐项脱敏**行。
+ *   复用模块 `listServices()`（= `/api/llm/services` 的**同一份**脱敏视图）—— 本文件**不写第二份脱敏实现**
+ *   （本项目吃过「两份落盘 / 两份真相」的亏）。模块不可用 / 抛异常 ⇒ 回 `[]`：**宁可不回，也绝不透传原始数组**
+ *   （原始数组里每项都带明文 `apiKey` —— 这正是本批要堵的 P0）。
+ */
+function maskedOverrideServices(mod) {
+  try {
+    if (mod && typeof mod.listServices === 'function') return mod.listServices();
+  } catch { /* 落空 ⇒ 回空数组（绝不回原始明文） */ }
+  return [];
 }
 
-/** 把「存储的覆盖」脱敏成可安全回给前端的形状（★ 不含 key 明文）。 */
-function sanitizeLlmOverride(o) {
+/**
+ * ★★ 2026-10-10（标准 §10「安全与信息边界」）—— `/api/llm/config` 的 `override` 回显**允许清单**
+ *   （**不是**排除清单）：**只放行清单内**的顶层键，清单外的**一律丢弃**（★ **绝不** `out[k] = v` 透传）。
+ *   ★ 与模块 `maskedExtra()` 用 `EXTRA_ECHO_KEYS` 的**同一原则**（「只放行列出的，其余一律不回」）。
+ *   ★ 为什么必须这样：P0 的根因就是「只挡**想得到的**键」（顶层 `apiKey`）而非「只放行**白名单**」——
+ *     对**未知顶层键**继续 `out[k] = v` 就是**同一类洞**。且触发面**不是纯理论**：`_llm-api.json` 是
+ *     模块注释里**明确允许用户手改**的文件 ⇒ 用户手写一个顶层未知键（如 `extra`）里放了密钥 ⇒ 旧写法会
+ *     **明文回给前端**。
+ *   ★ 清单内容 = 覆盖文件**可能**出现的顶层键（以模块 `normalizeOverride` / `LEGACY_OVERRIDE_KEYS` 的口径为准）：
+ *     · 多套服务元字段：`version` / `active`；
+ *     · legacy 单份覆盖字段：`profile` / `kind` / `target` / `baseUrl` / `model` / `timeoutMs` / `path` / `extract` / `models`。
+ *   ★ `apiKey` / `headers` / `services` **不在此清单**：它们走 `sanitizeLlmOverride()` 里的**特殊处理**
+ *     （丢弃 / 布尔 `hasHeaders` / 逐项脱敏）。
+ */
+const LLM_OVERRIDE_ECHO_KEYS = new Set([
+  'version', 'active',
+  'profile', 'kind', 'target', 'baseUrl', 'model', 'timeoutMs', 'path', 'extract', 'models',
+]);
+
+/**
+ * 把「存储的覆盖」脱敏成可安全回给前端的形状（★ 不含 key 明文 / 不含请求头内容）。
+ * ★★ 2026-10-10（标准 §10，委托方 P0/P1）：
+ *   · 顶层 `apiKey`（legacy 字段）**永不回显**；
+ *   · `headers` **不再回对象**（旧写法按名字猜敏感词、其余**值原样回传** ⇒ 自定义头明文外泄）⇒ 改回**布尔**
+ *     `hasHeaders`（与 `/api/llm/services` 的 `hasHeaders` 同口径）；
+ *   · `services` 是**数组** ⇒ 逐项走 `maskedOverrideServices()`（★ 旧写法 `out[k]=v` 会把整数组**原样**回传，
+ *     每项的 `apiKey` 明文外泄 —— 就是本批的 P0 根因）；
+ *   · 其余顶层键 ⇒ **只放行** `LLM_OVERRIDE_ECHO_KEYS` **允许清单**内的，清单外**一律丢弃**（P0 同类收口）。
+ */
+function sanitizeLlmOverride(mod, o) {
   const out = {};
   for (const [k, v] of Object.entries(o || {})) {
-    if (k === 'apiKey') continue;                                  // ★ 永不回显
-    if (k === 'headers') { out.headers = redactLlmHeaders(v); continue; }
+    if (k === 'apiKey') continue;                                  // ★ 永不回显（顶层 legacy 字段）
+    if (k === 'headers') { out.hasHeaders = !!(v && Object.keys(v).length > 0); continue; }
+    if (k === 'services') { out.services = maskedOverrideServices(mod); continue; }
+    if (!LLM_OVERRIDE_ECHO_KEYS.has(k)) continue;                  // ★ 允许清单外 ⇒ 丢弃（绝不透传未知键）
     out[k] = v;
   }
   out.hasKey = !!(o && o.apiKey);
@@ -2242,9 +2285,12 @@ function llmConfigPayload(mod, cfg, ov, keyInfo) {
     baseUrl: cfg.baseUrl || '',
     model: cfg.model || '',
     models: Array.isArray(cfg.models) ? cfg.models : [],
-    // 输入框只放**用户覆盖**的头（不把 profile 默认头混进来 ⇒ 保存不会把它们意外固化成覆盖）
-    headers: redactLlmHeaders(override.headers || {}),
-    effectiveHeaders: Object.keys(cfg.headers || {}),   // 生效头的**名字**（给提示用，不含值）
+    // ★★ 2026-10-10（标准 §10，委托方 P1）：请求头**内容**（头名与头值）**绝不外传** —— 旧写法回的是一个
+    //   「头名 → 值」对象（只对**名字**含敏感词的值打码，其余**原样回传**）⇒ 自定义头明文外泄。
+    //   现**只回一个布尔** `hasHeaders`（= 是否已配置请求头），与 `/api/llm/services` 的 `hasHeaders` 同口径。
+    hasHeaders: typeof cfg.hasHeaders === 'boolean'
+      ? cfg.hasHeaders
+      : !!(cfg.headers && Object.keys(cfg.headers).length > 0),
     timeoutMs: cfg.timeoutMs,
     path: cfg.path,
     extract: cfg.extract,
@@ -2262,7 +2308,7 @@ function llmConfigPayload(mod, cfg, ov, keyInfo) {
     retryBackoffMs: cfg.retryBackoffMs,
     unknownProfile: !!cfg.unknownProfile,
     overrideFile: mod.overrideFilePath(),
-    override: sanitizeLlmOverride(override),
+    override: sanitizeLlmOverride(mod, override),
   };
 }
 

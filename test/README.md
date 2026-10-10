@@ -13,7 +13,7 @@ node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自�
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12 条）
 node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（9 条，★ 绝不真安装）
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（81 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现）
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（82 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见）
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
 node test/briefs.test.mjs        # 「主题工单」数据层 + 接口 + UI 的测试（16 条，★ 含「控制台出片写进 _jobs 独立目录、不覆盖样板片」+「--ratio 的 `:` 判据」「filmUrl 指向本次产物」）
@@ -21,7 +21,7 @@ node test/originality.test.mjs   # 「从零原创」审计器的纯逻辑测试
 node test/style-skill-reader.test.mjs  # 风格 Skill 文档读取入口的纯逻辑测试（6 条，★ 钉「缺失即 null 绝不抛」的硬契约）
 node test/triple-check.test.mjs   # 三者一致性校验门（**全项目唯一允许调 7B VLM 的地方**）的纯逻辑测试（29 条）
 node test/dub-lexicon.test.mjs    # 规则词表 TAG_LEXICON / lexiconCoverage 的纯逻辑测试（12 条，★ 词表数据完整性）
-node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（31 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越 + ★ 4 个「零消费者」LLM 端点的最小回归 ㉓~㉖：`GET /api/llm/profiles`（只剩 workbuddy）/ `POST /api/llm/chat` / `POST /api/llm/invoke`（只打非法参错误路径，绝不起 run）/ `POST /api/llm/models`（agent 守卫拒绝，绝不打网关））
+node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（32 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越 + ★ 4 个「零消费者」LLM 端点的最小回归 ㉓~㉖：`GET /api/llm/profiles`（只剩 workbuddy）/ `POST /api/llm/chat` / `POST /api/llm/invoke`（只打非法参错误路径，绝不起 run）/ `POST /api/llm/models`（agent 守卫拒绝，绝不打网关）+ ★★ **㉛ 安全回归（P0/P1）**：`GET /api/llm/config` 响应体**搜不到明文密钥**、**搜不到自定义头的值**，`override.services` **逐项脱敏**（无 `apiKey` 字段）、`headers` **只回布尔 `hasHeaders`**）
 node test/voices-api.test.mjs     # /api/voices/{sources,import,test,test/audio} 的契约与校验测试（10 条，只测失败路径）
 node test/style-scan.test.mjs     # 风格源码指纹机制（约定一「自动纳入」的判据）测试（16 条，★ 该变就变/不该变就不变）
 node test/triple-check-flow.test.mjs  # verifyTriple 主流程端到端测试（13 条，★ 用桩 LM Studio，绝不碰真实模型）
@@ -29,7 +29,7 @@ node test/dub-align.test.mjs      # 功能2「口播 cue ↔ 文案句」时间�
 node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 条，★ 硬切不切在词/记号内部 + 切片 trim + 拼回不丢字）
 node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套件（138 条：**全部 51 个闸门**的失明/反向守卫 + **17 条核心判据**，每条都含「正向命中 + 阴性对照」，另含 60 个「改坏守卫或判据必须变红」自证）
 node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs 的行为测试（21 条，★ 槽位上限用子进程并发验排队 + 过期槽接管 + .mutex 清理 + CLI 退出码透传 + release 绝不抛）
-node test/llm-api.test.mjs        # 开放式 LLM 配置模块 lib/llm-api.mjs 的纯逻辑/离线测试（91 条，★ 桩服务用 node:http 监听随机端口、**不打真实外网**；钉「chat() 永不抛」+ 容错 8 类 + 密钥不外泄 + 覆盖文件读写 + ★ 多套「算力服务」CRUD 与 `extra` **逐键合并**（对齐参考 §11.1：空值不覆盖、其余键保留、`clearExtra` 显式清空））
+node test/llm-api.test.mjs        # 开放式 LLM 配置模块 lib/llm-api.mjs 的纯逻辑/离线测试（100 条，★ 桩服务用 node:http 监听随机端口、**不打真实外网**；钉「chat() 永不抛」+ 容错 8 类 + 密钥不外泄 + 覆盖文件读写 + ★ 多套「算力服务」CRUD 与 `extra` **逐键合并**（对齐参考 §11.1：空值不覆盖、其余键保留、`clearExtra` 显式清空）+ ★★ **`extra` 三键识别**（`path`/`force_stream`/`ensure_system_prompt` 顶层优先、`extra` 兜底，对齐参考 §5/§12.2）+ **`extra` 非密钥项白名单回显**（§10）+ **探测 `content:null` 不误判为坏结构**（§11.9））
 node test/prune-jobs.test.mjs     # scripts/prune-jobs.mjs 的**并发写**回归测试（1 条，★ 带屏障：父进程先占住跨进程写锁 + 等 prune 读完索引；钉「`--apply` 与并发 console 写**共用同一把锁** ⇒ 不丢并发新增的任务」，修前红/修后绿）
 node test/store-lock.test.mjs     # lib/store.mjs **未拿到跨进程写锁**时的降级路径测试（2 条，★ 把 `index.lock` 做成**目录**迫使 `acquireLock()` 返回 false；钉「未拿锁**仍会「重读 + 合并」**⇒ 不丢盘上别人的条目、且 `saveIndex` 返回 true」+「`savedAt` 统一为 ISO 字符串」；★ 反向验证：临时给合并加 `&& locked` 守卫 ⇒ 第 1 条**必红**）
 node test/resources.test.mjs      # 通用资源检测适配模块 lib/resources.mjs 的纯逻辑 / 离线测试（23 条，★ 五态真值表 + `satisfies` 版本语义（`>=` / `^` / 精确 / `*`）+ `dirFor` 路径穿越被拒 + `planDownloads`「**ready 不产生动作**」（本地优先 / 禁止重复下载的核心断言）+ 注入 `envResult` **离线**跑通 + ★ **`mount` 接线**（静态断言两个入口的函数体里真的 `await mount(`；行为断言 `opts.mount=false` 跳过挂载、无下载配置时不挂载；★ **端到端离线**：就绪 ⇒ 导入后**真的挂载** `mounted:true`、不可用 ⇒ 仍 `ok:true` 但 `mounted:false`）+ ★ **三条下载真路径离线测**（`_dlHttp` 成功 / 0 字节 corrupt / sha256 不符 ⇒ 都断言「先落 `_download/`、校验通过才移入 `dirFor()`」；`_dlExec` 成功与失败；`importResource` 的**目录**分支）—— **不起 WSL、不真下载外网**）
@@ -789,7 +789,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（81 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条）
+## `test/ui.test.mjs` 覆盖了什么（82 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条）
 <!-- ★ 2026-10-10 订正：本标题原写「69 条」，与入口行不一致（**旧漂移**）。上列批次之和确为 69，
      另 6 条来自其后未逐批列出的批次 ⇒ 总数改为 **75**（★ 以本文件「测试入口」表那一行为准）。
      ★ 另：2026-10-10「AI 算力配置」面板极简化时，I 组 6 条被**同数重写**（6 换 6）⇒ 总数不变。★ 2026-10-10 第二轮（通用算力模块重建）：I 组换锚点 + 新增 I7~I11（多套列表/新增/切换/删除/空状态）⇒ ui.test 由 75 → **80**；同轮 llm-api.test 71 → **78**、dub-api.test 27 → **31**。 -->
@@ -960,7 +960,7 @@ test/cases.mjs      冒烟测试用例 + 共享常量（ORCH_MD5 / 期望风格�
                     + 测试产物登记与清理（ARTIFACTS / cleanupArtifacts）+ WSL 辅助（wsl / freshDeadPid）
 test/setup.test.mjs 首次运行安装的纯逻辑测试（独立入口，不起服务、不碰 WSL）
 test/setup-api.test.mjs 「首次运行向导」两个接口 `GET /api/setup/actions` / `POST /api/setup/run` 的 HTTP 契约测试（独立入口，零依赖，**绝不真安装**）：`?simulate=<场景>` 的 count/autoCount/manualCount 自算一致 + 每个动作走 `serializeAction`（auto 有 steps+manual:null、manual 反之）+ 未知场景 400 + 无 simulate ⇒ `simulated===null` + `POST` 的非法 JSON / actionId 缺·非串·空·非法字符（`../x`/`a b`/`a/b`/`a:b`/中文）⇒ 400 + 未知动作 404 + manual 动作 400 且响应带 `manual` + 已知已就绪 ⇒ 200 `{ok,skipped}`。★ **每条失败路径都断言「没有起任务」**，并断言两个固定入口（`.console-port` / `打开控制台.url`）跑前跑后逐字节一致。★ 场景清单取自 `GET /api/env` 的 `scenarios`（不硬编码）。★ 变异验证：把 `server.mjs` 的 actionId 字符正则加一个 `/` ⇒ 对应用例变红
-test/ui.test.mjs    Web UI 层测试（独立入口）：无头 Edge --dump-dom + CDP 真点击 + 颜色对比度 + 批量/ETA 的服务端语义 + 声音版块（音色渲染/试听请求/选用持久化/出片带 --voice）+ 文案出片面板（形态切换/断句逐字/分析/风格下拉/出片请求体契约/三条前端拦截）+ 播放器弹层/窄屏侧栏/顶栏按钮 + 限幅开关·成片库·声音三处·生成工单·任务取消·预设 + 画幅警告一键修复 + **AI 算力配置面板**（★★ 2026-10-10 订正：下方「极简版」描述是**面板极简化那一轮**的**历史快照**，**已过时** —— 同日下发的《通用AI算力API接入模块》规格要求**开放式可插拔**，面板**已重建**为**多套「算力服务」**（41 个 `llm*` id，含 `llmLabel` / `llmBaseUrl` / `llmKey` / `llmHeaders` / `llmTimeout` / `llmKind`（4 个适配器下拉）/ 6 个高级字段；I 组用例已换锚点并新增 I7~I11「多套列表 / 新增 / 切换 / 删除 / 空状态」，`ui.test` 75 → **81**）。原文保留作历史）**（顶栏入口可达 / 默认态胶囊含 WorkBuddy / ★ 面板内 input·select·textarea 数量**全为 0** / 运行时说明 / 骨架不白屏 / **测试连接**桩 `POST /api/llm/validate` ⇒ 三步「可达·鉴权·返回体」逐步点亮 + 未捕获异常新增 0，★ 专用服务把 LEMO_FILM_DIR 隔离到临时树作纵深防御）
+test/ui.test.mjs    Web UI 层测试（独立入口）：无头 Edge --dump-dom + CDP 真点击 + 颜色对比度 + 批量/ETA 的服务端语义 + 声音版块（音色渲染/试听请求/选用持久化/出片带 --voice）+ 文案出片面板（形态切换/断句逐字/分析/风格下拉/出片请求体契约/三条前端拦截）+ 播放器弹层/窄屏侧栏/顶栏按钮 + 限幅开关·成片库·声音三处·生成工单·任务取消·预设 + 画幅警告一键修复 + **AI 算力配置面板**（★★ 2026-10-10 订正：下方「极简版」描述是**面板极简化那一轮**的**历史快照**，**已过时** —— 同日下发的《通用AI算力API接入模块》规格要求**开放式可插拔**，面板**已重建**为**多套「算力服务」**（41 个 `llm*` id，含 `llmLabel` / `llmBaseUrl` / `llmKey` / `llmHeaders` / `llmTimeout` / `llmKind`（4 个适配器下拉）/ 6 个高级字段；I 组用例已换锚点并新增 I7~I12「多套列表 / 新增 / 切换 / 删除 / 空状态 / `extra` 回填·清空发 `clearExtra`·`llmPath` 对 `openai-compatible` 可见」，`ui.test` 75 → **82**）。原文保留作历史）**（顶栏入口可达 / 默认态胶囊含 WorkBuddy / ★ 面板内 input·select·textarea 数量**全为 0** / 运行时说明 / 骨架不白屏 / **测试连接**桩 `POST /api/llm/validate` ⇒ 三步「可达·鉴权·返回体」逐步点亮 + 未捕获异常新增 0，★ 专用服务把 LEMO_FILM_DIR 隔离到临时树作纵深防御）
 test/dub-semantic.test.mjs 语义解析 / 风格匹配的纯逻辑测试（独立入口）：四维打分 + **visual 维度（口播画面气质）的向后兼容与决胜** + 规则路的切段粗粒度 + 外部 `--analysis` 注入与它的硬判据（拼回≠原文即拒）
 test/briefs.test.mjs 「主题工单」的测试（独立入口，**16 条**）：数据层 + 接口 + UI，含全链路出片用例。★ ⑬ 钉住「控制台出片必须写进独立输出目录」这条红线 —— 控制台起任务时**从不传 `--out`**（`server.mjs` 只拼 `--skip-sync <runOpts>`），而编排器 `lemo-make.mjs` 的 `outDir = o.out || <exportDir>\<slug>` ⇒ 成片直写**样板片路径**、把样板片覆盖掉（实测 art-deco 的样板片被覆盖成 9:16）。现在 `lib/jobs.mjs` 在**最靠近 spawn 的那一处**（`buildOrchArgs`）注入 `--out <exportDir>\_jobs\<任务id>`；用例两层断言：① 命令行拼装（`--out` 在、是绝对路径、落在 `_jobs\<任务id>`、**不等于也不落在**样板片目录里、只出现一次、用户自带 `--out` 原样尊重）；② 真走一次控制台「主题出片」入口（`--dry-run`，秒级），断言接口回给 UI 的 `job.outDir` 就是 `_jobs\<任务id>`（证明注入真的接在控制台那条路上）。★ ⑮ 钉住「`--ratio` 的值判据」：`9:16` 含 `:`，而 `lib/briefs.mjs` 的 `OPT_RE` 字符白名单里**没有** `:` ⇒ 改前 `--ratio 9:16` 被 `/api/run` 以「非法字符」拒（上一轮做验证时只能回退等价的 `--size 1080x1920`）。现在**不放宽通用白名单**（shell 元字符 / 空白 / 反斜杠 / 非 ASCII 照旧全拒），只在 `--ratio` 的**值位**换成与编排器同源的语义判据（`lib/sizes.mjs:resolveSize` ⇒ 预设比例或合法 WxH）—— 比字符白名单**更严**（`--ratio 99:99` 被拒）；同时 `/api/eta` 原先自己抄了一份同样缺 `:` 的正则，改成复用 `validateOpts`（同一处判据）。★ ⑯ 钉住「`filmUrl` 指向**本次任务**的产物」：控制台出片写在 `_jobs\<任务id>\<slug>.mp4`，而旧拼法 `/api/films/<slug>/<file>` 指的是**样板片**目录（会打开样板片）；现在按产物**实际在不在** `_jobs\<任务id>\` 下判（复用 `lib/jobs.mjs:jobOutDir`，与 `findFilm` 同源），在则拼 `/api/films/_jobs/:jobId/:file` 并断言**真 GET 得到那份字节**，不在（`--dry-run` / 产物被清理 / 用户自带 `--out`）则退回样板片拼法（向后兼容）。
 test/originality.test.mjs 「从零原创」审计器的纯逻辑测试（独立入口，零依赖）

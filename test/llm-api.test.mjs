@@ -582,6 +582,72 @@ test('★★ validate()·empty-output 降级：结构合法但探针两次都空
   } finally { await stub.close(); }
 });
 
+// ── ★★ 对齐参考 §11.9：推理型模型的探测假阴（`content=null` 不再误判为 bad-shape）──
+test('★★ validate()·推理型假阴（对齐参考 §11.9）：content=null + finish_reason=length ⇒ 触发 64 复验、只告警不失败', async () => {
+  let posts = 0;
+  const stub = await startStub((req, res) => {
+    if (req.method === 'GET') return json200(res, { data: [] });
+    posts += 1;
+    // 两次探针都返回 `content:null`（推理型模型把 token 花在 reasoning_content 上 ⇒ 小预算下 content=null）
+    return json200(res, { choices: [{ message: { content: null }, finish_reason: 'length' }] });
+  });
+  try {
+    const r = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890' }));
+    assert.equal(r.ok, true, `★ content=null 是可用端点，不得判失败：${JSON.stringify(r.errors)}`);
+    assert.equal(r.steps.shape.ok, true);
+    assert.equal(r.steps.shape.kind, 'empty-output', '★ 应降级为 empty-output（而非 bad-shape）');
+    assert.equal(posts, 2, '★ 应触发一次 64-token 复验（共两次 POST 探针）');
+    assert.equal(r.warnings.length, 1);
+    assert.equal(r.warnings[0].kind, 'empty-output');
+    assert.match(r.warnings[0].detail, /finish_reason=length/, '★ detail 应记 finish_reason，便于诊断');
+    assert.deepEqual(r.errors, [], '这不是 error');
+  } finally { await stub.close(); }
+});
+
+test('★ validate()·空串回归：content=\'\' + finish_reason=length ⇒ 仍只告警不失败（既有行为防回归）', async () => {
+  const stub = await startStub((req, res) => {
+    if (req.method === 'GET') return json200(res, { data: [] });
+    return json200(res, { choices: [{ message: { content: '' }, finish_reason: 'length' }] });
+  });
+  try {
+    const r = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890' }));
+    assert.equal(r.ok, true);
+    assert.equal(r.steps.shape.ok, true);
+    assert.equal(r.warnings.length, 1);
+    assert.equal(r.warnings[0].kind, 'empty-output');
+  } finally { await stub.close(); }
+});
+
+test('★★ validate()·安全网：路径取不到（响应无 choices）⇒ 仍判 bad-shape 硬失败', async () => {
+  let posts = 0;
+  const stub = await startStub((req, res) => {
+    if (req.method === 'GET') return json200(res, { data: [] });
+    posts += 1;
+    return json200(res, { foo: 'bar' });            // 完全没有 choices ⇒ 路径取不到 ⇒ present:false
+  });
+  try {
+    const r = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890' }));
+    assert.equal(r.ok, false, '★ 路径取不到必须硬失败（防 extract 路径写错）');
+    assert.equal(r.steps.shape.ok, false);
+    assert.equal(r.steps.shape.kind, 'bad-shape');
+    assert.equal(posts, 1, '★ bad-shape 不该触发复验（只有 empty-output 才复验）');
+  } finally { await stub.close(); }
+});
+
+test('★ validate()·正常取到文本：content=\'ok\' ⇒ steps.shape.ok 且无 empty-output warning', async () => {
+  const stub = await startStub((req, res) => {
+    if (req.method === 'GET') return json200(res, { data: [] });
+    return json200(res, { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
+  });
+  try {
+    const r = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890' }));
+    assert.equal(r.ok, true);
+    assert.equal(r.steps.shape.ok, true);
+    assert.equal(r.steps.shape.kind, null, '正常取到文本不应带 kind');
+    assert.equal(r.warnings.filter((w) => w.kind === 'empty-output').length, 0, '不应有 empty-output warning');
+  } finally { await stub.close(); }
+});
+
 test('★ previewProfile(id)：面板预览专用 —— 显式 id（不依赖 LEMO_LLM_PROFILE）、不读覆盖文件、不发网络、脱敏', async () => {
   await withEnv({ ...CLEAN, LEMO_LLM_PROFILE: 'workbuddy' }, async () => {
     // ① 显式 id
@@ -2231,6 +2297,102 @@ test('★★ §11.1 extra 显式清空：clearExtra 只删列出的键、未列�
       assert.equal('api_key_env' in ex, false, '★★ clearExtra 列出的键应被删除');
       assert.equal(ex.endpoint_env, 'E1', '★★ 未列出的键必须保留');
       assert.equal('clearExtra' in ex, false, '★★ clearExtra 是控制字段，绝不落盘');
+    } finally { rmOverride(); }
+  });
+});
+
+// ── ★★ §5 / §10 / §12.2 `extra` 三键来源链 + 白名单回显 —— 2026-10-10 ──
+//   参考文档 §5「`extra` 键全表」把 `path` / `force_stream` / `ensure_system_prompt` 列为合法键，
+//   §12.2 的 WorkBuddy 官方配方正是把它们写在 `extra` 里；§10 要求 `extra` 只回非密钥项。
+//   ⇒ 本次改动把三键纳入来源链（顶层显式优先、`extra` 兜底），并让 `maskedService` 只回白名单键。
+test('★★ §5/§12.2 extra.path 折进 path：只给 extra.path ⇒ 生效；顶层 path 给值 ⇒ 压过 extra.path', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-p1', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+        extra: { path: '/v2/chat/completions' },
+      }).ok, true);
+      assert.equal(resolveConfig({ service: 'svc-p1' }).path, '/v2/chat/completions',
+        '★★ 只给 extra.path ⇒ 生效配置的 path 应等于它（标准 §5）');
+      // ★ 顶层显式给值 ⇒ 压过 extra.path（顶层优先、extra 兜底）
+      assert.equal(saveService({ id: 'svc-p1', path: '/top/win' }).ok, true);
+      assert.equal(resolveConfig({ service: 'svc-p1' }).path, '/top/win',
+        '★★ 顶层 path 显式给值应压过 extra.path');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ §5/§12.2 extra.force_stream / extra.ensure_system_prompt 折进生效配置（顶层 false 能压过）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-sw1', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+        extra: { force_stream: true, ensure_system_prompt: true },
+      }).ok, true);
+      const cfg = resolveConfig({ service: 'svc-sw1' });
+      assert.equal(cfg.forceStream, true, '★★ extra.force_stream:true ⇒ 生效 forceStream 应为 true');
+      assert.equal(cfg.ensureSystemPrompt, true, '★★ extra.ensure_system_prompt:true ⇒ 生效 ensureSystemPrompt 应为 true');
+      // ★ 顶层显式 false 压过 extra.force_stream:true（§11.2 的「能关掉」）
+      assert.equal(saveService({ id: 'svc-sw1', forceStream: false }).ok, true);
+      assert.equal(resolveConfig({ service: 'svc-sw1' }).forceStream, false,
+        '★★ 顶层 forceStream:false 应压过 extra.force_stream:true');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ §12.2 照抄 WorkBuddy 官方配方 ⇒ path / forceStream / ensureSystemPrompt / model 全部正确（本改动验收用例）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-wb', kind: 'openai-compatible', target: 'model',
+        baseUrl: 'https://www.workbuddy.ai/v2/chat/completions', model: 'deepseek-v4.1-flash',
+        extra: { path: '/v2/chat/completions', force_stream: true, ensure_system_prompt: true },
+      }).ok, true);
+      const cfg = resolveConfig({ service: 'svc-wb' });
+      assert.equal(cfg.path, '/v2/chat/completions', '★★ extra.path 应被识别（否则静默丢 path）');
+      assert.equal(cfg.forceStream, true, '★★ extra.force_stream 应被识别（否则 11101）');
+      assert.equal(cfg.ensureSystemPrompt, true, '★★ extra.ensure_system_prompt 应被识别（否则 11128）');
+      assert.equal(cfg.model, 'deepseek-v4.1-flash', '★ model 应正确');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ §10 extra 回显白名单：只含白名单键、对象/未知键不回、绝不外泄密钥串', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-echo', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+        extra: {
+          auth_header: 'X-API-Key', api_key_env: 'MY_KEY_ENV',
+          body_template: { secret: 'S3CRET' }, unknown_key: 'X',
+        },
+      }).ok, true);
+      const s = listServices().find((x) => x.id === 'svc-echo');
+      assert.ok(s, '应能取到刚存的服务');
+      assert.ok(s.extra, '★ 非空 extra 应回显');
+      assert.equal(s.extra.auth_header, 'X-API-Key', '★ 白名单键 auth_header 应回显');
+      assert.equal(s.extra.api_key_env, 'MY_KEY_ENV', '★★ 只回环境变量名 api_key_env（不解析其值）');
+      assert.equal('body_template' in s.extra, false, '★★ 对象值键 body_template 不回（可能夹带密钥）');
+      assert.equal('unknown_key' in s.extra, false, '★★ 白名单外的 unknown_key 一律不回');
+      assert.equal(JSON.stringify(s).includes('S3CRET'), false, '★★ 结果里绝不出现密钥串 S3CRET');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★ §10 extra 为空 ⇒ 脱敏回显里没有 extra 字段（既有调用方逐字不变）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-noextra', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+      }).ok, true);
+      const s = listServices().find((x) => x.id === 'svc-noextra');
+      assert.ok(s, '应能取到刚存的服务');
+      assert.equal('extra' in s, false, '★★ extra 为空 ⇒ 不应返回 extra 字段');
     } finally { rmOverride(); }
   });
 });

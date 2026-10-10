@@ -22,6 +22,10 @@
  *   （★ **绝不用真文本** —— 那会在委托方的智能体网关上**起一个 run**）并确认身份类覆盖同样被忽略；
  *   ㉖ `POST /api/llm/models` 钉「`workbuddy`（`target:'agent'`）下**守卫拒绝、绝不打网关**」。
  *   ★ 全部只读 / 只打错误路径，**不发任何外部请求**。
+ * ★★ 2026-10-10 追加 ㉛：**安全回归** —— `GET /api/llm/config`（legacy 路由）的响应体里**绝不出现**
+ *   已保存服务的**明文 API-Key**（P0，曾用真请求复现坐实）与**请求头内容**（P1，标准 §10）；`override` 的
+ *   顶层键改**允许清单**语义（清单外的**未知键一律丢弃**，P0 同类）；并对照 `GET /api/llm/services` 同口径。
+ *   ★ 断言锚定**正面真值**（响应体字符串里搜不到唯一可识别的密钥 / 头值 / 未知键值）。
  *   为什么放在本文件：它已经在用**真起服务 + node:http 直连**打 HTTP 面，复用同一套起服务 / 隔离成片根 /
  *   逐字节还原的纪律，不必另造一个入口（★ 覆盖文件落在隔离成片根内，绝不碰用户真实 `D:\lemo-films`）。
  * 它们承担着上传安全（防目录穿越）、请求形状校验、语义结果注入等关键逻辑，
@@ -1267,10 +1271,14 @@ async function main() {
         need(!saved.text.includes(SECRET), `★ 保存回执泄露了 key 明文：${saved.text.slice(0, 240)}`);
 
         // ②b ★★ 契约回归（2026-10-10 变更）：POST /services **不带 id** ⇒ 后端**自动生成** id（**不再 400**）。
-        //   ★ 旧断言「缺 id ⇒ 400」已**过时** —— 后端 `saveService` 现改为 `newServiceId()`
-        //     生成 `svc-<base36 时间戳>-<进程内单调计数器 base36>`（lib/llm-api.mjs:1062），
-        //     并经返回值 `data.service.id` 给出（server.mjs:2629）。⇒ 这里改钉「不带 id ⇒ 成功 + 回 id」。
+        //   ★ 旧断言「缺 id ⇒ 400」已**过时** —— 后端 `saveService` 现改为调 `newServiceId()`
+        //     生成 `svc-<base36 时间戳>-<进程内单调计数器 base36>`（见 `lib/llm-api.mjs` 的 `newServiceId()`），
+        //     并经返回值 `data.service.id` 给出（见 `server.mjs` 的 `apiLlmServiceSave`）。
         //   ★ 连发两次：既证「成功」，也证「每次生成**不同** id」（`newServiceId` 的防撞**机制**，非概率）。
+        //   ★★ 2026-10-10 订正：本行原写**裸行号**（`lib/llm-api.mjs:1062` / `server.mjs:2629`）——
+        //     实测那两处**都已漂**（`1062` 行现在只是一个 `}`；`newServiceId` 已移到约 1190 行），
+        //     而 `check-ref-lines` **照样绿**（判据 (d) 只判「该行非空」、**不判对不对**）
+        //     ⇒ 改为**符号锚**（函数名），从此插行不再漂。
         const autoIds = [];
         for (let i = 0; i < 2; i++) {
           const r = await postJson(P, '/api/llm/services', {
@@ -1460,6 +1468,113 @@ async function main() {
         } catch { /* 尽力而为 */ }
       }
       notes.push('㉚ 空 services：删光后 validate {} ⇒ 200 + data.ok:false（含「未配置任何算力服务」），非 500');
+    });
+
+    // ══ ㉛ ★★ 安全回归：`GET /api/llm/config` 绝不回明文密钥（P0）/ 绝不回请求头内容（P1）══════════
+    //
+    // 由来（**已用真请求复现坐实**，不是假想）：`GET /api/llm/config` 的响应体里曾**带出已保存服务的明文
+    //   API-Key**。根因在 `server.mjs` 的 `sanitizeLlmOverride()` —— 它**只按顶层键过滤**：顶层 `apiKey`
+    //   被 `continue` 挡住，但覆盖文件现已是**多套服务**结构（`{version,active,services:[{…,apiKey}]}`），
+    //   `services` 是**数组** ⇒ 走 `out[k] = v` **整体原样**回给前端 ⇒ 每项 `apiKey` 明文外泄。
+    //   ★ 对照：新路由 `GET /api/llm/services` 早已正确脱敏（只回 `hasKey`/`keyMask`）⇒ 缺陷**只在这条 legacy 路由**。
+    //   同批 P1：`redactLlmHeaders()` 按**名字**猜敏感词（`authorization|api-key|token|…`），名字不含敏感词的
+    //   **自定义头**（如 `X-My-Credential`）的**值会原样回传**；标准 §10 要求「请求头内容绝不外传，只回布尔
+    //   `has_headers`」⇒ 现 `/api/llm/config` 的 `headers` 改回**布尔**（与 `/api/llm/services` 的 `hasHeaders` 同口径）。
+    //   ★ 断言锚定**正面真值**：响应体字符串里**搜不到**那个唯一可识别的密钥/头值（搜不到就是搜不到，不是
+    //     「两个坏输出互比」）；并正面断言 `override.services` 每项**没有** `apiKey` 字段、`hasHeaders` 为布尔。
+    //   ★ 反向验证：把 `sanitizeLlmOverride` 的 `services` 分支改回 `out[k]=v`（或把 headers 改回打码对象）
+    //     ⇒ 本用例**必红**。★ 全程只动隔离成片根里的覆盖文件，跑完逐字节还原。
+    await runCase('㉛ ★★ 安全回归：GET /api/llm/config 响应体搜不到明文密钥（P0）/ 请求头值（P1），且 override.services 逐项脱敏', async () => {
+      const cfg0 = await get('/api/llm/config');
+      need(cfg0.status === 200 && cfg0.json && cfg0.json.ok === true, `GET /api/llm/config 应 200，实际 ${cfg0.status}`);
+      const overrideFile = String(cfg0.json.data.overrideFile);
+      need(path.resolve(overrideFile).startsWith(path.resolve(TEST_FILM_ROOT) + path.sep),
+        `覆盖文件不在隔离根内（拒绝继续，免得写用户真实盘）：${overrideFile}（隔离根 ${TEST_FILM_ROOT}）`);
+      const before = (() => { try { return fs.readFileSync(overrideFile); } catch { return null; } })();
+      // ★ 唯一可识别的密钥串 / 自定义头名与值 —— 只要响应体里出现它们任一，就是泄漏。
+      const KEY = 'sk-gp4-LEAKPROOF-9f3a2b7c1d';
+      const HDR_NAME = 'X-My-Credential';
+      const HDR_VAL = 'hdr-gp4-LEAKPROOF-4e8b6a2d';
+      const HDR_VAL2 = 'hdr-gp4-LEAKPROOF-legacy-77aa11';
+      // ★ 顶层**允许清单外**的未知键里塞一个唯一串 ⇒ 响应体里**搜不到**才算收口（P0 同类：未知键绝不透传）
+      const TOP_LEAK = 'TOPLEVEL-MUST-NOT-LEAK-8c1d4a';
+      const SID = 'gp4-leak-regress';
+      try {
+        // 保存一套带**唯一**密钥 + **自定义头**的服务（唯一可识别 ⇒ 正面搜不到断言才有意义）
+        const saved = await postJson(P, '/api/llm/services', {
+          id: SID, label: '泄漏回归', kind: 'openai-compatible', target: 'model',
+          baseUrl: 'http://127.0.0.1:1', apiKey: KEY, model: 'm',
+          headers: { [HDR_NAME]: HDR_VAL },
+        });
+        need(saved.status === 200 && saved.json && saved.json.ok === true,
+          `保存服务应 200 + ok:true，实际 ${saved.status} ${saved.text.slice(0, 200)}`);
+        need(!saved.text.includes(KEY), `★ 保存回执就泄露了 key 明文：${saved.text.slice(0, 240)}`);
+
+        // ① P0：`GET /api/llm/config` 响应体里**搜不到**明文密钥（正面断言）
+        const cfg = await get('/api/llm/config');
+        need(cfg.status === 200 && cfg.json && cfg.json.ok === true, `GET /api/llm/config 应 200，实际 ${cfg.status}`);
+        need(!cfg.text.includes(KEY),
+          `★ P0 复发：GET /api/llm/config 回显了明文密钥「${KEY}」：${cfg.text.slice(0, 300)}`);
+        // ② P0：`override.services` 每一项**都没有** `apiKey` 字段（且确含刚保存的那套、hasKey:true 为脱敏正面真值）
+        const ov = (cfg.json.data && cfg.json.data.override) || {};
+        const svcArr = Array.isArray(ov.services) ? ov.services : [];
+        need(svcArr.length > 0,
+          `override.services 应非空（证明覆盖确实回显了服务，而非被整段丢弃）：${cfg.text.slice(0, 300)}`);
+        for (const s of svcArr) {
+          need(s && !Object.prototype.hasOwnProperty.call(s, 'apiKey'),
+            `★ P0 复发：override.services 某项带 apiKey 字段：${JSON.stringify(s).slice(0, 200)}`);
+        }
+        need(svcArr.some((s) => s && s.id === SID && s.hasKey === true),
+          `override.services 应含 ${SID} 且 hasKey:true（脱敏口径），实际 ids=${JSON.stringify(svcArr.map((s) => s && s.id))}`);
+
+        // ③ P1：`GET /api/llm/config` 响应体里**搜不到**自定义头的值 / 头名（请求头内容绝不外传）
+        need(!cfg.text.includes(HDR_VAL),
+          `★ P1 复发：GET /api/llm/config 回显了请求头值「${HDR_VAL}」：${cfg.text.slice(0, 300)}`);
+        // 顶层 `headers` 不再是对象（旧写法回「头名 → 值」对象）；`effectiveHeaders`（头名清单）也不再回
+        need(!(cfg.json.data.headers && typeof cfg.json.data.headers === 'object'),
+          `★ P1 复发：data.headers 仍是对象（可能带头名/头值）：${JSON.stringify(cfg.json.data.headers)}`);
+        need(cfg.json.data.effectiveHeaders === undefined,
+          `★ P1 复发：data.effectiveHeaders 仍回头名清单：${JSON.stringify(cfg.json.data.effectiveHeaders)}`);
+
+        // ④ 对照：`GET /api/llm/services`（新路由）**同口径** —— 同样搜不到密钥 / 头值
+        const list = await get('/api/llm/services');
+        need(list.status === 200 && list.json && list.json.ok === true, `GET /api/llm/services 应 200，实际 ${list.status}`);
+        need(!list.text.includes(KEY), `★ 对照：/api/llm/services 回显了明文密钥：${list.text.slice(0, 240)}`);
+        need(!list.text.includes(HDR_VAL), `★ 对照：/api/llm/services 回显了请求头值：${list.text.slice(0, 240)}`);
+
+        // ⑤ P1' + ⑥ 顶层允许清单：**legacy 覆盖文件**里直接写（HTTP 写不进去，这里直接落盘）——
+        //   既有自定义头（P1），又有一个**允许清单外**的未知顶层键（P0 同类：未知键绝不透传）。
+        fs.writeFileSync(overrideFile, JSON.stringify({
+          profile: 'workbuddy', headers: { 'X-Legacy-Credential': HDR_VAL2 }, timeoutMs: 5000,
+          topLevelUnknownBlob: { token: TOP_LEAK },   // ★ 未知顶层键（如用户手改塞的 extra）—— 必须被丢弃
+        }));
+        const cfg2 = await get('/api/llm/config');
+        need(cfg2.status === 200 && cfg2.json && cfg2.json.ok === true, `GET /api/llm/config 应 200，实际 ${cfg2.status}`);
+        need(!cfg2.text.includes(HDR_VAL2),
+          `★ P1 复发（legacy 覆盖头）：GET /api/llm/config 回显了头值「${HDR_VAL2}」：${cfg2.text.slice(0, 300)}`);
+        // ★ 正面真值：覆盖里确实写了头 ⇒ 布尔必须为 true（证明是「回布尔」而不是「把字段整个丢了」）
+        need(cfg2.json.data.hasHeaders === true,
+          `★ 正面真值：覆盖里写了请求头 ⇒ data.hasHeaders 必须为 true，实际 ${JSON.stringify(cfg2.json.data.hasHeaders)}`);
+        need(cfg2.json.data.override && cfg2.json.data.override.hasHeaders === true,
+          `★ 正面真值：override.hasHeaders 应为 true，实际 ${JSON.stringify(cfg2.json.data.override && cfg2.json.data.override.hasHeaders)}`);
+        need(!(cfg2.json.data.override.headers && typeof cfg2.json.data.override.headers === 'object'),
+          `★ P1 复发：override.headers 仍是对象：${JSON.stringify(cfg2.json.data.override.headers)}`);
+        // ⑥ ★★ 允许清单：顶层**未知键**（值含唯一串）绝不出现在响应体里（正面断言：搜不到就是搜不到）
+        need(!cfg2.text.includes(TOP_LEAK),
+          `★ P0 同类复发：GET /api/llm/config 透传了**允许清单外**的顶层未知键（值「${TOP_LEAK}」）：${cfg2.text.slice(0, 300)}`);
+        need(cfg2.json.data.override && !Object.prototype.hasOwnProperty.call(cfg2.json.data.override, 'topLevelUnknownBlob'),
+          `★ P0 同类复发：override 里仍带未知键 topLevelUnknownBlob：${JSON.stringify(cfg2.json.data.override)}`);
+        // ★ 正面真值：允许清单**内**的键仍照旧回显（证明是「允许清单」而非「整段丢弃」）
+        need(cfg2.json.data.override && cfg2.json.data.override.profile === 'workbuddy'
+          && cfg2.json.data.override.timeoutMs === 5000,
+        `★ 正面真值：允许清单内的 profile/timeoutMs 应仍回显，实际 ${JSON.stringify(cfg2.json.data.override)}`);
+      } finally {
+        try {
+          if (before === null) fs.unlinkSync(overrideFile);
+          else fs.writeFileSync(overrideFile, before);
+        } catch { /* 尽力而为 */ }
+      }
+      notes.push('㉛ 安全回归：GET /api/llm/config 响应体搜不到明文密钥（P0）/ 自定义头值（P1）/ **允许清单外的顶层未知键值**（P0 同类）；override.services 逐项脱敏、无 apiKey 字段；headers 只回布尔 hasHeaders；允许清单内 profile/timeoutMs 仍回显；与 /api/llm/services 同口径；覆盖文件已逐字节还原');
     });
 
   } finally {

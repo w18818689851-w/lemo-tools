@@ -412,20 +412,22 @@
           <span class="hint" id="llmModelHint"></span>
         </div>
         <!-- ★ 高级字段（标准 §9）：鉴权头名 / 鉴权前缀 / Key 环境变量名（→ extra 开放键）+ 能力类型 + 两个布尔开关。
-             ★ extra 三项后端**不回传**（信息边界 §10）⇒ 留空 = 不修改（与 API-Key / 请求头同口径）；
-               两个开关**总是显式发送 true/false**（§11.2，否则取消勾选不生效）。 -->
+             ★★ 2026-10-10 订正：extra 三项后端**按 §10 回显非密钥项**（path / auth_header / auth_scheme /
+                force_stream / ensure_system_prompt / api_key_env）⇒ 编辑时**回填**（旧注释「后端不回传」
+                是对 §10 的误读，已删）。★ 清空原值 = 显式删键（保存时发 clearExtra）；新增留空 = 不设置。
+                两个开关**总是显式发送 true/false**（§11.2，否则取消勾选不生效）。 -->
         <div class="form-grid llm-advanced">
           <label class="field">
             <span class="lbl">鉴权头名 auth_header</span>
-            <input id="llmAuthHeader" class="input" placeholder="留空 = 不修改（默认 Authorization）" autocomplete="off">
+            <input id="llmAuthHeader" class="input" placeholder="新增留空 = 不设置；编辑时清空原值 = 删除该键（默认 Authorization）" autocomplete="off">
           </label>
           <label class="field">
             <span class="lbl">鉴权前缀 auth_scheme</span>
-            <input id="llmAuthScheme" class="input" placeholder="留空 = 不修改（默认 Bearer ）" autocomplete="off">
+            <input id="llmAuthScheme" class="input" placeholder="新增留空 = 不设置；编辑时清空原值 = 删除该键（默认 Bearer 前缀）" autocomplete="off">
           </label>
           <label class="field">
             <span class="lbl">Key 环境变量名 api_key_env</span>
-            <input id="llmKeyEnv" class="input" placeholder="留空 = 不修改（如 MY_API_KEY）" autocomplete="off">
+            <input id="llmKeyEnv" class="input" placeholder="新增留空 = 不设置；编辑时清空原值 = 删除该键（如 MY_API_KEY）" autocomplete="off">
           </label>
           <label class="field">
             <span class="lbl">能力类型 capability</span>
@@ -457,13 +459,15 @@
                     placeholder="每行一个：名称: 值（如 X-Api-Version: 2024-01-01）&#10;敏感头的值后端打码成 ••••••，留占位符 = 不改"></textarea>
           <span class="hint" id="llmHeadersHint">每行一条「名称: 值」；留空该行 = 删除该头</span>
         </label>
+        <!-- ★ 2026-10-10 订正：`#llmCustomRows` 的显隐放宽到 custom / openai-compatible（见 syncLlmCustomRows）——
+             openai-compatible 也要能设 `path`（标准 §12.2 WorkBuddy 官方配方用 openai_compat + extra.path）。 -->
         <div class="form-grid llm-custom" id="llmCustomRows" hidden>
           <label class="field">
-            <span class="lbl">请求路径 path（custom 用）</span>
+            <span class="lbl">请求路径 path（custom / openai-compatible 用）</span>
             <input id="llmPath" class="input" placeholder="默认 /chat/completions" autocomplete="off">
           </label>
           <label class="field">
-            <span class="lbl">取值路径 extract（custom 用）</span>
+            <span class="lbl">取值路径 extract（custom / openai-compatible 用）</span>
             <input id="llmExtract" class="input" placeholder="点分路径，默认 choices.0.message.content" autocomplete="off">
           </label>
         </div>

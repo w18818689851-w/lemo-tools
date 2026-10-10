@@ -4593,7 +4593,10 @@ const LLM_TPL_FALLBACK = [
 ];
 let llmTemplates = [];          // 当前模板目录（先兜底、后端可用时被覆盖）
 let llmTemplatesTried = false;  // ★ 后端只试一次（后端可能还没落地 ⇒ 不反复打接口）
-const llmState = { services: [], active: '', cfg: null, busy: false, models: [], editingId: null };
+// ★★ 2026-10-10：`extraLoaded` = 进入编辑态时**已存在**的 extra 三项（`renderLlmForm` 填 / `resetLlmForm` 清），
+//   供 `llmFormPayload` 判定「原本有值、现在被清空」的键 ⇒ 走 `clearExtra` 显式删键（合并语义下清空不生效）。
+const llmState = { services: [], active: '', cfg: null, busy: false, models: [], editingId: null,
+  extraLoaded: { auth_header: '', auth_scheme: '', api_key_env: '' } };
 
 function llmSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 function llmSafeStr(o) { try { return JSON.stringify(o).slice(0, 200); } catch { return String(o); } }
@@ -4807,15 +4810,26 @@ function renderLlmForm(cfg) {
     keyInp.placeholder = cfg.hasKey ? `留空 = 不改${km}` : '留空 = 不设置';
   }
   renderLlmModelOptions(Array.isArray(cfg.models) ? cfg.models : [], '端点 / 配置');
-  // ★ 高级字段回显（标准 §9）：`capability` / `forceStream` / `ensureSystemPrompt` 后端**如实回显**；
-  //   `auth_header` / `auth_scheme` / `api_key_env` 属 `extra`，后端**不回传**（信息边界，§10）
-  //   ⇒ 一律清空 + 「留空 = 不修改」（与 API-Key / 请求头同口径）。
+  // ★ 高级字段回显（标准 §9）：`capability` / `forceStream` / `ensureSystemPrompt` 后端**如实回显**。
+  //   ★★ 2026-10-10 订正（§10 要求 `extra` 回非密钥项）：`auth_header` / `auth_scheme` / `api_key_env`
+  //   属 `extra` —— §10 明确要求 `extra` **只回非密钥项**（`path` / `auth_header` / `auth_scheme` /
+  //   `force_stream` / `ensure_system_prompt` / `api_key_env`），也就是**要回**；后端 `maskedExtra()`
+  //   已按 §10 回显（白名单 + 只回 env 变量名，绝不回其值）⇒ 这里从 `cfg.extra` 回填这三个输入框。
+  //   旧理由（**保留作历史，勿抹**）：曾按「`extra` 属信息边界、后端不回传 ⇒ 一律清空」处理
+  //   —— 那是对 §10 的**误读**（§10 的「只回非密钥项」= 要回非密钥项，不是不回）。
   if ($('llmCapability')) $('llmCapability').value = cfg.capability || 'llm';
   if ($('llmForceStream')) $('llmForceStream').checked = !!cfg.forceStream;
   if ($('llmSysFirst')) $('llmSysFirst').checked = !!cfg.ensureSystemPrompt;
-  if ($('llmAuthHeader')) $('llmAuthHeader').value = '';
-  if ($('llmAuthScheme')) $('llmAuthScheme').value = '';
-  if ($('llmKeyEnv')) $('llmKeyEnv').value = '';
+  const ex = (cfg.extra && typeof cfg.extra === 'object') ? cfg.extra : {};   // ★ `extra` 可能不存在 ⇒ 按空处理
+  const exAuthHeader = (ex.auth_header === undefined || ex.auth_header === null) ? '' : String(ex.auth_header);
+  const exAuthScheme = (ex.auth_scheme === undefined || ex.auth_scheme === null) ? '' : String(ex.auth_scheme);
+  const exKeyEnv = (ex.api_key_env === undefined || ex.api_key_env === null) ? '' : String(ex.api_key_env);
+  if ($('llmAuthHeader')) $('llmAuthHeader').value = exAuthHeader;
+  if ($('llmAuthScheme')) $('llmAuthScheme').value = exAuthScheme;
+  if ($('llmKeyEnv')) $('llmKeyEnv').value = exKeyEnv;
+  // ★★ 2026-10-10：记住「进入编辑态时**已存在**的 `extra` 键值」—— 保存时据此判定「原本有值、
+  //   现在被清空」的键（走 `clearExtra` 显式删键；否则合并语义下清空不生效 = 死路）。
+  llmState.extraLoaded = { auth_header: exAuthHeader, auth_scheme: exAuthScheme, api_key_env: exKeyEnv };
   applyLlmTargetUi(cfg);
   syncLlmTaskUi();
 }
@@ -4843,6 +4857,9 @@ function resetLlmForm() {
   if ($('llmAuthHeader')) $('llmAuthHeader').value = '';
   if ($('llmAuthScheme')) $('llmAuthScheme').value = '';
   if ($('llmKeyEnv')) $('llmKeyEnv').value = '';
+  // ★★ 2026-10-10：清掉「编辑态记住的 extra 旧值」⇒ 新增态下不存在「原本有值、现在被清空」的键，
+  //   保存时不会误发 clearExtra（与 renderLlmForm 填、resetLlmForm 清成对）。
+  llmState.extraLoaded = { auth_header: '', auth_scheme: '', api_key_env: '' };
   const keyInp = $('llmKey');
   if (keyInp) { keyInp.value = ''; keyInp.placeholder = '留空 = 不设置'; }
   const st = $('llmKeyState');
@@ -4967,15 +4984,35 @@ function llmFormPayload(includeKey) {
   if (authS.trim()) extra.auth_scheme = authS;
   if (keyEnv) extra.api_key_env = keyEnv;
   if (Object.keys(extra).length) p.extra = extra;
+  // ★★ 2026-10-10：`clearExtra` 显式清空通道（对齐参考 §11.1）—— 后端对 `extra` 是**逐键合并**
+  //   （传空值 = **不修改**旧值）⇒ 用户把输入框清空后保存，旧值**依然在**（看着空、实际没清掉 = 死路）。
+  //   判定：拿「进入编辑态时已存在的值」（`llmState.extraLoaded`，由 `renderLlmForm` 填、`resetLlmForm` 清），
+  //   逐键比对 —— **原本有值、现在被清空** ⇒ 把该键名收进 `clearExtra`（字符串数组；后端据此 `delete`）。
+  //   ★ 新增态 / 该键原本就没有值 ⇒ 不在 `clearExtra` 里（「留空 = 不设置」与「清空 = 删键」两义分清）。
+  //   ★ 空数组时**不带**该字段（保持请求体干净，与后端 `Array.isArray` 判据一致）。
+  const clearExtra = [];
+  const loaded = llmState.extraLoaded || {};
+  if (loaded.auth_header && !authH) clearExtra.push('auth_header');
+  if (loaded.auth_scheme && !authS.trim()) clearExtra.push('auth_scheme');
+  if (loaded.api_key_env && !keyEnv) clearExtra.push('api_key_env');
+  if (clearExtra.length) p.clearExtra = clearExtra;
   if (llmState.editingId) p.id = llmState.editingId;
   if (includeKey) { const k = $('llmKey').value; if (k) p.apiKey = k; }
   return p;
 }
 
-/** custom 适配器 或 custom 算力类型 才显示 path / extract（其余用不到，藏起来免得误导）。 */
+/** `path` / `extract` 两个高级字段的显隐：`custom` 或 `openai-compatible`（含算力类型 `custom`）才显示。
+ *  ★ 2026-10-10 订正：原条件**只在** `kind === 'custom'` 或算力类型 = custom 时显示，注释写
+ *    「其余用不到，藏起来免得误导」—— ★ 那句断言**不成立**：参考标准 §9 把 `#pf-path` 列为
+ *    **通用高级字段**，而 §12.2「WorkBuddy 官方算力接入配方」用的适配器正是 **`openai_compat`**
+ *    （**不是** custom）且**依赖 `extra.path`** 指定 `/v2/chat/completions`
+ *    ⇒ `openai-compatible` 用户**需要**能设请求路径，否则该配方在面板上无从配置。
+ *  ★ `anthropic`（路径固定 `/v1/messages`）与 `workbuddy-gateway`（本机网关，路径固定）**保持隐藏**。 */
 function syncLlmCustomRows() {
   const box = $('llmCustomRows');
-  if (box) box.hidden = ($('llmKind').value !== 'custom' && llmCurrentTask() !== 'custom');
+  if (!box) return;
+  const kind = $('llmKind') ? ($('llmKind').value || '') : '';
+  box.hidden = (kind !== 'custom' && kind !== 'openai-compatible' && llmCurrentTask() !== 'custom');
 }
 
 /** 算力类型联动：切换 task ⇒ 更新「试跑」占位提示 + 说明 + custom 行显隐。 */

@@ -5,7 +5,7 @@
  * 为什么单独一个入口：`test/README.md` 里如实写着「Web UI 交互：一条都没测」——
  * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  *   ★ 2026-10-08 复核：服务端侧现为 smoke **41** + setup **12** = **53** 条（「42 = 30 + 12」是写本文件时的快照）；
- *     本文件（UI 层）现为 **80** 条（★ 2026-10-10：J 组 +6 / K 组 +4 后 75；★ P4 把 I 组 I2/I3/I4 换锚点 + 新增 I7~I11 ⇒ 80）。
+ *     本文件（UI 层）现为 **82** 条（★ 2026-10-10：J 组 +6 / K 组 +4 后 75；★ P4 把 I 组 I2/I3/I4 换锚点 + 新增 I7~I11 ⇒ 80；★ 再补 I12 ⇒ 82）。
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
  * 批次：A/B/C/D（前四批）+ E（第五批：文案出片面板）+ F（第六批：补三处 UI 盲区）
@@ -32,7 +32,10 @@
  *   配置控件（label/kind/target/baseUrl/model/timeout/key/headers/path/extract）+ 空状态提示；④ 说明文案
  *   含「可插拔 / 不锁定 / 多套 / 快速切换」；⑤ 骨架不白屏 + `#llmSteps` 恰含 3 步；⑥ **测试连接**：桩
  *   `POST /api/llm/validate` ⇒ 三步**逐步**点亮 + 未捕获异常新增 **0**（★ 且请求体**只含 service** 选择器）；
- *   ★★ 新增 I7~I11：多套列表渲染 / 新增一套（断言 POST 请求体）/ 切换（断言 body.id）/ 删除（断言 POST /api/llm/services/delete 且 body.id）/ 空状态，
+ *   ★★ 新增 I7~I12：多套列表渲染 / 新增一套（断言 POST 请求体）/ 切换（断言 body.id）/ 删除（断言 POST /api/llm/services/delete 且 body.id）/ 空状态 /
+ *   I12（2026-10-10）`extra` 回显 + 显式清除：编辑时三项 `extra`（`auth_header`/`auth_scheme`/`api_key_env`）**回填**、
+ *   `openai-compatible` 下 `#llmCustomRows`（`llmPath`/`llmExtract`）**可见**、清空 `api_key_env` ⇒ 请求体恰含
+ *   `clearExtra:["api_key_env"]` 且 `extra` 仍保留另两项、`anthropic` 下隐藏且**不**带 `clearExtra`，
  *   全部用页面内 `window.fetch` 桩驱动，并带**反空转**断言（点前 0 条、点后 1 条）。
  *
  * 用法：
@@ -2926,7 +2929,7 @@ async function main() {
     //   ★ 落盘隔离（纵深防御）：I 组仍另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向仓外临时树）——
     //     新面板的写路径（保存 / 删除 / 切换）在用例里**全被桩拦下**，不落任何真实覆盖文件。
     const I_NAMES = ['I1 入口', 'I2 状态胶囊', 'I3 配置控件', 'I4 说明与空状态', 'I5 骨架不白屏', 'I6 测试连接',
-      'I7 多套列表渲染', 'I8 新增一套', 'I9 切换', 'I10 删除', 'I11 空状态'];
+      'I7 多套列表渲染', 'I8 新增一套', 'I9 切换', 'I10 删除', 'I11 空状态', 'I12 extra 回显与显式清除'];
     const iWillRun = !OPT.filter || I_NAMES.some((n) => n.includes(OPT.filter));
     if (iWillRun) {
       log('');
@@ -3441,6 +3444,64 @@ async function main() {
         // 收尾：把 fetch 还原（K 组在同页跑，别留桩）
         await cdp.evalJs(`if (window.__origFetch) { window.fetch = window.__origFetch; } true`);
         notes.push(`I11 空状态：桩 2 套（2 行）→ 桩 0 套（0 行 +「${s.text}」+「${s.saveHint}」+ 胶囊「${s.pill}」）`);
+      });
+
+      await runCase('I12 extra 回显与显式清除：编辑回填三项、openai-compatible 显示 path/extract、清空 keyEnv ⇒ clearExtra=["api_key_env"]、anthropic 隐藏且不带 clearExtra', async () => {
+        // ★★ 2026-10-10：钉住三处**用户可见行为** —— ① 编辑时 `extra` 三项（auth_header / auth_scheme /
+        //   api_key_env）**回填**（标准 §10：后端只回非密钥项，也就是**要回**）；② `openai-compatible`
+        //   下 `#llmCustomRows`（llmPath / llmExtract）**可见**（标准 §9 通用高级字段 / §12.2 官方配方用
+        //   openai_compat + path）；③ 清空 `api_key_env` ⇒ 请求体带 `clearExtra:["api_key_env"]`（后端对
+        //   extra 是**合并**语义，传空值 = 不修改 ⇒ 没有 clearExtra 就清不掉 = 死路），且 `extra` 仍保留另两项。
+        //   ★ 断言一律**锚定正面真值**（输入框值 / 请求体 JSON 逐字相等），不写「两个坏输出互比」的空断言。
+        const FIX = [{ id: 'svc-x', label: '配方云', kind: 'openai-compatible', target: 'model',
+          baseUrl: 'https://www.workbuddy.ai/v2/chat/completions', model: 'deepseek-v4.1-flash',
+          timeoutMs: 120000, hasKey: true, keyMask: 'ck-…', headers: {}, isDefault: false, active: true,
+          path: '/v2/chat/completions',
+          extra: { auth_header: 'X-Api-Key', auth_scheme: 'Token ', api_key_env: 'MY_KEY_ENV', force_stream: true } }];
+        await installLlmStub({ services: FIX, active: 'svc-x' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 1`, { timeoutMs: 8000 });
+        await cdp.evalJs(`document.querySelector('#llmList .llm-item[data-id="svc-x"] button[data-act="edit"]').click(); true`);
+        await waitFor(cdp.evalJs, `document.getElementById('llmForm').hidden === false`, { timeoutMs: 8000 });
+        const echoed = await cdp.evalJs(`(() => ({
+          h: document.getElementById('llmAuthHeader').value,
+          s: document.getElementById('llmAuthScheme').value,
+          e: document.getElementById('llmKeyEnv').value,
+          path: document.getElementById('llmPath').value,
+          customHidden: document.getElementById('llmCustomRows').hidden }))()`);
+        need(echoed.h === 'X-Api-Key', `#llmAuthHeader 应回填 extra.auth_header="X-Api-Key"，实际 ${JSON.stringify(echoed.h)}`);
+        need(echoed.s === 'Token ', `#llmAuthScheme 应回填 extra.auth_scheme="Token "，实际 ${JSON.stringify(echoed.s)}`);
+        need(echoed.e === 'MY_KEY_ENV', `#llmKeyEnv 应回填 extra.api_key_env="MY_KEY_ENV"，实际 ${JSON.stringify(echoed.e)}`);
+        need(echoed.path === '/v2/chat/completions', `#llmPath 应回填 path，实际 ${JSON.stringify(echoed.path)}`);
+        need(echoed.customHidden === false, 'openai-compatible 下 #llmCustomRows 应可见（path/extract 要能配）');
+        // ② 清空 api_key_env（另两项保留）⇒ 保存必须显式发 clearExtra
+        await cdp.evalJs(`(() => { document.getElementById('llmKeyEnv').value = ''; return true; })()`);
+        const before = await llmReqCount(postServices);
+        need(before === 0, `点「保存」之前就已发过 ${before} 条 POST /api/llm/services（反空转失败）`);
+        await cdp.evalJs(`document.getElementById('btnLlmSave').click(); true`);
+        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${postServices})`, { timeoutMs: 8000 });
+        const p = JSON.parse((await llmReqLast(postServices)).body || '{}');
+        need(JSON.stringify(p.clearExtra) === '["api_key_env"]',
+          `清空 api_key_env 后请求体应恰含 clearExtra=["api_key_env"]，实际 ${JSON.stringify(p.clearExtra)}`);
+        need(JSON.stringify(p.extra) === '{"auth_header":"X-Api-Key","auth_scheme":"Token "}',
+          `extra 应仍保留另两项、不含被清的 api_key_env，实际 ${JSON.stringify(p.extra)}`);
+        // ③ anthropic（路径固定）⇒ #llmCustomRows 隐藏；且无 extra 的服务保存**不带** clearExtra / extra
+        await installLlmStub({ services: [{ id: 'svc-y', label: '无 extra', kind: 'anthropic', target: 'model',
+          baseUrl: 'https://api.example.com/v1', model: 'claude-x', timeoutMs: 60000, hasKey: false, keyMask: '',
+          headers: {}, isDefault: false, active: true }], active: 'svc-y' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 1`, { timeoutMs: 8000 });
+        await cdp.evalJs(`document.querySelector('#llmList .llm-item[data-id="svc-y"] button[data-act="edit"]').click(); true`);
+        await waitFor(cdp.evalJs, `document.getElementById('llmForm').hidden === false`, { timeoutMs: 8000 });
+        const yHidden = await cdp.evalJs(`document.getElementById('llmCustomRows').hidden`);
+        need(yHidden === true, `anthropic 下 #llmCustomRows 应隐藏，实际 hidden=${yHidden}`);
+        await cdp.evalJs(`document.getElementById('btnLlmSave').click(); true`);
+        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${postServices})`, { timeoutMs: 8000 });
+        const p2 = JSON.parse((await llmReqLast(postServices)).body || '{}');
+        need(!('clearExtra' in p2), `无 extra 的服务保存不该带 clearExtra，实际 ${JSON.stringify(p2.clearExtra)}`);
+        need(!('extra' in p2), `无 extra 的服务保存不该带 extra（三项都空），实际 ${JSON.stringify(p2.extra)}`);
+        await cdp.evalJs(`if (window.__origFetch) { window.fetch = window.__origFetch; } true`);
+        notes.push(`I12 extra：回填 h=${JSON.stringify(echoed.h)}/s=${JSON.stringify(echoed.s)}/e=${JSON.stringify(echoed.e)}/path=${JSON.stringify(echoed.path)}；openai-compatible 显示 custom 行=${echoed.customHidden === false}；清空 keyEnv ⇒ clearExtra=${JSON.stringify(p.clearExtra)}、extra=${JSON.stringify(p.extra)}；anthropic 隐藏=${yHidden}、无 clearExtra=${!('clearExtra' in p2)}`);
       });
     }
 
