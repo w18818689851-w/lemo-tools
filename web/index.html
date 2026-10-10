@@ -173,7 +173,7 @@
            STYLE.md 生成，就绪后回到这里点「出片」。
            ★ 只列 4 个「内容驱动」风格（画面主体写死、内容可数据化）；其余 39 个 demo 改不动主题。
            ★ 工单里的主题是用户输入，前端一律走 textContent，绝不 innerHTML。 -->
-    <section class="card brief-card" id="briefCard">
+    <section class="card" id="briefCard">
       <div class="card-head">
         <h2 class="card-title">主题出片 <span class="count" id="briefCount"></span></h2>
         <div class="card-tools">
@@ -289,7 +289,7 @@
       <details class="voice-import" id="voiceImport">
         <summary>导入新音色<span class="vi-sum" id="viSum"></span></summary>
         <div class="vi-body">
-          <div class="vi-intro" id="viIntro"></div>
+          <div id="viIntro"></div>
           <div class="vi-tools">
             <button class="btn ghost small" id="btnVoiceSrcRefresh" title="重新读源目录（GET /api/voices/sources）">刷新</button>
             <span class="vi-hint" id="viHint"></span>
@@ -306,7 +306,7 @@
            的**后端能力保留**（server.mjs 的 /api/llm/* 一律未动），只是界面上暂不暴露，后期需要用再添加。
          ★ 「测试连接」按契约分三步**逐步**显示：可达 → 鉴权 → 返回体；任一步失败都给可操作的中文提示。
          ★ 落盘 D:\lemo-films\_llm-api.json（仓库之外 ⇒ 不进 git）。 -->
-    <section class="card llm-card" id="llmCard">
+    <section class="card" id="llmCard">
       <div class="card-head">
         <h2 class="card-title">AI 算力配置</h2>
         <!-- ★ 一眼看出当前默认走哪个（保留 llmCurrentPill 的角色）。 -->

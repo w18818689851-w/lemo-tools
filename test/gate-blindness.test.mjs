@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 133 条用例 / 覆盖全部 46 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 134 条用例 / 覆盖全部 47 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -212,6 +212,18 @@
  *            **必须仍然 exit 0**（证明「剥注释」生效、不假阳）；
  *          ④ **失明（判据③）** 全根 **0 个** `child_process` 导入 ⇒ FAIL +「本闸门已失明」且不输出判据②；
  *          ⑤ **★自证**：短路判据②（`if (unregistered.length) {` → `if (false) {`）⇒ 变异**重新变绿**。
+ *        · `check-readme-files`（2026-10-10 建，第 47 个；守「根 `README.md` 的 `## 文件` 段里
+ *          **列出的路径必须真实存在**」—— 该段此前**没有任何闸门解析**，实测漏了 `lib/llm-api.mjs`
+ *          而 8 个闸门全绿）：
+ *          主夹具 = **合成极小树**（本闸门的事实源是「`## 文件` 段里列出的路径 ↔ 仓库里是否存在」
+ *          这一对关系，最小树即可精确摆出两种形态）；覆盖点 **`LEMO_TOOLS_ROOT`**；
+ *          ★ 失明守卫要求「解析到 ≥1 条可识别路径」，故阴性 / 变异树里**必须**让清单真的列出几条路径；
+ *          ① **阴性对照**（清单列出的 2 条路径都真存在）⇒ exit 0 且打印判据② ✓；
+ *          ② **变异（判据①）** 清单里**加一个不存在的路径** ⇒ FAIL 并点名
+ *            `README 文件清单列出但不存在：lib/__NOPE__missing.mjs`；
+ *          ③ **失明三态（判据③）** ①无 `## 文件` 段 / ②有段但段内无围栏代码块 / ③有代码块但 0 条可识别路径
+ *            ⇒ 三态均 FAIL +「本闸门已失明」且不输出判据①（★ 2026-10-10 补：原只覆盖态①）；
+ *          ④ **★自证**：短路判据①（`if (missing.length) {` → `if (false) {`）⇒ 变异**重新变绿**。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -5513,6 +5525,89 @@ test('check-no-sync-spawn：阴性对照 + 实调用变异 + 注释态仍绿 + �
     assert.equal(rm1.code, 0, `短路判据② 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
       '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测判据②');
+  } finally { rm(dir); }
+});
+
+// ── 12n. check-readme-files.mjs（「README 文件清单列出的路径必须存在」，2026-10-10 建，第 47 个）──
+// ★ 主夹具 = **合成极小树**（本闸门的事实源是「根 README 的 `## 文件` 段里列出的路径 ↔ 仓库里是否
+//   存在」这一对关系，最小树即可精确摆出「列出且存在」与「列出但不存在」两种形态；不必整棵拷真实仓）。
+// ★ 覆盖点 **`LEMO_TOOLS_ROOT`**（同名同义于 check-resources / check-llm-api / check-lib-exports / check-no-sync-spawn）。
+// ★ 失明守卫要求「解析到 ≥1 条可识别路径」，故阴性 / 变异树里**必须**让清单里**真的列出**几条路径
+//   （否则整棵树走失明、判据①② 不输出，那条正向断言就测不到了）。
+const rfTree = (dir, extraPath) => {
+  mk(path.join(dir, 'lib'));
+  wf(path.join(dir, 'lib', 'rfkeep.mjs'), '// 真存在\n');
+  mk(path.join(dir, 'scripts'));
+  wf(path.join(dir, 'scripts', 'rfkeep.mjs'), '// 真存在\n');
+  wf(path.join(dir, 'README.md'),
+    '# 夹具\n\n## 文件\n\n```\n'
+    + 'lib/rfkeep.mjs            真存在的模块\n'
+    + 'scripts/rfkeep.mjs        真存在的脚本\n'
+    + (extraPath ? `${extraPath}  故意加的不存在路径\n` : '')
+    + '```\n');
+  return dir;
+};
+
+test('check-readme-files：阴性对照 + 清单加不存在路径的变异 + 失明三态（无段 / 无代码块 / 0 条路径）⇒ FAIL 并点名', async () => {
+  const dir = path.join(TMP, 'rf');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE = 'README 文件清单列出但不存在';        // 判据① 特有文案（逐字抄自闸门源码）
+  try {
+    // ① 阴性对照：清单里列出的 2 条路径都真存在 ⇒ exit 0 且打印判据② ✓
+    const neg = rfTree(path.join(dir, 'neg'));
+    const r0 = await runGate('check-readme-files.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-readme-files 阴性对照');
+    assert.ok(r0.out.includes('未登记的不存在路径 0 条'), `阴性对照应打印判据② ✓\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异（判据①）：清单里**加一个不存在的路径** ⇒ exit 1 并点名
+    const mut = rfTree(path.join(dir, 'mut'), 'lib/__NOPE__missing.mjs');
+    const r1 = await runGate('check-readme-files.mjs', { LEMO_TOOLS_ROOT: mut });
+    expectBlind(r1, NEEDLE, 'check-readme-files 变异（清单加不存在路径）');
+    assert.ok(r1.out.includes('README 文件清单列出但不存在：lib/__NOPE__missing.mjs'),
+      `变异应点名 lib/__NOPE__missing.mjs\n${r1.out.slice(0, 1400)}`);
+
+    // ③ 失明（判据③）：夹具 README **没有 `## 文件` 段** ⇒ FAIL +「本闸门已失明」
+    const blind = path.join(dir, 'blind');
+    wf(path.join(blind, 'README.md'), '# 夹具\n\n本 README 没有文件清单段。\n');
+    const r2 = await runGate('check-readme-files.mjs', { LEMO_TOOLS_ROOT: blind });
+    expectBlind(r2, N_BLIND, 'check-readme-files 失明（无 `## 文件` 段）');
+    assert.ok(r2.out.includes('找不到 `## 文件` 段'), `失明应点名「找不到 \`## 文件\` 段」\n${r2.out.slice(0, 900)}`);
+    assert.ok(!r2.out.includes(NEEDLE), `失明时不该输出判据①\n${r2.out.slice(0, 900)}`);
+
+    // ③B 失明（判据③ 第二态）：夹具 README **有 `## 文件` 段、但段内没有围栏代码块** ⇒ FAIL +「本闸门已失明」
+    //   （闸门源码：`else if (block.length === 0)` —— 段在、但一个 ``` 代码块都没有 ⇒ 判据① 恒为空集）。
+    const blind2 = path.join(dir, 'blind2');
+    wf(path.join(blind2, 'README.md'), '# 夹具\n\n## 文件\n\n本段没有围栏代码块，只有散文。\n');
+    const r2b = await runGate('check-readme-files.mjs', { LEMO_TOOLS_ROOT: blind2 });
+    expectBlind(r2b, N_BLIND, 'check-readme-files 失明（有段但无代码块）');
+    assert.ok(r2b.out.includes('段里找不到围栏代码块'),
+      `失明应点名「段里找不到围栏代码块」\n${r2b.out.slice(0, 900)}`);
+    assert.ok(!r2b.out.includes(NEEDLE), `失明时不该输出判据①\n${r2b.out.slice(0, 900)}`);
+
+    // ③C 失明（判据③ 第三态）：夹具 README **有段有代码块、但代码块里全是无法识别的行** ⇒ FAIL +「本闸门已失明」
+    //   （闸门源码：`else if (entries.length === 0)` —— 有代码块但 0 条能唯一识别为路径 ⇒ 判据① 恒为空集）。
+    const blind3 = path.join(dir, 'blind3');
+    wf(path.join(blind3, 'README.md'),
+      '# 夹具\n\n## 文件\n\n```\n'
+      + '这是一句说明文字没有路径\n'
+      + '这一段也没有可识别的条目\n'
+      + '```\n');
+    const r2c = await runGate('check-readme-files.mjs', { LEMO_TOOLS_ROOT: blind3 });
+    expectBlind(r2c, N_BLIND, 'check-readme-files 失明（代码块里 0 条可识别路径）');
+    assert.ok(r2c.out.includes('一个可识别的路径都没解析到'),
+      `失明应点名「一个可识别的路径都没解析到」\n${r2c.out.slice(0, 900)}`);
+    assert.ok(!r2c.out.includes(NEEDLE), `失明时不该输出判据①\n${r2c.out.slice(0, 900)}`);
+
+    // ④ ★自证：把「不存在 ⇒ FAIL」判定**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
+    //   （证明断言真的在测判据①，而不是在测「闸门有没有崩」）。
+    const gdir = path.join(dir, 'gmut');
+    mk(path.join(gdir, 'scripts'));
+    const g = patchGate('check-readme-files.mjs', path.join(gdir, 'scripts'),
+      [['if (missing.length) {', 'if (false) {']]);
+    const rm1 = await run(NODE, [g], { env: { LEMO_TOOLS_ROOT: mut } });
+    assert.equal(rm1.code, 0, `短路判据① 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
+      '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测判据①');
   } finally { rm(dir); }
 });
 

@@ -115,6 +115,9 @@
  *       `models`（模型下拉 / datalist 候选项 `o.textContent`） / `kind` `baseUrl` `model` `path` `extract`
  *       （面板**填进输入框**，用户读到的是字面文本）。**不覆盖** `id`（只做 `<option>.value`）/
  *       `isDefault`（布尔）/ `headers`（对象；其值是 textarea 里的技术性「名称: 值」，非**文案**）。
+ *       ★ 2026-10-10 订正：面板极简化后，上面这些渲染路径（profile/模型下拉项、`llmProfileHint` 提示行、
+ *         各输入框）**已删** —— 现仅 `label` 仍渲染（`llmCurrentPill`）。完整订正见下方
+ *         `USER_TEXT_FIELDS` 定义处的「2026-10-10 订正」段。
  *     · 判法：**静态解析**（**不用动态 import** —— 夹具树里模块的相对依赖常缺，import 抛错会被
  *       当成「失明」而把 `test/gate-blindness.test.mjs` 全打红，上一批踩过）。结构（条目边界 /
  *       字段值区间）取自**剥注释+字符串**的代码体（文案里的 `{}` `,` 会干扰配平），文案取自
@@ -262,6 +265,20 @@ const KEY_IDENT = new Set(['apikey', 'api_key', 'key', 'secret', 'token', 'passw
  *   · `isDefault` —— 布尔，无文案；
  *   · `headers` —— 对象；其值进的是 textarea 的「名称: 值」行，属**技术性头值**而非**文案**
  *     （把技术头值当文案判会误报）⇒ 不判。
+ * ★★ 2026-10-10 订正（面板极简化后 —— **原句照留**，只补现状；本仓纪律：**加日期订正、不抹原句**）：
+ *   · `web/app.js` 的 `renderLlmProfileOptions()` / `renderLlmModelOptions()` / `llmProfileHint`，
+ *     以及 `$('llmKind')` / `$('llmBaseUrl')` 等控件与渲染函数**已整体删除**（面板 28 控件 → 9 id、零输入）
+ *     ⇒ 上面「profile 下拉项 / 模型下拉 / 提示行 / 填进输入框」那几条**渲染路径均已不存在**。
+ *   · 面板现只剩：`llmCurrentPill`（默认显示「当前默认：WorkBuddy」，非默认时用 `cfg.label`）+
+ *     静态 `llmIntro` + 「测试连接」三步校验 ⇒ 仍**唯一**渲染给用户的 `PROFILES` 字段是 `label`；
+ *     `note` 也已不在 `/api/llm/config` 返回里（`server.mjs` 的 `llmConfigPayload` 不再回它），
+ *     `kind` / `baseUrl` / `model` / `models` / `path` / `extract` 无控件承接。
+ *   · ⇒ **判据逻辑一字未改**（集合 / 阈值 / 分支全不动）：`USER_TEXT_FIELDS` 仍按**原集合**遍历。
+ *     这是**有意保守** —— 它们是 `PROFILES` 的**文案字段**，将来任一被重新暴露给用户，含 `**` 仍是错的；
+ *     且多查当前不存在的字段无害（`fieldSpan` 取不到即 `continue`，不误报）。
+ *   · 现状核对（2026-10-10）：`PROFILES` 只剩 `workbuddy`，实抽 **5** 个字段
+ *     （`label`/`note`/`kind`/`baseUrl`/`model`）；`models`/`path`/`extract` **当前无任何 profile 提供**
+ *     ⇒ 遍历时被跳过（**集合项未删**，理由见上「有意保守」）。
  */
 const USER_TEXT_FIELDS = ['label', 'note', 'kind', 'baseUrl', 'model', 'models', 'path', 'extract'];
 

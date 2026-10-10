@@ -2111,6 +2111,29 @@ function watchBriefJob(jobId, briefId) {
 const LLM_KEY_MASK = '••••••';   // 固定占位符（见上文①）
 const LLM_SECRET_HEADER_RE = /authorization|api[-_]?key|token|secret|bearer|cookie/i;
 
+// ★★ 2026-10-10 收紧（委托方指令「**收紧 HTTP 层，不接受覆盖**」）—— `/api/llm/config` 落盘的 **kind 白名单**。
+//   · 委托方已明令「**只接 WorkBuddy，其他 provider 一律彻底删除**」⇒ 让面板把 `kind` 覆盖成
+//     `anthropic` / `openai-compatible` 等，**等于把已删的 provider 经「落盘覆盖」复活**。
+//   · ★ **实测**：`POST /api/llm/config {kind:'anthropic'}` 会被接受并落盘，随后 `GET /api/llm/config`
+//     的 baseUrl 变成 `ANTHROPIC_BASE_URL`（= 第三方中转 `http://43.139.159.106:3000`）—— 见本批复核报告。
+//   · 只放行 `workbuddy-gateway`（本机智能体网关）。★ `custom` **也不放行**：它是「任意端点」的通用
+//     适配器，同样能把链路指到第三方 ⇒ 与「只接 WorkBuddy」相悖。
+//   · ★ 为什么**不必**放行 `openai-compatible`：`lib/triple-check.mjs` 的 VLM 校验是**进程内直调
+//     `chat()`**、**不走 HTTP** ⇒ 不受本白名单影响（委托方任务书已确认）。
+const LLM_CONFIG_KINDS = new Set(['workbuddy-gateway']);
+
+// ★★ 2026-10-10 收紧（第二轮，委托方指令「**收紧 HTTP 层，不接受覆盖**」）—— **身份类字段的唯一真值**。
+//   · 含义：**决定「往哪个端点、用什么 kind 发」**的字段（改任一即可把链路指到别处 ⇒ 已删的 provider 复活）。
+//   · 用它的两处（**共用这一份清单**，免得将来两处又漂）：
+//       ① `buildLlmOpts`：/api/llm/* 的所有 handler —— 身份类字段**一律不从请求体取**；
+//       ② `POST /api/llm/config` 落盘侧 —— 身份类字段**一律不可落盘**（除 `profile` / `kind`，见下）。
+const LLM_IDENTITY_FIELDS = ['profile', 'kind', 'baseUrl', 'model', 'headers', 'path', 'extract', 'target'];
+// config 落盘侧：身份类里**只有**这两个可写 —— `profile` 须是**已知** profile（现在只剩 `workbuddy`）、
+//   `kind` 须在 `LLM_CONFIG_KINDS` 白名单内；二者各有**独立校验**（见 apiLlmConfigSave）。
+const LLM_CONFIG_WRITABLE_IDENTITY = new Set(['profile', 'kind']);
+/** 落盘侧**禁止**的身份类字段（= 身份类 − 可写的那两个）—— 由上面那份清单**派生**，不另抄一份。 */
+const LLM_CONFIG_DENY_FIELDS = LLM_IDENTITY_FIELDS.filter((k) => !LLM_CONFIG_WRITABLE_IDENTITY.has(k));
+
 // 动态 import：模块尚未落地时这里会抛，调用方兜住（服务照常起；下次请求会重试）。
 let _llmMod = null;
 async function loadLlmApi() {
@@ -2124,18 +2147,6 @@ function redactLlmHeaders(h) {
   if (!h || typeof h !== 'object') return {};
   const out = {};
   for (const [k, v] of Object.entries(h)) out[k] = LLM_SECRET_HEADER_RE.test(k) ? LLM_KEY_MASK : v;
-  return out;
-}
-
-/** 合并自定义头：占位符 ⇒ 保留 prev 原值（= 不改）；空串 ⇒ 删掉该头；其余照收。 */
-function mergeLlmHeaders(prev, incoming) {
-  const out = {};
-  const src = (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) ? incoming : {};
-  for (const [k, v] of Object.entries(src)) {
-    const val = String(v);
-    if (val === LLM_KEY_MASK) { if (prev && prev[k] !== undefined) out[k] = prev[k]; }
-    else if (val !== '') out[k] = val;
-  }
   return out;
 }
 
@@ -2153,25 +2164,30 @@ function sanitizeLlmOverride(o) {
 
 /**
  * 请求体 → 传给模块的 opts（§二 优先级 #1 = **显式**传参）。
- * ★ 只放「用户明确给了」的字段（空串一律视为「没给」）—— 其余交给模块按 §二 逐级回落（env / 覆盖文件 / 默认）。
+ *
+ * ★★ 2026-10-10 收紧（委托方指令「**收紧 HTTP 层，不接受覆盖**」）：
+ *   **身份类字段**（见共用常量 `LLM_IDENTITY_FIELDS`：`profile` / `kind` / `baseUrl` / `model` / `headers` /
+ *   `path` / `extract` / `target`）**一律不从请求体取** —— 它们决定「**往哪个端点、用什么 kind 发**」。
+ *   若可从请求体覆盖，就能把 **已删的 provider 经 HTTP 复活**。★ **实测（改动前）**：`POST /api/llm/validate` 带
+ *   `{profile:'workbuddy',kind:'anthropic',baseUrl:'127.0.0.1:1'}` 会被**接受**（`masked.kind` 变
+ *   `anthropic`、`keyMask` 变 `sk-K…` ⇒ 它转用了 `ANTHROPIC_API_KEY`）；若**不给** baseUrl，则会取
+ *   `ANTHROPIC_BASE_URL=http://43.139.159.106:3000` ⇒ **对第三方中转外呼**。⇒ 现在 handler **只用
+ *   服务端**解析出的那份配置（`workbuddy` 链路）。
+ *   ★ **保留**非身份类的调用参数：`timeoutMs` / `apiKey` —— 它们**不改变**「往哪个端点、用什么 kind 发」
+ *   （`apiKey` 只是同一条链路上的凭据，不能把链路指向别的 provider）。
  * @param {object} body 请求体
- * @param {object} [prevHeaders] 覆盖文件里的自定义头（用于把打码占位符还原成原值）
  */
-function buildLlmOpts(body, prevHeaders) {
-  const b = (body && typeof body === 'object') ? body : {};
+function buildLlmOpts(body) {
+  // ★ 身份类字段**显式剥掉**（护栏：即便将来有人把某个身份类字段误加进下面的白名单，这里也先删掉它）——
+  //   与 `POST /api/llm/config` 落盘侧**共用**同一份 `LLM_IDENTITY_FIELDS`，两处不会漂。
+  const b = { ...((body && typeof body === 'object') ? body : {}) };
+  for (const k of LLM_IDENTITY_FIELDS) delete b[k];
   const o = {};
-  for (const k of ['profile', 'baseUrl', 'kind', 'model', 'path', 'extract', 'target']) {
-    if (typeof b[k] === 'string' && b[k].trim() !== '') o[k] = b[k].trim();
-  }
   if (b.timeoutMs !== undefined && b.timeoutMs !== '' && b.timeoutMs !== null) {
     const n = Number(b.timeoutMs);
     if (Number.isFinite(n)) o.timeoutMs = n;
   }
   if (typeof b.apiKey === 'string' && b.apiKey !== '') o.apiKey = b.apiKey;
-  if (b.headers && typeof b.headers === 'object' && !Array.isArray(b.headers)) {
-    const h = mergeLlmHeaders(prevHeaders, b.headers);
-    if (Object.keys(h).length) o.headers = h;
-  }
   return o;
 }
 
@@ -2266,10 +2282,14 @@ async function apiLlmConfigGet(req, res, url) {
  *
  * 语义（与前端「留空=不改」对齐）：
  *   · `apiKey` 空串/缺省 ⇒ **不改**；`clearKey:true` ⇒ 清掉已存密钥；
- *   · `baseUrl` / `model` / `kind` / `path` / `extract` 空串 ⇒ **删掉该项覆盖**（回落到默认）；
- *   · `headers` 值 = 占位符 `••••••` ⇒ 保留原值，空串 ⇒ 删该头；空对象 ⇒ 删 headers 覆盖；
+ *   · `profile` 须是**已知** profile（现在只剩 `workbuddy`），`kind` 须在白名单（`workbuddy-gateway`）；
+ *     二者空串 ⇒ **删掉该项覆盖**（回落到默认）；
  *   · `timeoutMs` 空 ⇒ 删；否则须在 1000–600000；
  *   · `models` 数组 ⇒ 存（面板拉到的候选模型清单）；空数组 / null ⇒ 删该项覆盖。
+ * ★★ 2026-10-10 收紧（委托方指令「收紧 HTTP 层，不接受覆盖」）：**身份类字段一律不可落盘** ——
+ *   `baseUrl` / `model` / `headers` / `path` / `extract` / `target` 一律**结构化拒绝**（见
+ *   `LLM_CONFIG_DENY_FIELDS`）。它们决定「往哪个端点、用什么 kind 发」；若可落盘，就能把**已删的
+ *   provider 持久复活**（实测：`{baseUrl:'http://43.139.159.106:3000'}` 曾被接受并落盘 ⇒ 第三方中转）。
  * ★ 删除靠「把值置成 undefined」：模块 saveOverride 是浅合并，JSON 序列化会丢弃 undefined 键。
  * ★ 落盘用模块的 saveOverride（原子写 + 与现有覆盖合并），本文件**不自己读写**那个文件。
  */
@@ -2280,19 +2300,58 @@ async function apiLlmConfigSave(req, res) {
 
   try {
     const mod = await loadLlmApi();
-    const prev = mod.readOverride();
+
+    // ★★ 2026-10-10 收紧（委托方指令「收紧 HTTP 层，不接受覆盖」）：**落盘侧的身份类拦截 + 白名单校验**。
+    //   ① **身份类字段**（`baseUrl` / `model` / `headers` / `path` / `extract` / `target`）**一律不可落盘** ——
+    //      它们决定「往哪个端点、用什么 kind 发」；若可落盘，就能把**已删的 provider 持久复活**。
+    //      ★ **实测（改动前）**：`POST /api/llm/config {baseUrl:'http://43.139.159.106:3000'}` 会被**接受并落盘**，
+    //        随后 `GET /api/llm/config` 的 baseUrl 即变该第三方中转（**持久**生效，比单次请求覆盖更危险）。
+    //      ★ 清单由共用常量 `LLM_CONFIG_DENY_FIELDS` 派生（与 `buildLlmOpts` 的 `LLM_IDENTITY_FIELDS` 同源）。
+    //   ② 身份类里**只有** `profile` / `kind` 可写：`profile` 须**已知**、`kind` 须在白名单（各自校验见下）。
+    //   ★ 拒绝用**结构化** `{ok:false,error:{kind:'config'}}`（HTTP 200），**不是** 500。
+    const denied = LLM_CONFIG_DENY_FIELDS.filter((k) => body[k] !== undefined);
+    if (denied.length) {
+      return sendJson(res, 200, {
+        ok: false,
+        error: {
+          kind: 'config',
+          message: `不接受覆盖：${denied.join(' / ')} 由服务端配置决定（本软件只接 WorkBuddy），不可经 /api/llm/config 落盘。`,
+        },
+      });
+    }
+    if (body.profile !== undefined) {
+      const pid = String(body.profile).trim();
+      const known = Object.prototype.hasOwnProperty.call(mod.PROFILES || {}, pid);
+      if (pid !== '' && !known) {
+        return sendJson(res, 200, {
+          ok: false,
+          error: {
+            kind: 'config',
+            message: `未知 profile「${pid}」：只接受内置 profile（当前：${Object.keys(mod.PROFILES || {}).join(' / ') || '（无）'}）。`,
+          },
+        });
+      }
+    }
+    if (body.kind !== undefined) {
+      const kd = String(body.kind).trim();
+      if (kd !== '' && !LLM_CONFIG_KINDS.has(kd)) {
+        return sendJson(res, 200, {
+          ok: false,
+          error: {
+            kind: 'config',
+            message: `不允许的 kind「${kd}」：本软件只接 WorkBuddy（放行 ${[...LLM_CONFIG_KINDS].join(' / ')}）。`,
+          },
+        });
+      }
+    }
+
     const partial = {};
     if (typeof body.profile === 'string' && body.profile.trim()) partial.profile = body.profile.trim();
-    for (const k of ['baseUrl', 'model', 'kind', 'path', 'extract']) {
-      if (body[k] === undefined) continue;
-      const v = String(body[k]).trim();
-      partial[k] = v === '' ? undefined : v;
-    }
-    // ★ 接入对象（target）：'model'（底层基础大模型 API）/ 'agent'（智能体 API）。
-    //   归一成这两个字面量（与模块 resolveConfig 同口径）；空串 ⇒ 删掉该项覆盖（回落 profile 内置默认）。
-    if (body.target !== undefined) {
-      const t = String(body.target).trim();
-      partial.target = t === '' ? undefined : (t === 'agent' ? 'agent' : 'model');
+    // ★ 落盘侧**只**接受 `kind` 这一个「可写身份类」字段（已过白名单）；`baseUrl` / `model` / `headers` /
+    //   `path` / `extract` / `target` 已在上面**整段拒绝**（不进 partial）。
+    if (body.kind !== undefined) {
+      const v = String(body.kind).trim();
+      partial.kind = v === '' ? undefined : v;
     }
     if (body.timeoutMs !== undefined) {
       if (body.timeoutMs === '' || body.timeoutMs === null) partial.timeoutMs = undefined;
@@ -2319,15 +2378,6 @@ async function apiLlmConfigSave(req, res) {
         return sendJson(res, 200, { ok: false, error: { kind: 'config', message: 'models 必须是数组' } });
       }
     }
-    if (body.headers !== undefined) {
-      if (body.headers === null) partial.headers = undefined;
-      else if (typeof body.headers === 'object' && !Array.isArray(body.headers)) {
-        const h = mergeLlmHeaders(prev.headers, body.headers);
-        partial.headers = Object.keys(h).length ? h : undefined;
-      } else {
-        return sendJson(res, 200, { ok: false, error: { kind: 'config', message: 'headers 必须是对象' } });
-      }
-    }
 
     const saved = mod.saveOverride(partial);
     if (!saved || saved.ok !== true) {
@@ -2349,7 +2399,7 @@ async function apiLlmValidate(req, res) {
 
   try {
     const mod = await loadLlmApi();
-    const r = await mod.validate(buildLlmOpts(body, mod.readOverride().headers));
+    const r = await mod.validate(buildLlmOpts(body));
     sendJson(res, 200, { ok: true, data: r });
   } catch (e) { llmFail(res, e); }
 }
@@ -2369,7 +2419,7 @@ async function apiLlmChat(req, res) {
     const msgs = (Array.isArray(body.messages) && body.messages.length)
       ? body.messages
       : [{ role: 'user', content: String(body.prompt || '你好，请用一句话回复「pong」。') }];
-    const r = await mod.chat(msgs, buildLlmOpts(body, mod.readOverride().headers));
+    const r = await mod.chat(msgs, buildLlmOpts(body));
     sendJson(res, 200, { ok: true, data: r });
   } catch (e) { llmFail(res, e); }
 }
@@ -2410,7 +2460,7 @@ async function apiLlmInvoke(req, res) {
     }
     const task = typeof body.task === 'string' ? body.task.trim() : '';
     const params = (body.params && typeof body.params === 'object' && !Array.isArray(body.params)) ? body.params : {};
-    const r = await mod.invoke(task, params, buildLlmOpts(body, mod.readOverride().headers));
+    const r = await mod.invoke(task, params, buildLlmOpts(body));
     sendJson(res, 200, { ok: true, data: r });
   } catch (e) { llmFail(res, e); }
 }
@@ -2434,7 +2484,7 @@ async function apiLlmModels(req, res) {
 
   try {
     const mod = await loadLlmApi();
-    const opts = buildLlmOpts(body, mod.readOverride().headers);
+    const opts = buildLlmOpts(body);
     // ★ 只做「读」：resolveConfig 不发起任何请求（纯解析配置），拿 target 判守卫。
     let probe = null;
     try { probe = mod.resolveConfig(opts); } catch { probe = null; }

@@ -8,6 +8,15 @@
  * ★ 另含 ⑰：`GET/HEAD /api/films/dub/:dir/:file`（「文案出片」成片字节，`server.mjs` 的 `apiDubFilmFile`）——
  *   它是成片库播放的落点，此前服务端**零断言**（ui.test.mjs 只查 video.src 属性）。
  *   覆盖 200/206/416/HEAD 与**路径穿越防护**；纯只读，不写盘。
+ * ★★ 2026-10-10 追加 ㉑㉒：`/api/llm/*` 的 **HTTP 层「不接受身份类覆盖」**（委托方指令「收紧 HTTP 层，
+ *   不接受覆盖」）—— ㉑ 钉住 `POST /api/llm/validate` **忽略**请求体里的 `kind`/`baseUrl`/`profile`/`model`/
+ *   `headers`/`path`/`extract`/`target`（否则已删的 provider 可经 HTTP 复活、甚至对第三方中转外呼），
+ *   且**空体仍 `ok:true`**（回归基线）；㉒ 钉住 `POST /api/llm/config` **身份类字段不可落盘**
+ *   （`baseUrl`/`model`/`headers`/`path`/`extract`/`target` ⇒ 结构化拒绝、不落盘、`GET` 的 baseUrl 不变）
+ *   且**拒绝**未知 profile / 非白名单 kind（结构化 `{ok:false,error}`），**空体 / timeoutMs 仍能正常保存**，
+ *   白名单内（`workbuddy` / `workbuddy-gateway`）放行。
+ *   为什么放在本文件：它已经在用**真起服务 + node:http 直连**打 HTTP 面，复用同一套起服务 / 隔离成片根 /
+ *   逐字节还原的纪律，不必另造一个入口（★ 覆盖文件落在隔离成片根内，绝不碰用户真实 `D:\lemo-films`）。
  * 它们承担着上传安全（防目录穿越）、请求形状校验、语义结果注入等关键逻辑，
  * 此前**没有任何测试**（全仓 grep 只在 README 里提到 /api/dub/analyze 一次）。
  *
@@ -953,6 +962,139 @@ async function main() {
       need(judgeTruePeak({ truePeak: -0.2, peak: -1.3 }).verdict === 'fail', '真峰值 −0.2 > −1.2 必须 fail（不被采样峰值掩盖）');
 
       notes.push('⑳ judgeTruePeak：{truePeak:null,peak:-1.3}⇒unknown（旧回落写法会误判 pass）；−1.5/−1.2⇒pass；−0.2⇒fail');
+    });
+
+    // ══ ㉑ ★★ /api/llm/* HTTP 层「不接受身份类覆盖」（2026-10-10 收紧）════════
+    //
+    // 由来（**已实测坐实**，不是假想）：`server.mjs` 的 `buildLlmOpts` 曾**原样接收**请求体里的
+    //   `kind` / `baseUrl` / `profile` / `model` / `headers` / `path` / `extract` / `target`，
+    //   而 `lib/llm-api.mjs` 的 `resolveConfig` 又让**显式 kind 压过 profile 自身** ⇒
+    //   `POST /api/llm/validate` 带 `{profile:'workbuddy',kind:'anthropic',baseUrl:'127.0.0.1:1'}`
+    //   会被**接受**（`masked.kind` 变 `anthropic`、`keyMask` 变 `sk-K…` ⇒ 转用了 `ANTHROPIC_API_KEY`）；
+    //   **不给** baseUrl 时更会取 `ANTHROPIC_BASE_URL`（第三方中转）⇒ ★★「**已删的 provider 可经 HTTP 复活**」。
+    //   委托方指令：「**收紧 HTTP 层，不接受覆盖**」。⇒ 现在 handler **只用服务端**解析出的配置（workbuddy 链路）。
+    //   ★ 反向验证：把 `buildLlmOpts` 的收紧改回原样 ⇒ 本用例**必红**（masked.kind 会变 anthropic）。
+    await runCase('㉑ ★ /api/llm/validate：请求体里的身份类覆盖（kind/baseUrl/model/headers/path/extract/target）一律被忽略；空体仍 ok:true', async () => {
+      // 先取服务端**自己**解析出的配置当基线（**不硬编码** kind / baseUrl —— 它们随环境变）
+      const cfg = await get('/api/llm/config');
+      need(cfg.status === 200 && cfg.json.ok === true, `GET /api/llm/config 应 200/ok:true，实际 ${cfg.status}`);
+      const baseKind = cfg.json.data.kind;
+      const baseBaseUrl = cfg.json.data.baseUrl;
+      need(typeof baseKind === 'string' && baseKind.length > 0, `基线 kind 为空：${cfg.text.slice(0, 160)}`);
+
+      // ① 空体 ⇒ 回归基线：仍 ok:true（面板「测试连接」依赖它，它只走只读 GET /api/v1/health）
+      const empty = await postJson(P, '/api/llm/validate', {});
+      need(empty.status === 200 && empty.json.ok === true,
+        `validate 空体应 HTTP 200 + ok:true，实际 ${empty.status} ${empty.text.slice(0, 200)}`);
+      need(empty.json.data && empty.json.data.ok === true,
+        `validate 空体必须仍 ok:true（回归基线，不许弄坏）：${empty.text.slice(0, 240)}`);
+      need(empty.json.data.masked.kind === baseKind && empty.json.data.masked.baseUrl === baseBaseUrl,
+        `validate 空体的 kind/baseUrl 应等于服务端配置（${baseKind} / ${baseBaseUrl}）：${empty.text.slice(0, 240)}`);
+
+      // ② ★ 身份类覆盖：必须被**忽略**（仍走 workbuddy 链路，而不是 anthropic / 127.0.0.1:1）
+      const evil = await postJson(P, '/api/llm/validate', {
+        profile: 'workbuddy', kind: 'anthropic', baseUrl: '127.0.0.1:1',
+        model: 'nvidia/nemotron-3-super-120b-a12b', headers: { Authorization: 'Bearer evil' },
+        path: '/evil', extract: 'evil', target: 'model',
+      });
+      need(evil.status === 200 && evil.json.ok === true, `validate 应 HTTP 200，实际 ${evil.status}`);
+      need(evil.json.data && evil.json.data.masked, `validate 缺 masked：${evil.text.slice(0, 200)}`);
+      need(evil.json.data.masked.kind !== 'anthropic',
+        '★ kind 仍被请求体覆盖成 anthropic（收紧失效 —— 已删 provider 经 HTTP 复活）');
+      need(evil.json.data.masked.baseUrl !== '127.0.0.1:1',
+        '★ baseUrl 仍被请求体覆盖（收紧失效 —— 可对任意端点/第三方中转外呼）');
+      need(evil.json.data.masked.kind === baseKind,
+        `★ 身份类覆盖未被忽略：masked.kind=${evil.json.data.masked.kind}（应=${baseKind}）`);
+      need(evil.json.data.masked.baseUrl === baseBaseUrl,
+        `★ baseUrl 覆盖未被忽略：masked.baseUrl=${evil.json.data.masked.baseUrl}（应=${baseBaseUrl}）`);
+      // ③ 请求体塞进来的自定义头**不得**出现在响应里
+      need(!JSON.stringify(evil.json.data.masked.headers || {}).includes('evil'),
+        `★ 请求体塞的 headers 泄露进了 masked.headers：${JSON.stringify(evil.json.data.masked.headers)}`);
+      notes.push(`㉑ validate：空体 ok:true（kind=${baseKind}）；带 kind/baseUrl/model/headers/path/extract/target 覆盖后`
+        + ` masked.kind 仍=${evil.json.data.masked.kind}、baseUrl 仍=${evil.json.data.masked.baseUrl}（覆盖被忽略）`);
+    });
+
+    // ══ ㉒ ★★ POST /api/llm/config：身份类字段不可落盘 + 未知 profile / 非白名单 kind 拒绝；空体仍能保存 ════
+    //
+    // 由来（**已实测坐实**）：`/api/llm/config` 曾**不校验** `profile` 存在性 ⇒ 可把未知 profile 原样写进
+    //   `_llm-api.json`；`kind` 同样**照单全收** ⇒ `{kind:'anthropic'}` 落盘后 baseUrl 变 `ANTHROPIC_BASE_URL`；
+    //   ★★ 更直接：`{baseUrl:'http://43.139.159.106:3000'}` 曾被**接受并落盘** ⇒ `GET /api/llm/config`
+    //   的 baseUrl 即变该**第三方中转**（**持久**生效，比单次请求覆盖更危险）⇒「已删 provider 经落盘复活」。
+    //   委托方指令：「收紧 HTTP 层，不接受覆盖」—— 同样适用于**落盘侧**。⇒ 身份类字段一律不可落盘；
+    //   身份类里只留 `profile`（须已知）/ `kind`（须白名单）可写；非身份类（`timeoutMs` / `apiKey` / `models`）保留。
+    //   ★ 反向验证：把落盘侧的身份类拦截（`LLM_CONFIG_DENY_FIELDS` 那段）摘掉 ⇒ 本用例**必红**。
+    await runCase('㉒ ★ /api/llm/config：身份类字段（baseUrl/model/headers/path/extract/target）不可落盘 + 未知 profile / 非白名单 kind 拒绝；空体仍能保存', async () => {
+      const cfg = await get('/api/llm/config');
+      need(cfg.status === 200 && cfg.json.ok === true, `GET /api/llm/config 应 200，实际 ${cfg.status}`);
+      const overrideFile = String(cfg.json.data.overrideFile);
+      const baseBaseUrl = cfg.json.data.baseUrl;
+      // ★ 安全网：确认覆盖文件落在**隔离成片根**内 —— 绝不碰用户真实 D:\lemo-films\_llm-api.json
+      need(path.resolve(overrideFile).startsWith(path.resolve(TEST_FILM_ROOT) + path.sep),
+        `覆盖文件不在隔离根内（拒绝继续，免得写用户真实盘）：${overrideFile}（隔离根 ${TEST_FILM_ROOT}）`);
+      const originalBytes = (() => { try { return fs.readFileSync(overrideFile); } catch { return null; } })();
+      const unchanged = () => {
+        const now = (() => { try { return fs.readFileSync(overrideFile); } catch { return null; } })();
+        return (originalBytes === null) === (now === null)
+          && (originalBytes === null || Buffer.compare(originalBytes, now) === 0);
+      };
+
+      // ① 未知 profile ⇒ 结构化拒绝
+      const p = await postJson(P, '/api/llm/config', { profile: 'nonexistent-xyz' });
+      need(p.status === 200, `拒绝也应 HTTP 200（错误放 body），实际 ${p.status}`);
+      need(p.json && p.json.ok === false && p.json.error && p.json.error.kind === 'config',
+        `未知 profile 应结构化拒绝 {ok:false,error:{kind:'config'}}，实际 ${p.text.slice(0, 200)}`);
+      need(/未知 profile/.test(p.json.error.message || ''), `拒绝理由没点名「未知 profile」：${p.json.error.message}`);
+
+      // ② 非白名单 kind ⇒ 拒绝（anthropic / openai-compatible / custom 都是「非 WorkBuddy」链路）
+      for (const badKind of ['anthropic', 'openai-compatible', 'custom']) {
+        const k = await postJson(P, '/api/llm/config', { kind: badKind });
+        need(k.status === 200 && k.json && k.json.ok === false && k.json.error && k.json.error.kind === 'config',
+          `kind=${badKind} 应结构化拒绝，实际 ${k.status} ${k.text.slice(0, 200)}`);
+      }
+
+      // ③ ★★ 身份类字段 ⇒ 一律**不可落盘**（否则已删 provider 可**持久**复活）
+      const denyCases = [
+        { baseUrl: 'http://43.139.159.106:3000' },            // ★ 第三方中转（本用例的核心）
+        { model: 'nvidia/nemotron-3-super-120b-a12b' },
+        { headers: { Authorization: 'Bearer evil' } },
+        { path: '/evil' }, { extract: 'evil' }, { target: 'model' },
+      ];
+      for (const dc of denyCases) {
+        const fld = Object.keys(dc)[0];
+        const r = await postJson(P, '/api/llm/config', dc);
+        need(r.status === 200 && r.json && r.json.ok === false && r.json.error && r.json.error.kind === 'config',
+          `身份类字段 ${fld} 应结构化拒绝，实际 ${r.status} ${r.text.slice(0, 200)}`);
+        need(new RegExp(fld).test(r.json.error.message || ''), `拒绝理由没点名 ${fld}：${r.json.error.message}`);
+        need(unchanged(), `★ 身份类字段 ${fld} 竟被落盘（覆盖文件变了）—— 已删 provider 可经落盘持久复活`);
+      }
+      // ③' 全部拒绝后，GET 的 baseUrl 必须**仍是 workbuddy 链路**
+      const after = await get('/api/llm/config');
+      need(after.status === 200 && after.json.data.baseUrl === baseBaseUrl,
+        `★ baseUrl 竟被改写：${after.json.data.baseUrl}（应=${baseBaseUrl}）`);
+
+      // ④ ★ 回归基线：空体 / 只带 timeoutMs ⇒ 仍能**正常保存**（别把正常保存也堵死）
+      const e1 = await postJson(P, '/api/llm/config', {});
+      need(e1.status === 200 && e1.json.ok === true,
+        `空体保存应仍 ok:true，实际 ${e1.status} ${e1.text.slice(0, 200)}`);
+      const e2 = await postJson(P, '/api/llm/config', { timeoutMs: 5000 });
+      need(e2.status === 200 && e2.json.ok === true && e2.json.data.timeoutMs === 5000,
+        `只带 timeoutMs 应保存成功且生效（timeoutMs=5000），实际 ${e2.text.slice(0, 200)}`);
+
+      // ⑤ 白名单内（workbuddy + workbuddy-gateway）⇒ 放行（证明不是「一律拒」）
+      const okc = await postJson(P, '/api/llm/config', { profile: 'workbuddy', kind: 'workbuddy-gateway' });
+      need(okc.status === 200 && okc.json.ok === true,
+        `白名单内的 profile/kind 应放行，实际 ${okc.status} ${okc.text.slice(0, 200)}`);
+      need(okc.json.data.profile === 'workbuddy' && okc.json.data.kind === 'workbuddy-gateway',
+        `放行后配置应仍 workbuddy / workbuddy-gateway：${okc.text.slice(0, 200)}`);
+
+      // 收尾：把覆盖文件**逐字节还原**（跑前不存在 ⇒ 删掉），别污染后续用例 / 用户的盘
+      try {
+        if (originalBytes === null) fs.unlinkSync(overrideFile);
+        else fs.writeFileSync(overrideFile, originalBytes);
+      } catch { /* 尽力而为 */ }
+      notes.push('㉒ config：身份类 6 字段（baseUrl/model/headers/path/extract/target）+ 未知 profile + 非白名单 kind '
+        + '全被结构化拒绝且不落盘（GET baseUrl 不变）；空体 / timeoutMs 仍能保存；workbuddy+workbuddy-gateway 放行；'
+        + '覆盖文件已逐字节还原');
     });
 
   } finally {
