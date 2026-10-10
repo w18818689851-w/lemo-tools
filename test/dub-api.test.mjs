@@ -15,6 +15,13 @@
  *   （`baseUrl`/`model`/`headers`/`path`/`extract`/`target` ⇒ 结构化拒绝、不落盘、`GET` 的 baseUrl 不变）
  *   且**拒绝**未知 profile / 非白名单 kind（结构化 `{ok:false,error}`），**空体 / timeoutMs 仍能正常保存**，
  *   白名单内（`workbuddy` / `workbuddy-gateway`）放行。
+ * ★★ 2026-10-10 追加 ㉓~㉖：**4 个「零消费者」LLM 端点的最小回归**（委托方两轮减法后，这些端点**前端已无调用**
+ *   —— `web/app.js` 不再引用 —— 但**能力保留、后期要用再添加** ⇒ ★ **不删端点、只补测试**，以免将来改 LLM
+ *   契约时**没有前端回归信号**、静默破坏）。㉓ `GET /api/llm/profiles` 钉「只剩 1 个 profile（`workbuddy`）、
+ *   `current` 就是它」；㉔ `POST /api/llm/chat` / ㉕ `POST /api/llm/invoke` **只打非法参错误路径**
+ *   （★ **绝不用真文本** —— 那会在委托方的智能体网关上**起一个 run**）并确认身份类覆盖同样被忽略；
+ *   ㉖ `POST /api/llm/models` 钉「`workbuddy`（`target:'agent'`）下**守卫拒绝、绝不打网关**」。
+ *   ★ 全部只读 / 只打错误路径，**不发任何外部请求**。
  *   为什么放在本文件：它已经在用**真起服务 + node:http 直连**打 HTTP 面，复用同一套起服务 / 隔离成片根 /
  *   逐字节还原的纪律，不必另造一个入口（★ 覆盖文件落在隔离成片根内，绝不碰用户真实 `D:\lemo-films`）。
  * 它们承担着上传安全（防目录穿越）、请求形状校验、语义结果注入等关键逻辑，
@@ -1095,6 +1102,132 @@ async function main() {
       notes.push('㉒ config：身份类 6 字段（baseUrl/model/headers/path/extract/target）+ 未知 profile + 非白名单 kind '
         + '全被结构化拒绝且不落盘（GET baseUrl 不变）；空体 / timeoutMs 仍能保存；workbuddy+workbuddy-gateway 放行；'
         + '覆盖文件已逐字节还原');
+    });
+
+    // ══ ㉓ ★ GET /api/llm/profiles：只接 WorkBuddy —— 只剩 1 个 profile 且 current 就是它 ══════════
+    //
+    // 由来：委托方两轮减法后 `PROFILES` 只剩 `workbuddy` 一个（已删 11 个 provider）。本端点**前端已无消费者**
+    //   （`web/app.js` 不再调用）⇒ 将来改 LLM 契约时**没有前端回归信号**，可能静默把 provider 加回来 / 换默认。
+    //   ★ 本用例把「只剩 1 个 profile = workbuddy、current 也是它」钉死 —— 谁再破坏「只接 WorkBuddy」，这里必红。
+    //   ★ 纯只读，不打任何网关。★ 反向验证：把 `PROFILES` 加回第 2 个 profile（或改默认）⇒ 本用例必红。
+    await runCase('㉓ ★ GET /api/llm/profiles：只接 WorkBuddy —— 只剩 1 个 profile（workbuddy）且 current 就是它', async () => {
+      const t0 = Date.now();
+      const r = await get('/api/llm/profiles');
+      need(r.status === 200, `profiles 应 HTTP 200，实际 ${r.status}：${r.text.slice(0, 200)}`);
+      need(r.json && r.json.ok === true && r.json.data, `profiles 应结构化 {ok:true,data}，实际：${r.text.slice(0, 200)}`);
+      const d = r.json.data;
+      need(Array.isArray(d.profiles), `data.profiles 应是数组，实际：${r.text.slice(0, 200)}`);
+      need(d.profiles.length === 1,
+        `★ 「只接 WorkBuddy」被破坏：profiles 应恰 1 个（workbuddy），实际 ${d.profiles.length} 个：`
+        + `${JSON.stringify(d.profiles.map((p) => p && p.id))}`);
+      need(d.profiles[0] && d.profiles[0].id === 'workbuddy',
+        `★ 唯一的 profile 必须是 workbuddy，实际 id=${d.profiles[0] && d.profiles[0].id}`);
+      need(d.current === 'workbuddy', `★ current 必须是 workbuddy（默认 profile 不得漂），实际 ${d.current}`);
+      // ★ key 永不明文：profiles 是脱敏视图（只回 hasKey），不得出现任何 key 明文。
+      need(!/"(apiKey|sk-[A-Za-z0-9])/.test(r.text), `★ profiles 疑似回显了 key 明文：${r.text.slice(0, 240)}`);
+      need(Date.now() - t0 < 10000, `profiles 应快速返回，实际耗时 ${Date.now() - t0}ms`);
+      notes.push(`㉓ profiles：仅 1 个 profile（workbuddy），current=${d.current}，无 key 明文`);
+    });
+
+    // ══ ㉔ ★ POST /api/llm/chat：零消费者端点 —— 只打「非法参」错误路径（★ 绝不用真文本起 run）══════
+    //
+    // 风险：本端点前端已无消费者（面板「试跑」控件已删）⇒ 契约漂移无前端信号。★ 但它一旦拿到**真文本**
+    //   就会在委托方的智能体网关上**起一个 run** ⇒ 本用例**只**打两类错误路径（都**不发任何外部请求**）：
+    //   ① 请求体不是合法 JSON（服务端在解析处即拒）；② `messages:[null]`（`normalizeMessages` 过滤后为空
+    //   ⇒ 模块在**建连之前**就返回 config 错）。并借此确认 HTTP 层收紧对 chat 同样生效（身份类覆盖被忽略）。
+    //   ★ 反向验证：把 `buildLlmOpts` 的身份类剥离摘掉 ⇒ 覆盖生效 ⇒ `data.meta.kind` 变 anthropic ⇒ 本用例必红。
+    await runCase('㉔ ★ POST /api/llm/chat：非法 JSON / 空 messages ⇒ 结构化 {ok:false,error}（绝不起 run）+ 身份类覆盖被忽略', async () => {
+      const t0 = Date.now();
+      // ① 非法 JSON ⇒ 服务端解析处即拒，**不碰模块 / 不发任何请求**
+      const bad = await postRaw(P, '/api/llm/chat', '{ this is not json ');
+      need(bad.status === 200, `chat 非法 JSON 应 HTTP 200（错误放 body），实际 ${bad.status}`);
+      need(bad.json && bad.json.ok === false && bad.json.error && bad.json.error.kind === 'config',
+        `chat 非法 JSON 应结构化 {ok:false,error:{kind:'config'}}，实际：${bad.text.slice(0, 200)}`);
+
+      // ② messages 归一后为空（`[null]` 被 normalizeMessages 过滤掉）⇒ 模块在**发请求之前**返回 config 错。
+      //    ★ 顺带带一组身份类覆盖：必须被忽略（meta 里的 kind/baseUrl 仍是服务端的 workbuddy 链路）。
+      const emptyMsgs = await postJson(P, '/api/llm/chat', {
+        messages: [null],
+        profile: 'workbuddy', kind: 'anthropic', baseUrl: '127.0.0.1:1',
+        model: 'nvidia/nemotron-3-super-120b-a12b', headers: { Authorization: 'Bearer evil' }, target: 'model',
+      });
+      need(emptyMsgs.status === 200, `chat 应 HTTP 200，实际 ${emptyMsgs.status}`);
+      need(emptyMsgs.json && emptyMsgs.json.ok === true, `chat 信封应 {ok:true,data}，实际：${emptyMsgs.text.slice(0, 200)}`);
+      const d = emptyMsgs.json.data || {};
+      need(d.ok === false && d.error && d.error.kind === 'config',
+        `chat 空 messages 应结构化 {ok:false,error:{kind:'config'}}，实际：${emptyMsgs.text.slice(0, 240)}`);
+      // ★ HTTP 层收紧：身份类覆盖不得生效（否则已删的 anthropic provider 可经 chat 复活 / 对第三方中转外呼）
+      need(d.meta && d.meta.kind !== 'anthropic',
+        `★ chat 竟接受了 kind 覆盖（已删 provider 复活）：meta.kind=${d.meta && d.meta.kind}`);
+      need(d.meta && d.meta.baseUrl !== '127.0.0.1:1',
+        `★ chat 竟接受了 baseUrl 覆盖（可对任意端点外呼）：meta.baseUrl=${d.meta && d.meta.baseUrl}`);
+      need(Date.now() - t0 < 10000, `chat 错误路径应快速返回，实际 ${Date.now() - t0}ms`);
+      notes.push(`㉔ chat：非法 JSON / 空 messages 均 {ok:false,error:{kind:'config'}}；身份类覆盖被忽略`
+        + `（meta.kind=${d.meta && d.meta.kind}、baseUrl=${d.meta && d.meta.baseUrl}）`);
+    });
+
+    // ══ ㉕ ★ POST /api/llm/invoke：零消费者端点 —— 只打「非法参」错误路径（★ 绝不起 run）══════════
+    //
+    // 同 ㉔ 的纪律：**只**打「非法 JSON / 未知 task / 已知 task 缺参」三类错误路径，**都不发外部请求**。
+    //   未知 task 在 `invoke()` 里**先于** `resolveConfig` 被拒；`image` 缺 `prompt` 在 `build()` 阶段即拒。
+    //   ★ 反向验证：把 `buildLlmOpts` 的身份类剥离摘掉 ⇒ `data.meta.kind` 变 anthropic ⇒ 本用例必红。
+    await runCase('㉕ ★ POST /api/llm/invoke：非法 JSON / 未知 task / 缺参 ⇒ 结构化错误（绝不起 run）+ 身份类覆盖被忽略', async () => {
+      const t0 = Date.now();
+      // ① 非法 JSON
+      const bad = await postRaw(P, '/api/llm/invoke', 'not json at all');
+      need(bad.status === 200 && bad.json && bad.json.ok === false && bad.json.error && bad.json.error.kind === 'config',
+        `invoke 非法 JSON 应 HTTP 200 + {ok:false,error:{kind:'config'}}，实际 ${bad.status} ${bad.text.slice(0, 200)}`);
+
+      // ② 未知 task ⇒ 模块**在 resolveConfig 之前**即归一为 config 错（不发请求）
+      const unknown = await postJson(P, '/api/llm/invoke', { task: 'nonexistent-task-xyz', params: {} });
+      need(unknown.status === 200 && unknown.json && unknown.json.ok === true, `invoke 信封应 {ok:true,data}，实际 ${unknown.status}`);
+      const ud = unknown.json.data || {};
+      need(ud.ok === false && ud.task === 'nonexistent-task-xyz' && ud.error && ud.error.kind === 'config',
+        `invoke 未知 task 应 {ok:false,task,error:{kind:'config'}}，实际：${unknown.text.slice(0, 240)}`);
+      need(/未知算力类型/.test((ud.error && ud.error.message) || ''),
+        `invoke 未知 task 的报错应点名「未知算力类型」：${ud.error && ud.error.message}`);
+
+      // ③ 已知 task 但缺参（image 缺 prompt）⇒ build 阶段即拒，**在发请求之前**返回；顺带带身份类覆盖。
+      const missing = await postJson(P, '/api/llm/invoke', {
+        task: 'image', params: {},
+        profile: 'workbuddy', kind: 'anthropic', baseUrl: '127.0.0.1:1', model: 'x', target: 'model',
+      });
+      need(missing.status === 200 && missing.json && missing.json.ok === true, `invoke 信封应 {ok:true,data}，实际 ${missing.status}`);
+      const md = missing.json.data || {};
+      need(md.ok === false && md.task === 'image' && md.error && md.error.kind === 'config',
+        `invoke image 缺 prompt 应结构化 config 错，实际：${missing.text.slice(0, 240)}`);
+      need(md.meta && md.meta.kind !== 'anthropic',
+        `★ invoke 竟接受了 kind 覆盖（已删 provider 复活）：meta.kind=${md.meta && md.meta.kind}`);
+      need(md.meta && md.meta.baseUrl !== '127.0.0.1:1',
+        `★ invoke 竟接受了 baseUrl 覆盖：meta.baseUrl=${md.meta && md.meta.baseUrl}`);
+      need(Date.now() - t0 < 10000, `invoke 错误路径应快速返回，实际 ${Date.now() - t0}ms`);
+      notes.push(`㉕ invoke：非法 JSON / 未知 task / image 缺 prompt 均结构化 {ok:false,...}；身份类覆盖被忽略`
+        + `（meta.kind=${md.meta && md.meta.kind}）`);
+    });
+
+    // ══ ㉖ ★ POST /api/llm/models：零消费者端点 —— workbuddy（agent）下必须被「agent 守卫」拒绝（★ 绝不打网关）══
+    //
+    // 规格 v3 明禁「探查 / 读取智能体内部模型信息」⇒ `workbuddy`（`target:'agent'`）下 `listModels()` 必须**整条拒绝**。
+    //   本端点前端已无消费者 ⇒ 无前端信号。★ 本用例钉两件：① `{}` ⇒ 守卫结构化拒绝（`config` 错）；
+    //   ② 请求体塞 `kind`/`baseUrl`/`target:'model'` 想**绕过守卫** ⇒ 仍被拒（HTTP 层收紧把身份类覆盖剥掉）。
+    //   ★ 全程**不真打网关**。★ 反向验证：把 `buildLlmOpts` 的身份类剥离摘掉 ⇒ `target:'model'` 生效、守卫被绕过 ⇒ 必红。
+    await runCase('㉖ ★ POST /api/llm/models：workbuddy（agent）⇒ 守卫拒绝（结构化 config 错，绝不打网关）；身份类覆盖无法绕过守卫', async () => {
+      const t0 = Date.now();
+      const r = await postJson(P, '/api/llm/models', {});
+      need(r.status === 200, `models 应 HTTP 200，实际 ${r.status}`);
+      need(r.json && r.json.ok === false && r.json.error && r.json.error.kind === 'config',
+        `models（workbuddy=agent）应被守卫结构化拒绝 {ok:false,error:{kind:'config'}}，实际：${r.text.slice(0, 240)}`);
+      need(/智能体/.test(r.json.error.message || ''),
+        `models 拒绝理由应点名「智能体」（规格 v3 禁止探查智能体内部模型）：${r.json.error.message}`);
+
+      // ★ 反向：即便请求体塞 kind/baseUrl/target:'model' 想绕过守卫，也必须仍被拒（HTTP 层收紧 ⇒ target 覆盖被忽略）
+      const bypass = await postJson(P, '/api/llm/models', {
+        profile: 'workbuddy', kind: 'openai-compatible', baseUrl: '127.0.0.1:1', target: 'model', model: 'x',
+      });
+      need(bypass.status === 200 && bypass.json && bypass.json.ok === false && bypass.json.error && bypass.json.error.kind === 'config',
+        `★ models 守卫竟被身份类覆盖绕过（target='model' 生效 ⇒ 可能真去打网关）：${bypass.text.slice(0, 240)}`);
+      need(Date.now() - t0 < 10000, `models 应快速返回，实际 ${Date.now() - t0}ms`);
+      notes.push('㉖ models：workbuddy（agent）下守卫拒绝（config 错），带 kind/baseUrl/target 覆盖也仍被拒（不打网关）');
     });
 
   } finally {

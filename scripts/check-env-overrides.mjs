@@ -519,6 +519,14 @@ const OVERRIDES = {
       'scripts/check-mux-parity.mjs', 'scripts/check-mux-selection.mjs', 'scripts/check-ref-lines.mjs',
       'scripts/check-render-venc.mjs', 'scripts/check-shell-structure.mjs', 'scripts/check-venc-args.mjs',
       'scripts/patch-style-mux.mjs',
+      // ★ 2026-10-10 补：这 4 个闸门也把 `LEMO_OPUSCAR` 当**库仓根覆盖点**（`path.resolve(process.env.LEMO_OPUSCAR || …)`）
+      //   ⇒ 补进 readers 让判据② 也守它（原先只在判据③ 里报「新读者未登记」）。
+      //   · check-demo-header：按库仓根找 demo 头样式
+      //   · check-repro-form：按库仓根找复现表单
+      //   · check-sources-paths：按库仓根校验来源路径
+      //   · check-target-as-measured：按库仓根找「目标 vs 实测」读数
+      'scripts/check-demo-header.mjs', 'scripts/check-repro-form.mjs', 'scripts/check-sources-paths.mjs',
+      'scripts/check-target-as-measured.mjs',
       // ★ 2026-10-07：本闸门自己（⑦ 的库仓侧扫描根）也是 `LEMO_OPUSCAR` 的读者。
       //   它**不扫自己**（见 ⑤）⇒ 它**不在**「扫到」的 (文件, 变量) 对里，所以上面那句
       //   「(文件, 变量) 对 差额」会显示 **-1**，那是**预期的**（输出里有一行专门说明）。
@@ -534,7 +542,12 @@ const OVERRIDES = {
     readers: ['lib/styles-root.mjs', 'scripts/check-aspect-declaration.mjs', 'scripts/check-aspect-prose.mjs',
       'scripts/check-audio-chain.mjs', 'scripts/check-dub-styles.mjs', 'scripts/check-film-aspect.mjs',
       'scripts/check-mix-candidates.mjs', 'scripts/check-ref-lines.mjs', 'scripts/check-render-venc.mjs',
-      'scripts/style-scan.mjs'],
+      'scripts/style-scan.mjs',
+      // ★ 2026-10-10 补：这 2 个闸门也把 `LEMO_STYLES_ROOT` 当**风格源码根覆盖点**
+      //   （`process.env.LEMO_STYLES_ROOT || 'D:/lemo-opuscar/styles'`）⇒ 补进 readers 让判据② 也守它。
+      //   · check-doc-coverage：按风格源码根核对文档覆盖
+      //   · check-header-counts：按风格源码根数头部计数
+      'scripts/check-doc-coverage.mjs', 'scripts/check-header-counts.mjs'],
     what: '风格源码根（默认 <库根>/styles）',
   },
   LEMO_STYLES_ROOT_WSL: {
@@ -553,7 +566,11 @@ const OVERRIDES = {
     what: '库根（WSL 侧；编排器 CFG.wslLib 与 lib/env.mjs 的 CFG.wslLib 同名同义）',
   },
   LEMO_FILM_DIR: {
-    readers: ['lib/env.mjs', 'scripts/check-selfcheck-claims.mjs', 'scripts/prune-jobs.mjs'],
+    readers: ['lib/env.mjs', 'scripts/check-selfcheck-claims.mjs', 'scripts/prune-jobs.mjs',
+      // ★ 2026-10-10 补：`clean-test-residue.mjs` 也把 `LEMO_FILM_DIR` 当**成片根覆盖点**
+      //   （`process.env.LEMO_FILM_DIR || 'D:/lemo-films'`；它从成片根派生 `.briefs` / `.console` / `.locks-test`）
+      //   ⇒ 补进 readers 让判据② 也守它。
+      'scripts/clean-test-residue.mjs'],
     what: '成片根（lib/env.mjs 的 exportDir；★ 曾被硬编码过一段时期，见头注释 ①）',
   },
   // ★ 2026-10-09 追加：测试残留清理工具的**备份目录覆盖点**。
@@ -606,8 +623,17 @@ const OVERRIDES = {
     readers: ['scripts/check-config-vs-doc.mjs', 'scripts/check-derivation-caliber.mjs', 'scripts/check-film-aspect.mjs',
       'scripts/check-film-delivery.mjs', 'scripts/check-mux-parity.mjs', 'scripts/check-ref-lines.mjs',
       'scripts/check-selfcheck-claims.mjs', 'scripts/check-skill-artifacts.mjs', 'scripts/check-skill-film-fields.mjs',
-      'scripts/check-skill-scores.mjs', 'scripts/check-tp-prose.mjs'],
-    what: '风格技能树（_distill.json）根 —— 11 个闸门共用，夹具靠它指向临时副本',
+      'scripts/check-skill-scores.mjs', 'scripts/check-tp-prose.mjs',
+      // ★ 2026-10-10 补：这 5 个闸门也把 `LEMO_DISTILL_ROOT` 当**风格技能树根覆盖点**
+      //   （`path.resolve(process.env.LEMO_DISTILL_ROOT || <默认>)`）⇒ 补进 readers 让判据② 也守它。
+      //   · check-demo-header：按技能树根找 demo 头
+      //   · check-distill-fields：按技能树根核对 _distill.json 字段
+      //   · check-repro-form：按技能树根找复现表单
+      //   · check-sources-paths：按技能树根校验来源路径
+      //   · check-target-as-measured：按技能树根找「目标 vs 实测」读数
+      'scripts/check-demo-header.mjs', 'scripts/check-distill-fields.mjs', 'scripts/check-repro-form.mjs',
+      'scripts/check-sources-paths.mjs', 'scripts/check-target-as-measured.mjs'],
+    what: '风格技能树（_distill.json）根 —— 16 个闸门共用，夹具靠它指向临时副本',
   },
   LEMO_DUB_STYLES: {
     readers: ['lib/dub-core.mjs', 'lib/dub-semantic.mjs', 'scripts/check-config-notes.mjs', 'scripts/check-config-vs-doc.mjs',
@@ -740,7 +766,21 @@ const OVERRIDES = {
       // ★ 2026-10-10：`check-visible-hints.mjs`（守「用户可见文案不得提及已删控件/已删 profile」）
       //   也读它 —— 它要按 `<LEMO_TOOLS_ROOT>` 定位待扫文件（`lib/llm-api.mjs` / `web/index.html` / `web/app.js`），
       //   同样供非破坏变异（指向临时夹具树）。
-      'scripts/check-visible-hints.mjs'],
+      'scripts/check-visible-hints.mjs',
+      // ★ 2026-10-10 补：这 8 个闸门也把 `LEMO_TOOLS_ROOT` 当**本仓根覆盖点**
+      //   （`path.resolve(process.env.LEMO_TOOLS_ROOT || path.join(HERE, '..'))`）—— 一律是
+      //   「按仓根定位待扫文件」的扫描根，夹具靠它指向临时副本 ⇒ 补进 readers 让判据② 也守它。
+      //   · check-distill-fields：按仓根 + 技能树根核对字段
+      //   · check-gate-self-claims：按仓根核对闸门自述
+      //   · check-header-counts：按仓根数头部计数
+      //   · check-lib-exports：按仓根校验 lib 导出
+      //   · check-no-sync-spawn：按仓根扫同步 spawn
+      //   · check-readme-files：按仓根核对 README 列出的文件
+      //   · check-resources：按仓根跑资源检测
+      //   · check-sources-paths：按仓根校验来源路径
+      'scripts/check-distill-fields.mjs', 'scripts/check-gate-self-claims.mjs', 'scripts/check-header-counts.mjs',
+      'scripts/check-lib-exports.mjs', 'scripts/check-no-sync-spawn.mjs', 'scripts/check-readme-files.mjs',
+      'scripts/check-resources.mjs', 'scripts/check-sources-paths.mjs'],
     what: 'lemo-tools 仓根（本仓自身）',
   },
   LEMO_VOICE_TEST_TMP: {

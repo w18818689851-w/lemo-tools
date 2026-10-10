@@ -21,7 +21,7 @@ node test/originality.test.mjs   # 「从零原创」审计器的纯逻辑测试
 node test/style-skill-reader.test.mjs  # 风格 Skill 文档读取入口的纯逻辑测试（6 条，★ 钉「缺失即 null 绝不抛」的硬契约）
 node test/triple-check.test.mjs   # 三者一致性校验门（**全项目唯一允许调 7B VLM 的地方**）的纯逻辑测试（29 条）
 node test/dub-lexicon.test.mjs    # 规则词表 TAG_LEXICON / lexiconCoverage 的纯逻辑测试（12 条，★ 词表数据完整性）
-node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（23 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越）
+node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（27 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越 + ★ 4 个「零消费者」LLM 端点的最小回归 ㉓~㉖：`GET /api/llm/profiles`（只剩 workbuddy）/ `POST /api/llm/chat` / `POST /api/llm/invoke`（只打非法参错误路径，绝不起 run）/ `POST /api/llm/models`（agent 守卫拒绝，绝不打网关））
 node test/voices-api.test.mjs     # /api/voices/{sources,import,test,test/audio} 的契约与校验测试（10 条，只测失败路径）
 node test/style-scan.test.mjs     # 风格源码指纹机制（约定一「自动纳入」的判据）测试（16 条，★ 该变就变/不该变就不变）
 node test/triple-check-flow.test.mjs  # verifyTriple 主流程端到端测试（13 条，★ 用桩 LM Studio，绝不碰真实模型）
