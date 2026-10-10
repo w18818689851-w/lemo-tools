@@ -147,8 +147,39 @@ function toast(msg, isErr) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 4200);
 }
 
+// ★ 客户端超时（照参考实现 app/api.js 的 LONG_TIMEOUT=60000 口径）：网络挂住不会**无限等**。
+//   默认 60 秒；调用方可用 opts.timeoutMs 覆盖（探测 / 校验 / 调用类可能较慢 ⇒ 传更长）。
+//   ★ 为什么必须加：`fetch` 在「服务端接受了连接但迟迟不回」时**永不 reject** ⇒ 面板会一直转圈。
+const API_TIMEOUT_MS = 60000;
+const API_TIMEOUT_MS_LONG = 120000;
+
 async function api(path, opts) {
-  const r = await fetch(path, opts);
+  const o = Object.assign({}, opts || {});
+  const timeoutMs = (Number.isFinite(o.timeoutMs) && o.timeoutMs > 0) ? o.timeoutMs : API_TIMEOUT_MS;
+  delete o.timeoutMs;
+  let controller = null;
+  let timer = null;
+  if (typeof AbortController === 'function' && !o.signal) {
+    controller = new AbortController();
+    o.signal = controller.signal;
+    timer = setTimeout(() => { try { controller.abort(); } catch { /* 忽略 */ } }, timeoutMs);
+  }
+  let r;
+  try {
+    r = await fetch(path, o);
+  } catch (e) {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (controller && e && e.name === 'AbortError') {
+      // ★ 超时：抛一个**结构化**错误（挂在 err.data 上，信封与后端一致）⇒ llmReq() 能原样透出
+      //   `kind:'timeout'`，面板显示「请求超时」而不是把它误判成「服务没在跑」。
+      const err = new Error(`请求超时（>${Math.round(timeoutMs / 1000)}s）`);
+      err.timeout = true;
+      err.data = { ok: false, error: { kind: 'timeout', message: `请求超时（>${Math.round(timeoutMs / 1000)}s）：服务端未在时限内响应。` } };
+      throw err;
+    }
+    throw e;
+  }
+  if (timer) { clearTimeout(timer); timer = null; }
   const txt = await r.text();
   let data = null;
   try { data = txt ? JSON.parse(txt) : null; } catch { data = { raw: txt }; }
@@ -4489,8 +4520,10 @@ function focusSearch() {
 //   GET    /api/llm/services        → { ok, data:{ services:[脱敏…], active:'<id>' } }
 //   GET    /api/llm/services/:id    → 单套详情（编辑回显）
 //   POST   /api/llm/services        → 保存 / 更新一套（★ 配置体**只能**经它写入）
-//   DELETE /api/llm/services/:id    → 删除一套
+//   POST   /api/llm/services/delete → { id } ⇒ 删除一套（★ 标准 §7 1.1：写操作一律 POST；
+//                                    原 `DELETE /api/llm/services/:id` 已废 ⇒ 收 405）
 //   POST   /api/llm/services/active → { id } ⇒ 切换（全局实时生效）
+//   GET    /api/llm/service-templates → { templates:[…] }（只读预填模板，**无密钥**）
 //   POST   /api/llm/validate|models|chat|invoke → ★ **只接受 service（选择器）**
 //
 // ★ 三条纪律（本项目铁律）：
@@ -4525,6 +4558,41 @@ const LLM_KIND_LABEL = {
   custom: '厂商私有接口',
   'workbuddy-gateway': '本机智能体网关',
 };
+// ★★ 「从模板新建」：**国产厂商预设模板**（★ **无密钥**、**不锁定服务商** —— 只把适配器 / Endpoint /
+//    名称 / 候选模型预填进下方表单；用户确认后自己点「保存」才成真服务，模板**绝不自动创建**）。
+//   ★★ 这是**内置兜底目录**：后端 `lib/llm-api.mjs` 的 `SERVICE_TEMPLATES` / `listServiceTemplates()`
+//     已在（7 家，与下表同源）；只差 HTTP 读入口 `GET /api/llm/service-templates`。落地后
+//     `loadLlmTemplates()` 会用后端那份**覆盖**本兜底。
+//   ★★ 假设的后端契约（★ 后端尚未落地读入口时按此写）：`GET /api/llm/service-templates`
+//     ⇒ `{ok:true,data:{templates:[{id,label,kind,target,baseUrl,model,models}]}}`
+//     （★ 也容忍 `data` 直接是数组；★ 模板**不含 apiKey**）。
+//   ★ 下表**逐字段照抄后端 `SERVICE_TEMPLATES`**（同一批 endpoint / model），免得两边对不上；
+//     后端读入口落地后本表可删（届时只留后端一份真相）。
+const LLM_TPL_FALLBACK = [
+  { id: 'doubao', label: '豆包 / 火山方舟（字节跳动）', kind: 'openai-compatible', target: 'model',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-1-6-251015',
+    models: ['doubao-seed-1-6-251015', 'doubao-seed-2-0-pro-260215', 'doubao-seed-2-0-lite-260215', 'doubao-seed-2-0-mini-260215'] },
+  { id: 'qwen', label: '通义千问 / 阿里云百炼（DashScope）', kind: 'openai-compatible', target: 'model',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus',
+    models: ['qwen-plus', 'qwen-flash', 'qwen3-max', 'qwen3-vl-plus'] },
+  { id: 'hunyuan', label: '腾讯混元（Tencent Hunyuan）', kind: 'openai-compatible', target: 'model',
+    baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1', model: 'hunyuan-turbos-latest',
+    models: ['hunyuan-turbos-latest', 'hunyuan-turbo', 'hunyuan-lite', 'hunyuan-vision', 'hunyuan-functioncall'] },
+  { id: 'deepseek', label: 'DeepSeek（深度求索）', kind: 'openai-compatible', target: 'model',
+    baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash',
+    models: ['deepseek-flash', 'deepseek-v4-pro'] },
+  { id: 'zhipu', label: '智谱 GLM（智谱开放平台）', kind: 'openai-compatible', target: 'model',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3',
+    models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.2'] },
+  { id: 'kimi', label: '月之暗面 Kimi（Moonshot）', kind: 'openai-compatible', target: 'model',
+    baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2.7',
+    models: ['kimi-k2.7', 'kimi-k2.6', 'kimi-k2.5', 'moonshot-v1-128k'] },
+  { id: 'siliconflow', label: '硅基流动 SiliconFlow（国产模型聚合）', kind: 'openai-compatible', target: 'model',
+    baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3',
+    models: ['deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen3-8B'] },
+];
+let llmTemplates = [];          // 当前模板目录（先兜底、后端可用时被覆盖）
+let llmTemplatesTried = false;  // ★ 后端只试一次（后端可能还没落地 ⇒ 不反复打接口）
 const llmState = { services: [], active: '', cfg: null, busy: false, models: [], editingId: null };
 
 function llmSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
@@ -4565,7 +4633,19 @@ async function llmReq(path, opts) {
   let res;
   try { res = await api(path, opts); }
   catch (e) {
-    const raw = e && e.data && (typeof e.data.raw === 'string' ? e.data.raw : e.data.error);
+    // ★★ 后端**结构化错误**（信封 `{ok:false,error:{kind,message}}`）⇒ **原样透出**。
+    //   为什么必须有这条：`api()` 在 `!r.ok`（HTTP 4xx/5xx）时把**完整信封**挂在 `e.data` 上，
+    //   而 `new Error(对象)` 的 message 是 `[object Object]` ⇒ 老代码会把它**误判成网络错误**，
+    //   报成「[network] [object Object]（控制台服务是否还在跑？）」—— 把**配置错误**说成**服务没在跑**，
+    //   用户无从下手（实测：保存算力服务缺 id 的 400 就是这样被吞掉的）。
+    //   ⇒ 结构化错误（error 是对象）一律原样返回，让面板显示后端那句可操作的中文 message。
+    const env = e && e.data;
+    if (env && env.ok === false && env.error && typeof env.error === 'object') {
+      return { ok: false, error: env.error };
+    }
+    // ★ 真正的**网络失败**（fetch 抛 TypeError，无 e.data）/ 非结构化错误体（error 是字符串 / 裸文本）
+    //   ⇒ 仍按「网络」处理并附「服务是否在跑」提示（这条**不变**）。
+    const raw = env && (typeof env.raw === 'string' ? env.raw : env.error);
     const message = (typeof raw === 'string' && raw) ? raw.slice(0, 300) : ((e && e.message) || '请求失败');
     return { ok: false, error: { kind: 'network', message, hint: '控制台服务是否还在跑？' } };
   }
@@ -4681,6 +4761,12 @@ async function loadLlm() {
 }
 
 // ── 编辑表单：字段 ↔ 配置体 ───────────────────────────────────
+/** 重试字段回显值：未设置 / 等于模块默认值 ⇒ 空串（空 = 不写该字段，见 renderLlmForm 注释）。 */
+function llmRetryFieldValue(v, dflt) {
+  if (v === undefined || v === null || v === '') return '';
+  return Number(v) === dflt ? '' : String(v);
+}
+
 /** 把一套服务填进表单（★ 不回显 key；headers 用打码后的值）。 */
 function renderLlmForm(cfg) {
   if (!cfg) return;
@@ -4690,15 +4776,24 @@ function renderLlmForm(cfg) {
   $('llmBaseUrl').value = cfg.baseUrl || '';
   $('llmModel').value = cfg.model || '';
   $('llmTimeout').value = (cfg.timeoutMs !== undefined && cfg.timeoutMs !== null) ? String(cfg.timeoutMs) : '';
+  // ★ 容错 / 自动重试（服务对象字段 retry / retryBackoffMs）：后端 maskedService 对**未设置**项
+  //   回的是**默认值**（retry=0 / retryBackoffMs=200）⇒ 等于默认值时**回显为空**，
+  //   否则「留空保存 → 编辑回显成 0 → 再保存」会把它**写成 0**（违反「留空 = 不写该字段」）。
+  $('llmRetry').value = llmRetryFieldValue(cfg.retry, 0);
+  $('llmRetryBackoff').value = llmRetryFieldValue(cfg.retryBackoffMs, 200);
   $('llmPath').value = cfg.path || '';
   $('llmExtract').value = cfg.extract || '';
-  // 输入框只放**用户覆盖**的头（后端已把敏感值打码成 ••••••；留占位符 = 不改）
-  $('llmHeaders').value = Object.entries(cfg.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n');
-  const eff = Array.isArray(cfg.effectiveHeaders) ? cfg.effectiveHeaders : [];
+  // ★★ 2026-10-10 标准 §10（信息边界）：后端**只回布尔 `hasHeaders`**（请求头内容绝不外传）⇒
+  //   编辑时输入框**必然为空** —— 这是**有意设计**，配合「留空 = 不修改」（后端 saveService 对空 dict
+  //   保留旧值）。★ 绝不假装回显头内容（旧写法读 `cfg.headers` / `cfg.effectiveHeaders`，现已不存在）。
+  $('llmHeaders').value = '';
+  $('llmHeaders').placeholder = cfg.hasHeaders
+    ? '留空 = 保持原有请求头不变；填写则整体替换'
+    : '每行一个：名称: 值（如 X-Api-Version: 2024-01-01）';
   setLlmHint($('llmHeadersHint'),
-    eff.length
-      ? `每行一条「名称: 值」；留空该行 = 删除该头。当前生效头：${eff.join(', ')}`
-      : '每行一条「名称: 值」；留空该行 = 删除该头', false);
+    cfg.hasHeaders
+      ? '已配置自定义请求头（内容不回显）。留空 = 保持原有请求头不变；填写则整体替换（每行一条「名称: 值」）。'
+      : '每行一条「名称: 值」（如 X-Api-Version: 2024-01-01）；留空 = 不设置。', false);
 
   const st = $('llmKeyState');
   if (st) {
@@ -4712,6 +4807,15 @@ function renderLlmForm(cfg) {
     keyInp.placeholder = cfg.hasKey ? `留空 = 不改${km}` : '留空 = 不设置';
   }
   renderLlmModelOptions(Array.isArray(cfg.models) ? cfg.models : [], '端点 / 配置');
+  // ★ 高级字段回显（标准 §9）：`capability` / `forceStream` / `ensureSystemPrompt` 后端**如实回显**；
+  //   `auth_header` / `auth_scheme` / `api_key_env` 属 `extra`，后端**不回传**（信息边界，§10）
+  //   ⇒ 一律清空 + 「留空 = 不修改」（与 API-Key / 请求头同口径）。
+  if ($('llmCapability')) $('llmCapability').value = cfg.capability || 'llm';
+  if ($('llmForceStream')) $('llmForceStream').checked = !!cfg.forceStream;
+  if ($('llmSysFirst')) $('llmSysFirst').checked = !!cfg.ensureSystemPrompt;
+  if ($('llmAuthHeader')) $('llmAuthHeader').value = '';
+  if ($('llmAuthScheme')) $('llmAuthScheme').value = '';
+  if ($('llmKeyEnv')) $('llmKeyEnv').value = '';
   applyLlmTargetUi(cfg);
   syncLlmTaskUi();
 }
@@ -4726,16 +4830,26 @@ function resetLlmForm() {
   $('llmBaseUrl').value = '';
   $('llmModel').value = '';
   $('llmTimeout').value = '';
+  $('llmRetry').value = '';
+  $('llmRetryBackoff').value = '';
   $('llmPath').value = '';
   $('llmExtract').value = '';
   $('llmHeaders').value = '';
+  $('llmHeaders').placeholder = '每行一个：名称: 值（如 X-Api-Version: 2024-01-01）';
+  // ★ 高级字段重置（标准 §9）：能力类型回 llm；两个布尔开关回 false；extra 三项留空 = 不设置。
+  if ($('llmCapability')) $('llmCapability').value = 'llm';
+  if ($('llmForceStream')) $('llmForceStream').checked = false;
+  if ($('llmSysFirst')) $('llmSysFirst').checked = false;
+  if ($('llmAuthHeader')) $('llmAuthHeader').value = '';
+  if ($('llmAuthScheme')) $('llmAuthScheme').value = '';
+  if ($('llmKeyEnv')) $('llmKeyEnv').value = '';
   const keyInp = $('llmKey');
   if (keyInp) { keyInp.value = ''; keyInp.placeholder = '留空 = 不设置'; }
   const st = $('llmKeyState');
   if (st) { st.textContent = '未配置'; st.className = 'llm-key-state missing'; }
   llmState.models = [];
   renderLlmModelOptions([], '端点 / 配置');
-  setLlmHint($('llmHeadersHint'), '每行一条「名称: 值」；留空该行 = 删除该头', false);
+  setLlmHint($('llmHeadersHint'), '每行一条「名称: 值」（如 X-Api-Version: 2024-01-01）；留空 = 不设置。', false);
   setLlmHint($('llmFormHint'), '', false);
   syncLlmTaskUi();
 }
@@ -4748,6 +4862,73 @@ function addLlmService() {
   $('llmLabel').focus?.();
 }
 
+// ── 「从模板新建」（★ 模板只**预填**：不自动创建、不锁定服务商）────────────
+/** 把模板目录灌进「从模板新建」下拉（★ 第一项恒为占位符；选中即**预填**表单）。 */
+function renderLlmTemplateOptions() {
+  const sel = $('llmTemplateSelect');
+  if (!sel) return;
+  const keep = sel.value;
+  sel.textContent = '';
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = '— 选一个预设模板 —';
+  sel.appendChild(ph);
+  for (const t of llmTemplates) {
+    if (!t || !t.id) continue;
+    const o = document.createElement('option');
+    o.value = t.id;
+    o.textContent = t.label || t.id;
+    sel.appendChild(o);
+  }
+  sel.value = keep;   // 尽量保住用户当前选择（覆盖重绘时不跳回占位符）
+}
+
+/**
+ * 读模板目录：★ **优先调后端** `GET /api/llm/service-templates`（唯一真相）；**兜底表留作后备**
+ * （后端不可达 / 返回空 ⇒ 用内置表，无网也能用）。★ 只试一次（不反复打接口）。
+ */
+async function loadLlmTemplates() {
+  if (llmTemplatesTried) { renderLlmTemplateOptions(); return; }
+  llmTemplatesTried = true;
+  const r = await llmReq('/api/llm/service-templates');
+  const d = r.ok ? r.data : null;
+  const list = Array.isArray(d) ? d : (d && Array.isArray(d.templates) ? d.templates : []);
+  // ★ 后端优先：拿到非空清单就用它；否则（后端未落地 / 不可达 / 空表）回落到内置兜底。
+  llmTemplates = list.length ? list : LLM_TPL_FALLBACK.slice();
+  renderLlmTemplateOptions();
+}
+
+/** 按模板**预填**表单（★ 只预填：不保存、不自动创建、不锁定；密钥一律留空）。
+ *  ★ 走 `resetLlmForm()` ⇒ 回到「新增」态（`editingId = null`，**页面侧不自造任何 id** ——
+ *    服务标识由**后端在保存时生成**）。 */
+function applyLlmTemplate(id) {
+  const t = llmTemplates.find((x) => x && x.id === id);
+  if (!t) return;
+  resetLlmForm();
+  if ($('llmLabel')) $('llmLabel').value = t.label || t.id || '';
+  if ($('llmKind')) $('llmKind').value = t.kind || 'openai-compatible';
+  if ($('llmTarget')) $('llmTarget').value = (t.target === 'agent') ? 'agent' : 'model';
+  $('llmBaseUrl').value = t.baseUrl || '';
+  // ★ 模板自带候选模型 ⇒ 灌进「多模型切换」下拉 + datalist（同源），并把 model 预填成模板推荐值。
+  renderLlmModelOptions(Array.isArray(t.models) ? t.models : [], '模板');
+  $('llmModel').value = t.model || '';
+  if (t.timeoutMs !== undefined && t.timeoutMs !== null) $('llmTimeout').value = String(t.timeoutMs);
+  if (t.headers && typeof t.headers === 'object') {
+    $('llmHeaders').value = Object.entries(t.headers).map(([k, v]) => `${k}: ${v}`).join('\n');
+  }
+  $('llmPath').value = t.path || '';
+  $('llmExtract').value = t.extract || '';
+  applyLlmTargetUi(null, false);
+  syncLlmCustomRows();
+  const form = $('llmForm');
+  if (form) form.hidden = false;
+  if ($('llmFormTitle')) $('llmFormTitle').textContent = '从模板新建：' + (t.label || t.id || '');
+  setLlmHint($('llmFormHint'),
+    '已按模板「' + (t.label || t.id) + '」预填 —— 请确认 / 补齐（模型名、API-Key）后点「保存」才会创建服务；模板本身不会自动创建，也不锁定服务商。', false);
+  setLlmHint($('llmTplHint'), '模板只是预填，保存后才成真服务。', false);
+  $('llmLabel').focus?.();
+}
+
 /** 表单 → 配置体（★ 只经 POST /api/llm/services 写入；includeKey=false 时不带 key）。 */
 function llmFormPayload(includeKey) {
   const p = {
@@ -4757,12 +4938,35 @@ function llmFormPayload(includeKey) {
     baseUrl: $('llmBaseUrl').value.trim(),
     model: $('llmModel').value.trim(),
     timeoutMs: $('llmTimeout').value.trim(),
+    // ★ 容错 / 自动重试（服务对象字段）：留空 ⇒ 空串 ⇒ 后端 normService 视为 blank、**不写该字段**
+    //   （与「留空 = 不重试」一致；不会写成 0）。
+    retry: $('llmRetry').value.trim(),
+    retryBackoffMs: $('llmRetryBackoff').value.trim(),
     path: $('llmPath').value.trim(),
     extract: $('llmExtract').value.trim(),
-    headers: parseLlmHeaders($('llmHeaders').value),
     // ★ 拉取到的候选模型清单随保存落盘 ⇒ 刷新后下拉仍在。
     models: Array.isArray(llmState.models) ? llmState.models : [],
   };
+  // ★★ 请求头（标准 §10/§11.1）：**留空 = 不修改** —— 空 ⇒ **不带该字段**（后端据此保留旧请求头）；
+  //   填了才整体替换。
+  const headers = parseLlmHeaders($('llmHeaders').value);
+  if (Object.keys(headers).length) p.headers = headers;
+  // ★★ 能力类型（标准 §4 / §11.11）：**总是发送**（下拉总有值，缺省 llm）。
+  //   ★ 合法值 = llm / image / speech / embedding（注意是 embedding，不是 embed —— 后端显式校验）。
+  p.capability = $('llmCapability') ? ($('llmCapability').value || 'llm') : 'llm';
+  // ★★ 两个布尔开关（标准 §11.2）：**总是显式发送 true/false** —— 否则「取消勾选」会被合并语义吃掉。
+  p.forceStream = !!($('llmForceStream') && $('llmForceStream').checked);
+  p.ensureSystemPrompt = !!($('llmSysFirst') && $('llmSysFirst').checked);
+  // ★★ `extra` 开放键（标准 §5）：`auth_header` / `auth_scheme` / `api_key_env` —— 留空 = 不修改
+  //   （三项都空 ⇒ **不带 extra**，后端保留已有 extra 的其余键）。
+  const extra = {};
+  const authH = $('llmAuthHeader') ? $('llmAuthHeader').value.trim() : '';
+  const authS = $('llmAuthScheme') ? $('llmAuthScheme').value : '';
+  const keyEnv = $('llmKeyEnv') ? $('llmKeyEnv').value.trim() : '';
+  if (authH) extra.auth_header = authH;
+  if (authS.trim()) extra.auth_scheme = authS;
+  if (keyEnv) extra.api_key_env = keyEnv;
+  if (Object.keys(extra).length) p.extra = extra;
   if (llmState.editingId) p.id = llmState.editingId;
   if (includeKey) { const k = $('llmKey').value; if (k) p.apiKey = k; }
   return p;
@@ -4820,7 +5024,11 @@ function renderLlmModelOptions(models, sourceLabel) {
   sel.value = '';
 }
 
-/** 保存 / 更新一套（★ 配置体**只能**经 POST /api/llm/services 写入）。 */
+/** 保存 / 更新一套（★ 配置体**只能**经 POST /api/llm/services 写入）。
+ *  ★★ id 契约（★ 后端与本面板已定死）：**新增态请求体不带 id** ⇒ **后端生成 id** 并在
+ *    `data.service.id` 回传；**编辑态带 id** ⇒ 更新那一套。★ 页面侧**绝不自造** `svc-new-N` 之类
+ *    （老写法自造 id 会让真后端 400：`保存算力服务需要 id`）。
+ *  ★ 保存成功后**用后端回的 `data.service.id` 选中新那套**（刷新列表 + 打开表单）⇒ 用户能立刻编辑它。 */
 async function saveLlmService() {
   if (llmState.busy) return;
   const label = $('llmLabel') ? $('llmLabel').value.trim() : '';
@@ -4841,10 +5049,25 @@ async function saveLlmService() {
     return;
   }
   toast('算力服务已保存');
-  llmState.editingId = null;
-  const form = $('llmForm');
-  if (form) form.hidden = true;
-  await loadLlm();
+  const saved = (r.data && r.data.service) || null;
+  const newId = (saved && saved.id) ? String(saved.id) : '';
+  await loadLlm();                       // ★ 先刷新列表（含**后端生成**的新 id）
+  if (newId) {
+    // ★ 选中刚保存的那套：用**后端回的 id**（不是页面自造），表单切到编辑态 ⇒ 可立刻继续编辑。
+    llmState.editingId = newId;
+    const f = $('llmForm');
+    if (f) f.hidden = false;
+    if ($('llmFormTitle')) $('llmFormTitle').textContent = `编辑算力服务：${(saved && saved.label) || newId}`;
+    if (saved) renderLlmForm(saved);
+    setLlmHint($('llmFormHint'), `已保存（服务标识 ${newId}）—— 正在自动检测连通性…`, false);
+    // ★★ 保存后**自动检测**（标准 §9「保存后自动检测」）：对刚保存的那套跑一次三步校验并逐步点亮。
+    await validateLlm();
+  } else {
+    // ★ 后端没回 id（老后端 / 异常）⇒ 退回原行为：收起表单、清编辑态（列表已刷新）。
+    llmState.editingId = null;
+    const f = $('llmForm');
+    if (f) f.hidden = true;
+  }
 }
 
 /** 编辑一套：先本地回显（列表里已有脱敏字段），再拉详情覆盖（GET /api/llm/services/:id）。 */
@@ -4879,14 +5102,18 @@ async function activateLlmService(id) {
   await loadLlm();
 }
 
-/** 删除一套（DELETE /api/llm/services/:id）。 */
+/** 删除一套（★ 2026-10-10 标准 §7 1.1：写操作一律 POST ⇒ 改走 `POST /api/llm/services/delete`，id 放 body）。
+ *  ★ 原 `DELETE /api/llm/services/:id` 已被后端**移除**（非白名单写方法 ⇒ **405**）⇒ 再发就删不掉了。 */
 async function deleteLlmService(id) {
   if (llmState.busy) return;
   const s = llmState.services.find((x) => x && x.id === id);
   const name = (s && (s.label || s.id)) || id;
   if (typeof window.confirm === 'function' && !window.confirm(`确定删除算力服务「${name}」？`)) return;
   llmState.busy = true;
-  const r = await llmReq('/api/llm/services/' + encodeURIComponent(id), { method: 'DELETE' });
+  const r = await llmReq('/api/llm/services/delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
   llmState.busy = false;
   if (!r.ok) { toast('删除失败：' + llmErrText(r.error), true); return; }
   if (llmState.editingId === id) { llmState.editingId = null; const f = $('llmForm'); if (f) f.hidden = true; }
@@ -5016,6 +5243,117 @@ async function validateLlm() {
     return;
   }
   await revealLlmSteps(r.data);
+}
+
+// ── 一键检测全部 / 自动挑选可用（标准 §9；★ **必须串行**）──────────────────
+/**
+ * 串行对**每一套已保存服务**跑一次三步校验（`POST /api/llm/validate {service}`）。
+ * ★★ **必须串行**：并发会把远端网关 / 本机算力**打爆**（参考实现 `onProbeAll` 明写「串行」）。
+ *   实现上用 `for` + `await` ⇒ 天然串行（上一套**返回后**才发下一套）。
+ * @param {(i:number,total:number,label:string)=>void} [onProgress] 每步**开始前**的进度回调。
+ * @returns {Promise<{id:string,label:string,ok:boolean,detail:string}[]>}
+ */
+async function probeLlmServicesSerial(onProgress) {
+  const list = Array.isArray(llmState.services) ? llmState.services : [];
+  const out = [];
+  let n = 0;
+  for (const s of list) { if (s && s.id) n++; }
+  let i = 0;
+  for (const s of list) {
+    if (!s || !s.id) continue;
+    i++;
+    if (onProgress) onProgress(i, n, s.label || s.id);
+    const r = await llmReq('/api/llm/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: s.id }),
+      timeoutMs: API_TIMEOUT_MS_LONG,   // 校验可能较慢（探测类）⇒ 用更长超时
+    });
+    const d = (r.ok && r.data) ? r.data : {};
+    const ok = !!(r.ok && d.ok === true);
+    const steps = d.steps || {};
+    const detail = d.hint || LLM_STEP_ORDER
+      .map((k) => normLlmStep(steps[k]).detail).filter((x) => x && x !== '—（未执行）').join(' · ');
+    out.push({
+      id: s.id, label: s.label || s.id, ok,
+      detail: ok ? (detail || '通过') : (detail || (r.error ? llmErrText(r.error) : '未通过')),
+    });
+  }
+  return out;
+}
+
+/** 渲染「一键检测 / 自动挑选」结果（标题 + 结论 + 逐套明细）。 */
+function renderLlmProbeOut(title, verdict, isOk, rows) {
+  const box = $('llmProbeOut');
+  if (!box) return;
+  box.textContent = '';
+  const head = el('div', 'llm-probe-head');
+  head.appendChild(el('span', 'llm-probe-title', title));
+  head.appendChild(el('span', 'llm-probe-verdict' + (isOk ? ' is-ok' : ' is-bad'), verdict));
+  box.appendChild(head);
+  for (const r of rows) {
+    const row = el('div', 'llm-probe-row');
+    row.appendChild(el('span', 'llm-probe-name', r.label));
+    row.appendChild(el('span', 'llm-probe-state' + (r.ok ? ' is-ok' : ' is-bad'), r.ok ? '可用' : '不可用'));
+    row.appendChild(el('span', 'llm-probe-detail', r.detail || ''));
+    box.appendChild(row);
+  }
+  box.hidden = false;
+}
+
+/** 一键检测全部已保存算力：**串行**逐套校验，显示进度（i/N），最后给「N/M 可用」汇总。 */
+async function probeAllLlmServices() {
+  if (llmState.busy) return;
+  const box = $('llmProbeOut');
+  if (!llmState.services.length) {
+    if (box) { renderLlmProbeOut('一键检测全部', '当前没有已保存的算力服务', false, []); }
+    toast('没有已保存的算力服务', true);
+    return;
+  }
+  llmState.busy = true;
+  if (box) { box.hidden = false; box.textContent = '正在检测…'; }
+  const rows = await probeLlmServicesSerial((i, n, label) => {
+    if (box) box.textContent = `正在检测「${label}」（${i}/${n}）…`;
+  });
+  llmState.busy = false;
+  const okN = rows.filter((r) => r.ok).length;
+  renderLlmProbeOut('一键检测全部', `${okN} / ${rows.length} 可用`, okN === rows.length && rows.length > 0, rows);
+  toast(`检测完成：${okN}/${rows.length} 可用`, okN !== rows.length);
+}
+
+/** 自动挑选可用的：**串行**检测全部 ⇒ 把**第一个检测通过**的切为当前生效；全不通过 ⇒ 明确提示。 */
+async function autoPickLlmService() {
+  if (llmState.busy) return;
+  const box = $('llmProbeOut');
+  if (!llmState.services.length) {
+    if (box) { renderLlmProbeOut('自动挑选可用算力', '当前没有已保存的算力服务', false, []); }
+    toast('没有已保存的算力服务', true);
+    return;
+  }
+  llmState.busy = true;
+  if (box) { box.hidden = false; box.textContent = '正在检测…'; }
+  const rows = await probeLlmServicesSerial((i, n, label) => {
+    if (box) box.textContent = `正在检测「${label}」（${i}/${n}）…`;
+  });
+  const firstOk = rows.find((r) => r.ok);
+  if (!firstOk) {
+    llmState.busy = false;
+    renderLlmProbeOut('自动挑选可用算力', '没有任何可用算力', false, rows);
+    toast('没有检测到任何可用算力（全部未通过）', true);
+    return;
+  }
+  const r = await llmReq('/api/llm/services/active', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: firstOk.id }),
+  });
+  llmState.busy = false;
+  if (!r.ok) {
+    renderLlmProbeOut('自动挑选可用算力', '切换失败', false, rows);
+    toast('切换失败：' + llmErrText(r.error), true);
+    return;
+  }
+  await loadLlm();
+  renderLlmProbeOut('自动挑选可用算力', `已切到「${firstOk.label}」`, true, rows);
+  toast(`已自动切换到可用算力：${firstOk.label}`);
 }
 
 // ── 试跑（按「算力类型」）─────────────────────────────────────
@@ -5211,9 +5549,18 @@ function bind() {
   if ($('btnGotoLlm')) $('btnGotoLlm').addEventListener('click', gotoLlmCard);
   if ($('btnLlmRefresh')) $('btnLlmRefresh').addEventListener('click', loadLlm);
   if ($('btnLlmValidate')) $('btnLlmValidate').addEventListener('click', validateLlm);
+  // ★ 一键检测全部 / 自动挑选可用（标准 §9；两者都**串行**检测，见各自函数注释）
+  if ($('btnLlmProbeAll')) $('btnLlmProbeAll').addEventListener('click', probeAllLlmServices);
+  if ($('btnLlmAutoPick')) $('btnLlmAutoPick').addEventListener('click', autoPickLlmService);
   if ($('btnLlmStandalone')) $('btnLlmStandalone').addEventListener('click', toggleLlmStandalone);
   // 通用算力接入面板：新增 / 保存 / 取消 / 清密钥 / 拉清单 / 试跑 + 列表行内「切换·编辑·删除」（事件委托）
   if ($('btnLlmAdd')) $('btnLlmAdd').addEventListener('click', addLlmService);
+  // ★ 「从模板新建」：选中一个预设 ⇒ **预填**表单（一次性；预填后下拉复位，避免误读成「绑定」）
+  if ($('llmTemplateSelect')) $('llmTemplateSelect').addEventListener('change', (e) => {
+    const id = e.target.value;
+    e.target.value = '';
+    if (id) applyLlmTemplate(id);
+  });
   if ($('btnLlmSave')) $('btnLlmSave').addEventListener('click', saveLlmService);
   if ($('btnLlmCancel')) $('btnLlmCancel').addEventListener('click', () => {
     const f = $('llmForm'); if (f) f.hidden = true; llmState.editingId = null;
@@ -5566,7 +5913,7 @@ async function boot() {
   await Promise.all([
     loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs(),
     loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(),
-    loadLlm(), loadResources(false),
+    loadLlm(), loadResources(false), loadLlmTemplates(),
   ]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）
   setInterval(() => { loadJobs(); }, 3000);

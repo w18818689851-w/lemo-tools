@@ -32,7 +32,7 @@
  *   配置控件（label/kind/target/baseUrl/model/timeout/key/headers/path/extract）+ 空状态提示；④ 说明文案
  *   含「可插拔 / 不锁定 / 多套 / 快速切换」；⑤ 骨架不白屏 + `#llmSteps` 恰含 3 步；⑥ **测试连接**：桩
  *   `POST /api/llm/validate` ⇒ 三步**逐步**点亮 + 未捕获异常新增 **0**（★ 且请求体**只含 service** 选择器）；
- *   ★★ 新增 I7~I11：多套列表渲染 / 新增一套（断言 POST 请求体）/ 切换（断言 body.id）/ 删除（断言 DELETE）/ 空状态，
+ *   ★★ 新增 I7~I11：多套列表渲染 / 新增一套（断言 POST 请求体）/ 切换（断言 body.id）/ 删除（断言 POST /api/llm/services/delete 且 body.id）/ 空状态，
  *   全部用页面内 `window.fetch` 桩驱动，并带**反空转**断言（点前 0 条、点后 1 条）。
  *
  * 用法：
@@ -2916,8 +2916,10 @@ async function main() {
     //   ⇒ 面板已从上一轮的「极简零控件」**重建**为完整配置面板（P3 交付）⇒ 本组**换锚点**（★ 只换锚点，
     //     不削弱断言强度）：I2 改验「当前生效」胶囊的三分支；I3 **反转**为「面板确有配置控件」+ 空状态；
     //     I4 改验新说明 / 空状态文案；★★ 新增 I7~I11 把「多套列表 / 新增 / 切换 / 删除 / 空状态」钉住。
-    //   ★ HTTP 契约（P2 已落地）：`GET|POST /api/llm/services`、`GET|DELETE /api/llm/services/:id`、
-    //     `POST /api/llm/services/active`、`POST /api/llm/validate|models|chat|invoke`。
+    //   ★ HTTP 契约（P2 已落地）：`GET|POST /api/llm/services`、`GET /api/llm/services/:id`、
+    //     `POST /api/llm/services/delete`（★ 2026-10-10：写操作白名单 ⇒ 删除由 `DELETE /api/llm/services/:id`
+    //     改为 POST + body `{id}`；DELETE/PUT/PATCH 一律 405）、`POST /api/llm/services/active`、
+    //     `POST /api/llm/validate|models|chat|invoke`。
     //     ★★ 铁律：**配置体只能经 `POST /api/llm/services` 写入**；**调用类端点只接受 `service` 选择器**。
     //   ★ 手法：CDP 真点击 + 页面内 patch `window.fetch`（只拦 `/api/llm/`，其余照走真后端）——
     //     桩把每次请求记进 `window.__llmReq` ⇒ 每条用例都能做**反空转**（点前 0 条 / 点后 1 条）。
@@ -2967,6 +2969,9 @@ async function main() {
         if (!window.__origFetch) window.__origFetch = window.fetch;
         const S = ${JSON.stringify(cfg)};
         window.__llmReq = [];
+        // ★★ 记「桩**回的**响应体」—— 供 I8 断言「页面用的是**后端返回的** id」
+        //   （契约：POST /api/llm/services 不带 id ⇒ **后端**生成 id 并回在 data.service.id）。
+        window.__llmResp = [];
         const json = (payload, status) => new Response(JSON.stringify(payload), { status: status || 200, headers: { 'Content-Type': 'application/json' } });
         window.fetch = async (input, opts) => {
           const url = String(input && input.url ? input.url : input);
@@ -2981,11 +2986,18 @@ async function main() {
               if (method === 'GET') return json({ ok: true, data: { services: S.services || [], active: S.active || '' } });
               if (method === 'POST') {
                 const p = JSON.parse(body || '{}') || {};
-                const id = p.id || ('svc-new-' + ((S.services || []).length + 1));
+                // ★★ 契约镜像（真后端 saveService）：**不带 id ⇒ 由后端生成 id 并回在 data.service.id**。
+                //   ★ 桩**必须**照做：生成一个**页面算不出**的 id（带随机后缀）—— 绝不能「页面没传 id 就直接放行」，
+                //     那正是当年把「面板不发 id + 老后端 HTTP 400」这个 bug **掩盖掉**的**宽松之处**（桩通过 ≠ 真通过）。
+                if (S.saveError) return json(S.saveError.body, S.saveError.status || 400);   // ★ 反向用例：桩像**老后端**一样拒绝
+                S.__seq = (S.__seq || 0) + 1;
+                const id = p.id || ('srv-' + S.__seq + '-' + Math.random().toString(36).slice(2, 8));
                 const svc = Object.assign({}, p, { id, hasKey: !!p.apiKey });
                 S.services = (S.services || []).filter((x) => x.id !== id).concat([svc]);
-                if (!S.active) S.active = id;
-                return json({ ok: true, data: { service: svc, active: S.active } });
+                if (!S.active) S.active = id;             // ★ 照真后端：首套保存即置为当前生效
+                const payload = { ok: true, data: { service: svc, active: S.active } };
+                window.__llmResp.push({ url, method, status: 200, body: payload });
+                return json(payload);
               }
             }
             if (rest === '/active' && method === 'POST') {
@@ -2993,13 +3005,18 @@ async function main() {
               S.active = id;
               return json({ ok: true, data: { active: id } });
             }
-            if (rest.startsWith('/') && rest !== '/active') {
+            // ★★ 2026-10-10：删除改走 POST + /delete（原 DELETE /api/llm/services/:id 已废 ⇒ 真后端
+            //   非白名单写方法一律 405）。⇒ 桩不再保留 DELETE 分支（保留会让「405 语义」在本用例里失真）。
+            //   ★ 路由顺序：/delete 分支排在 rest.startsWith('/') 之前，避免被当成 id=delete 的 GET 分支抢先命中。
+            //   ★ S.active 回落照真后端 deleteService()：删的若是当前生效项 ⇒ 切到剩下的第一套；全删光 ⇒ 空。
+            if (rest === '/delete' && method === 'POST') {
+              const id = (JSON.parse(body || '{}') || {}).id || '';
+              S.services = (S.services || []).filter((x) => x.id !== id);
+              if (S.active === id) S.active = (S.services[0] && S.services[0].id) || '';
+              return json({ ok: true, data: { deleted: id, active: S.active } });
+            }
+            if (rest.startsWith('/') && rest !== '/active' && rest !== '/delete') {
               const id = decodeURIComponent(rest.slice(1));
-              if (method === 'DELETE') {
-                S.services = (S.services || []).filter((x) => x.id !== id);
-                if (S.active === id) S.active = (S.services[0] && S.services[0].id) || '';
-                return json({ ok: true, data: { deleted: id, active: S.active } });
-              }
               if (method === 'GET') {
                 const svc = (S.services || []).find((x) => x.id === id);
                 return svc ? json({ ok: true, data: svc }) : json({ ok: false, error: { kind: 'config', message: '找不到算力服务' } }, 404);
@@ -3018,7 +3035,10 @@ async function main() {
       const llmReqCount = (pred) => cdp.evalJs(`(window.__llmReq || []).filter((r) => ${pred}).length`);
       const postServices = `r.method === 'POST' && r.url.split('?')[0] === '/api/llm/services'`;
       const postActive = `r.method === 'POST' && r.url.split('?')[0] === '/api/llm/services/active'`;
-      const anyDelete = `r.method === 'DELETE'`;
+      const postDelete = `r.method === 'POST' && r.url.split('?')[0] === '/api/llm/services/delete'`;
+      // ★ 读桩**回的**最后一条响应体（供 I8 取「后端生成的 id」）。
+      const llmRespLast = (pred) => cdp.evalJs(`(() => { const rs = (window.__llmResp || []).filter((r) => ${pred});
+        return rs.length ? rs[rs.length - 1].body : null; })()`);
 
       await runCase('I1 顶栏「LLM 配置」入口可达：按钮在、点了给卡片加高亮并滚进视口', async () => {
         need(await cdp.evalJs(`!!document.getElementById('btnGotoLlm')`), '顶栏没有「LLM 配置」入口按钮 #btnGotoLlm');
@@ -3298,7 +3318,55 @@ async function main() {
         await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 1`, { timeoutMs: 8000 });
         const label = await cdp.evalJs(`(document.querySelector('#llmList .llm-item-label') || {}).textContent || ''`);
         need(label === '我的本地 vLLM', `保存后列表里的 label 是「${label}」，期望「我的本地 vLLM」`);
-        notes.push(`I8 新增一套：点前 0 条 → 点后 1 条 POST /api/llm/services（body 含 label/kind/baseUrl/model/timeoutMs/headers/apiKey）；保存后列表 1 行「${label}」`);
+        // ★★ 契约（真后端 `saveService`）：**不带 id ⇒ 由后端生成 id 并回在 `data.service.id`**。
+        //   桩照真后端**生成**了 id（不是页面自造）⇒ 这里断言**页面确实用了后端返回的那个 id**：
+        //   · 桩回执的 id 必须存在、且不是可预测的旧 scheme（`svc-new-*`）；
+        //   · 保存后列表那**唯一一行**的 id 必须**就是**这个后端 id（不是页面另造的）；
+        //   · 首套保存即被置为当前生效（照真后端 `active = strOr(pick(st.active, id))`）⇒「当前生效」那行的 id 也必须**就是**它。
+        const sresp = await llmRespLast(postServices);
+        need(sresp && sresp.data && sresp.data.service && typeof sresp.data.service.id === 'string' && sresp.data.service.id.length > 0,
+          `桩（照真后端契约）应生成 id 并回在 data.service.id，实际回执 ${JSON.stringify(sresp)}`);
+        const srvId = sresp.data.service.id;
+        need(!/^svc-new-/.test(srvId), `桩生成的 id 不该是旧的、可预测的 scheme（svc-new-*）：${srvId}`);
+        const savedIds = await llmRows();
+        need(savedIds.length === 1 && savedIds[0] === srvId,
+          `保存后列表 id=${JSON.stringify(savedIds)}，期望恰好 [${JSON.stringify(srvId)}]（后端生成的 id）`);
+        const activeId = await cdp.evalJs(`(document.querySelector('#llmList .llm-item.is-active') || { dataset: {} }).dataset.id || ''`);
+        need(activeId === srvId,
+          `保存后「当前生效」行 id=${JSON.stringify(activeId)}，期望后端返回的 id ${JSON.stringify(srvId)}`);
+        notes.push(`I8 新增一套：点前 0 条 → 点后 1 条 POST /api/llm/services（body 含 label/kind/baseUrl/model/timeoutMs/headers/apiKey）；后端生成 id「${srvId}」⇒ 列表 1 行 +「当前生效」行 id 均 = 该 id；label「${label}」`);
+      });
+
+      await runCase('I8b 反向：桩像**老后端**那样拒绝（不带 id ⇒ HTTP 400 结构化 error）⇒ 面板必须**原样显示** message（不得误报成「服务没在跑」）', async () => {
+        // ★★ 这条**专守**「错误提示误判」那个 bug：老后端对「不带 id 的 POST /api/llm/services」回
+        //   `400 {ok:false,error:{kind:'config',message:'保存算力服务需要 id（服务标识）'}}`。
+        //   面板**必须**把这条 message **原样**透出来；**不许**把结构化 config 错**误判**成网络错 /
+        //   「控制台服务是否还在跑？」（那会把「少传了个字段」误导成「后端挂了」）。
+        await installLlmStub({
+          services: [], active: '',
+          saveError: { status: 400, body: { ok: false, error: { kind: 'config', message: '保存算力服务需要 id（服务标识）' } } },
+        });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `!!document.querySelector('#llmList .llm-empty')`, { timeoutMs: 8000 });
+        await cdp.evalJs(`document.getElementById('btnLlmAdd').click(); true`);
+        await cdp.evalJs(`(() => { document.getElementById('llmLabel').value = '会被后端拒绝的一套'; return true; })()`);
+        // ★ 反空转：点「保存」之前，一条 POST /api/llm/services 都不该有
+        const before = await llmReqCount(postServices);
+        need(before === 0, `点「保存」之前就已经发过 ${before} 条 POST /api/llm/services（反空转失败）`);
+        await cdp.evalJs(`document.getElementById('btnLlmSave').click(); true`);
+        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${postServices})`, { timeoutMs: 8000 });
+        // 保存流程走完（提示从「保存中…」变掉）再读 —— 不靠「等它变红」来判定，读回真实文案再断言。
+        await waitFor(cdp.evalJs,
+          `document.getElementById('llmFormHint').textContent.trim() !== '保存中…'`, { timeoutMs: 8000 });
+        const hint = await cdp.evalJs(`document.getElementById('llmFormHint').textContent`);
+        need(hint.includes('保存算力服务需要 id（服务标识）'),
+          `#llmFormHint 没有**原样**显示后端返回的 message（实际「${hint}」）—— 结构化 error 被吞了`);
+        need(!/控制台服务是否还在跑|\[network\]/.test(hint),
+          `把结构化 config 错**误判**成了网络错 /「服务没在跑」：${hint}`);
+        // 反空转（后置）：被拒后列表仍应为空（不得被「假成功」塞进一行）
+        const rows = await llmRows();
+        need(rows.length === 0, `保存被后端拒绝后，列表却出现 ${rows.length} 行：${JSON.stringify(rows)}`);
+        notes.push(`I8b 反向（老后端 400）：面板原样显示「${hint.slice(0, 70)}」；未误报网络错；被拒后列表仍 0 行`);
       });
 
       await runCase('I9 切换当前生效：点某行「切换」⇒ POST /api/llm/services/active 且 body.id 正确（反空转：点前 0 条）', async () => {
@@ -3324,24 +3392,31 @@ async function main() {
         notes.push(`I9 切换：点前 0 条 → 点后 1 条 POST /api/llm/services/active，body={"id":"svc-b"}（无配置体字段）；切换后 .is-active 行 → svc-b、胶囊「某云文本推理」`);
       });
 
-      await runCase('I10 删除一套：点某行「删除」⇒ DELETE /api/llm/services/<id>（反空转：点前 0 条；删后剩 1 行）', async () => {
+      await runCase('I10 删除一套：点某行「删除」⇒ POST /api/llm/services/delete 且 body={"id":"svc-a"}（反空转：点前 0 条；删后剩 1 行）', async () => {
         await installLlmStub({ services: LLM_FIXTURE, active: 'svc-b' });
         // 删除会走 window.confirm（无头环境默认返回 false ⇒ 不删）⇒ 先让用户「点确定」。
         await cdp.evalJs(`window.__origConfirm = window.confirm; window.confirm = () => true; true`);
         await llmRefresh();
         await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 2`, { timeoutMs: 8000 });
-        const before = await llmReqCount(anyDelete);
-        need(before === 0, `点「删除」之前就已经发过 ${before} 条 DELETE（反空转失败）`);
+        const before = await llmReqCount(postDelete);
+        need(before === 0, `点「删除」之前就已经发过 ${before} 条 POST /api/llm/services/delete（反空转失败）`);
         await cdp.evalJs(`document.querySelector('#llmList .llm-item[data-id="svc-a"] button[data-act="del"]').click(); true`);
-        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${anyDelete})`, { timeoutMs: 8000 });
-        const req = await llmReqLast(anyDelete);
-        need(req.url.split('?')[0] === '/api/llm/services/svc-a',
-          `DELETE 打到了 ${req.url}，期望 /api/llm/services/svc-a`);
+        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${postDelete})`, { timeoutMs: 8000 });
+        const req = await llmReqLast(postDelete);
+        // ★ 正面真值：新契约是 POST + 固定路径 `/delete`（不再是 `DELETE /api/llm/services/<id>`）。
+        need(req.method === 'POST' && req.url.split('?')[0] === '/api/llm/services/delete',
+          `删除请求打到了 ${req.method} ${req.url}，期望 POST /api/llm/services/delete`);
+        // ★ 正面真值：body **必须恰好**是 {"id":"svc-a"}（不许夹带别的字段，也不许空 body）。
+        const b = JSON.parse(req.body || '{}');
+        need(JSON.stringify(b) === '{"id":"svc-a"}', `删除请求体是 ${JSON.stringify(b)}，期望恰好 {"id":"svc-a"}`);
         await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 1`, { timeoutMs: 8000 });
         const left = await llmRows();
         need(left.length === 1 && left[0] === 'svc-b', `删掉 svc-a 后应只剩 svc-b：${JSON.stringify(left)}`);
+        // ★ 状态断言（当前生效项回落）：删的是**非当前生效**的 svc-a ⇒ 当前生效仍应是 svc-b（未误回落）。
+        const activeAfter = await cdp.evalJs(`(document.querySelector('#llmList .llm-item.is-active') || { dataset: {} }).dataset.id || ''`);
+        need(activeAfter === 'svc-b', `删掉非生效项 svc-a 后，.is-active 行应仍是 svc-b，实际「${activeAfter}」`);
         await cdp.evalJs(`if (window.__origConfirm) window.confirm = window.__origConfirm; true`);
-        notes.push(`I10 删除：点前 0 条 → 点后 1 条 DELETE /api/llm/services/svc-a；删后列表剩 1 行（${JSON.stringify(left)}）`);
+        notes.push(`I10 删除：点前 0 条 → 点后 1 条 POST /api/llm/services/delete，body={"id":"svc-a"}；删后列表剩 1 行（${JSON.stringify(left)}），.is-active 仍 svc-b`);
       });
 
       await runCase('I11 空状态：桩 2 套（2 行）→ 桩 0 套（0 行 + 空状态提示 + 「已加载 0 套」）', async () => {

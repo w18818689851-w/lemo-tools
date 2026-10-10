@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 135 条用例 / 覆盖全部 48 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 138 条用例 / 覆盖全部 51 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -287,6 +287,16 @@ const SCRIPTS = path.join(TOOLS, 'scripts');
 //   非 C 盘（本项目纪律）；父目录由 `mk()` 的 recursive 建出，跑完整棵按确切路径删掉。
 const TMP = path.join('D:/lemo-tmp', `gb-blind-${process.pid}`);
 const NODE = process.execPath;               // 本测试就是被目标 node 跑的 ⇒ 自洽
+/**
+ * ★ `--only <子串>`：只跑用例名含该子串的用例。**纯增量** —— 不带该参数时 `ONLY` 为空串，
+ *   `includes('')` 恒真 ⇒ 行为**逐字不变**。
+ *   用途：本套件全量约 2 分钟（要 spawn 上百个子进程），改一条用例时不必等全量。
+ *   ★ 纪律：只跑子集时**不可**据此判「全绿」—— 收尾仍须全量复跑一次。
+ */
+const ONLY = (() => {
+  const i = process.argv.indexOf('--only');
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : '';
+})();
 
 const TTY = process.stdout.isTTY;
 const C = {
@@ -4810,6 +4820,36 @@ const c2Src = () => {
     '夹具自身失效：C2 第二步后 `isDefault: true` 应恰为 1 处（摘全部 + 只加一处）');
   return s;
 };
+/**
+ * ★★ 变异 G 的锚点**从真实源码现取**（**不写死**）—— 判据⑦(b) 只关心「`file.baseUrl`（覆盖文件）
+ *   与 `rtBase`（运行时线索）的**相对次序**」，中间插了哪些**别的**来源都**不影响**本变异。
+ *   ★ 为什么改成「现取」（2026-10-10，修**既有红**）：旧夹具把整行写死成
+ *     `pick(o.baseUrl, process.env.LEMO_LLM_BASE, file.baseUrl, rtBase, base.baseUrl, '')` ——
+ *     而源码在支持 `extra.endpoint_env`（标准 §6）后变成
+ *     `pick(o.baseUrl, process.env.LEMO_LLM_BASE, epEnv, file.baseUrl, rtBase, base.baseUrl, '')`
+ *     （中间**多了一个来源** `epEnv`）⇒ 写死的片段**再也找不到** ⇒ 用例报
+ *     「破坏用例自身失效：…里找不到待删的守卫片段（源码已变？）」（**假红**，与本闸门判据无关）。
+ *   ★ 该来源 `epEnv` 在闸门里归一为 `null`（`srcIdOf` 只认 `o.` / `process.env.LEMO_LLM_` / `file.` /
+ *     `rt[A-Z]` / `base.` 五种前缀）⇒ 被当作「**非来源**」跳过 ⇒ **不参与次序判定**
+ *     ⇒ 对调 `file.baseUrl` 与 `rtBase` 仍然**精确命中**「覆盖文件排在运行时线索**之后**」那一支。
+ *   ★ 这是**收窄夹具的脆弱面**，不是放宽判据：对调后仍断言次序确实是 `rtBase, file.baseUrl`。
+ */
+const gSwap = () => {
+  const real = realLlm();
+  const m = /pick\(o\.baseUrl,[^;]*?\)/.exec(real);
+  assert.ok(m, '夹具自身失效：变异 G 在真实源码里找不到 baseUrl 的 `pick(...)`');
+  const call = m[0];
+  assert.ok(call.includes('file.baseUrl') && call.includes('rtBase'),
+    `夹具自身失效：变异 G 的 \`pick(...)\` 里没有 file.baseUrl / rtBase —— ${call}`);
+  const swapped = call
+    .replace('file.baseUrl', '\u0000TMP\u0000')
+    .replace('rtBase', 'file.baseUrl')
+    .replace('\u0000TMP\u0000', 'rtBase');
+  assert.notEqual(swapped, call, '夹具自身失效：变异 G 的 file.baseUrl ↔ rtBase 对调没生效');
+  assert.ok(/pick\(o\.baseUrl,[^;]*?rtBase,\s*file\.baseUrl/.test(swapped),
+    `夹具自身失效：变异 G 对调后次序不是 rtBase, file.baseUrl —— ${swapped}`);
+  return { from: call, to: swapped };
+};
 
 test('check-llm-api：阴性对照 + 判据①~⑤、⑦ 八种变异（导出缺失 / chat 里 throw / isDefault 缺或挪走 / 密钥外泄 / 多余环境变量 / 枚举外 kind / 代码次序倒置 / 契约声明倒置）⇒ FAIL 并点名；失明三态', async () => {
   const dir = path.join(TMP, 'cla');
@@ -4886,9 +4926,9 @@ test('check-llm-api：阴性对照 + 判据①~⑤、⑦ 八种变异（导出�
 
     // ⑪ 变异 G（判据⑦(b)）：把 `baseUrl` 那行 `pick(...)` 的 `file.baseUrl` 与 `rtBase` **对调**
     //   （= 旧序：运行时线索压过覆盖文件）⇒ FAIL 并点名「契约声明『覆盖文件』在『运行时线索』之前，代码里却是反的」
-    const g = llmMut(path.join(dir, 'g'),
-      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, file.baseUrl, rtBase, base.baseUrl, \'\')',
-      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, rtBase, file.baseUrl, base.baseUrl, \'\')');
+    //   ★ 锚点**现取**（`gSwap()`）—— 不写死整行，避免源码在中间插入来源时夹具假红。
+    const gs = gSwap();
+    const g = llmMut(path.join(dir, 'g'), gs.from, gs.to);
     const r8 = await runGate('check-llm-api.mjs', { LEMO_TOOLS_ROOT: g });
     expectBlind(r8, '契约声明「覆盖文件（面板）」在「运行时线索', 'check-llm-api 变异G（判据⑦(b) 代码次序倒置）');
     assert.ok(r8.out.includes('判据⑦(b)'), `变异G 应点名判据⑦(b)\n${r8.out.slice(0, 1400)}`);
@@ -4925,10 +4965,9 @@ test('★自证 check-llm-api：短路判据② / 判据③「workbuddy 条目�
     // 变异 E 夹具（规格外的 LEMO_LLM_ZZZ）
     const e = llmMut(path.join(dir, 'e'), "const OVERRIDE_BASENAME = '_llm-api.json';",
       "const OVERRIDE_BASENAME = '_llm-api.json';\nconst _probe = process.env.LEMO_LLM_ZZZ;");
-    // 变异 G 夹具（判据⑦(b)：baseUrl 那行 file.baseUrl ↔ rtBase 对调 ⇒ 旧序）
-    const g = llmMut(path.join(dir, 'g'),
-      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, file.baseUrl, rtBase, base.baseUrl, \'\')',
-      'pick(o.baseUrl, process.env.LEMO_LLM_BASE, rtBase, file.baseUrl, base.baseUrl, \'\')');
+    // 变异 G 夹具（判据⑦(b)：baseUrl 那行 file.baseUrl ↔ rtBase 对调 ⇒ 旧序；★ 锚点现取，见 `gSwap()`）
+    const gs = gSwap();
+    const g = llmMut(path.join(dir, 'g'), gs.from, gs.to);
 
     // ★ 短路判据② 的 `else if (/\bthrow\b/.test(chatBody))` ⇒ 变异 B 应**真变绿**（exit 0）
     const gB = patchGate('check-llm-api.mjs', path.join(dir, 'gB'),
@@ -5745,6 +5784,216 @@ test('check-visible-hints：阴性对照 + 变异（不存在的控件 id）+ �
   } finally { rm(dir); }
 });
 
+// ── 12k. check-llm-facade-only.mjs（「算力配置必须走 lib/llm-api.mjs」，2026-10-10 建，第 49 个）──
+//   ★ 扫描根**按脚本自身位置**推导（**无** env 覆盖点）⇒ 夹具 = 「闸门拷进 <夹具>/scripts/ +
+//     规范通路放 <夹具>/lib/」；复用 `copyGate()`（本套件对「按自身位置取根」的闸门的既有写法）。
+/** 造一棵 facade-only 夹具树：`<dir>/scripts/check-llm-facade-only.mjs` + `<dir>/lib/llm-api.mjs`（规范通路）。
+ *  `extra` = `{相对路径: 内容}`，**在规范通路之后写** ⇒ 可用它**覆盖** `lib/llm-api.mjs`（造失明态）。 */
+const facadeTree = (dir, extra = {}) => {
+  const gate = copyGate('check-llm-facade-only.mjs', dir);
+  wf(path.join(dir, 'lib', 'llm-api.mjs'), realLlm());
+  for (const [rel, body] of Object.entries(extra)) wf(path.join(dir, rel), body);
+  return gate;
+};
+/** 真阳夹具：一个**自己读覆盖文件**的旁路模块（判据① 要抓的就是它）。 */
+const FACADE_BYPASS = "import fs from 'node:fs';\n"
+  + 'export function read() {\n'
+  + "  return JSON.parse(fs.readFileSync('/x/_llm-api.json', 'utf8'));\n"
+  + '}\n';
+/** 反向诱惑夹具：同一句写进**注释**（**不是代码**）⇒ 剥注释后**不该**命中。 */
+const FACADE_COMMENT = '// 说明：本模块**不**读 _llm-api.json（那是 lib/llm-api.mjs 的职责）\n'
+  + 'export const ok = 1;\n';
+
+test('check-llm-facade-only：阴性对照 + 变异（自己读覆盖文件）+ 反向诱惑（注释不判）+ 失明 ⇒ FAIL 并点名', async () => {
+  const dir = path.join(TMP, 'facade');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE = '**直接引用** _llm-api.json';      // 判据① 特有文案（★ 逐字抄自闸门源码，**含 `**`**）
+  try {
+    // ① 阴性对照：规范通路 + 一个**不碰**该文件的模块 ⇒ exit 0 且打印判据① ✓
+    const neg = facadeTree(path.join(dir, 'neg'), { 'lib/other.mjs': 'export const x = 1;\n' });
+    const r0 = await run(NODE, [neg], {});
+    expectClean(r0, N_BLIND, 'check-llm-facade-only 阴性对照');
+    assert.ok(r0.out.includes('扫描范围内**没有**未登记的直连'), `阴性对照应打印判据① ✓\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异（判据①）：新写一个**自己读覆盖文件**的模块 ⇒ exit 1 并点名
+    const mut = facadeTree(path.join(dir, 'mut'), { 'lib/bypass.mjs': FACADE_BYPASS });
+    const r1 = await run(NODE, [mut], {});
+    expectBlind(r1, NEEDLE, 'check-llm-facade-only 变异（直连覆盖文件）');
+    assert.ok(r1.out.includes('lib/bypass.mjs'), `变异应点名 lib/bypass.mjs\n${r1.out.slice(0, 1400)}`);
+
+    // ③ ★反向诱惑（本闸门特有）：同一句写进**注释** ⇒ **必须仍 exit 0**
+    //   （证明「剥注释、**保留字符串**」生效 —— 文件名写在字符串里、必须看得见；注释里的提及**不判**。）
+    const cmt = facadeTree(path.join(dir, 'cmt'), { 'lib/comment.mjs': FACADE_COMMENT });
+    const r2 = await run(NODE, [cmt], {});
+    expectClean(r2, N_BLIND, 'check-llm-facade-only 反向诱惑（注释里的提及不判）');
+    assert.ok(r2.out.includes('扫描范围内**没有**未登记的直连'), `反向诱惑应仍 exit 0 且判据① ✓\n${r2.out.slice(0, 1200)}`);
+
+    // ④ 失明（判据④）：规范通路里**抽不到**该字面量（改名）⇒ FAIL +「本闸门已失明」且**不输出判据①**
+    const blind = facadeTree(path.join(dir, 'blind'), { 'lib/llm-api.mjs': "export const RENAMED = 'x.json';\n" });
+    const r3 = await run(NODE, [blind], {});
+    expectBlind(r3, N_BLIND, 'check-llm-facade-only 失明（规范通路抽不到正参照）');
+    assert.ok(r3.out.includes('抽不到'), `失明应说明「抽不到」\n${r3.out.slice(0, 900)}`);
+    assert.ok(!r3.out.includes(NEEDLE), `失明时不该输出判据①\n${r3.out.slice(0, 900)}`);
+
+    // ⑤ ★自证：把「未登记 ⇒ 计入 bypassReal」**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
+    //   （证明断言真的在测判据①，而不是在测「闸门有没有崩」。）
+    const gdir = path.join(dir, 'gmut');
+    const g = patchGate('check-llm-facade-only.mjs', path.join(gdir, 'scripts'),
+      [['else bypassReal.push({ rel, hits: h });', 'else void 0;']]);
+    wf(path.join(gdir, 'lib', 'llm-api.mjs'), realLlm());     // 规范通路（否则闸门失明 ⇒ exit 2，测不到判据①）
+    wf(path.join(gdir, 'lib', 'bypass.mjs'), FACADE_BYPASS);
+    const rm1 = await run(NODE, [g], {});
+    assert.equal(rm1.code, 0, `短路判据① 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
+      '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测判据①');
+  } finally { rm(dir); }
+});
+
+// ── 12l. check-llm-global-effect.mjs（「算力配置修改全局生效」，2026-10-10 建，第 50 个）──────────
+//   ★ 本闸门**真 import** `<ROOT>/lib/llm-api.mjs`（行为闸门）⇒ 夹具必须**整份 lib/ 都在**
+//     （`llm-api.mjs` → `env.mjs` → `styles-root.mjs`），否则连 import 都过不去。
+/** 把真实 `lib/*.mjs` 整份拷进 `<dir>/lib/`（新闸门按**自身位置**取根，需要模块能真 import）。 */
+const copyLib = (dir) => {
+  mk(path.join(dir, 'lib'));
+  const src = path.join(TOOLS, 'lib');
+  for (const f of fs.readdirSync(src)) {
+    if (f.endsWith('.mjs')) fs.copyFileSync(path.join(src, f), path.join(dir, 'lib', f));
+  }
+  return dir;
+};
+/** 造一棵 global-effect 夹具树（★ 返回**夹具根目录**，闸门路径由调用方 `path.join` 出来）。
+ *  闸门拷进 `<dir>/scripts/` + 整份 `lib/`。 */
+const geTree = (dir) => {
+  copyGate('check-llm-global-effect.mjs', dir);
+  copyLib(dir);
+  return dir;
+};
+/** `<dir>` 里那个 global-effect 闸门副本的路径。 */
+const geGate = (dir) => path.join(dir, 'scripts', 'check-llm-global-effect.mjs');
+/** ★ 变异夹具：把 `loadStore()` 改成「**读一次就缓存住**」= 真实风险形态（配置改了、进程内不生效）。 */
+const geCacheMut = (dir) => {
+  const real = realLlm();
+  const from = 'function loadStore() {\n  const raw = readOverride();';
+  const ret = '  return { raw, version: OVERRIDE_VERSION, active: norm.active, '
+    + 'services: effectiveServices(norm), explicitEmpty: norm.explicitEmpty };';
+  assert.ok(real.includes(from), '夹具自身失效：geCacheMut 找不到 loadStore() 的开头');
+  assert.ok(real.includes(ret), '夹具自身失效：geCacheMut 找不到 loadStore() 的 return');
+  const s = real
+    .replace(from, 'let __CACHE = null;\nfunction loadStore() {\n  if (__CACHE) return __CACHE;\n  const raw = readOverride();')
+    .replace(ret, '  return (__CACHE = { raw, version: OVERRIDE_VERSION, active: norm.active, '
+      + 'services: effectiveServices(norm), explicitEmpty: norm.explicitEmpty });');
+  assert.notEqual(s, real, '夹具自身失效：geCacheMut 的替换没生效');
+  wf(path.join(dir, 'lib', 'llm-api.mjs'), s);
+  return dir;
+};
+
+test('check-llm-global-effect：阴性对照（7/7）+ 变异（loadStore 缓存住）⇒ C1/C2/C3 FAIL 并点名 + 失明 + ★自证', async () => {
+  const dir = path.join(TMP, 'ge');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE = 'C2_ACTIVE_PROPAGATE';            // 判据 C2 的 id（逐字抄自闸门源码）
+  try {
+    // ① 阴性对照：真实模块 ⇒ 7/7 项通过、exit 0 且**不含**失明文案
+    const neg = geTree(path.join(dir, 'neg'));
+    const r0 = await run(NODE, [geGate(neg)], {});
+    expectClean(r0, N_BLIND, 'check-llm-global-effect 阴性对照');
+    assert.ok(r0.out.includes('7/7 项通过'), `阴性对照应 7/7 通过\n${r0.out.slice(0, 1600)}`);
+
+    // ② 变异：`loadStore()` 缓存住 ⇒ C1/C2/C3 FAIL、exit 1
+    //   ★ 反向价值：C4（读盘）/ C5（新进程）**仍应 PASS** —— 证明各判据**相互独立**
+    //     （C4/C5 本就不受**进程内**缓存影响；若它们也红，说明判据串味了）。
+    const mut = geCacheMut(geTree(path.join(dir, 'mut')));
+    const r1 = await run(NODE, [geGate(mut)], {});
+    expectBlind(r1, NEEDLE, 'check-llm-global-effect 变异（loadStore 缓存住）');
+    assert.ok(r1.out.includes('[FAIL] C1_SAVE_VISIBLE'), `变异应点名 C1\n${r1.out.slice(0, 1600)}`);
+    assert.ok(r1.out.includes('[PASS] C4_PERSIST') && r1.out.includes('[PASS] C5_CROSS_PROCESS'),
+      `变异下 C4/C5 应**仍 PASS**（判据相互独立）\n${r1.out.slice(0, 1600)}`);
+
+    // ③ 失明（判据 C6 之外的那条前置）：模块抽不到导出 ⇒ exit 2 +「本闸门已失明」且不输出判据
+    const bd = geTree(path.join(dir, 'blind'));
+    const bp = path.join(bd, 'lib', 'llm-api.mjs');
+    const bs = fs.readFileSync(bp, 'utf8');
+    assert.ok(bs.includes('export function getActiveService() {'), '夹具自身失效：找不到 getActiveService 的 export');
+    fs.writeFileSync(bp, bs.replace('export function getActiveService() {', 'function getActiveService() {'), 'utf8');
+    const r2 = await run(NODE, [geGate(bd)], {});
+    expectBlind(r2, N_BLIND, 'check-llm-global-effect 失明（抽不到导出）');
+    assert.ok(r2.out.includes('抽不到导出'), `失明应说明「抽不到导出」\n${r2.out.slice(0, 900)}`);
+    assert.ok(!r2.out.includes('[FAIL]'), `失明时不该输出判据\n${r2.out.slice(0, 900)}`);
+
+    // ④ ★自证：把「失败项计入」**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
+    const gdir = geCacheMut(geTree(path.join(dir, 'gmut')));
+    const gp = patchGate('check-llm-global-effect.mjs', path.join(gdir, 'scripts'),
+      [['const failed = checks.filter((c) => !c.ok);', 'const failed = [];']]);
+    const rm1 = await run(NODE, [gp], {});
+    assert.equal(rm1.code, 0, `短路「失败项计入」后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
+      '短路后正向断言竟然还通过 ⇒ 断言没在测判据');
+  } finally { rm(dir); }
+});
+
+// ── 12m. check-llm-freeze-hash.mjs（「算力模块冻结指纹」，2026-10-10 建，第 51 个）──────────────
+//   ★ 冻结集 = `lib/llm-api.mjs` + `scripts/check-llm-*.mjs`（**显式列举**，不靠目录遍历）。
+/** 造一棵 freeze-hash 夹具树（★ 返回**夹具根目录**，闸门路径由调用方 `path.join` 出来）：
+ *  闸门 + 整份 `lib/` + 至少一个 `scripts/check-llm-*.mjs`
+ *  （后者让**通配项**也展开出成员；★ 闸门自己拷进去也**天然**满足这条）。 */
+const fhTree = (dir) => {
+  copyGate('check-llm-freeze-hash.mjs', dir);
+  copyLib(dir);
+  copyGate('check-llm-api.mjs', dir);
+  return dir;
+};
+const fhManifest = (dir) => path.join(dir, 'scripts', 'llm-freeze.manifest.json');
+
+test('check-llm-freeze-hash：冻结→一致 + 变异（改被冻结文件不重冻）⇒ FAIL 并点名 + 失明（无清单）+ ★自证', async () => {
+  const dir = path.join(TMP, 'fh');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE = '冻结被破坏';                      // 判据① 特有文案（逐字抄自闸门源码）
+  try {
+    const d = fhTree(path.join(dir, 'neg'));
+    const g = path.join(d, 'scripts', 'check-llm-freeze-hash.mjs');
+
+    // ① 先 `--write` 冻结 ⇒ exit 0；再**校验** ⇒ exit 0（一致）且打印判据① ✓
+    const rw = await run(NODE, [g, '--write'], {});
+    assert.equal(rw.code, 0, `--write 应 exit 0，实得 ${rw.code}\n${rw.out.slice(0, 900)}`);
+    assert.ok(fs.existsSync(fhManifest(d)), '--write 应写出清单');
+    const r0 = await run(NODE, [g], {});
+    expectClean(r0, N_BLIND, 'check-llm-freeze-hash 阴性对照（刚冻结完 ⇒ 一致）');
+    assert.ok(r0.out.includes('指纹一致'), `刚冻结完应「指纹一致」\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异：改一个**被冻结**的文件而**不重新冻结** ⇒ exit 1 并**点名该文件**
+    fs.appendFileSync(path.join(d, 'lib', 'llm-api.mjs'), '\n// 变异：动一个字节\n', 'utf8');
+    const r1 = await run(NODE, [g], {});
+    expectBlind(r1, NEEDLE, 'check-llm-freeze-hash 变异（改被冻结文件不重冻）');
+    assert.ok(r1.out.includes('lib/llm-api.mjs'), `变异应点名 lib/llm-api.mjs\n${r1.out.slice(0, 1400)}`);
+
+    // ③ 失明：删掉清单 ⇒ exit 2 +「本闸门已失明」（check 模式没有参照物）
+    fs.unlinkSync(fhManifest(d));
+    const r2 = await run(NODE, [g], {});
+    expectBlind(r2, N_BLIND, 'check-llm-freeze-hash 失明（清单不存在）');
+    assert.ok(!r2.out.includes(NEEDLE), `失明时不该输出判据①\n${r2.out.slice(0, 900)}`);
+
+    // ③b 失明：规范通路**不在冻结集**（`lib/` 整个不在）⇒ exit 2
+    const d2 = path.join(dir, 'nofacade');
+    mk(path.join(d2, 'scripts'));
+    fs.copyFileSync(path.join(SCRIPTS, 'check-llm-freeze-hash.mjs'), path.join(d2, 'scripts', 'check-llm-freeze-hash.mjs'));
+    const r3 = await run(NODE, [path.join(d2, 'scripts', 'check-llm-freeze-hash.mjs'), '--write'], {});
+    assert.equal(r3.code, 2, `规范通路不在冻结集 ⇒ --write 应 exit 2（拒绝冻结），实得 ${r3.code}\n${r3.out.slice(0, 900)}`);
+    assert.ok(r3.out.includes(N_BLIND), `应报失明\n${r3.out.slice(0, 900)}`);
+
+    // ④ ★自证：把「指纹一致」判定**短路成恒真** ⇒ 变异必须重新变绿（exit 0）
+    const d3 = fhTree(path.join(dir, 'gmut'));
+    const g3 = path.join(d3, 'scripts', 'check-llm-freeze-hash.mjs');
+    const rw3 = await run(NODE, [g3, '--write'], {});
+    assert.equal(rw3.code, 0, `自证夹具 --write 应 exit 0，实得 ${rw3.code}`);
+    fs.appendFileSync(path.join(d3, 'lib', 'llm-api.mjs'), '\n// 变异\n', 'utf8');
+    const gp = patchGate('check-llm-freeze-hash.mjs', path.join(d3, 'scripts'),
+      [['const same = prevFp === cur.fingerprint;', 'const same = true;']]);
+    const rm1 = await run(NODE, [gp], {});
+    assert.equal(rm1.code, 0, `短路判据① 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
+      '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测判据①');
+  } finally { rm(dir); }
+});
+
 // ── 跑 ──────────────────────────────────────────────────────────────────────
 async function main() {
   rm(TMP);
@@ -5754,6 +6003,9 @@ async function main() {
   const results = [];
   try {
     for (const c of cases) {
+      // ★ `--only <子串>`：只跑用例名含该子串的用例（**纯增量**：不带该参数时行为逐字不变）。
+      //   用途：本套件全量 ~2 分钟，改一条用例时不必等全量。★ 只跑子集时**不可**据此判「全绿」。
+      if (ONLY && !c.name.includes(ONLY)) continue;
       const s = Date.now();
       try {
         await c.fn();

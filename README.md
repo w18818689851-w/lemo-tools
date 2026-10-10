@@ -131,15 +131,17 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/llm/services` | 列出全部已保存的算力服务（**脱敏**）+ 当前生效的服务 id | 同步 |
 | GET | `/api/llm/services/:id` | 单套详情（**脱敏**，供面板编辑回显）；不存在 ⇒ 404 + 结构化错误 | 同步 |
 | POST | `/api/llm/services` | **保存/更新一套**算力服务（★ 本处**接受配置体**）—— ★ 唯一接受配置体的写入路径 | 同步 |
-| DELETE | `/api/llm/services/:id` | 删除一套算力服务；不存在 ⇒ 404 + 结构化错误 | 同步 |
+| DELETE | `/api/llm/services/:id` | ★ 2026-10-10 订正（标准 §7 1.1）：本路由**保留但只回 405 JSON**（写方法非白名单）—— 原句保留作历史：「删除一套算力服务；不存在 ⇒ 404 + 结构化错误」；**删除请改用 `POST /api/llm/services/delete`** | 同步 |
 | POST | `/api/llm/services/active` | **切换当前算力服务**（★ 全局实时生效：切换后所有调用立即走它） | 同步 |
+| POST | `/api/llm/services/delete` | ★ 2026-10-10 新增（标准 §7 1.1 写操作白名单）：删除一套算力服务，body `{id}`；**替代原 `DELETE /api/llm/services/:id`**（写方法一律 POST）；缺 id ⇒ 400、不存在 ⇒ 404 + 结构化错误 | 同步 |
+| GET | `/api/llm/service-templates` | ★ 2026-10-10 新增（标准 §5）：**只读**；返回内置**预填模板**（endpoint / model 等，**无任何密钥**）；不锁定、不自动创建 | 同步 |
 | GET | `/api/resources/scan` | 资源全量/子集扫描（返回 `lib/resources.mjs` 的 `scanAll()`；30s 缓存 + 并发合并） | 同步 |
 | GET | `/api/resources/dirplan` | 目录规划（纯函数、不碰 IO，直接透传） | 同步 |
 | POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
 | POST | `/api/resources/download` | 一键下载（后台任务，日志走既有任务/SSE 通道） | 同步 |
 
-★ 上表共 **59** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
-其余 **57** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
+★ 上表共 **61** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
+其余 **59** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
 `DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
 ★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
 

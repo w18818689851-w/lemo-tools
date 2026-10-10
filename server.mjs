@@ -2120,6 +2120,11 @@ const LLM_SECRET_HEADER_RE = /authorization|api[-_]?key|token|secret|bearer|cook
 //     适配器，同样能把链路指到第三方 ⇒ 与「只接 WorkBuddy」相悖。
 //   · ★ 为什么**不必**放行 `openai-compatible`：`lib/triple-check.mjs` 的 VLM 校验是**进程内直调
 //     `chat()`**、**不走 HTTP** ⇒ 不受本白名单影响（委托方任务书已确认）。
+//   ★ 2026-10-10 订正（委托方新规格《通用AI算力API接入模块》）：模块已重建为**开放式、可插拔、不锁定
+//     服务商**，面板**已提供** `openai-compatible` / `anthropic` / `custom` / `workbuddy-gateway` 四个 kind
+//     入口。故上句「只接 WorkBuddy」仅描述**本 legacy 端点**的有意收窄（本白名单**仍**只放行
+//     `workbuddy-gateway`，值**不动**）；**新增/修改算力服务请走** `POST /api/llm/services`（kind 校验由
+//     模块 `SERVICE_KINDS` 负责，**另一套**口径，不受本白名单约束）。
 const LLM_CONFIG_KINDS = new Set(['workbuddy-gateway']);
 
 // ★★ 2026-10-10 收紧（第二轮，委托方指令「**收紧 HTTP 层，不接受覆盖**」）—— **身份类字段的唯一真值**。
@@ -2356,7 +2361,7 @@ async function apiLlmConfigSave(req, res) {
         ok: false,
         error: {
           kind: 'config',
-          message: `不接受覆盖：${denied.join(' / ')} 由服务端配置决定（本软件只接 WorkBuddy），不可经 /api/llm/config 落盘。`,
+          message: `不接受覆盖：${denied.join(' / ')} 由服务端配置决定，不可经 /api/llm/config 落盘；如需新增/修改算力服务，请用 POST /api/llm/services。`,
         },
       });
     }
@@ -2380,7 +2385,7 @@ async function apiLlmConfigSave(req, res) {
           ok: false,
           error: {
             kind: 'config',
-            message: `不允许的 kind「${kd}」：本软件只接 WorkBuddy（放行 ${[...LLM_CONFIG_KINDS].join(' / ')}）。`,
+            message: `不允许的 kind「${kd}」：本接口（legacy）仅放行 ${[...LLM_CONFIG_KINDS].join(' / ')}；其他适配器（openai-compatible / anthropic / custom）请用 POST /api/llm/services。`,
           },
         });
       }
@@ -2626,13 +2631,26 @@ async function apiLlmServiceSave(req, res) {
 }
 
 /**
- * DELETE /api/llm/services/:id —— 删除一套算力服务。★ 删的若是**当前生效**那套 ⇒ 模块自动切到剩下的第一套
- * （都删光 ⇒ 空，合法）。不存在 ⇒ 404 + 结构化错误。
- * 返回 `{ok:true,data:{deleted,active}}`。
+ * POST /api/llm/services/delete —— 删除一套算力服务（★ 2026-10-10：写操作改用 **POST**）。
+ * body = `{id}`。★ 删的若是**当前生效**那套 ⇒ 模块自动切到剩下的第一套（都删光 ⇒ 空，合法）。
+ * 缺 id ⇒ 400；不存在 ⇒ 404 + 结构化错误。返回 `{ok:true,data:{deleted,active}}`。
+ *   ★ 为什么由 `DELETE /api/llm/services/:id` 改为 `POST …/delete`：标准 §7 1.1「写操作白名单」要求
+ *     「**所有写操作一律 POST**，PUT / DELETE / PATCH ⇒ **405**」（参考实现 `serve.py` 的 `_write_allowed`
+ *     仅放行白名单内的 POST）。⇒ 删除也必须走 POST，见下方 `LLM_WRITE_WHITELIST`。
+ *   ★ 原句（**保留，不抹**）：`DELETE /api/llm/services/:id` —— 删除一套算力服务。★ 删的若是**当前生效**
+ *     那套 ⇒ 模块自动切到剩下的第一套（都删光 ⇒ 空，合法）。不存在 ⇒ 404 + 结构化错误。
  */
-async function apiLlmServiceDelete(req, res, id) {
+async function apiLlmServiceDelete(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
   try {
     const mod = await loadLlmApi();
+    const id = String((body && body.id) != null ? body.id : '').trim();
+    if (!id) {
+      return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '缺少 id（要删除的算力服务标识）' } });
+    }
     const r = mod.deleteService(id);
     if (!r || r.ok !== true) {
       const e = (r && r.error) || {};
@@ -2640,6 +2658,25 @@ async function apiLlmServiceDelete(req, res, id) {
     }
     sendJson(res, 200, { ok: true, data: { deleted: r.deleted, active: r.active } });
   } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * `DELETE /api/llm/services/:id` —— ★ 2026-10-10（标准 §7 1.1）：**保留路由行，但只回 405 JSON**。
+ *   ★ 由来：标准要求「写操作一律 POST，PUT / DELETE / PATCH ⇒ 405」（参考实现 `serve.py` 的
+ *     `_write_allowed`）。⇒ 删除改走 `POST /api/llm/services/delete`；本路由**不再执行删除**。
+ *   ★ 为什么保留而不是删掉：① **明确 405 比 404 更可操作**（告诉调用方「路径对、方法不对」）；
+ *     ② README 的 HTTP 接口表保留该行（注明「已移除 ⇒ 405」）⇒ 保留路由行才能让 `check-api-docs`
+ *     的「README ↔ server 分发块」**双向一致**（否则文档会「撒谎」）。
+ *   ★ 原句（**保留，不抹**）：`DELETE /api/llm/services/:id` —— 删除一套算力服务（不存在 ⇒ 404）。
+ */
+function apiLlmServiceDeleteGone(req, res, id) {
+  sendJson(res, 405, {
+    ok: false,
+    error: {
+      kind: 'unsupported',
+      message: `不支持的写操作：DELETE /api/llm/services/${id}（/api/llm/* 只接受白名单内的 POST 写操作；删除请用 POST /api/llm/services/delete）`,
+    },
+  });
 }
 
 /**
@@ -2667,6 +2704,58 @@ async function apiLlmServiceSetActive(req, res) {
   } catch (e) { llmFail(res, e); }
 }
 
+/**
+ * GET /api/llm/service-templates —— 列出**预填模板**（★ 脱敏：模板里**只有 endpoint / model 等预填值，
+ *   绝无任何密钥**）。★ 语义 = **预填表单**（面板「从模板新建」用它把表单填好，用户**再保存**才成真服务）
+ *   —— **不锁定、不自动创建**（与「已保存的算力服务」是两回事）。返回 `{ok:true,data:{templates:[…]}}`。
+ *   ★ 2026-10-10 追加（标准 §5）：前端 `web/app.js` 早已调用本端点（`GET /api/llm/service-templates`），
+ *     但后端此前**无该路由**（⇒ 404）—— 本处补齐，纯只读。
+ */
+async function apiLlmServiceTemplates(req, res) {
+  try {
+    const mod = await loadLlmApi();
+    sendJson(res, 200, { ok: true, data: { templates: mod.listServiceTemplates() } });
+  } catch (e) { llmFail(res, e); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── ★★ 写操作白名单（代码级强制）—— 2026-10-10 追加（标准 §7 1.1）──
+// ══════════════════════════════════════════════════════════════════════════════
+//   标准原文：「**所有写操作一律 POST**（`PUT` / `DELETE` / `PATCH` ⇒ **405**）」；参考实现 `serve.py`
+//   的 `_write_allowed` 只放行白名单内的 POST，其余写方法/路径一律 405 JSON。
+//   ★ 本批**只覆盖 `/api/llm/*` 这一族**（任务的硬边界）：该族里**写方法只认白名单内的 POST**，
+//     其余写方法（PUT / DELETE / PATCH）或未登记的 POST ⇒ **405 JSON**。
+//   ★ **不碰其它族**：`/api/jobs/:id`（DELETE 取消 / 删除）、`/api/briefs/:id`（PATCH / DELETE）等
+//     既有写路由**逐字不变**（它们不在 `/api/llm/` 前缀内 ⇒ 本白名单**恒放行**）。
+//   ★ `GET` / `HEAD` 是只读，不在判定内。
+const LLM_WRITE_WHITELIST = new Set([
+  'POST /api/llm/config',
+  'POST /api/llm/validate',
+  'POST /api/llm/chat',
+  'POST /api/llm/invoke',
+  'POST /api/llm/models',
+  'POST /api/llm/services',
+  'POST /api/llm/services/active',
+  'POST /api/llm/services/delete',   // ★ 2026-10-10：删除改走 POST（原 `DELETE /api/llm/services/:id` 已废）
+]);
+/** 写方法集合（`GET` / `HEAD` / `OPTIONS` 只读，不算写）。 */
+const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
+/**
+ * ★★ 2026-10-10（标准 §7 1.1）：`DELETE /api/llm/services/:id` —— 该**具体 id** 形态**保留路由行但只回 405**。
+ *   ★ 为什么要保留：① 标准要求「写方法非白名单 ⇒ 405」（**明确 405 比 404 更可操作**）；
+ *     ② README 的 HTTP 接口表**保留该行**（注明「已移除 ⇒ 405」）⇒ 保留路由行才能让
+ *     `check-api-docs` 的「README ↔ server 分发块」**双向一致**（否则文档会「撒谎」）。
+ *   ★ 与白名单的关系：本形态**不**由白名单拦截，而由下方**显式路由**回 405（两者都是 405，行为一致）。
+ */
+const LLM_LEGACY_DELETE_RE = /^\/api\/llm\/services\/[^/]+$/;
+/** `/api/llm/*` 的写操作是否在白名单内（★ 非 `/api/llm/` 前缀 / 非写方法 ⇒ **恒 true** ⇒ 其它族不受影响）。 */
+function llmWriteAllowed(method, path) {
+  if (!path.startsWith('/api/llm/')) return true;
+  if (!WRITE_METHODS.has(method)) return true;
+  if (method === 'DELETE' && LLM_LEGACY_DELETE_RE.test(path)) return true;   // ★ 交给下面的显式路由回 405
+  return LLM_WRITE_WHITELIST.has(`${method} ${path}`);
+}
+
 // ── 路由 ────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
@@ -2674,6 +2763,19 @@ const server = http.createServer(async (req, res) => {
   const m = req.method || 'GET';
 
   try {
+    // ★★ 2026-10-10 追加（标准 §7 1.1「写操作白名单」）：`/api/llm/*` 这一族的写方法**只认白名单内的 POST**；
+    //   其余（含 `DELETE /api/llm/services/:id`、`PUT` / `PATCH`）⇒ **405 JSON**。
+    //   ★ 只作用于 `/api/llm/` 前缀 ⇒ 其它族（`/api/jobs/:id` 的 DELETE、`/api/briefs/:id` 的 PATCH/DELETE）
+    //     **行为逐字不变**（白名单对非 `/api/llm/` 前缀恒放行）。
+    if (!llmWriteAllowed(m, p)) {
+      return sendJson(res, 405, {
+        ok: false,
+        error: {
+          kind: 'unsupported',
+          message: `不支持的写操作：${m} ${p}（/api/llm/* 只接受白名单内的 POST 写操作；删除请用 POST /api/llm/services/delete）`,
+        },
+      });
+    }
     if (p === '/api/run' && m === 'POST') return await apiRun(req, res);
     // GET /api/jobs —— 任务列表 + 队列状态（同步快照）
     if (p === '/api/jobs' && m === 'GET') return sendJson(res, 200, { jobs: jobs.listJobs(), queue: jobs.queueState() });
@@ -2769,14 +2871,20 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/llm/chat' && m === 'POST') return await apiLlmChat(req, res);
     if (p === '/api/llm/invoke' && m === 'POST') return await apiLlmInvoke(req, res);
     if (p === '/api/llm/models' && m === 'POST') return await apiLlmModels(req, res);
+    // ★ 2026-10-10 追加（标准 §5）：服务**预填模板**列表（纯只读；前端 `web/app.js` 早已调用）。
+    if (p === '/api/llm/service-templates' && m === 'GET') return await apiLlmServiceTemplates(req, res);
     // ── 算力服务 CRUD（/api/llm/services*，2026-10-10 追加）—— ★ 唯一接受**配置体**的写入路径 ──
     //    （★ 调用类端点仍只接受 `service` 选择器；见文件头「算力服务 CRUD」段的边界说明。）
     if (p === '/api/llm/services' && m === 'GET') return await apiLlmServicesList(req, res);
     if (p === '/api/llm/services' && m === 'POST') return await apiLlmServiceSave(req, res);
     if (p === '/api/llm/services/active' && m === 'POST') return await apiLlmServiceSetActive(req, res);
+    // ★ 2026-10-10：删除改走 POST（标准 §7 1.1 写操作白名单）—— 必须在下面 `:id` 正则**之前**匹配。
+    if (p === '/api/llm/services/delete' && m === 'POST') return await apiLlmServiceDelete(req, res);
     mm = /^\/api\/llm\/services\/([^/]+)$/.exec(p);
     if (mm && m === 'GET') return await apiLlmServiceGet(req, res, mm[1]);
-    if (mm && m === 'DELETE') return await apiLlmServiceDelete(req, res, mm[1]);
+    // ★ 2026-10-10（标准 §7 1.1）：原删除路由**保留但只回 405**（写方法非白名单）——
+    //   ★ 删除请走 `POST /api/llm/services/delete`；保留本行是为了让 README 的接口表 ↔ 分发块**双向一致**。
+    if (mm && m === 'DELETE') return apiLlmServiceDeleteGone(req, res, mm[1]);
 
     if (p.startsWith('/api/')) return sendJson(res, 404, { error: `未知接口 ${m} ${p}` });
 

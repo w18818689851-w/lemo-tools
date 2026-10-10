@@ -336,6 +336,13 @@
         <div class="llm-services-head">
           <span class="lbl">已保存的算力服务</span>
           <button class="btn ghost small" id="btnLlmAdd" title="新增一套算力服务（在下方表单里填服务名称标记 / Endpoint / API-Key / 请求头 / 超时）">＋ 新增算力服务</button>
+          <label class="llm-tpl">
+            <span class="lbl">从模板新建</span>
+            <select class="input llm-template-select" id="llmTemplateSelect" title="选一个国产厂商预设模板：只把适配器 / Endpoint / 名称预填进下方表单，不会自动创建服务，也不会锁定服务商；确认后自己点「保存」才成真服务">
+              <option value="">— 选一个预设模板 —</option>
+            </select>
+          </label>
+          <span class="hint" id="llmTplHint"></span>
           <span class="hint" id="llmListHint"></span>
           <span class="hint" id="llmSaveHint"></span>
         </div>
@@ -385,10 +392,64 @@
             <span class="hint">★ 密钥永不回显；留空表示「不改」</span>
           </label>
         </div>
+        <!-- ★ 容错 / 自动重试（规格 §5）：两个「服务对象字段」，随保存落盘、编辑回显。
+             ★ 留空 = 不写这两个字段（与后端默认一致：retry 默认 0 = 不重试）。 -->
+        <div class="form-grid llm-retry">
+          <label class="field">
+            <span class="lbl">重试次数 retry</span>
+            <input id="llmRetry" class="input num" type="number" min="0" max="5" step="1" placeholder="留空 = 不重试（默认 0）">
+            <span class="hint">留空 = 不重试（默认）；仅对超时 / 5xx / 429 等可重试错生效，鉴权 / 参数错不重试</span>
+          </label>
+          <label class="field">
+            <span class="lbl">重试退避 retryBackoffMs</span>
+            <input id="llmRetryBackoff" class="input num" type="number" min="0" max="10000" step="50" placeholder="留空 = 默认 200（0–10000 毫秒）">
+            <span class="hint">每次重试前的等待基数（毫秒，指数退避 base×2^(n−1)）；留空 = 用默认 200</span>
+          </label>
+        </div>
         <div class="llm-model-row">
           <button type="button" class="btn ghost small" id="btnLlmModels" title="从当前 Endpoint 拉取可用模型清单（POST /api/llm/models），供下拉切换">拉取清单</button>
           <select id="llmModelSelect" class="input llm-model-select" hidden title="从端点拉到的可用模型里挑一个（选中即填入 model）"></select>
           <span class="hint" id="llmModelHint"></span>
+        </div>
+        <!-- ★ 高级字段（标准 §9）：鉴权头名 / 鉴权前缀 / Key 环境变量名（→ extra 开放键）+ 能力类型 + 两个布尔开关。
+             ★ extra 三项后端**不回传**（信息边界 §10）⇒ 留空 = 不修改（与 API-Key / 请求头同口径）；
+               两个开关**总是显式发送 true/false**（§11.2，否则取消勾选不生效）。 -->
+        <div class="form-grid llm-advanced">
+          <label class="field">
+            <span class="lbl">鉴权头名 auth_header</span>
+            <input id="llmAuthHeader" class="input" placeholder="留空 = 不修改（默认 Authorization）" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl">鉴权前缀 auth_scheme</span>
+            <input id="llmAuthScheme" class="input" placeholder="留空 = 不修改（默认 Bearer ）" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl">Key 环境变量名 api_key_env</span>
+            <input id="llmKeyEnv" class="input" placeholder="留空 = 不修改（如 MY_API_KEY）" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl">能力类型 capability</span>
+            <select id="llmCapability" class="input" title="算力能力类型（标准 §4）：llm / image / speech / embedding —— 注意是 embedding，不是 embed（后端显式校验）">
+              <option value="llm">llm（文本推理）</option>
+              <option value="image">image（图像生成）</option>
+              <option value="speech">speech（语音）</option>
+              <option value="embedding">embedding（向量计算）</option>
+            </select>
+          </label>
+          <label class="field llm-switch-field">
+            <span class="lbl">强制流式 forceStream</span>
+            <span class="llm-switch">
+              <input type="checkbox" id="llmForceStream">
+              <span class="hint">服务端只接受流式时勾选（如 WorkBuddy 官方 /v2/chat/completions）</span>
+            </span>
+          </label>
+          <label class="field llm-switch-field">
+            <span class="lbl">首条补 system ensureSystemPrompt</span>
+            <span class="llm-switch">
+              <input type="checkbox" id="llmSysFirst">
+              <span class="hint">服务端要求首条必须是 system 时勾选（如 WorkBuddy 官方 code=11128）</span>
+            </span>
+          </label>
         </div>
         <label class="field llm-headers-field">
           <span class="lbl">自定义请求头 headers</span>
@@ -418,8 +479,13 @@
            ★ 调用类端点只接受 service（选择器）⇒ 测试连接针对**已保存**的服务；新增的请先保存。 -->
       <div class="llm-actions">
         <button class="btn primary" id="btnLlmValidate">测试连接</button>
+        <button class="btn ghost" id="btnLlmProbeAll" title="对每一套已保存算力【串行】跑一次三步校验（并发会打爆网关），并显示进度（i/N）">一键检测全部</button>
+        <button class="btn ghost" id="btnLlmAutoPick" title="【串行】检测全部，把第一个通过的切为当前生效；全不通过会明确提示">自动挑选可用的</button>
         <span class="hint" id="llmValidateHint"></span>
       </div>
+
+      <!-- ★ 一键检测全部 / 自动挑选可用：逐套结果（标题 + 结论 + 明细）。 -->
+      <div class="llm-probe-out" id="llmProbeOut" hidden></div>
 
       <!-- 三步校验结果：可达 / 鉴权 / 返回体，**逐步**显示（不是一次性糊出来）。
            任一步失败都在最下面给一句可操作的中文提示（来自后端 validate().hint）。 -->

@@ -1230,14 +1230,15 @@ async function main() {
       notes.push('㉖ models：workbuddy（agent）下守卫拒绝（config 错），带 kind/baseUrl/target 覆盖也仍被拒（不打网关）');
     });
 
-    // ══ ㉗ ★★ 算力服务 CRUD 五条新路由（/api/llm/services*，2026-10-10 追加）══════════
+    // ══ ㉗ ★★ 算力服务 CRUD 六条路由（/api/llm/services*，2026-10-10 追加）══════════
     //
     // 由来：委托方新规格《通用AI算力API接入模块》§5 要求「开放式、可插拔、不锁定服务商 / 类型 / 部署方式」
-    //   + 「多套算力保存、快速切换」⇒ 新增这 5 条路由，其中 POST/DELETE 是**唯一接受配置体**的写入路径。
+    //   + 「多套算力保存、快速切换」⇒ 新增这 6 条路由，其中 **POST 是唯一接受配置体 / 写操作的**路径
+    //   （★ 2026-10-10 标准 §7 写白名单：`DELETE` / `PUT` / `PATCH /api/llm/*` 一律 **405**）。
     //   ★ 它们此前**没有任何永久测试**（只有一次性探针）⇒ 本用例把「成功信封 {ok:true,data}」与
     //   「错误结构化 {ok:false,error:{kind,message}} 且**绝不 500**」逐条钉住。
     //   ★ 全程只动**隔离成片根**里的覆盖文件，跑完逐字节还原 —— 绝不碰用户真实盘。
-    await runCase('㉗ ★★ 算力服务 CRUD：GET/POST/DELETE /api/llm/services* + /services/active 成功与错误路径（绝不 500）', async () => {
+    await runCase('㉗ ★★ 算力服务 CRUD：GET/POST /api/llm/services* + /services/active + POST /services/delete；★ 写方法 DELETE/PUT/PATCH ⇒ 405；错误路径结构化且绝不 500', async () => {
       const cfg = await get('/api/llm/config');
       need(cfg.status === 200 && cfg.json.ok === true, `GET /api/llm/config 应 200，实际 ${cfg.status}`);
       const overrideFile = String(cfg.json.data.overrideFile);
@@ -1265,6 +1266,31 @@ async function main() {
           `保存回执应是 ${SID} 且 hasKey:true，实际 ${saved.text.slice(0, 240)}`);
         need(!saved.text.includes(SECRET), `★ 保存回执泄露了 key 明文：${saved.text.slice(0, 240)}`);
 
+        // ②b ★★ 契约回归（2026-10-10 变更）：POST /services **不带 id** ⇒ 后端**自动生成** id（**不再 400**）。
+        //   ★ 旧断言「缺 id ⇒ 400」已**过时** —— 后端 `saveService` 现改为 `newServiceId()`
+        //     生成 `svc-<base36 时间戳>-<进程内单调计数器 base36>`（lib/llm-api.mjs:1062），
+        //     并经返回值 `data.service.id` 给出（server.mjs:2629）。⇒ 这里改钉「不带 id ⇒ 成功 + 回 id」。
+        //   ★ 连发两次：既证「成功」，也证「每次生成**不同** id」（`newServiceId` 的防撞**机制**，非概率）。
+        const autoIds = [];
+        for (let i = 0; i < 2; i++) {
+          const r = await postJson(P, '/api/llm/services', {
+            label: `自动 id 服务 ${i}`, kind: 'openai-compatible', target: 'model',
+            baseUrl: 'http://127.0.0.1:1', model: 'm',
+          });
+          need(r.status === 200 && r.json && r.json.ok === true && r.json.data && r.json.data.service,
+            `POST /services 不带 id 应 200 + {ok:true,data:{service}}，实际 ${r.status} ${r.text.slice(0, 200)}`);
+          const gid = r.json.data.service.id;
+          need(typeof gid === 'string' && /^svc-[0-9a-z]+-[0-9a-z]+$/.test(gid),
+            `不带 id 应回后端生成的 data.service.id（形如 svc-<base36>-<base36>），实际 ${JSON.stringify(gid)}`);
+          need(/^[0-9a-z-]+$/.test(gid), `生成的 id 应 URL-safe（只含 [0-9a-z-]），实际 ${JSON.stringify(gid)}`);
+          autoIds.push(gid);
+        }
+        need(autoIds[0] !== autoIds[1], `连发两次不带 id 应生成**不同** id（防撞机制），实际都是 ${autoIds[0]}`);
+        // ★ 生成的服务**真落了盘**（不是「只回执、没存」）：GET /services/:id 能取回它
+        const gotAuto = await get(`/api/llm/services/${autoIds[0]}`);
+        need(gotAuto.status === 200 && gotAuto.json && gotAuto.json.ok === true && gotAuto.json.data && gotAuto.json.data.id === autoIds[0],
+          `生成的 id ${autoIds[0]} 应能 GET 回来（已落盘），实际 ${gotAuto.status} ${gotAuto.text.slice(0, 200)}`);
+
         // ③ GET /api/llm/services/:id ⇒ 200 + {ok:true,data:<svc>}（脱敏）
         const one = await get(`/api/llm/services/${SID}`);
         need(one.status === 200 && one.json && one.json.ok === true && one.json.data,
@@ -1281,21 +1307,42 @@ async function main() {
         const list1 = await get('/api/llm/services');
         need(list1.json.data.active === SID, `切换后 GET /services 的 active 应=${SID}，实际 ${list1.text.slice(0, 200)}`);
 
-        // ⑤ DELETE /api/llm/services/:id ⇒ 200 + {ok:true,data:{deleted,active}}
-        const del = await httpSend(P, { method: 'DELETE', path: `/api/llm/services/${SID}` });
+        // ⑤ POST /api/llm/services/delete {id} ⇒ 200 + {ok:true,data:{deleted,active}}
+        //   ★ 2026-10-10 变更（标准 §7 写白名单）：删除由 `DELETE /services/:id` **改走** `POST /services/delete`。
+        const del = await postJson(P, '/api/llm/services/delete', { id: SID });
         need(del.status === 200 && del.json && del.json.ok === true && del.json.data && del.json.data.deleted === SID,
-          `DELETE /services/:id 应 200 + {ok:true,data:{deleted:${SID}}}，实际 ${del.status} ${del.text.slice(0, 200)}`);
+          `POST /services/delete 应 200 + {ok:true,data:{deleted:${SID}}}，实际 ${del.status} ${del.text.slice(0, 200)}`);
         const list2 = await get('/api/llm/services');
         need(!list2.json.data.services.some((s) => s.id === SID), `删除后列表不应再含 ${SID}`);
 
+        // ⑤b ★★ 写白名单（标准 §7 1.1）：`/api/llm/*` 的写操作**只认白名单内的 POST** ——
+        //   `DELETE` / `PUT` / `PATCH` 一律 **405 + 结构化**（且绝不 500）。★ 这是「删除改走 POST」的**机制**证据。
+        //   ★ 405 是**方法级**判定（与 id 是否存在无关）⇒ 用刚删掉的 SID 也不影响。
+        const methodCases = [
+          ['DELETE /services/:id', await httpSend(P, { method: 'DELETE', path: `/api/llm/services/${SID}` })],
+          ['PUT /services/:id', await httpSend(P, { method: 'PUT', path: `/api/llm/services/${SID}` })],
+          ['PATCH /services/:id', await httpSend(P, { method: 'PATCH', path: `/api/llm/services/${SID}` })],
+        ];
+        for (const [label, r] of methodCases) {
+          need(r.status === 405, `★ ${label} 应 405（写白名单只放行 POST），实际 ${r.status} ${r.text.slice(0, 200)}`);
+          need(r.status !== 500, `${label}：绝不 500`);
+          need(r.json && r.json.ok === false && r.json.error && typeof r.json.error.kind === 'string'
+            && typeof r.json.error.message === 'string' && r.json.error.message.length > 0,
+          `${label}：应结构化 {ok:false,error:{kind,message}}，实际 ${r.text.slice(0, 240)}`);
+        }
+
         // ⑥ 错误路径：一律**结构化** {ok:false,error:{kind,message}}，且**绝不 500**
+        //   ★ 注意：**已无**「缺 id ⇒ 400」这条 —— 后端已改为「缺 id ⇒ 自动生成 id」（见 ②b），
+        //     故此处换成「非对象体（数组）⇒ 400」这条**仍然存在**的结构校验路径（server.mjs:2621）。
+        //   ★ 原 `DELETE /services/nope ⇒ 404` 已按 §7 改走 `POST /services/delete {id:'nope'} ⇒ 404`（方法级 405 见 ⑤b）。
         const errCases = [
-          ['POST /services 空体（缺 id）', await postJson(P, '/api/llm/services', {}), 400],
+          ['POST /services 非对象体（数组）', await postRaw(P, '/api/llm/services', '[]'), 400],
           ['POST /services 非法 kind', await postJson(P, '/api/llm/services', { id: 'x-bad', kind: 'bogus-kind' }), 400],
           ['POST /services 非法 JSON', await postRaw(P, '/api/llm/services', '{ not json '), 400],
           ['POST /services/active 缺 id', await postJson(P, '/api/llm/services/active', {}), 400],
+          ['POST /services/delete 缺 id', await postJson(P, '/api/llm/services/delete', {}), 400],
           ['GET /services/nope', await get('/api/llm/services/nope'), 404],
-          ['DELETE /services/nope', await httpSend(P, { method: 'DELETE', path: '/api/llm/services/nope' }), 404],
+          ['POST /services/delete 未知 id', await postJson(P, '/api/llm/services/delete', { id: 'nope' }), 404],
         ];
         for (const [label, r, want] of errCases) {
           need(r.status === want, `${label}：应 HTTP ${want}，实际 ${r.status} ${r.text.slice(0, 200)}`);
@@ -1310,7 +1357,7 @@ async function main() {
           else fs.writeFileSync(overrideFile, before);
         } catch { /* 尽力而为 */ }
       }
-      notes.push('㉗ services CRUD：5 条路由成功均 {ok:true,data}；6 条错误路径均结构化 {ok:false,error} 且非 500；覆盖文件已还原');
+      notes.push('㉗ services CRUD：GET/POST services* + active + POST /services/delete 成功均 {ok:true,data}；★ 不带 id ⇒ 200 + 后端生成 data.service.id（连发两次 id 不同、已落盘）；★ DELETE/PUT/PATCH /api/llm/* ⇒ 405 结构化；7 条错误路径均结构化 {ok:false,error} 且非 500；覆盖文件已还原');
     });
 
     // ══ ㉘ ★★ 铁律：调用类端点只认 `service` 选择器 —— validate 用「所选那套」的 kind/baseUrl，不是请求体的 ══
@@ -1363,11 +1410,11 @@ async function main() {
     });
 
     // ══ ㉙ ★ 未知 id 三处口径（写路径 404；调用路径 200+data.ok:false —— 家族口径，非 bug）══════
-    await runCase('㉙ ★ 未知 id：DELETE /services/nope ⇒ 404；/services/active{nope} ⇒ 404；validate{service:nope} ⇒ 200+data.ok:false', async () => {
-      // ① 写路径：未知 id ⇒ 404 + 结构化
-      const del = await httpSend(P, { method: 'DELETE', path: '/api/llm/services/nope-xyz' });
+    await runCase('㉙ ★ 未知 id：POST /services/delete{nope} ⇒ 404；/services/active{nope} ⇒ 404；validate{service:nope} ⇒ 200+data.ok:false', async () => {
+      // ① 写路径：未知 id ⇒ 404 + 结构化（★ 2026-10-10 §7：删除改走 POST /services/delete，不再是 DELETE）
+      const del = await postJson(P, '/api/llm/services/delete', { id: 'nope-xyz' });
       need(del.status === 404 && del.json && del.json.ok === false && del.json.error && del.json.error.kind === 'config',
-        `DELETE 未知 id 应 404 + {ok:false,error:{kind:'config'}}，实际 ${del.status} ${del.text.slice(0, 200)}`);
+        `POST /services/delete 未知 id 应 404 + {ok:false,error:{kind:'config'}}，实际 ${del.status} ${del.text.slice(0, 200)}`);
       // ② 切换：未知 id ⇒ 404 + 结构化
       const act = await postJson(P, '/api/llm/services/active', { id: 'nope-xyz' });
       need(act.status === 404 && act.json && act.json.ok === false && act.json.error && act.json.error.kind === 'config',
@@ -1378,7 +1425,7 @@ async function main() {
         `validate 未知 service 应 200 + {ok:true,data:{ok:false}}（家族口径），实际 ${v.status} ${v.text.slice(0, 240)}`);
       const blob = JSON.stringify(v.json.data);
       need(/找不到算力服务/.test(blob), `validate 未知 service 的报错应点名「找不到算力服务」：${v.text.slice(0, 240)}`);
-      notes.push('㉙ 未知 id：DELETE/active ⇒ 404 结构化；validate ⇒ 200 + data.ok:false（家族口径，非 bug）');
+      notes.push('㉙ 未知 id：POST /services/delete · /services/active ⇒ 404 结构化；validate ⇒ 200 + data.ok:false（家族口径，非 bug）');
     });
 
     // ══ ㉚ ★ 空 services：删光 ⇒ validate {} ⇒ 200 + data.ok:false（优雅降级，绝不 500）══════════
@@ -1389,11 +1436,11 @@ async function main() {
         `覆盖文件不在隔离根内（拒绝继续）：${overrideFile}`);
       const before = (() => { try { return fs.readFileSync(overrideFile); } catch { return null; } })();
       try {
-        // 删光当前所有服务
+        // 删光当前所有服务（★ 2026-10-10 §7：删除改走 POST /services/delete {id}）
         const list = await get('/api/llm/services');
         need(list.status === 200 && list.json.ok === true, `GET /services 应 200，实际 ${list.status}`);
         for (const s of list.json.data.services) {
-          const d = await httpSend(P, { method: 'DELETE', path: `/api/llm/services/${encodeURIComponent(s.id)}` });
+          const d = await postJson(P, '/api/llm/services/delete', { id: s.id });
           need(d.status === 200 && d.json.ok === true, `删除 ${s.id} 应成功，实际 ${d.status} ${d.text.slice(0, 200)}`);
         }
         const empty = await get('/api/llm/services');

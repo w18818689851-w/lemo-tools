@@ -73,6 +73,8 @@ const {
   maskKey, overrideFilePath, readOverride, saveOverride, maskedConfig, previewProfile, IMAGE_LIMITS,
   // ★ 2026-10-10 追加（多套「算力服务」CRUD）—— 本批新增的 6 个导出，此前**只有一次性探针验过**。
   listServices, getActiveService, serviceById, setActiveService, saveService, deleteService,
+  // ★ 2026-10-10 追加（标准 §8 / §11.5）：流式 + 跨服务降级 —— 此前**只有一次性探针验过**（探针已删）。
+  stream, chatWithFallback,
 } = await import('../lib/llm-api.mjs');
 
 const TTY = process.stdout.isTTY;
@@ -1836,6 +1838,401 @@ test('★★ 重试·总耗时受 timeoutMs 封顶（重试不把超时乘 N）�
       `★★ 每次尝试都跑满单次超时时，总耗时仍须 ≤ timeoutMs 量级（< ${TIMEOUT * 2}ms），实得 ${elapsed}ms（若 ≈5s ⇒ 超时被乘了 5 倍）`);
     assert.equal(nHang, 1, `★ 预算耗尽后不得再发新请求：桩应只收 1 次，实得 ${nHang}`);
   } finally { await stubHang.close(); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ⑮ ★★ P1 新交付能力（标准 §8 / §11.1 / §11.2 / §11.5 / §11.8）—— 2026-10-10 ──
+// ═══════════════════════════════════════════════════════════════════════════
+//   本批 5 项此前**只有一次性探针验过（探针已删）** ⇒ 这里补**永久回归**：
+//     ① `chatWithFallback`（跨服务降级）—— 主失败依次试 `fallbacks`，`meta.tried` 如实列出，**永不抛**；
+//     ② `forceStream`（`chat()` 改走流式聚合）/ `ensureSystemPrompt`（首条非 system ⇒ 自动补）—— 服务字段 + 显式开关；
+//     ③ `stream()` —— 逐块产出、**永不抛**、不支持的 kind 优雅报「不支持流式」；
+//     ④ `joinUrl` 版本段去重（`/v1` + `/v1/…` 不拼成 `/v1/v1/…`；base 已含完整 path 不重复拼）；
+//     ⑤ §11.1 空值保护（传空 key / 空 headers ⇒ 旧值仍在；显式 `clearKey` / `clearHeaders` 才清空）。
+//   ★ 纪律：本机桩 + 临时成片根（TMP）；**绝不真打外网**；每条先 `rmOverride()` + `withEnv(CLEAN)`，`finally` 还原。
+
+/** ★ 记录请求的桩（本段共用）：解析 JSON body 后记进 `seen`（`{method,url,body,stream}`），再交给 `handler`。
+ *  ★ 反空转用：用例**先断言 `seen.length===0`（点之前 0 条）**，跑完再断言**精确条数**。 */
+async function startRecStub(handler) {
+  const seen = [];
+  const stub = await startStub(async (req, res) => {
+    let body = null;
+    try { body = JSON.parse((await readBody(req)) || '{}'); } catch { body = null; }
+    const rec = { method: req.method, url: req.url, body, stream: !!(body && body.stream) };
+    seen.push(rec);
+    return handler(req, res, rec, seen);
+  });
+  return { ...stub, seen };
+}
+
+/** OpenAI 兼容的 SSE 流式响应（`chat/completions`）：逐块 `choices.0.delta.content` + `[DONE]`。 */
+function sseChat(res, deltas) {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+  for (const d of deltas) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: d } }] })}\n\n`);
+  res.write('data: [DONE]\n\n');
+  res.end();
+}
+
+test('★★ 降级·chatWithFallback：主服务失败 ⇒ 依次试 fallbacks 走到 B；meta.tried 如实列出 + fallbackUsed:true（且不抛）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const A = await startRecStub((req, res) => status(res, 500, '{"error":"A-down"}'));
+    const B = await startRecStub((req, res) => json200(res, { choices: [{ message: { content: 'from-B' } }] }));
+    try {
+      assert.equal(saveService({ id: 'svc-fb-a', kind: 'openai-compatible', target: 'model', baseUrl: A.base, model: 'm' }).ok, true);
+      assert.equal(saveService({ id: 'svc-fb-b', kind: 'openai-compatible', target: 'model', baseUrl: B.base, model: 'm' }).ok, true);
+      // ★ 反空转：发之前两桩都 0 条
+      assert.equal(A.seen.length, 0, 'A 桩发之前应 0 条');
+      assert.equal(B.seen.length, 0, 'B 桩发之前应 0 条');
+      let r;
+      try {
+        r = await chatWithFallback([{ role: 'user', content: 'hi' }],
+          { service: 'svc-fb-a', fallbacks: ['svc-fb-b'], timeoutMs: 3000 });
+      } catch (e) {
+        assert.fail(`★ chatWithFallback **抛异常了**（应永不抛）：${(e && e.stack) || e}`);
+      }
+      assert.equal(r.ok, true, `★ 主失败后应降级到 B 成功：${JSON.stringify(r.error || '')}`);
+      assert.equal(r.text, 'from-B', '取到的应是 B 的文本');
+      assert.equal(r.meta.fallbackUsed, true, '★ 用了降级 ⇒ meta.fallbackUsed 应为 true');
+      assert.ok(Array.isArray(r.meta.tried), 'meta.tried 应是数组');
+      assert.equal(r.meta.tried.length, 2, `meta.tried 应如实列 2 条，实得 ${JSON.stringify(r.meta.tried)}`);
+      assert.equal(r.meta.tried[0].service, 'svc-fb-a', '★ 第 1 条应是主服务 A');
+      assert.equal(r.meta.tried[0].ok, false, '★ A 失败 ⇒ ok:false');
+      assert.equal(r.meta.tried[0].error.kind, 'http-error', '★ A 是 500 ⇒ 试错 kind=http-error');
+      assert.equal(r.meta.tried[1].service, 'svc-fb-b', '★ 第 2 条应是降级 B');
+      assert.equal(r.meta.tried[1].ok, true, '★ B 成功 ⇒ ok:true');
+      // ★ 反空转：两桩各恰 1 条（真发了，且各只发一次）
+      assert.equal(A.seen.length, 1, `A 应恰收 1 次，实得 ${A.seen.length}`);
+      assert.equal(B.seen.length, 1, `B 应恰收 1 次，实得 ${B.seen.length}`);
+    } finally { await A.close(); await B.close(); rmOverride(); }
+  });
+});
+
+test('★★ 降级·主服务成功 ⇒ 不碰 fallbacks（B 桩 0 条）、fallbackUsed:false、tried 只 1 条', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const A = await startRecStub((req, res) => json200(res, { choices: [{ message: { content: 'from-A' } }] }));
+    const B = await startRecStub((req, res) => json200(res, { choices: [{ message: { content: 'from-B' } }] }));
+    try {
+      assert.equal(saveService({ id: 'svc-fb-a2', kind: 'openai-compatible', target: 'model', baseUrl: A.base, model: 'm' }).ok, true);
+      assert.equal(saveService({ id: 'svc-fb-b2', kind: 'openai-compatible', target: 'model', baseUrl: B.base, model: 'm' }).ok, true);
+      assert.equal(A.seen.length, 0); assert.equal(B.seen.length, 0);
+      const r = await chatWithFallback([{ role: 'user', content: 'hi' }],
+        { service: 'svc-fb-a2', fallbacks: ['svc-fb-b2'], timeoutMs: 3000 });
+      assert.equal(r.ok, true);
+      assert.equal(r.text, 'from-A');
+      assert.equal(r.meta.fallbackUsed, false, '★ 主即成功 ⇒ fallbackUsed 应为 false');
+      assert.equal(r.meta.tried.length, 1, '主即成功 ⇒ tried 只 1 条');
+      assert.equal(B.seen.length, 0, `★ 主即成功 ⇒ 绝不碰 fallback（B 应 0 条），实得 ${B.seen.length}`);
+    } finally { await A.close(); await B.close(); rmOverride(); }
+  });
+});
+
+test('★★ 降级·全败 ⇒ ok:false（取最后一个错）+ tried 全 false，且不抛', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const A = await startRecStub((req, res) => status(res, 500, '{"error":"A-down"}'));
+    const B = await startRecStub((req, res) => status(res, 500, '{"error":"B-down"}'));
+    try {
+      assert.equal(saveService({ id: 'svc-fb-a3', kind: 'openai-compatible', target: 'model', baseUrl: A.base, model: 'm' }).ok, true);
+      assert.equal(saveService({ id: 'svc-fb-b3', kind: 'openai-compatible', target: 'model', baseUrl: B.base, model: 'm' }).ok, true);
+      let r;
+      try {
+        r = await chatWithFallback([{ role: 'user', content: 'hi' }],
+          { service: 'svc-fb-a3', fallbacks: ['svc-fb-b3'], timeoutMs: 3000 });
+      } catch (e) { assert.fail(`★ 全败也不许抛：${(e && e.stack) || e}`); }
+      assert.equal(r.ok, false, '★ 全败 ⇒ ok:false');
+      assert.equal(r.error.kind, 'http-error', '★ 取最后一个失败（B 的 500 ⇒ http-error）');
+      assert.equal(r.meta.tried.length, 2);
+      assert.equal(r.meta.tried.every((t) => t.ok === false), true, `tried 应全为 false：${JSON.stringify(r.meta.tried)}`);
+      assert.equal(A.seen.length, 1); assert.equal(B.seen.length, 1);
+    } finally { await A.close(); await B.close(); rmOverride(); }
+  });
+});
+
+test('★★ 11101 兜底：非流式被拒（400+11101）⇒ 自动改走流式成功；★ 桩收到请求形态依次 [{stream:false},{stream:true}]', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const stub = await startRecStub((req, res, rec) => {
+      if (rec.stream) return sseChat(res, ['streamed-', 'ok']);
+      return status(res, 400, JSON.stringify({ error: { code: 11101, message: 'Non-stream chat request is currently not supported' } }));
+    });
+    try {
+      assert.equal(stub.seen.length, 0, '发之前应 0 条');
+      let r;
+      try {
+        r = await chat([{ role: 'user', content: 'hi' }], { ...OAI(), baseUrl: stub.base, timeoutMs: 3000 });
+      } catch (e) { assert.fail(`★ chat() 抛异常了：${(e && e.stack) || e}`); }
+      assert.equal(r.ok, true, `★ 400+11101 应自动改走流式并成功：${JSON.stringify(r.error || '')}`);
+      assert.equal(r.text, 'streamed-ok', '聚合文本应是流式增量拼接');
+      assert.equal(r.meta.via, 'stream', '★ meta.via=stream（自证经流式取得）');
+      // ★★ 直接证据：桩收到的请求形态**依次**是「先非流式、再流式」
+      assert.deepEqual(stub.seen.map((s) => ({ stream: s.stream })), [{ stream: false }, { stream: true }],
+        `★ 请求形态应依次 [{stream:false},{stream:true}]，实得 ${JSON.stringify(stub.seen.map((s) => s.stream))}`);
+      assert.equal(stub.seen.length, 2, `★ 应恰 2 次请求（1 非流式 + 1 流式），实得 ${stub.seen.length}`);
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
+test('★★ forceStream：显式 true / 服务字段 true ⇒ chat 走流式聚合；★ 显式 false 能关掉（压过服务里的 true）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const stub = await startRecStub((req, res, rec) => (rec.stream
+      ? sseChat(res, ['via-', 'stream'])
+      : json200(res, { choices: [{ message: { content: 'via-nonstream' } }] })));
+    try {
+      // (a) 显式 forceStream:true
+      assert.equal(stub.seen.length, 0, '发之前应 0 条');
+      const a = await chat([{ role: 'user', content: 'hi' }], { ...OAI(), baseUrl: stub.base, forceStream: true, timeoutMs: 3000 });
+      assert.equal(a.ok, true, `forceStream 应成功：${JSON.stringify(a.error || '')}`);
+      assert.equal(a.text, 'via-stream', '★ forceStream ⇒ 应取流式聚合文本');
+      assert.equal(a.meta.via, 'stream', '★ 应经流式取得');
+      assert.deepEqual(stub.seen.map((s) => s.stream), [true], '★ forceStream ⇒ 桩只收 stream:true');
+
+      // (b) 服务配置字段 forceStream:true 同样生效
+      stub.seen.length = 0;
+      const s = saveService({ id: 'svc-force', kind: 'openai-compatible', target: 'model', baseUrl: stub.base, model: 'm', forceStream: true });
+      assert.equal(s.ok, true, `保存带 forceStream 的服务应成功：${JSON.stringify(s)}`);
+      assert.equal(s.service.forceStream, true, '★ 回执应如实回 forceStream:true');
+      const b = await chat([{ role: 'user', content: 'hi' }], { service: 'svc-force', timeoutMs: 3000 });
+      assert.equal(b.ok, true, `服务字段 forceStream 应生效：${JSON.stringify(b.error || '')}`);
+      assert.equal(b.meta.via, 'stream');
+      assert.deepEqual(stub.seen.map((x) => x.stream), [true], '★ 服务字段 forceStream ⇒ 也走流式');
+
+      // (c) 显式 false 能关掉（压过服务里的 true）
+      stub.seen.length = 0;
+      const c = await chat([{ role: 'user', content: 'hi' }], { service: 'svc-force', forceStream: false, timeoutMs: 3000 });
+      assert.equal(c.ok, true, `显式 false 后应走非流式：${JSON.stringify(c.error || '')}`);
+      assert.equal(c.text, 'via-nonstream', '★ 显式 false ⇒ 走非流式（取 JSON 文本）');
+      assert.equal(c.meta.via, undefined, '★ 非流式 ⇒ 不该有 meta.via');
+      assert.deepEqual(stub.seen.map((x) => x.stream), [false], '★★ 显式 false 能真的关掉（桩收 stream:false）');
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
+test('★★ 11128 兜底：ensureSystemPrompt ⇒ 首条非 system 自动补；★ 服务字段生效；★ 显式 false 能关掉', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const stub = await startRecStub((req, res, rec) => {
+      const first = rec.body && Array.isArray(rec.body.messages) ? rec.body.messages[0] : null;
+      if (!first || first.role !== 'system') {
+        return status(res, 400, JSON.stringify({ error: { code: 11128, message: 'first message must be system' } }));
+      }
+      return json200(res, { choices: [{ message: { content: 'ok-with-system' } }] });
+    });
+    try {
+      // (a) 显式 ensureSystemPrompt:true ⇒ 自动补 system ⇒ 成功
+      assert.equal(stub.seen.length, 0, '发之前应 0 条');
+      const a = await chat([{ role: 'user', content: 'hi' }], { ...OAI(), baseUrl: stub.base, ensureSystemPrompt: true, timeoutMs: 3000 });
+      assert.equal(a.ok, true, `ensureSystemPrompt 应成功：${JSON.stringify(a.error || '')}`);
+      assert.equal(a.text, 'ok-with-system');
+      assert.equal(stub.seen[0].body.messages[0].role, 'system', '★ 桩收到的首条应是补上的 system');
+      assert.match(stub.seen[0].body.messages[0].content, /helpful/i, '★ 补的应是默认 system 文案');
+
+      // (b) 服务配置字段 ensureSystemPrompt:true 同样生效
+      stub.seen.length = 0;
+      const s = saveService({ id: 'svc-sys', kind: 'openai-compatible', target: 'model', baseUrl: stub.base, model: 'm', ensureSystemPrompt: true });
+      assert.equal(s.ok, true, `保存带 ensureSystemPrompt 的服务应成功：${JSON.stringify(s)}`);
+      assert.equal(s.service.ensureSystemPrompt, true, '★ 回执应如实回 ensureSystemPrompt:true');
+      const b = await chat([{ role: 'user', content: 'hi' }], { service: 'svc-sys', timeoutMs: 3000 });
+      assert.equal(b.ok, true, `服务字段 ensureSystemPrompt 应生效：${JSON.stringify(b.error || '')}`);
+      assert.equal(stub.seen[0].body.messages[0].role, 'system', '★ 服务字段也补了 system');
+
+      // (c) 显式 false 能关掉（压过服务里的 true）⇒ 首条仍是 user ⇒ 被 11128 拒
+      stub.seen.length = 0;
+      const c = await chat([{ role: 'user', content: 'hi' }], { service: 'svc-sys', ensureSystemPrompt: false, timeoutMs: 3000 });
+      assert.equal(stub.seen[0].body.messages[0].role, 'user', '★★ 显式 false ⇒ 不补 system（首条仍是 user）');
+      assert.equal(c.ok, false, '★ 不补 ⇒ 被 11128 拒 ⇒ ok:false');
+      assert.equal(c.error.kind, 'http-error');
+      assert.equal(c.error.httpStatus, 400, '★ 错误应如实带 400');
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
+test('★★ stream()：openai-compatible 取到分片；不支持流式的 kind 优雅报错；不可达也不抛（与 chat 同纪律）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    // (a) 真 SSE ⇒ 逐片取到（★ 且不抛）
+    const stub = await startRecStub((req, res) => sseChat(res, ['你', '好', '！']));
+    try {
+      assert.equal(stub.seen.length, 0, '发之前应 0 条');
+      const got = [];
+      let thrown = null;
+      try {
+        for await (const c of stream([{ role: 'user', content: 'hi' }], { ...OAI(), baseUrl: stub.base, timeoutMs: 3000 })) got.push(c);
+      } catch (e) { thrown = e; }
+      assert.equal(thrown, null, `★ stream() 抛异常了（应永不抛）：${(thrown && thrown.stack) || thrown}`);
+      const text = got.filter((c) => c.ok && typeof c.delta === 'string').map((c) => c.delta).join('');
+      assert.equal(text, '你好！', `★ 应聚合出全部分片，实得 ${JSON.stringify(text)}`);
+      assert.equal(got.every((c) => c.ok === true), true, '正常流不应有错误块');
+      assert.equal(got[got.length - 1].done, true, '最后一块应 done:true');
+      assert.equal(stub.seen.length, 1, '应恰 1 次流式请求');
+      assert.equal(stub.seen[0].stream, true, '★ 流式请求体应带 stream:true');
+    } finally { await stub.close(); }
+
+    // (b) 不支持的 kind（anthropic）⇒ 优雅 config 错（不抛原始异常、零外呼）
+    const stubA = await startRecStub((req, res) => json200(res, { content: [{ text: 'x' }] }));
+    try {
+      const got = [];
+      let thrown = null;
+      try {
+        for await (const c of stream([{ role: 'user', content: 'hi' }], { ...ANTH(), baseUrl: stubA.base, timeoutMs: 3000 })) got.push(c);
+      } catch (e) { thrown = e; }
+      assert.equal(thrown, null, '★ 不支持流式也**不抛**');
+      assert.equal(got.length, 1, `应只产出 1 个终止块，实得 ${got.length}`);
+      assert.equal(got[0].ok, false);
+      assert.equal(got[0].error.kind, 'config', '★ 归一为 config 错');
+      assert.match(got[0].error.message, /不支持流式/, `★ 应明确报「不支持流式」：${got[0].error.message}`);
+      assert.equal(stubA.seen.length, 0, '★ 不支持的 kind ⇒ 一个请求都不该发（零外呼）');
+    } finally { await stubA.close(); }
+
+    // (c) 不可达 ⇒ 优雅报错、不抛（用「刚关闭的端口」造，不打真外网）
+    const base = await closedBase();
+    const got = [];
+    let thrown = null;
+    try {
+      for await (const c of stream([{ role: 'user', content: 'hi' }], { ...OAI(), baseUrl: base, timeoutMs: 3000 })) got.push(c);
+    } catch (e) { thrown = e; }
+    assert.equal(thrown, null, '★ 不可达也不抛');
+    assert.ok(got.length >= 1 && got[0].ok === false, '应产出终止错误块');
+    assert.equal(got[0].error.kind, 'unreachable', `不可达 ⇒ kind=unreachable，实得 ${got[0].error.kind}`);
+  });
+});
+
+test('★★ joinUrl 版本段去重（经 invoke(custom) 观测真实出站 URL）：/v1 + /v1/… 不拼成 /v1/v1/…；base 已含完整 path 不重复拼', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const stub = await startRecStub((req, res) => json200(res, { v: 'ok' }));
+    try {
+      assert.equal(stub.seen.length, 0, '发之前应 0 条');
+      const call = async (baseUrl, path) => {
+        const r = await invoke('custom', { body: { x: 1 } }, { kind: 'custom', baseUrl, path, extract: 'v', timeoutMs: 3000 });
+        assert.equal(r.ok, true, `invoke(custom) 应成功：${JSON.stringify(r.error || '')}`);
+        return stub.seen[stub.seen.length - 1].url;
+      };
+      // ① base 含版本段 /v1，path 也含 /v1 ⇒ 去重成单段（★ 否则是 /v1/v1/…）
+      assert.equal(await call(`${stub.base}/v1`, '/v1/chat/completions'), '/v1/chat/completions',
+        '★ base 与 path 都有 /v1 ⇒ 不得拼成 /v1/v1/…');
+      // ② base 已含完整 path ⇒ 不再重复拼接
+      assert.equal(await call(`${stub.base}/v1/chat/completions`, '/v1/chat/completions'), '/v1/chat/completions',
+        '★ base 已含完整 path ⇒ 不得再拼一次');
+      // ③ base 尾斜杠 ⇒ 不拼出双斜杠
+      assert.equal(await call(`${stub.base}/v1/`, '/v1/chat/completions'), '/v1/chat/completions',
+        '★ base 尾斜杠应容忍');
+      assert.equal(stub.seen.length, 3, `★ 应恰 3 次请求（反空转：真发出去了），实得 ${stub.seen.length}`);
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
+test('★★ §11.1 空值保护：saveService 传空 key / 空 headers ⇒ 旧值仍在；★ 显式 clearKey/clearHeaders 才清空', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      const SECRET = 'sk-keep-abcdef123456';
+      const s1 = saveService({ id: 'svc-keep', kind: 'openai-compatible', target: 'model', baseUrl: 'http://127.0.0.1:1', model: 'm', apiKey: SECRET, headers: { 'X-Trace': 'keep-me' } });
+      assert.equal(s1.ok, true, `首次保存应成功：${JSON.stringify(s1)}`);
+      assert.equal(s1.service.hasKey, true);
+      // ★ 脱敏视图（标准 §10）**只回布尔** `hasHeaders`，**不回头名/头值**（旧版回的 `headers` 已删）
+      assert.equal(s1.service.hasHeaders, true, '★ 应如实回 hasHeaders:true（脱敏视图不回头内容）');
+      assert.equal(s1.service.headers, undefined, '★ 脱敏视图**不得**回请求头内容（§10：头名/头值绝不外传）');
+
+      // ★ 再传空串 key + 空 dict headers ⇒ 旧值必须仍在（「留空 = 不修改」）
+      const s2 = saveService({ id: 'svc-keep', apiKey: '', headers: {} });
+      assert.equal(s2.ok, true, `空值更新应成功：${JSON.stringify(s2)}`);
+      assert.equal(s2.service.hasKey, true, '★★ 传空 key ⇒ 旧 Key 必须仍在（不被清空）');
+      assert.equal(s2.service.hasHeaders, true, '★★ 传空 headers ⇒ 旧请求头必须仍在');
+      assert.equal(listServices().find((x) => x.id === 'svc-keep').hasKey, true, '★ 落盘后 hasKey 仍应为 true');
+      assert.equal(resolveConfig({ service: 'svc-keep' }).apiKey, SECRET, '★ 生效配置里 Key 明文应仍是旧的（模块内部用）');
+      assert.equal(resolveConfig({ service: 'svc-keep' }).headers['X-Trace'], 'keep-me', '★ 生效配置里请求头应仍是旧的');
+
+      // ★ 显式 clearKey ⇒ 真清空
+      const s3 = saveService({ id: 'svc-keep', clearKey: true });
+      assert.equal(s3.ok, true, `clearKey 应成功：${JSON.stringify(s3)}`);
+      assert.equal(s3.service.hasKey, false, '★★ 显式 clearKey ⇒ Key 才被清空');
+      assert.equal(resolveConfig({ service: 'svc-keep' }).apiKey, '', '★ 生效配置里 Key 应已清空');
+
+      // ★ 显式 clearHeaders ⇒ 真清空
+      const s4 = saveService({ id: 'svc-keep', clearHeaders: true });
+      assert.equal(s4.ok, true, `clearHeaders 应成功：${JSON.stringify(s4)}`);
+      assert.equal(s4.service.hasHeaders, false, '★★ 显式 clearHeaders ⇒ 请求头才被清空');
+      assert.equal(resolveConfig({ service: 'svc-keep' }).headers['X-Trace'], undefined, '★ 生效配置里请求头应已清空');
+    } finally { rmOverride(); }
+  });
+});
+
+// ── ★★ §11.1 extra 开放键包：逐键合并（不是整对象覆盖）+ 空值不覆盖 + clearExtra 显式清空 ──
+//   参考口径（`facade.py` 的 `_do()`）：面板只管理少数几个键（auth_header / auth_scheme / text_path …），
+//   已有服务上的 `endpoint_env` / `api_key_env` / `models_path` 必须**原样保留**；值为空 ⇒ 不覆盖旧值。
+test('★★ §11.1 extra 逐键合并：只传一个键 ⇒ 旧键（endpoint_env / models_path）必须保留、新键写入', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      const s1 = saveService({
+        id: 'svc-extra-a', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+        extra: { endpoint_env: 'A', models_path: 'B' },
+      });
+      assert.equal(s1.ok, true, `首次保存应成功：${JSON.stringify(s1)}`);
+      // ★ 第二次只带一个新键 ⇒ 不得整对象覆盖（否则 endpoint_env / models_path 被冲掉）
+      const s2 = saveService({ id: 'svc-extra-a', extra: { auth_header: 'X-K' } });
+      assert.equal(s2.ok, true, `二次保存应成功：${JSON.stringify(s2)}`);
+      const ex = resolveConfig({ service: 'svc-extra-a' }).extra;
+      assert.equal(ex.endpoint_env, 'A', '★★ 旧键 endpoint_env 必须保留（逐键合并，非整对象覆盖）');
+      assert.equal(ex.models_path, 'B', '★★ 旧键 models_path 必须保留');
+      assert.equal(ex.auth_header, 'X-K', '★ 新键 auth_header 必须写入');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ §11.1 extra 空值不覆盖：传空串键 ⇒ 旧值仍在，且该空串键本身不落盘', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-extra-b', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+        extra: { api_key_env: 'K1' },
+      }).ok, true);
+      // ★ 传空串 ⇒ 「留空 = 不修改」；空串键 other 也应被**跳过**（不得写进 extra）
+      assert.equal(saveService({ id: 'svc-extra-b', extra: { api_key_env: '', other: '' } }).ok, true);
+      const ex = resolveConfig({ service: 'svc-extra-b' }).extra;
+      assert.equal(ex.api_key_env, 'K1', '★★ 传空串 ⇒ 旧值必须仍在（不被清空）');
+      assert.equal('other' in ex, false, '★★ 空串键 other 应被跳过（不得写进 extra）');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ §11.1 extra null/undefined 不覆盖：传 null / undefined ⇒ 旧值仍在', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-extra-c', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+        extra: { api_key_env: 'K1' },
+      }).ok, true);
+      assert.equal(saveService({ id: 'svc-extra-c', extra: { api_key_env: null } }).ok, true);
+      assert.equal(resolveConfig({ service: 'svc-extra-c' }).extra.api_key_env, 'K1', '★★ 传 null ⇒ 旧值必须仍在');
+      assert.equal(saveService({ id: 'svc-extra-c', extra: { api_key_env: undefined } }).ok, true);
+      assert.equal(resolveConfig({ service: 'svc-extra-c' }).extra.api_key_env, 'K1', '★★ 传 undefined ⇒ 旧值必须仍在');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ §11.1 extra 显式清空：clearExtra 只删列出的键、未列出的保留，且 clearExtra 不落盘', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      assert.equal(saveService({
+        id: 'svc-extra-d', kind: 'custom', target: 'model', baseUrl: 'http://127.0.0.1:1',
+        extra: { api_key_env: 'K1', endpoint_env: 'E1' },
+      }).ok, true);
+      // ★ 合并语义下传空串不生效 ⇒ 必须靠 clearExtra 才能真删键（否则误填的键永远清不掉）
+      const s = saveService({ id: 'svc-extra-d', clearExtra: ['api_key_env'] });
+      assert.equal(s.ok, true, `clearExtra 应成功：${JSON.stringify(s)}`);
+      const ex = resolveConfig({ service: 'svc-extra-d' }).extra;
+      assert.equal('api_key_env' in ex, false, '★★ clearExtra 列出的键应被删除');
+      assert.equal(ex.endpoint_env, 'E1', '★★ 未列出的键必须保留');
+      assert.equal('clearExtra' in ex, false, '★★ clearExtra 是控制字段，绝不落盘');
+    } finally { rmOverride(); }
+  });
 });
 
 // ── 运行器 ──────────────────────────────────────────────────
