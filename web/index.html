@@ -119,6 +119,28 @@
             <option value="libx264">libx264（软件）</option>
           </select>
         </label>
+        <!-- 输出尺寸（★ 与「主题出片」/「文案出片」**同一条纪律、同一套 id 命名**，别另发明一套）：
+             选项由服务端 GET /api/sizes 给（清单的权威来源是库侧 core/render/size.mjs 的 RATIOS），
+             前端不硬编码比例表。默认选中服务端给的 defaultRatio（9:16）；选「自定义尺寸…」时出现
+             宽高输入框（偶数、MIN_SIZE–MAX_SIZE）。★ 下面 min/max 只是 HTML 层的初始值，
+             app.js 会用 /api/sizes 的 custom.min/max 覆盖它们 —— 改下限只需改库，别只改这里。
+             出片时控制台会**显式**传 --ratio <比例>（或 --size <WxH>，优先级更高）。 -->
+        <label class="field">
+          <span class="lbl">输出尺寸</span>
+          <select id="runRatio" class="input" title="出片尺寸：默认 9:16 竖屏"></select>
+          <span class="hint" id="runRatioHint"></span>
+        </label>
+        <label class="field" id="runSizeField" hidden>
+          <span class="lbl">自定义像素（宽 × 高）</span>
+          <span class="size-row">
+            <input id="runSizeW" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1080" autocomplete="off">
+            <span class="size-x">×</span>
+            <input id="runSizeH" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1920" autocomplete="off">
+          </span>
+          <span class="hint" id="runSizeHint"></span>
+        </label>
       </div>
 
       <div class="presets" id="presets">
@@ -153,6 +175,15 @@
             <span class="lbl">--out 输出目录</span>
             <input id="fOut" class="input" placeholder="留空 = D:\lemo-films\<slug>" autocomplete="off">
           </label>
+          <label class="field wide">
+            <span class="lbl">--film 影片模块</span>
+            <input id="fFilm" class="input" placeholder="留空 = 用该风格自带的影片模块（如 film_coffee.js）" autocomplete="off">
+          </label>
+        </div>
+        <!-- ★ 起飞前检查开关（CLI 的 --no-preflight）：与上面那排勾选项**同一种写法**（.chk）。
+             勾上 = 不跑起飞前检查直接启动（编排器默认是开启该检查，但**只提示、绝不阻断**）。 -->
+        <div class="checks">
+          <label class="chk"><input type="checkbox" id="fNoPreflight"> --no-preflight 跳过起飞前检查（勾选 = 不跑预检直接启动）</label>
         </div>
       </details>
 
@@ -464,6 +495,7 @@
         <button class="btn primary" id="btnLlmValidate">测试连接</button>
         <button class="btn ghost" id="btnLlmProbeAll" title="对每一套已保存算力【串行】跑一次三步校验（并发会打爆网关），并显示进度（i/N）">一键检测全部</button>
         <button class="btn ghost" id="btnLlmAutoPick" title="【串行】检测全部，把第一个通过的切为当前生效；全不通过会明确提示">自动挑选可用的</button>
+        <button class="btn ghost" id="btnLlmTryRun" title="给当前算力服务发一句固定的小测试话（POST /api/llm/invoke，task=chat），把返回的文本显示在下面">试调用</button>
         <span class="hint" id="llmValidateHint"></span>
       </div>
 

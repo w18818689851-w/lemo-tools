@@ -556,7 +556,10 @@ function orchestratorRuns(slug, demoRel, script) {
  *   （pitch.py 就是第一例：它已在 2026-10-06 被补进编排器，因此本表**不登记它**。
  *     trim_cmd.py / export_cues.mjs / words.py 是 2026-10-07 的第二、三、四例，同样已从本表移除；
  *     video_png.mjs 是**第五例，也是形态不同的一例** —— 它不是「漏跑一步」，而是**替换渲染器**
- *     （PNG 无损中间片）；编排器的渲染段现在按候选探测它，故同样已从本表移除、并加进 runs[] 镜像。）
+ *     （PNG 无损中间片）；编排器的渲染段现在按候选探测它，故同样已从本表移除、并加进 runs[] 镜像。
+ *     core/render/still.mjs 是**第六例（2026-10-10）** —— 编排器新增第 7 步「静帧交付图」，
+ *     用 still.mjs 出 poster.jpg ⇒ 已从本表移除。★ 但它是 root='lib' 条目，**不在**下面那句
+ *     「自动不再报」的覆盖范围内（那个机制只认 root='demo' 的候选脚本）⇒ 它是**手工移除**的。）
  * ★ root='demo' 的 rel 相对 demo 目录（tools/xxx.py）；root='lib' 的 rel 相对库根（core/…）。
  *   两者都按「相对库根」拼出来核存在性 ⇒ **不写死任何 slug**。
  */
@@ -569,8 +572,12 @@ const ORCH_SKIP_STEPS = [
   { rel: 'models/gen_volt.mjs',   root: 'demo', impact: 'none', what: '生成 volt 素材（确定性：重跑产物与入库版逐字节相同，实测 md5 一致）' },
   { rel: 'models/gen_kite.mjs',   root: 'demo', impact: 'none', what: '生成 kite 素材（确定性：重跑产物与入库版逐字节相同，实测 md5 一致）' },
   // ── 只影响交付图（成片本身不变，poster / styleframe 等会陈旧）──
-  { rel: 'core/render/still.mjs', root: 'lib',  impact: 'delivery', what: '出静帧（poster / styleframe 等交付图）' },
-  { rel: 'tools/still.mjs',       root: 'demo', impact: 'delivery', what: '出静帧（poster / styleframe 等交付图）' },
+  // ★ 2026-10-10：`core/render/still.mjs` **已从本表移除** —— 编排器现在用它出 poster.jpg
+  //   （第 7 步「静帧交付图」，见 main 里 posterIntent 的说明）⇒ 它属于「编排器本次**会跑**」，
+  //   不再登记。★ 如实说明：这一条是**手工移除**，不是 orchestratorRuns 的自动机制 ——
+  //   那个机制只覆盖 root='demo' 的候选脚本（core/ 脚本**故意不进** runs[]，见本函数上方 538-546 行的
+  //   说明）。所以 root='lib' 的条目被补上后，必须**回来删这一行**。
+  { rel: 'tools/still.mjs',       root: 'demo', impact: 'delivery', what: '出 demo 自带的静帧（设定表 / 模型表等；本编排器只出 poster.jpg，用的是 core/render/still.mjs）' },
   // ── 纯自检（不跑只是少一道校验，成片一字不变）──
   { rel: 'tools/cuecheck.py',     root: 'demo', impact: 'selfcheck', what: '配乐卡点 ↔ 画面时间网格自检' },
   { rel: 'tools/final_asr.py',    root: 'demo', impact: 'selfcheck', what: '成片终检（ASR 比对）' },
@@ -840,6 +847,13 @@ function parseArgs(argv) {
     skipSync: false, skipAudio: false, skipRender: false,
     audioOnly: false, renderOnly: false, dryRun: false, help: false,
     noPreflight: false, manifest: null,
+    // ── 2026-10-10 新增：对齐上游 3 个正式能力 + 1 个环境变量（详见各处注释）──
+    renderSlots: 2,          // ① 整机渲染槽上限（0 = 不限 ⇒ 不设 RENDER_SLOTS）
+    noReadcheck: false,      // ② 阅读时长自检：完全跳过
+    readcheckStrict: false,  // ② 自检不达标时**阻断**出片（默认只报告）
+    noPoster: false,         // ③ 静帧交付图 poster.jpg：跳过
+    posterT: null,           // ③ poster 取哪一秒（默认按 demo 的 build.sh）
+    color: 'default',        // ④ 混流色彩空间（default ⇒ 不设 LEMO_COLOR）
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -881,6 +895,12 @@ function parseArgs(argv) {
     else if (a === '--dry-run') o.dryRun = true;
     else if (a === '--no-preflight') o.noPreflight = true;
     else if (a === '--manifest') o.manifest = next('--manifest');
+    else if (a === '--render-slots') o.renderSlots = Number(next('--render-slots'));
+    else if (a === '--no-readcheck') o.noReadcheck = true;
+    else if (a === '--readcheck-strict') o.readcheckStrict = true;
+    else if (a === '--no-poster') o.noPoster = true;
+    else if (a === '--poster-t') o.posterT = Number(next('--poster-t'));
+    else if (a === '--color') o.color = next('--color');
     else if (!a.startsWith('--')) o.slug = a;
     else fail(`未知参数 ${a}（--help 看用法）`);
   }
@@ -909,6 +929,20 @@ function parseArgs(argv) {
   // --lang：语言代码（en / zh / …）。只做形状校验；具体有没有对应内容文件由下面的换名逻辑查。
   if (o.lang !== null && !/^[A-Za-z][\w-]*$/.test(o.lang)) {
     fail(`--lang 只接受语言代码（如 en / zh），收到 '${o.lang}'`);
+  }
+  // --render-slots：0 = 不限（**不设**该变量）；1–256 与上游 core/render/slot.mjs 的接受区间一致
+  //   （它的 envNum 只认 `Number.isInteger(n) && n >= 1 && n <= 256`，超出会被**静默忽略并回退 3** ——
+  //    与其让用户以为设上了、实际回退，不如在这里直接报错）。
+  if (!Number.isInteger(o.renderSlots) || o.renderSlots < 0 || o.renderSlots > 256) {
+    fail(`--render-slots 必须是 0–256 的整数（0 = 不限；上限 256 来自 core/render/slot.mjs 的接受区间），收到：${o.renderSlots}`);
+  }
+  // --poster-t：秒。0 合法（有的风格 build.sh 就用 0 出海报：ascii-crt / dark-keynote / pixel-rpg）。
+  if (o.posterT !== null && (!Number.isFinite(o.posterT) || o.posterT < 0)) {
+    fail(`--poster-t 必须是非负数（秒），收到：${o.posterT}`);
+  }
+  // --color：只有两档，与 core/render/mux.sh 的 `case "${LEMO_COLOR:-}" in ''|bt709)` 完全一致。
+  if (!['default', 'bt709'].includes(o.color)) {
+    fail(`--color 只能是 default 或 bt709（core/render/mux.sh 只接受 '' | 'bt709'），收到 '${o.color}'`);
   }
   return o;
 }
@@ -1157,6 +1191,124 @@ function qIntent(slug) {
 /** 头部打印用：把「传了什么 / 没传」显式区分开，避免使用者以为只传了一份。 */
 const fmtQ = v => (v === null || v === undefined ? '(无)' : `--q '${v}'`);
 
+/**
+ * ③ 静帧交付图：从 demo **自己的 build.sh** 里取它声明的 poster 参数（默认时间点 + 页面查询串）。
+ *
+ * ★ 为什么默认值要「照 build.sh 取」而不是我拍一个数（**先去上游找了既有约定**，实测依据如下）：
+ *   全库 43 个风格的 build.sh **各自**都有一条「出 poster」的静帧行，写法高度一致：
+ *     `node core/render/still.mjs $D <t> [<更多 t>] --q '<页面查询>' --out <dir> --prefix <p>_ && cp <dir>/<p>_<t>.jpg <...>/poster.jpg`
+ *   实测抽样（`grep -n poster styles/<slug>/demo/build.sh`）：
+ *     · rubber-hose  43.1  --q 'poster=1&nosub=1'
+ *     · ascii-crt     0    --q 'frame=poster'
+ *     · engraving    33.5  --q "content=$C&nosub=1"
+ *     · one-line     46.9  （无 --q）
+ *     · art-deco      3.6  （静帧行渲 41.9 3.6，poster 取 3.6）
+ *   ⇒ 「哪一秒」**是逐风格定的**，且**同一秒常常同时被 styleframe 复用**。上游没有任何「通用默认秒」，
+ *     真正的约定就是**这条 build.sh 行本身**。所以这里解析它，而不是自创一个数
+ *     （与 `--grain` 走 `muxIntent`、`--q` 走 `qIntent` 是同一个思路：默认值一律照 build.sh 取）。
+ *   ★ 只有**没有这条行**的风格才退到 `style.json` 的 `frame_sec`（图鉴卡片那一帧，44/44 都有），
+ *     再没有才用 0。三档都写在调用点，便于核对。
+ *
+ * 返回 `{ t:number, q:string|null }`；解析不出 poster 行 ⇒ `null`。
+ * ★ 只读 build.sh 文本，不执行它（本文件的所有 intent 都是这个口径）。
+ */
+function posterIntent(slug) {
+  const p = path.join(CFG.winLib, 'styles', slug, 'demo', 'build.sh');
+  if (!fs.existsSync(p)) return null;
+  const lines = fs.readFileSync(p, 'utf8').split('\n').filter(l => !/^\s*#/.test(l));
+  // ① 找「拷成 poster.jpg」的那条 cp，从**源文件名**里读回时间点与前缀。
+  //    源形如 `<dir>/<prefix><t>.jpg`（rubber-hose 是 `poster_43.1.jpg` ⇒ prefix='poster_'、t=43.1）。
+  //    ⚠️ 不能只找「第一条含 still.mjs 的行」：art-deco / backrooms / midcentury-toon / silent-film
+  //       的静帧行与 poster 的 cp 行**不在同一行**，且静帧行常一次渲好几个时间点。
+  const CP_POSTER = /\bcp\b\s+(?:-\S+\s+)*("[^"]+"|'[^']+'|\S+)\s+(?:"[^"]*poster\.jpg"|'[^']*poster\.jpg'|\S*poster\.jpg)/;
+  let t = null, prefix = null;
+  for (const l of lines) {
+    const m = CP_POSTER.exec(l);
+    if (!m) continue;
+    const base = m[1].replace(/^["']|["']$/g, '').split('/').pop();
+    const bm = /^(.*?)(\d+(?:\.\d+)?)\.jpg$/.exec(base);
+    if (!bm) continue;
+    prefix = bm[1]; t = bm[2];
+    break;
+  }
+  if (t === null) return null;
+  // ② 找**产生这一帧**的 still 行，取它声明的 --q（页面查询串）。
+  //    排除以 `cp` 开头的行 —— 否则 `$D/out/still/p_7.4.jpg` 里的 `still` 会把 cp 行当成静帧行。
+  //    `still`（而不是 `still.mjs`）：papercut-red / shadow-puppet 的 build.sh 用的是裸 `still`。
+  const tRe = new RegExp(`(?:^|[^\\d.])${t.replace(/\./g, '\\.')}(?![\\d.])`);
+  let q = null;
+  for (const l of lines) {
+    if (/^\s*cp\b/.test(l) || !/\bstill\b/.test(l)) continue;
+    if (!tRe.test(l)) continue;
+    if (prefix && !l.includes(prefix)) continue;
+    const qm = /(?:^|[^-\w])--q\s+("[^"]*"|'[^']*'|\S+)/.exec(l);
+    q = qm ? qm[1].replace(/^["']|["']$/g, '') : null;
+    break;
+  }
+  return { t: Number(t), q };
+}
+
+/**
+ * ③ poster 的页面查询串：把 build.sh 那行的 `--q` 与**本次生效的内容**合起来。
+ *
+ * 为什么不能直接把 build.sh 的 `--q` 原样传：
+ *   · engraving 的 poster 行写的是 `--q "content=$C&nosub=1"`（$C 是 build.sh 自己的变量）
+ *     —— 原样传 `content=$C` 会让页面去找一个叫 `$C` 的内容文件。
+ *   · 其余风格要么没有 --q，要么是不含变量的字面量（`poster=1&nosub=1` 之类）。
+ * 所以规则是：**保留 build.sh 里能忠实重建的键**，`content=` 一律换成本次生效的内容名
+ * （没换内容时就是内容文件默认的 `content.json`，即 engraving `C=${1:-content.json}` 的默认分支）。
+ * 另外：用户用 `--q content=x.json` 换内容时，poster 也必须跟着换 —— 否则海报还是旧内容的画面。
+ * 取不到任何键 ⇒ 返回 null（**不传 --q**，与 build.sh 无 --q 的风格一致）。
+ */
+function posterQuery(qBuild, content) {
+  let q = qBuild || '';
+  if (q.includes('$')) {
+    q = q.split('&').filter(kv => !kv.startsWith('content=')).join('&');
+    q = [q, `content=${content || 'content.json'}`].filter(Boolean).join('&');
+  }
+  if (content && !/(?:^|&)content=/.test(q)) q = q ? `${q}&content=${content}` : `content=${content}`;
+  return q || null;
+}
+
+/**
+ * ② 阅读时长自检的**廉价预判**：本 demo 的页面源码里到底有没有 `TEXTS` 的痕迹。
+ *
+ * ★ 为什么要预判（实测依据）：`core/render/readcheck.mjs` 检查的是**页面自报**的文字框
+ *   （约定 `window.TEXTS(t) → [{id,text,x0,y0,x1,y1}]`）。没有这个接口时它**不是**报「达标」，
+ *   而是退出码 **2**（"NOT CHECKED … This is not a pass."）。本编排器默认要跑它，
+ *   但全库 `styles/<slug>/demo/` 下**一个 TEXTS 都没有**（实测 grep 命中 0）⇒ 默认每次出片都会白跑一趟
+ *   （它按 `--step 0.04` 重跑整片 `window.render(t)`，40s 片约 1000 次渲染）换来一句「没检查」。
+ *   所以先用文本特征判一次：**命中就照跑**（保守 —— 宁可白跑，不可漏查），没命中就跳过并**打印理由**。
+ *
+ * ★ 判定保守在哪：只做「有没有这个字符串」的粗判（`\bTEXTS\b`），**不判**它是不是真的函数、
+ *   是不是挂在 window 上 —— 这些只有真跑起来才知道。所以命中 ≠ 一定可查（真跑可能仍返回 2），
+ *   而**不命中 ≈ 一定不可查**（页面里根本没写过这个标识符）。
+ * ★ 扫描范围：demo 目录树（深度 ≤3、最多 400 个文件），只读 `.js/.mjs/.cjs/.html/.htm/.json/.css`，
+ *   跳过 `node_modules/out/stills/voices/audio/models/.venv/.git` —— 大目录不进去，成本是毫秒级。
+ */
+function demoHasTexts(demoRel) {
+  const root = path.join(CFG.winLib, demoRel);
+  const SKIP = new Set(['node_modules', 'out', 'stills', 'voices', 'audio', 'models', '.venv', '.git', 'tmp']);
+  const EXT = /\.(?:m?js|cjs|html?|json|css)$/i;
+  let budget = 400;
+  const walk = (dir, depth) => {
+    if (depth > 3 || budget <= 0) return false;
+    let ents;
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+    for (const e of ents) {
+      if (budget <= 0) return false;
+      if (e.isDirectory()) { if (!SKIP.has(e.name) && walk(path.join(dir, e.name), depth + 1)) return true; continue; }
+      if (!e.isFile() || !EXT.test(e.name)) continue;
+      budget--;
+      let s;
+      try { s = fs.readFileSync(path.join(dir, e.name), 'utf8'); } catch { continue; }
+      if (/\bTEXTS\b/.test(s)) return true;
+    }
+    return false;
+  };
+  return walk(root, 0);
+}
+
 const HELP = `
 lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
 
@@ -1208,6 +1360,25 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   --render-only          只跑渲染
   --dry-run              只打印计划
   --no-preflight         跳过起飞前检查（默认开启；本检查只提示、绝不阻断）
+  --render-slots <n>     整机同时渲染的**整片**数上限（默认 2；0 = 不限，即不设 RENDER_SLOTS）。
+                         ★ 这是**整机**预算、不是本进程的：上限由 core/render/video.mjs 自己向
+                           core/render/slot.mjs 申请槽位（锁目录默认在系统临时目录，
+                           同一台机器上**所有** lemo-opuscar 克隆 / 直接跑 build.sh 的渲染共用它）。
+                           默认 2 = 允许「两个不同 demo 的 lemo-make 同时在跑」这一现实情形
+                           （按 slug 的并发锁只防同名，不同 slug 照样能撞），同时把 GPU 占用封顶。
+                         ★ 槽位拿不到时会**一直等**（每 60s 打印一行 waiting for a render slot），
+                           不报错、不退出 —— 想完全不受影响就设 0（不设该变量、也不申请槽位）。
+  --no-readcheck         跳过阅读时长自检（默认跑；只报告、不阻断）
+  --readcheck-strict     让阅读时长自检**不达标时阻断**出片（退出码 1）。默认只报告
+  --no-poster            跳过静帧交付图（默认出片后在输出目录产 poster.jpg）
+  --poster-t <秒>        poster.jpg 取哪一秒的画面。默认照 demo 自己的 build.sh 里那条
+                         「出 poster」的静帧行取（全库 43 个风格就是这么定的，如 rubber-hose 43.1、
+                         ascii-crt 0、engraving 33.5）；没有该行的风格退到 style.json 的 frame_sec；
+                         再没有就用 0
+  --color <default|bt709>
+                         混流色彩空间。default（默认）= **不设** LEMO_COLOR，与改动前逐字节一致；
+                         bt709 = 在 WSL 侧 sh mux.sh 的进程里导出 LEMO_COLOR=bt709
+                         （标准 yuv420p 限幅 + bt709 标签；画面色值差 ±3 以内，会与旧片有细微色差）
   --manifest <path>      起飞前检查读的 demo 链路声明，默认
                          ${CFG.manifestPath}
                          （也可用环境变量 LEMO_MANIFEST；文件不在就静默跳过检查）
@@ -1503,6 +1674,12 @@ async function main() {
   console.log(C.dim(`  demo   ${demoRel}`));
   console.log(C.dim(`  输出   ${outDir}`));
   console.log(C.dim(`  编码   ${o.venc}    fps ${o.fps}    workers ${o.workers}`));
+  // ★ 只在**非默认**时打印，保证默认路径的输出与改动前逐字节一致。
+  //   渲染槽与色彩这两项在别处看不见（不像 --q 会进命令行、--no-poster 会少一步），所以显式报出生效值。
+  if (o.renderSlots !== 2) {
+    console.log(C.dim(`  渲染槽 ${o.renderSlots === 0 ? '不限（不设 RENDER_SLOTS）' : o.renderSlots}`));
+  }
+  if (o.color !== 'default') console.log(C.dim(`  色彩   ${o.color}`));
   // 打印**生效值**（可能是 build.sh 来的），不只打印命令行给没给
   if (qRender || qEvents) console.log(C.dim(`  页面参数 渲染 ${fmtQ(qRender)} / 事件 ${fmtQ(qEvents)}`));
   if (o.film) console.log(C.dim(`  选片   ${o.film}（页面 ?film=${o.film}）`));
@@ -1739,6 +1916,22 @@ async function main() {
     if (!o.skipRender) console.log(C.dim(`     $ node ${renderVArgs.join(' ')}`));
     console.log(`  4. 混流     ${(o.skipRender || o.skipAudio) ? '（依赖缺失，跳过）' : `WSL ${demoMuxRel || 'core/render/mux.sh'}（${o.venc}）→ ${finalWin}`}`);
     console.log(`  5. 导出     ${outDir}`);
+    // 6/7 是 2026-10-10 接入的两步（② readcheck / ③ poster）。干跑也要能看见它们，
+    // 否则「默认会跑什么」在 dry-run 里是看不全的（本项目反复强调 dry-run 必须能反映真实计划）。
+    console.log(`  6. 自检     ${o.noReadcheck ? '（--no-readcheck 跳过）'
+      : `WSL 无关 · Windows 开页面跑 core/render/readcheck.mjs（${demoHasTexts(demoRel) ? '本 demo 有 TEXTS 痕迹 ⇒ 会真跑' : '无 TEXTS 痕迹 ⇒ 会跳过并打印理由'}）`
+        + `${o.readcheckStrict ? ' · --readcheck-strict（不达标即阻断）' : ' · 只报告不阻断'}`}`);
+    {
+      const pi = posterIntent(o.slug);
+      let fs2 = null;
+      try {
+        const sj = JSON.parse(fs.readFileSync(path.join(CFG.winLib, 'styles', o.slug, 'style.json'), 'utf8'));
+        if (sj && Number.isFinite(Number(sj.frame_sec))) fs2 = Number(sj.frame_sec);
+      } catch { /* 同运行时：读不到就退下一档 */ }
+      const pt = o.posterT ?? (pi ? pi.t : null) ?? fs2 ?? 0;
+      console.log(`  7. 交付图   ${o.noPoster ? '（--no-poster 跳过）'
+        : `poster.jpg（t=${pt}s）→ ${path.join(outDir, 'poster.jpg')}`}`);
+    }
     console.log(C.dim((contentOf(qRender) || contentOf(qEvents) || o.lines)
       ? '\n  换内容/换配音行时：2 的「配音」阶段会先单独跑完并回传 voices/*.json，\n'
         + '  之后 2 的「配乐+混音」与 3 才并行（页面要靠 dur.json 排口播时间窗）。\n'
@@ -2717,6 +2910,19 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
         LEMO_GPU: '1',
         LEMO_VENC: 'h264_nvenc',
       };
+      // ① RENDER_SLOTS：**只在这里注入**，不另包一层 core/render/slot.mjs ——
+      //   video.mjs 自己就会 `process.env.RENDER_SLOTS ? acquire() : ()=>{}`，包一层反而要处理
+      //   它的 RENDER_SLOT_HELD 语义（见 core/render/slot.mjs 头部说明）。
+      // ★ 为什么默认给 2（而不是不限、也不是 1）：
+      //   · 现实并发路径是「**两个不同 demo 的 lemo-make 同时在跑**」—— 编排器的并发锁是**按 slug**
+      //     的（`<成片根>\.<slug>.lock`），只防同名，不同 demo 照样能撞（lib/jobs.mjs 的注释明写这一点）。
+      //   · 控制台那条队列是**串行**的（lib/jobs.mjs：同一时刻最多一个 lemo-make 子进程），
+      //     所以它**不会**加并发 —— 设上限主要防的是「命令行 + 命令行」这种撞车。
+      //   · 槽位是**整机**的（锁目录默认在系统临时目录，同一台机器上所有克隆 / 直接跑 build.sh 的
+      //     渲染共用）⇒ 它同时也是「别把唯一那块 GPU 排满」的旋钮。默认 2 = 正常一个 + 容一个。
+      // ★ 代价（如实写）：槽位拿不到时 acquire() **不会超时**，只会每 60s 打印一行并继续等
+      //   （core/render/slot.mjs 头部「已知行为」⑤）⇒ 想回到「完全不参与整机限流」的行为，加 --render-slots 0。
+      if (o.renderSlots > 0) env.RENDER_SLOTS = String(o.renderSlots);
       // 事件与字幕已在并行段之前导出并回传 WSL（见第 2 步），这里只负责渲染。
       // ⚠️ 这里**只**传 --q（渲染侧），不要再传给 events.mjs 同一份 —— 那正是本文件修过的缺陷：
       //    noev=1 会把事件表清空，配乐随即 IndexError（实测 exit 1）。
@@ -2748,6 +2954,16 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
   const exportWsl = outDir.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
   const runStart = Math.floor(t0 / 1000);
   const crfLine = intent.crf ? `export CRF=${intent.crf}` : '# （build.sh 里没写 CRF，不导出该变量）';
+  // ④ LEMO_COLOR：**必须写进这段 WSL 脚本**，不能靠 wsl.exe 的 env 透传。
+  //   ★ 已核实它到底在哪个进程里被读：core/render/mux.sh 的 `case "${LEMO_COLOR:-}" in ''|bt709)` 与
+  //     滤镜分支都在**这个 sh 进程自己的环境**里取值 ⇒ 变量必须出现在「sh "$MUX" …」这一跳之前。
+  //   ★ 而 runWsl 用的是 `su - lemo -c "bash /tmp/x.sh"` —— `su -` 会**重置环境**（登录 shell），
+  //     wsl.exe 上带的 env 到不了脚本里 ⇒ 唯一可靠的位置就是脚本内 `export`
+  //     （与下面那条既有的 `export LEMO_VENC=…` 同款、同理）。
+  //   ★ default ⇒ 一个字都不写（走 mux.sh 自己的默认色彩路径，与改动前逐字节一致）。
+  const colorLine = o.color === 'bt709'
+    ? 'export LEMO_COLOR=bt709'
+    : '# （--color default：不导出 LEMO_COLOR，mux.sh 走它自己的默认色彩路径）';
   // ⚠️ 关键：渲染产物落在 **Windows** 文件系统（D:\lemo-opuscar\...\out\video_gpu.mp4），
   //    而混流在 WSL 里跑。这两棵树是**独立文件系统**，中间没有任何同步步骤会传渲染产物
   //    （push 只传字体/素材，pull 只传 core/render/video.mjs）。
@@ -2758,6 +2974,7 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
 set -u
 export PATH=/usr/local/bin:$PATH
 export LEMO_VENC=${o.venc === 'nvenc' ? 'h264_nvenc' : 'libx264'}
+${colorLine}
 LIB=${CFG.wslLib}
 D=${demoWsl}
 S=${CFG.wslLib}/styles/${o.slug}
@@ -2912,6 +3129,84 @@ echo "MUX_OK $(stat -c%s "$OUT/${o.slug}.mp4") src_frames=$SRC_FRAMES out_frames
   ok(dst);
   const srtDst = path.join(outDir, `${o.slug}.srt`);
   if (fs.existsSync(srtDst)) ok(srtDst);
+
+  // ── 6. 阅读时长自检（② readcheck，2026-10-10 接入上游正式能力）──────────────
+  // ★ 位置：**字幕导出之后**（字幕在第 3 步就写好了），且放在最后 —— 这样它不会打断任何既有步骤，
+  //   也不会因为前面某个 fail() 提前退出而丢掉这道自检。
+  // ★ 退出码语义（core/render/readcheck.mjs 头注释，已逐字核对）：
+  //     0 = 全部达标；1 = 有不达标；**2 = 检查没能运行**（页面没有 window.TEXTS / DUR 非正 /
+  //     整片没返回过文字）—— 上游原文是 "This is not a pass."，所以 2 **绝不能**被当成「通过」，
+  //     也**不能**被当成「不达标」。三档必须分开报（本块就是这么做的）。
+  // ★ 默认「只报告、不阻断」，与本项目「检查只提示、绝不阻断」的既有风格一致（同 --no-preflight）。
+  //   要它阻断就加 --readcheck-strict（那时才 fail() ⇒ 退出码 1）。
+  if (!o.noReadcheck) {
+    step('阅读时长自检（readcheck）');
+    if (!demoHasTexts(demoRel)) {
+      // ② 的廉价预判（见 demoHasTexts 的说明）：没有 window.TEXTS 的痕迹 ⇒ 真跑必然返回 2。
+      info(C.dim('（跳过：本 demo 的页面源码里没有 window.TEXTS / TEXTS 的痕迹 ——'));
+      info(C.dim('  readcheck 检查的是页面**自报**的文字框，没有这个接口就无从检查（不是通过、也不是不达标））'));
+    } else {
+      const rcArgs = ['core/render/readcheck.mjs', demoRel, '--size', `${outSize.w}x${outSize.h}`];
+      // --q 必须与**渲染那份**一致：内容/语言/选片都靠它，不一致等于在查另一部片子。
+      if (qRender) rcArgs.push('--q', qRender);
+      info(C.dim(`$ node ${rcArgs.join(' ')}`));
+      const rcEnv = { ...process.env, PATH: `${ffDir};${process.env.PATH || ''}` };
+      const rr = await runLive(process.execPath, rcArgs, { cwd: CFG.winLib, env: rcEnv });
+      if (rr.code === 0) {
+        ok('全部达标');
+      } else if (rr.code === 2) {
+        warn('检查**没能运行**（页面没有 window.TEXTS(t) / window.DUR 非正 / 整片没返回过任何文字）。');
+        warn('  这**不算通过、也不算不达标** —— 是「无从检查」。见 core/render/readcheck.mjs 头注释的页面约定。');
+      } else {
+        if (o.readcheckStrict) fail('阅读时长自检不达标（--readcheck-strict ⇒ 阻断出片）');
+        warn('阅读时长自检不达标（默认**只报告、不阻断**；加 --readcheck-strict 可让它阻断出片）。');
+      }
+    }
+  } else {
+    step('阅读时长自检（readcheck）'); info(C.dim('（--no-readcheck）'));
+  }
+
+  // ── 7. 静帧交付图 poster.jpg（③，2026-10-10 接入上游正式能力）──────────────
+  // ★ 为什么要有它：上游交付物含 poster.jpg（DIRECTOR.md / MAINTAINING.md 都把它列进交付清单），
+  //   而编排器此前**从不出**它（ORCH_SKIP_STEPS 里登记的 core/render/still.mjs）。
+  // ★ 成本：一次**独立的页面启动**（≈ 一次浏览器启动 + N 帧），与渲染那份成片无关。
+  // ★ 默认时间点：照 demo 自己的 build.sh 那条 poster 行取（见 posterIntent 的实测依据）；
+  //   没有该行退到 style.json 的 frame_sec；再没有用 0。
+  // ★ 产出位置：**输出目录**（与成片同处）⇒ 交付时 poster 与 mp4 在一起。
+  if (!o.noPoster) {
+    step('静帧交付图（poster.jpg）');
+    const pi = posterIntent(o.slug);
+    let frameSec = null;
+    try {
+      const sj = JSON.parse(fs.readFileSync(path.join(CFG.winLib, 'styles', o.slug, 'style.json'), 'utf8'));
+      if (sj && Number.isFinite(Number(sj.frame_sec))) frameSec = Number(sj.frame_sec);
+    } catch { /* 没有 style.json / 读不动 ⇒ 这一档作废，走下一档 */ }
+    const pt = o.posterT ?? (pi ? pi.t : null) ?? frameSec ?? 0;
+    const from = o.posterT !== null ? '--poster-t'
+      : pi ? `build.sh 的 poster 行（${pi.t}s）`
+        : frameSec !== null ? `style.json 的 frame_sec（${frameSec}s）` : '兜底 0';
+    // 静帧落在 demo/out/poster/（渲染产物区），再拷到输出目录 —— 免得失败时在交付目录里留半成品。
+    const scratch = path.join(demoWin, 'out', 'poster');
+    const posterArgs = ['core/render/still.mjs', demoRel, String(pt),
+      '--size', `${outSize.w}x${outSize.h}`, '--out', scratch, '--prefix', 'poster_'];
+    const pq = posterQuery(pi ? pi.q : null, contentOf(qRender));
+    if (pq) posterArgs.push('--q', pq);
+    info(`时间点 ${pt}s（来源：${from}）`);
+    info(C.dim(`$ node ${posterArgs.join(' ')}`));
+    const pEnv = { ...process.env, PATH: `${ffDir};${process.env.PATH || ''}` };
+    const pr = await runLive(process.execPath, posterArgs, { cwd: CFG.winLib, env: pEnv });
+    const src = path.join(scratch, `poster_${pt}.jpg`);
+    if (pr.code !== 0 || !fs.existsSync(src)) {
+      // 只报告、不阻断：poster 是交付图，成片已经出来了，不该因为一张静帧把整条命令判失败。
+      warn(`poster 静帧没产出（still.mjs 退出码 ${pr.code}）—— 不影响成片，跳过`);
+    } else {
+      const posterDst = path.join(outDir, 'poster.jpg');
+      fs.copyFileSync(src, posterDst);
+      ok(`${posterDst}  ${(fs.statSync(posterDst).size / 1024).toFixed(0)} KB`);
+    }
+  } else {
+    step('静帧交付图'); info(C.dim('（--no-poster）'));
+  }
 
   console.log(C.ok(`\n全部完成 · ${(st.size / 1048576).toFixed(1)} MB · 总耗时 ${el()}`));
 }

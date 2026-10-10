@@ -258,7 +258,12 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     **35 改为 37**（实测 `ls styles/*/demo/build.sh | wc -l` = **37**；`hd-2d` / `pictogram-motion`
 //     于第 113 批补入 `build.sh`，35 是旧值）。**只改这一个数、只动这一行注释，不触碰任何代码语义**
 //     （证明见 test/README.md）。这是**有意改编排器**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = 'c57baac7f042c1d62f01392385c679aa';
+//   2026-10-10 更新（**有意改编排器**）：接入上游 3 个正式能力 + 1 个环境变量透传，共 **6 个新 CLI 参数**
+//     （`--render-slots` / `--no-readcheck` / `--readcheck-strict` / `--no-poster` / `--poster-t` / `--color`）
+//     + 新增第 6 步「阅读时长自检」与第 7 步「静帧交付图」+ 从 `ORCH_SKIP_STEPS` 手工移除 `core/render/still.mjs`。
+//     ★ 三档默认值（`--render-slots 2` / `--color default` / 默认跑 readcheck 但只报告不阻断 / 默认产 poster）
+//     保证**默认路径的编排行为与输出逐字节不变**（详见 test/README.md 的「本次改了什么」段与 README.md 差异清单）。
+export const ORCH_MD5 = 'a09262544f3e415d467dcf412a04994d';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

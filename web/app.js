@@ -47,6 +47,10 @@ const state = {
   briefSizeW: '',         // 自定义宽（字符串，原样保留用户输入）
   briefSizeH: '',         // 自定义高
   briefBusy: false,       // 正在建工单 / 出片（防重复点击）
+  // ── 输出尺寸：**启动任务主表单**（①；与上面两个面板同一条纪律，id 前缀 = run）──
+  runRatio: '',           // 主表单选过的比例（'__custom' = 自定义像素）；空 = 还没选过 → 用默认
+  runSizeW: '',           // 自定义宽（字符串，原样保留用户输入）
+  runSizeH: '',           // 自定义高
   // ── 声音（配音音色）──────────────────────────────────────
   // ★ 音色清单 / 分组 / 默认值 / 告警阈值全部来自 /api/voices，前端**不硬编码音色名**。
   voices: null,           // /api/voices 结果；null = 还没加载完（用来显示骨架屏）
@@ -847,8 +851,14 @@ function styleItemNode(s, q) {
   item.appendChild(cb);
 
   const main = el('div', 'si-main');
+  // ★ 三个字段**都要看得见**（②）：中文名在上（si-name，缺中文名时退回 slug），
+  //   英文名与 slug 在下（si-sub）。★ slug 必须仍在 —— 它是 CLI 参数，也是搜索命中高亮
+  //   （markHit）的目标节点 `.si-slug`。
   main.appendChild(el('div', 'si-name', styleLabel(s)));
-  main.appendChild(el('div', 'si-sub', s.slug));
+  const sub = el('div', 'si-sub');
+  if (s.nameEn) { sub.appendChild(el('span', 'si-en', s.nameEn)); sub.appendChild(document.createTextNode(' · ')); }
+  sub.appendChild(el('span', 'si-slug', s.slug));
+  main.appendChild(sub);
   item.appendChild(main);
 
   if (!s.hasDemo) item.appendChild(el('span', 'nodemo', '无 demo'));
@@ -874,7 +884,9 @@ function markHit(item, q, s) {
     const v = (s[key] || '');
     const idx = v.toLowerCase().indexOf(q);
     if (idx < 0) continue;
-    const node = item.querySelector(key === 'slug' ? '.si-sub' : '.si-name');
+    // ★ slug 的高亮目标改成 `.si-slug`（② 之后 `.si-sub` 里还有英文名那一段 —— 若仍整块替换，
+    //   一次 slug 命中就会把英文名抹掉）。
+    const node = item.querySelector(key === 'slug' ? '.si-slug' : '.si-name');
     if (!node) continue;
     node.textContent = '';
     node.appendChild(document.createTextNode(v.slice(0, idx)));
@@ -2439,6 +2451,122 @@ async function fillDubRatios() {
   syncDubSizeUI();
 }
 
+// ── 输出尺寸：**启动任务主表单**（①；与上面两个面板**同一条纪律、同一套 id 命名**）──────
+//
+// ★ id 命名与「主题出片」/「文案出片」完全一致：`<前缀>Ratio` / `<前缀>SizeField` / `<前缀>SizeW` /
+//   `<前缀>SizeH` / `<前缀>RatioHint` / `<前缀>SizeHint`（本处前缀 = `run`，state 键同名）。
+//   比例清单与「比例 → 像素」换算的唯一来源仍是库侧 core/render/size.mjs（经 GET /api/sizes 给），
+//   前端**不硬编码**任何比例。
+// ★ 与另两个面板的**唯一差别**：主表单没有「该风格能不能正确构图」的清单 —— 那份判据来自
+//   /api/briefs 的 styles[].aspects，只覆盖「主题出片」那 4 个白名单风格 ⇒ 这里**不做**构图警告
+//   （不猜、不吓人），只做尺寸选择 + 即时校验。
+// ★ 非法自定义尺寸**不阻断**「开始生成」：buildOpts() 只在合法时才传 `--size`，非法时**不传**
+//   （回退服务端默认 9:16），错因写进 #runSizeHint。主表单按钮的 disabled 归运行生命周期管，
+//   这里**不动**它（与另两个面板不同 —— 它们的按钮只在建工单时用，这里按钮要管整个任务生命周期）。
+
+/** 自定义像素的校验结果：{ok, w, h, error}。空输入按「还没填完」处理（措辞友好）。 */
+function checkRunCustomSize() {
+  const wRaw = ($('runSizeW') ? $('runSizeW').value : '').trim();
+  const hRaw = ($('runSizeH') ? $('runSizeH').value : '').trim();
+  if (!wRaw || !hRaw) return { ok: false, error: '填宽和高两个数字（如 1080 × 1920）' };
+  if (!/^\d+$/.test(wRaw) || !/^\d+$/.test(hRaw)) return { ok: false, error: '宽和高都必须是整数' };
+  const w = Number(wRaw), h = Number(hRaw);
+  if (w < SIZE_MIN || w > SIZE_MAX || h < SIZE_MIN || h > SIZE_MAX) {
+    return { ok: false, error: `宽和高都要在 ${SIZE_MIN}–${SIZE_MAX} 之间` };
+  }
+  if (w % 2 || h % 2) return { ok: false, error: '宽和高都必须是偶数（H.264 编码要求，如 1080 × 1920）' };
+  return { ok: true, w, h };
+}
+
+/** 主表单选的尺寸 → {ratio, size, custom, ok, error}（喂给 buildOpts 拼 `--ratio` / `--size`）。 */
+function currentRunSizeChoice() {
+  const sel = $('runRatio');
+  const v = sel ? sel.value : '';
+  if (v === CUSTOM_RATIO) {
+    const c = checkRunCustomSize();
+    return { ratio: state.defaultRatio, size: c.ok ? `${c.w}x${c.h}` : null, custom: true, ok: c.ok, error: c.error };
+  }
+  return { ratio: v || state.defaultRatio, size: null, custom: false, ok: true, error: null };
+}
+
+/** 主表单比例下拉 / 自定义宽高 → 同步界面：显隐自定义框、更新提示（**不改任何按钮的 disabled**）。 */
+function syncRunSizeUI() {
+  const sel = $('runRatio');
+  const field = $('runSizeField');
+  const hint = $('runRatioHint');
+  const shint = $('runSizeHint');
+  if (!sel) return;
+
+  const custom = sel.value === CUSTOM_RATIO;
+  if (field) field.hidden = !custom;
+
+  if (custom) {
+    if (!state.runSizeW) state.runSizeW = '1080';
+    if (!state.runSizeH) state.runSizeH = '1920';
+    if ($('runSizeW') && !$('runSizeW').value) $('runSizeW').value = state.runSizeW;
+    if ($('runSizeH') && !$('runSizeH').value) $('runSizeH').value = state.runSizeH;
+    const c = checkRunCustomSize();
+    if (hint) hint.textContent = '自定义像素（出片命令带 --size，优先级高于 --ratio）';
+    if (shint) {
+      shint.textContent = c.ok ? `→ ${c.w} × ${c.h}（出片命令：--size ${c.w}x${c.h}）` : c.error;
+      shint.classList.toggle('bad', !c.ok);
+    }
+    if ($('runSizeW')) $('runSizeW').classList.toggle('bad', !c.ok);
+    if ($('runSizeH')) $('runSizeH').classList.toggle('bad', !c.ok);
+  } else {
+    const r = state.ratios.find((x) => x.id === sel.value);
+    if (hint) {
+      hint.textContent = r
+        ? `${r.label || r.id}${r.pixels ? `　→ ${r.w} × ${r.h}` : ''}（出片命令：--ratio ${r.id}）`
+        : '';
+    }
+    if (shint) { shint.textContent = ''; shint.classList.remove('bad'); }
+    if ($('runSizeW')) $('runSizeW').classList.remove('bad');
+    if ($('runSizeH')) $('runSizeH').classList.remove('bad');
+  }
+}
+
+/** 把主表单的比例下拉填好（预设 + 自定义）。**只在选项集合变了时重建**，不顶掉用户的选择。 */
+async function fillRunRatios() {
+  const sel = $('runRatio');
+  if (!sel) return;
+  const d = await ensureSizes();
+
+  if (!d || !state.ratios.length) {
+    // 读不到清单：不硬编码兜底，只禁用下拉并如实说明（服务端仍会按默认 9:16 出片）。
+    sel.textContent = '';
+    sel.disabled = true;
+    const hint = $('runRatioHint');
+    if (hint) hint.textContent = '读取尺寸清单失败（不选 = 服务端按默认 9:16 出片）';
+    return;
+  }
+
+  const sig = state.ratios.map((r) => r.id).join(',');
+  if (sel.dataset.sig !== sig) {
+    sel.textContent = '';
+    for (const r of state.ratios) {
+      const o = document.createElement('option');
+      o.value = r.id;
+      o.textContent = r.label || r.id;
+      o.title = `${r.label || r.id}：出片命令会带上 --ratio ${r.id}`
+        + (r.pixels ? `（${r.w} × ${r.h}）` : '');
+      sel.appendChild(o);
+    }
+    const oc = document.createElement('option');
+    oc.value = CUSTOM_RATIO;
+    oc.textContent = '自定义尺寸…';
+    oc.title = `自己填宽 × 高（偶数、${SIZE_MIN}–${SIZE_MAX}）；出片命令会带上 --size <宽x高>（优先级高于 --ratio）`;
+    sel.appendChild(oc);
+    sel.dataset.sig = sig;
+    // 默认选中服务端给的 defaultRatio（9:16）—— 用户选过就保留他的选择
+    const want = (state.runRatio === CUSTOM_RATIO || state.ratios.some((r) => r.id === state.runRatio))
+      ? state.runRatio : state.defaultRatio;
+    sel.value = want || state.ratios[0].id;
+  }
+  sel.disabled = false;
+  syncRunSizeUI();
+}
+
 // ── 素材比例 × 输出比例：会不会把素材裁掉 ────────────────────────
 //
 // 背景（实测出来的产品代价）：口播素材铺画面时走的是
@@ -3170,18 +3298,35 @@ function buildOpts() {
   const q = $('fQ').value.trim();
   const grain = $('fGrain').value.trim();
   const out = $('fOut').value.trim();
+  const film = $('fFilm') ? $('fFilm').value.trim() : '';
 
   if (fps && fps !== '24') o.push('--fps', fps);
+  // ★ 这里的 '6' 是**编排器的默认值**（lemo-make.mjs 的 --workers 默认 6）——等于它就交给 CLI 自己用默认。
+  // ★★ 2026-10-10（对齐核查后**有意不改**，如实登记）：上游 `core/README.md:35` 的 `--workers` 默认是 **3**
+  //   （注「up to 6 workers for a single render」），我们两边都取**上限 6**。判据 = 用户级**最高优先级**
+  //   硬规则 A「**本地渲染速度最大化**」压过「默认值逐字对齐」⇒ 本机独跑取 6 更快，且 6 仍在上游声明的
+  //   合法范围内（1..6）。★ 想改成上游默认 3：这里与 `web/index.html` 的 `#fWorkers` 的 `value` 要**同改**，
+  //   否则「不传 = 用 CLI 默认 6」与页面显示不一致。完整对比见 `test/README.md` 的 2026-10-10 更新段。
   if (workers && workers !== '6') o.push('--workers', workers);
   if (venc) o.push('--venc', venc);
   if (q) o.push('--q', q);
   if (grain) o.push('--grain', grain);
   if (out) o.push('--out', out);
+  // 输出尺寸（①）：与「主题出片」/「文案出片」**同一条纪律** —— 显式传 `--ratio <比例>`（连默认 9:16 也传，
+  // 命令预览里看得见用的是哪个尺寸）；选了「自定义尺寸…」且校验通过就改传 `--size <WxH>`（优先级更高）。
+  // ★ 自定义尺寸**非法时不传任何尺寸**（回退服务端默认 9:16）—— 错因由 #runSizeHint 说清楚，不阻断启动。
+  const size = currentRunSizeChoice();
+  if (size.custom) { if (size.ok) o.push('--size', size.size); }
+  else if (size.ratio) o.push('--ratio', size.ratio);
+  // --film（CLI 已有、UI 此前没有）：留空 = 用该风格自带的影片模块。
+  if (film) o.push('--film', film);
   if ($('fSkipSync').checked) o.push('--skip-sync');
   if ($('fSkipRender').checked) o.push('--skip-render');
   if ($('fAudioOnly').checked) o.push('--audio-only');
   if ($('fRenderOnly').checked) o.push('--render-only');
   if ($('fDryRun').checked) o.push('--dry-run');
+  // --no-preflight（CLI 已有、UI 此前没有）：勾上 = 不跑起飞前检查直接启动。
+  if ($('fNoPreflight') && $('fNoPreflight').checked) o.push('--no-preflight');
   // 声音版块：选过音色 / 填过语速才追加（用户已在 --q 里手写就让他赢，见 voiceCliOpts）
   const v = voiceCliOpts(q);
   o.push(...v.opts);
@@ -3189,6 +3334,10 @@ function buildOpts() {
 }
 
 function syncPreview() {
+  // ★ 顺序要紧：**先**把尺寸控件刷成当前值（选「自定义尺寸…」时它会补上默认的 1080 × 1920
+  //   并做校验），**再**拼命令 —— 否则切到自定义的那一瞬间 buildOpts 读到的是空输入框，
+  //   命令里会没有 `--size`，而提示却写着 `--size 1080x1920`（预览与提示互相打脸）。
+  syncRunSizeUI();
   const { slug, opts } = buildOpts();
   const cmd = slug ? `node lemo-make.mjs ${[slug, ...opts].join(' ')}` : '';
   $('cmdPreview').textContent = cmd;
@@ -3621,7 +3770,9 @@ function fillBriefStyles() {
   for (const s of state.briefStyles) {
     const o = document.createElement('option');
     o.value = s.slug;
-    o.textContent = `${s.cn}（${s.slug}）`;     // 中文名 + slug：中文给人看，slug 给「处理工单」用
+    // ★ 三字段都显示（②）：中文名 · 英文名 · slug。slug 必须仍在 —— 它是 CLI 参数、
+    //   也是「处理工单」时用的键（字段来自服务端 /api/briefs 的 styles[].en，前端不硬编码）。
+    o.textContent = [s.cn, s.en, s.slug].filter(Boolean).join(' · ');
     o.title = `画面主体固定为库内已有的那个（字段 ${s.subjectField}）；主题只改文案 / 配色 / 细节 / 台词。`;
     sel.appendChild(o);
   }
@@ -3726,9 +3877,12 @@ async function ensureSizes() {
     if (d.custom) {
       if (Number.isInteger(d.custom.min)) SIZE_MIN = d.custom.min;
       if (Number.isInteger(d.custom.max)) SIZE_MAX = d.custom.max;
-      const w = $('briefSizeW'), h = $('briefSizeH');
-      if (w) { w.min = String(SIZE_MIN); w.max = String(SIZE_MAX); }
-      if (h) { h.min = String(SIZE_MIN); h.max = String(SIZE_MAX); }
+      // 自定义宽高输入框的上下限跟着库侧的 MIN_SIZE / MAX_SIZE 走
+      // （brief = 主题出片面板；run = 启动任务主表单；两处同一套 id 后缀）。
+      for (const id of ['briefSizeW', 'briefSizeH', 'runSizeW', 'runSizeH']) {
+        const box = $(id);
+        if (box) { box.min = String(SIZE_MIN); box.max = String(SIZE_MAX); }
+      }
     }
     return d;
   } catch (e) {
@@ -4449,7 +4603,9 @@ async function loadStylesBadges() {
     for (const s of state.styles) {
       const o = document.createElement('option');
       o.value = s.slug;                          // 表单里填的永远是 slug（CLI 参数）
-      if (s.nameCn) o.label = s.nameCn;          // 下拉里显示中文名，方便找
+      // ★ 下拉里显示三字段：中文名 · 英文名 · slug（②；字段来自服务端 /api/demos 的
+      //   nameCn / nameEn，前端不解析、不硬编码）。value 仍是 slug ⇒ 选完填进表单的永远是 CLI 参数。
+      o.label = [s.nameCn, s.nameEn, s.slug].filter(Boolean).join(' · ');
       dl.appendChild(o);
     }
   } catch (e) { /* 静默：徽标不是关键路径 */ }
@@ -5130,6 +5286,77 @@ async function validateLlm() {
   await revealLlmSteps(r.data);
 }
 
+// ── 试调用：给当前算力服务发一句固定小 prompt（POST /api/llm/invoke，task='chat'）────
+//
+// ★ 与「测试连接」的分工：那边验**连通性**（可达 → 鉴权 → 返回体三步，`/api/llm/validate`）；
+//   这边只发**一句最小 prompt**，把**真实返回的文本**拿回来 —— 用户配好服务后不必先跑三步校验、
+//   再自己去猜「它到底会不会回话」。
+// ★ 契约（读 server.mjs 的 apiLlmInvoke + lib/llm-api.mjs 的 invoke 文档，**不猜**）：
+//   body = `{ task, params, service? }`；`task` 合法取值 'chat' | 'image' | 'audio' | 'embedding' | 'custom'；
+//   `task:'chat'` 的 params 是 `{ messages, images?, maxTokens?, temperature? }`（`invoke` 委托给 chat()）；
+//   成功返回 `{ok:true,data:{ok:true,task:'chat',result:{text},raw,meta}}`，失败 `data.ok===false` 且
+//   `data.error = {kind,message,hint?}`。★ 模块 `invoke()` **永不抛**，这里再经 llmReq() 兜一层。
+// ★ 铁律同「测试连接」：调用类端点**只接受 service（选择器）**，不传任何配置体。
+const LLM_TRY_PROMPT = '用一句话回答：pong';
+
+/** 把「试调用」结果渲染到 #llmProbeOut（★ 复用既有 `.llm-probe-*` 样式，不新增任何 CSS/类名）。 */
+function renderLlmTryRunOut(ok, text) {
+  const box = $('llmProbeOut');
+  if (!box) return;
+  box.textContent = '';
+  const head = el('div', 'llm-probe-head');
+  head.appendChild(el('span', 'llm-probe-title', '试调用（一句话探针）'));
+  head.appendChild(el('span', 'llm-probe-verdict' + (ok ? ' is-ok' : ' is-bad'), ok ? '成功' : '失败'));
+  box.appendChild(head);
+  const row = el('div', 'llm-probe-row');
+  row.appendChild(el('span', 'llm-probe-name', '返回文本'));
+  row.appendChild(el('span', 'llm-probe-detail', text || '（空）'));
+  box.appendChild(row);
+  box.hidden = false;
+}
+
+/** 试调用：对当前选中 / 生效的服务发一句固定 prompt，把返回文本显示在面板里。 */
+async function tryRunLlm() {
+  if (llmState.busy) return;
+  const service = llmState.editingId || llmState.active || '';
+  const btn = $('btnLlmTryRun');
+  llmState.busy = true;
+  if (btn) btn.disabled = true;
+  setLlmHint($('llmValidateHint'),
+    service ? '正在发一句测试话（试调用）…' : '未选择任何服务：将用后端默认算力服务发一句测试话…', false);
+
+  const r = await llmReq('/api/llm/invoke', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      task: 'chat',
+      ...(service ? { service } : {}),
+      params: { messages: [{ role: 'user', content: LLM_TRY_PROMPT }], maxTokens: 32 },
+    }),
+    timeoutMs: API_TIMEOUT_MS_LONG,   // 远端算力可能较慢 ⇒ 用更长超时（与「一键检测全部」同口径）
+  });
+  llmState.busy = false;
+  if (btn) btn.disabled = false;
+
+  if (!r.ok) {   // 请求本身没跑起来（网络 / 后端信封失败）
+    setLlmHint($('llmValidateHint'), '试调用没跑起来：' + llmErrText(r.error), true);
+    renderLlmTryRunOut(false, (r.error && (r.error.hint || r.error.message)) || '请求失败');
+    toast('试调用没跑起来', true);
+    return;
+  }
+  const d = r.data || {};
+  if (d.ok === true) {
+    const text = (d.result && typeof d.result.text === 'string') ? d.result.text : '';
+    setLlmHint($('llmValidateHint'), `试调用成功：${llmActiveLabel() || '当前算力服务'} 回了一句话`, false);
+    renderLlmTryRunOut(true, text || '（模型返回了空文本）');
+    toast('试调用成功');
+  } else {
+    const e = d.error || {};
+    setLlmHint($('llmValidateHint'), '试调用失败：' + llmErrText(e), true);
+    renderLlmTryRunOut(false, e.hint || e.message || '（后端未给出错误信息）');
+    toast('试调用失败', true);
+  }
+}
+
 // ── 一键检测全部 / 自动挑选可用（标准 §9；★ **必须串行**）──────────────────
 /**
  * 串行对**每一套已保存服务**跑一次三步校验（`POST /api/llm/validate {service}`）。
@@ -5277,6 +5504,22 @@ function bind() {
       syncBriefSizeUI();
     });
   }
+  // 输出尺寸（**启动任务主表单**，①）：换比例 / 改自定义宽高 → 走 syncPreview()，
+  // 由它顺带 syncRunSizeUI() 刷新提示，并把 `--ratio` / `--size` 重新拼进命令预览。
+  if ($('runRatio')) {
+    $('runRatio').addEventListener('change', (e) => {
+      state.runRatio = e.target.value;
+      syncPreview();
+    });
+  }
+  for (const id of ['runSizeW', 'runSizeH']) {
+    if (!$(id)) continue;
+    $(id).addEventListener('input', (e) => {
+      if (id === 'runSizeW') state.runSizeW = e.target.value.trim();
+      else state.runSizeH = e.target.value.trim();
+      syncPreview();
+    });
+  }
   $('briefTopic').addEventListener('keydown', (e) => {
     // ★ Ctrl+Enter 交给全局处理器（它跑的是「启动任务」），这里只管裸 Enter
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) createBriefFromForm();
@@ -5289,6 +5532,9 @@ function bind() {
   // ★ 一键检测全部 / 自动挑选可用（标准 §9；两者都**串行**检测，见各自函数注释）
   if ($('btnLlmProbeAll')) $('btnLlmProbeAll').addEventListener('click', probeAllLlmServices);
   if ($('btnLlmAutoPick')) $('btnLlmAutoPick').addEventListener('click', autoPickLlmService);
+  // ★ 试调用（④）：给当前算力服务发一句固定小 prompt（POST /api/llm/invoke, task=chat），
+  //   把返回文本显示在面板里 —— 与「测试连接」互补（那边验连通性，这边看真实回话）。
+  if ($('btnLlmTryRun')) $('btnLlmTryRun').addEventListener('click', tryRunLlm);
   // 通用算力接入面板：新增 / 保存 / 取消 / 清密钥 / 拉清单 + 列表行内「切换·编辑·删除」（事件委托）
   if ($('btnLlmAdd')) $('btnLlmAdd').addEventListener('click', addLlmService);
   if ($('btnLlmSave')) $('btnLlmSave').addEventListener('click', saveLlmService);
@@ -5564,8 +5810,10 @@ function bind() {
     toast(`已选中 ${slug}，确认参数后点「开始生成」`);
   });
 
-  for (const id of ['fSlug', 'fFps', 'fWorkers', 'fVenc', 'fQ', 'fGrain', 'fOut',
-                    'fSkipSync', 'fSkipRender', 'fAudioOnly', 'fRenderOnly', 'fDryRun']) {
+  // ★ 参数一变就重拼命令预览。`fFilm`（⑤ --film）是文本输入 ⇒ 靠 'input'；`fNoPreflight`
+  //   （⑤ --no-preflight）是复选 ⇒ 靠 'change'。两个都挂上（幂等，多挂一个监听不会出错）。
+  for (const id of ['fSlug', 'fFps', 'fWorkers', 'fVenc', 'fQ', 'fGrain', 'fOut', 'fFilm',
+                    'fSkipSync', 'fSkipRender', 'fAudioOnly', 'fRenderOnly', 'fDryRun', 'fNoPreflight']) {
     $(id).addEventListener('change', syncPreview);
     $(id).addEventListener('input', syncPreview);
   }
@@ -5638,7 +5886,7 @@ async function boot() {
   renderDubState();        // 出片区初始收起
   await Promise.all([
     loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs(),
-    loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(),
+    loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(), fillRunRatios(),
     loadLlm(), loadResources(false),
   ]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）

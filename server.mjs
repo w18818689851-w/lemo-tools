@@ -1970,7 +1970,7 @@ async function apiBriefRun(req, res, id) {
   // runOpts 里若自己带了尺寸参数，会与控制台按工单拼出来的那个冲突 —— 提醒一句（不拦）。
   // ★ 判据与 lib/briefs.mjs:validateOpts 一致：`--ratio` 的值现在**是收的**（`9:16` 含 `:` 也收），
   //   所以这个分支是真会走到的（改前 `--ratio 9:16` 在 validateOpts 就被 400 拦掉了，文案成了死代码）。
-  // ★ 冲突结果不是「可能」而是确定的：编排器 `lemo-make.mjs:871` 对重复 `--ratio` 是**后者胜**
+  // ★ 冲突结果不是「可能」而是确定的：编排器 `lemo-make.mjs:885` 对重复 `--ratio` 是**后者胜**
   //   （`o.ratio = next()` 逐次覆盖），而控制台把自己的那个拼在 runOpts **之后** ⇒ 工单的尺寸字段赢。
   if (b.runOpts.includes('--ratio') || b.runOpts.includes('--size')) {
     warnings.push('runOpts 里已经带了 --ratio / --size：控制台还会按工单的「输出尺寸」再传一次，'

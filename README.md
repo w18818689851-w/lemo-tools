@@ -275,8 +275,8 @@ lemo-make.bat --help
 | `tools/words.py` | **成片内容** | dataviz / swiss-motion | ★ **已修（2026-10-07）**：编排器**现在会跑它**（`asr_check.py` 之后、`VOICE_DONE` 之前；产物 `voices/words_rel.json` 由页面 `main.js` 直读驱动逐词高亮）。原先漏跑 ⇒ 逐词时间轴陈旧 5~6 天 |
 | `tools/video_png.mjs` | **成片内容** | risograph | ★ **已修（2026-10-07）**：编排器**现在会用它**。它是**换渲染器**（PNG 无损中间片）而非追加一步 —— 上一轮判「不接」是因为它**不接受 `--size`**、接上会静默丢画幅；本轮先给它补上 `--size`（照 `core/render/page.mjs` 的 `takeSize` 同源），再在编排器渲染段做**候选探测**（`demoRenderRel`，不写死 slug）。**为什么必须修**：网点色在 JPEG 4:2:0 里会被吃掉 ⇒ 用 `core/render/video.mjs` 出的 risograph 成片视觉上是**降级**的。列在此处只为标记「这一类缺口确实存在过」 |
 | `models/gen_volt.mjs` + `models/gen_kite.mjs` | 已核实**无差异** | hologram-hud | 生成 volt / kite 素材。2026-10-07 实测重跑产物与入库版**逐字节相同**（md5 volt `b25a8e24…` / kite `9f1badb7…`）⇒ 确定性生成物，**不跑与跑无差异**，故不为它改编排器 |
-| `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变）。2026-10-07 已量化（见下） |
-| `tools/still.mjs` | 只影响交付图 | rubber-hose | 同上 |
+| `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变）。2026-10-07 已量化（见下）。★ **2026-10-10 部分已修**：编排器新增第 7 步「静帧交付图」，**现在会用它出 `poster.jpg`**（时间点照 demo 自己的 build.sh 那条 poster 行取，见 `--poster-t`）；**`stills/*.jpg` / `styleframe.jpg` 仍不出** ⇒ 那几类交付图照旧会陈旧 |
+| `tools/still.mjs` | 只影响交付图 | rubber-hose（另有 cel-anime-80s 有此文件但无 build.sh） | demo **自带**的静帧脚本，出的是 2880×1620 的**设定表 / 模型表**（rubber-hose 的 `poster.jpg` / `styleframe.jpg` 是 `core/render/still.mjs` 出的）—— 编排器**不出**这一类 |
 | `tools/cuecheck.py` | 纯自检 | 12 个：art-deco / dark-keynote / dataviz / engraving / hologram-hud / iso-infographic / microgame / midcentury-toon / silent-film / silkscreen-poster / whiteboard / woodcut | 配乐卡点 ↔ 画面时间网格自检 |
 | `tools/final_asr.py` | 纯自检 | **8 个**：dark-keynote / **dataviz** / hologram-hud / iso-infographic / microgame / rubber-hose / **stained-glass** / woodcut | 成片终检（ASR 比对） |
 | `check_mix.py`（`demo/` 或 `demo/tools/`） | 纯自检 | 2 个：blueprint / glass-product | 混音自检 |
@@ -295,7 +295,30 @@ lemo-make.bat --help
 （`pitch.py` 是第一例；2026-10-07 补进编排器的 `trim_cmd.py` / `export_cues.mjs` / `words.py` 是第二、三、四例，
 它们已从登记表里**移除**，`runs[]` 镜像则同步**加入**。`video_png.mjs` 是**第五例，也是形态不同的一例** ——
 它不是「漏跑一步」而是**换渲染器**，同样已移除、已进 `runs[]`；移除后该表的 `impact: content` 一档**为空**，
-如实说明：内容级缺口目前**清零**，表结构保留，供将来如实登记新发现的内容级缺口。）
+如实说明：内容级缺口目前**清零**，表结构保留，供将来如实登记新发现的内容级缺口。
+`core/render/still.mjs` 是**第六例（2026-10-10）** —— 编排器新增「静帧交付图」步，用它出 `poster.jpg`
+⇒ 已从登记表移除。★ **如实说明一处例外**：它是 `root='lib'` 条目，**不在**上面那句「自动不再报」的
+覆盖范围内（那个自动机制只认 `root='demo'` 的候选脚本，`core/` 脚本**有意不进** `runs[]`）
+⇒ 这一条是**手工移除**的；今后再有 `root='lib'` 的条目被补上，必须回 `ORCH_SKIP_STEPS` 手工删行。
+
+★ **2026-10-10：编排器接入上游 3 个正式能力 + 1 个环境变量**（对齐 `lemomo-ai/lemo-opuscar`）。
+新增 6 个 CLI 参数，全部**默认与改动前逐字节一致**（默认值都不设新变量、不改既有步骤）：
+
+| 参数 | 默认 | 落点 |
+|---|---|---|
+| `--render-slots <n>` | `2`（`0` = 不限，即**不设** `RENDER_SLOTS`） | 渲染子进程 env（`core/render/video.mjs` 自己向 `core/render/slot.mjs` 申请整机槽位）。**只注入 env，不包一层 slot.mjs** |
+| `--no-readcheck` | 关（默认**跑**，只报告不阻断） | 第 6 步「阅读时长自检」：`node core/render/readcheck.mjs <demo> --size WxH [--q …]`，退出码 **0/1/2 分开报**（2 = 无从检查，**不算通过也不算不达标**） |
+| `--readcheck-strict` | 关（默认只报告） | 同上；打开后不达标 ⇒ `fail()`（退出码 1） |
+| `--no-poster` | 关（默认出） | 第 7 步「静帧交付图」：`node core/render/still.mjs <demo> <t> --size WxH --out <demo>/out/poster --prefix poster_` → 拷成**输出目录**的 `poster.jpg` |
+| `--poster-t <秒>` | 按 demo 的 `build.sh` 里那条 poster 静帧行取；无该行退 `style.json` 的 `frame_sec`；再没有用 `0` | 同上 |
+| `--color <default\|bt709>` | `default`（**不设** `LEMO_COLOR`） | **写进 WSL mux 脚本的 `export`**（`core/render/mux.sh` 在 `sh mux.sh` 这个进程的环境里读它；`runWsl` 用 `su -`，**会重置环境** ⇒ 靠 `wsl.exe` 透传无效） |
+
+★ 阅读时长自检带一道**廉价预判**：先在本 demo 的页面源码里找 `TEXTS` 的痕迹，找不到就**跳过并打印理由**
+（`readcheck` 检查的是页面自报的文字框，没有该接口必然返回 2；而它按 `--step 0.04` 重跑整片 `window.render(t)`，
+40 s 片约 1000 次渲染 ⇒ 白跑很贵）。★ 实测：全库 `styles/<slug>/demo/` 下**一个 `TEXTS` 都没有** ⇒
+现状下这一步**总是走「跳过」分支**（成本 ≈ 0）；一旦某个风格真的实现了 `window.TEXTS`，它就会自动开始真跑。
+★ `--render-slots` 的默认 2 有代价（如实写）：`slot.mjs` 的 `acquire()` **没有超时**，槽位被别人占着时
+它只每 60 s 打印一行 `waiting for a render slot` 并**继续等**（不报错、不退出）—— 想完全不参与整机限流就设 `0`。
 
 ★ **`tools/video_png.mjs`（risograph）已接上（2026-10-07）—— 它是怎么修的**：
 它在 `build.sh:12` **替换** `core/render/video.mjs`：
@@ -521,7 +544,7 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `c57baac7f042c1d62f01392385c679aa`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `a09262544f3e415d467dcf412a04994d`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
 - **27 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`

@@ -29,7 +29,7 @@
  *   · **只读**：不跑渲染、不加载模型、不改任何风格源码 / 成片 json。只读源码文本与 json。
  *   · 「默认影片模块 = `film.js`」的判据（证据）：
  *       - `styles/engraving/demo/main.js:9` → `const mod = await import('./' + (q.get('film') || 'film') + '.js');`
- *       - `lemo-make.mjs:784` → 注释「默认 film.js = 仓库自带示例片」；`lemo-make.mjs:1334` → `const filmName = o.film || 'film';`
+ *       - `lemo-make.mjs:791` → 注释「默认 film.js = 仓库自带示例片」；`lemo-make.mjs:1505` → `const filmName = o.film || 'film';`
  *       - ⇒ 不传 `--film` 时页面加载的就是 `demo/film.js`。
  *     局限：只有 `engraving` 的 `main.js` 真的写了 `q.get('film')`；其余风格**根本没有 `film.js`**
  *     （它们不走影片模块约定）—— 对这些风格本闸门按「无 `film.js` ⇒ 无 `aspects` ⇒ 只支持 16:9」判，
