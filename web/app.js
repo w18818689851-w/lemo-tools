@@ -5241,7 +5241,7 @@ async function autoPickLlmService() {
   toast(`已自动切换到可用算力：${firstOk.label}`);
 }
 
-/** ★ 界面入口：顶栏「LLM 配置」→ 滚到面板卡片并高亮一下（纯前端定位，不发请求）。 */
+/** ★ 界面入口：顶栏「AI 算力配置」→ 滚到面板卡片并高亮一下（纯前端定位，不发请求）。 */
 function gotoLlmCard() {
   const card = $('llmCard');
   if (!card) return;

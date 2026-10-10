@@ -27,7 +27,7 @@
  *   I 补的是 **通用 AI 算力接入面板**（`/api/llm/*`）—— 此前在 UI 层**零覆盖**（探针只在 `D:/lemo-tmp/`，
  *   不进仓）。★ 2026-10-10（P4）重写：委托方《通用 AI 算力 API 接入模块》规格要求**开放式 / 可插拔**、
  *   **不锁定**服务商，面板可配 名称标记 / Endpoint / API-Key / 请求头 / 超时 并**多套保存 + 快速切换**
- *   ⇒ 本组随之**换锚点**（★ 面板已从「极简零控件」重建为完整配置面板）：① 顶栏「LLM 配置」入口可达（加 .flash 并滚进视口）；
+ *   ⇒ 本组随之**换锚点**（★ 面板已从「极简零控件」重建为完整配置面板）：① 顶栏「AI 算力配置」入口可达（加 .flash 并滚进视口）；
  *   ② 「当前生效」胶囊三分支（出厂默认 WorkBuddy / 无服务「当前未选择」/ 有服务显 label）；③ 面板**确有**
  *   配置控件（label/kind/target/baseUrl/model/timeout/key/headers/path/extract）+ 空状态提示；④ 说明文案
  *   含「可插拔 / 不锁定 / 多套 / 快速切换」；⑤ 骨架不白屏 + `#llmSteps` 恰含 3 步；⑥ **测试连接**：桩
@@ -3043,8 +3043,8 @@ async function main() {
       const llmRespLast = (pred) => cdp.evalJs(`(() => { const rs = (window.__llmResp || []).filter((r) => ${pred});
         return rs.length ? rs[rs.length - 1].body : null; })()`);
 
-      await runCase('I1 顶栏「LLM 配置」入口可达：按钮在、点了给卡片加高亮并滚进视口', async () => {
-        need(await cdp.evalJs(`!!document.getElementById('btnGotoLlm')`), '顶栏没有「LLM 配置」入口按钮 #btnGotoLlm');
+      await runCase('I1 顶栏「AI 算力配置」入口可达：按钮在、点了给卡片加高亮并滚进视口', async () => {
+        need(await cdp.evalJs(`!!document.getElementById('btnGotoLlm')`), '顶栏没有「AI 算力配置」入口按钮 #btnGotoLlm');
         // 先滚到顶（面板卡片在长页面靠下 ⇒ 此刻必然在视口外），再点入口 —— 才能证明「点了真的滚过去」
         await cdp.evalJs(`window.scrollTo(0, 0); true`);
         const beforeTop = await cdp.evalJs(`document.getElementById('llmCard').getBoundingClientRect().top`);
@@ -3053,7 +3053,7 @@ async function main() {
         await cdp.evalJs(`document.getElementById('btnGotoLlm').click(); true`);
         // ★ 有牙的判据：gotoLlmCard() 会给卡片加 .flash 高亮（证明入口真的接到了面板，不是空按钮）
         need(await cdp.evalJs(`document.getElementById('llmCard').classList.contains('flash')`) === true,
-          '点「LLM 配置」后 #llmCard 没有 .flash 高亮类（入口没接到面板）');
+          '点「AI 算力配置」后 #llmCard 没有 .flash 高亮类（入口没接到面板）');
         await waitFor(cdp.evalJs,
           `document.getElementById('llmCard').getBoundingClientRect().top < window.innerHeight`,
           { timeoutMs: 8000 });

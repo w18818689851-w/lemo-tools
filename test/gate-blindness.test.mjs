@@ -5669,7 +5669,7 @@ const rfTree = (dir, extraPath) => {
 //   ★ 判据③ 失明守卫要求「≥1 条用户可见串」**且**「`web/index.html` 的 id 集合非空」
 //     ⇒ 夹具 HTML 必须**至少含 1 个 id**，且阴性 / 变异树里都留中文串。
 const VH_HTML = '<html><body>\n'
-  + '<button id="btnLlmAdd" title="跳到「AI 算力配置」面板（默认走 WorkBuddy；这里只查看连接状态）">LLM 配置</button>\n'
+  + '<button id="btnLlmAdd" title="跳到「AI 算力配置」面板（默认走 WorkBuddy；这里只查看连接状态）">AI 算力配置</button>\n'
   + '<input id="llmBaseUrl" placeholder="如 https://api.example.com/v1">\n'
   + '</body></html>\n';
 const VH_APP = "const hint = '运行时口令：未注入（测试连接会提示未配置）';\n";

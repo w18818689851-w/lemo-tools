@@ -936,7 +936,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 | 用例 | 动作 → 断言 |
 |---|---|
-| I1 | 顶栏 `#btnGotoLlm`「LLM 配置」**存在且点得动**：点它 → `#llmCard` 加 `.flash` 高亮、且卡片真的滚进视口（top 由视口外 → 视口内） |
+| I1 | 顶栏 `#btnGotoLlm`「AI 算力配置」**存在且点得动**：点它 → `#llmCard` 加 `.flash` 高亮、且卡片真的滚进视口（top 由视口外 → 视口内） |
 | I2 | 默认态胶囊 `#llmCurrentPill` 文案含「当前默认」+「WorkBuddy」、且带 `.is-default`（新面板已无 profile 下拉 ⇒ 不再有「切换」分支） |
 | I3 | ★★ **极简本身**（本批核心约束）：`#llmCard` 内 `<input>` / `<select>` / `<textarea>` 数量**全部 === 0**（将来谁把控件加回来，这条必红） |
 | I4 | `#llmIntro` 明说端点与口令**自动取自运行时**、**无需手工填写**，且用户可见文案**不含 markdown 星号** |
