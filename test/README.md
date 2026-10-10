@@ -12,7 +12,7 @@ node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（12 条）
-node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（9 条，★ 绝不真安装）
+node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（11 条，★ 绝不真安装）
 node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（82 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见）
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
@@ -29,9 +29,9 @@ node test/dub-align.test.mjs      # 功能2「口播 cue ↔ 文案句」时间�
 node test/dub-split.test.mjs      # 断句 splitSentences 纯逻辑测试（10 条，★ 硬切不切在词/记号内部 + 切片 trim + 拼回不丢字）
 node test/gate-blindness.test.mjs # 闸门「守卫 + 核心判据」回归套件（139 条：**全部 52 个闸门**的失明/反向守卫 + **17 条核心判据**，每条都含「正向命中 + 阴性对照」，另含 60 个「改坏守卫或判据必须变红」自证）
 node test/slot.test.mjs           # 整机渲染限流器 core/render/slot.mjs 的行为测试（21 条，★ 槽位上限用子进程并发验排队 + 过期槽接管 + .mutex 清理 + CLI 退出码透传 + release 绝不抛）
-node test/llm-api.test.mjs        # 开放式 LLM 配置模块 lib/llm-api.mjs 的纯逻辑/离线测试（104 条，★ 桩服务用 node:http 监听随机端口、**不打真实外网**；钉「chat() 永不抛」+ 容错 8 类 + 密钥不外泄 + 覆盖文件读写 + ★ 多套「算力服务」CRUD 与 `extra` **逐键合并**（对齐参考 §11.1：空值不覆盖、其余键保留、`clearExtra` 显式清空）+ ★★ **`extra` 三键识别**（`path`/`force_stream`/`ensure_system_prompt` 顶层优先、`extra` 兜底，对齐参考 §5/§12.2）+ **`extra` 非密钥项白名单回显**（§10）+ **探测 `content:null` 不误判为坏结构**（§11.9）+ ★★ **`validate()` 认 `forceStream` 且补 `11101` 流式兜底**（§11.5 —— 修「测试连接对只接受流式的端点必然红」））
+node test/llm-api.test.mjs        # 开放式 LLM 配置模块 lib/llm-api.mjs 的纯逻辑/离线测试（109 条，★ 桩服务用 node:http 监听随机端口、**不打真实外网**；钉「chat() 永不抛」+ 容错 8 类 + 密钥不外泄 + 覆盖文件读写 + ★ 多套「算力服务」CRUD 与 `extra` **逐键合并**（对齐参考 §11.1：空值不覆盖、其余键保留、`clearExtra` 显式清空）+ ★★ **`extra` 三键识别**（`path`/`force_stream`/`ensure_system_prompt` 顶层优先、`extra` 兜底，对齐参考 §5/§12.2）+ **`extra` 非密钥项白名单回显**（§10）+ **探测 `content:null` 不误判为坏结构**（§11.9）+ ★★ **`validate()` 认 `forceStream` 且补 `11101` 流式兜底**（§11.5 —— 修「测试连接对只接受流式的端点必然红」））
 node test/prune-jobs.test.mjs     # scripts/prune-jobs.mjs 的**并发写**回归测试（1 条，★ 带屏障：父进程先占住跨进程写锁 + 等 prune 读完索引；钉「`--apply` 与并发 console 写**共用同一把锁** ⇒ 不丢并发新增的任务」，修前红/修后绿）
-node test/store-lock.test.mjs     # lib/store.mjs **未拿到跨进程写锁**时的降级路径测试（2 条，★ 把 `index.lock` 做成**目录**迫使 `acquireLock()` 返回 false；钉「未拿锁**仍会「重读 + 合并」**⇒ 不丢盘上别人的条目、且 `saveIndex` 返回 true」+「`savedAt` 统一为 ISO 字符串」；★ 反向验证：临时给合并加 `&& locked` 守卫 ⇒ 第 1 条**必红**）
+node test/store-lock.test.mjs     # lib/store.mjs **未拿到跨进程写锁**时的降级路径测试（3 条，★ 把 `index.lock` 做成**目录**迫使 `acquireLock()` 返回 false；钉「未拿锁**仍会「重读 + 合并」**⇒ 不丢盘上别人的条目、且 `saveIndex` 返回 true」+「`savedAt` 统一为 ISO 字符串」；★ 反向验证：临时给合并加 `&& locked` 守卫 ⇒ 第 1 条**必红**）
 node test/resources.test.mjs      # 通用资源检测适配模块 lib/resources.mjs 的纯逻辑 / 离线测试（23 条，★ 五态真值表 + `satisfies` 版本语义（`>=` / `^` / 精确 / `*`）+ `dirFor` 路径穿越被拒 + `planDownloads`「**ready 不产生动作**」（本地优先 / 禁止重复下载的核心断言）+ 注入 `envResult` **离线**跑通 + ★ **`mount` 接线**（静态断言两个入口的函数体里真的 `await mount(`；行为断言 `opts.mount=false` 跳过挂载、无下载配置时不挂载；★ **端到端离线**：就绪 ⇒ 导入后**真的挂载** `mounted:true`、不可用 ⇒ 仍 `ok:true` 但 `mounted:false`）+ ★ **三条下载真路径离线测**（`_dlHttp` 成功 / 0 字节 corrupt / sha256 不符 ⇒ 都断言「先落 `_download/`、校验通过才移入 `dirFor()`」；`_dlExec` 成功与失败；`importResource` 的**目录**分支）—— **不起 WSL、不真下载外网**）
 node test/vram.test.mjs           # lib/vram.mjs（显存）的**首份测试**（23 条，★ 该模块此前**无专门闸门也无专门测试** —— 而显存是本项目常态瓶颈）。三层：① **纯函数** `vramShortfallMessage`（差额算术 / 放行值 `max(0,可用-300)` / 三分支文案 / 占用者诊断段的名字×个数+示例 pid、>6 项截断、空清单、`pid:null`、**契约「occupants 缺省 ⇒ 逐字节退回原文案」**）；② 真读 GPU 部分（`vramFreeMiB` / `gpuOccupants`）；③ `ensureVramFree`（`need<=0` 跳过且**一次都不 spawn** / 够用 ⇒ 零输出零卸载 / `LEMO_NO_VRAM_FREE=1` 只查不腾 / 不足 ⇒ 卸模型并报腾出量 / 仍不足 ⇒ `ok:false` + `settle` 真重试 / `onShort:'continue'`）。★ **桩法**：`spawn` 无 shell ⇒ `.cmd` 桩**不被命中**（会穿透到真卡）⇒ 用 `module.registerHooks()` 拦 `node:child_process` 的 `spawn`（只换 nvidia-smi，其余转发），LM Studio 侧用本地 http 桩 + `LEMO_LMSTUDIO_BASE` ⇒ **绝不真卸模型、绝不真腾显存**。★ **10 处变异全部被抓**（其中 1 处原本假绿：两个坏输出互比 = 空断言，已改正面断言）
 ```
