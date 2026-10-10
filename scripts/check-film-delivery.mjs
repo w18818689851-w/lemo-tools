@@ -61,7 +61,7 @@
  *     `defer = (film.mtime > _distill.json.mtime)` **且**下列**任一**成立：
  *       · **成片很新**：`now − film.mtime ≤ DEFER_FRESH_MS`（15 min）—— 刚渲完，回填可能还在路上；
  *       · **该 slug 的并发锁活着**：`<LOCK_DIR>/.<slug>.lock` 存在且按**编排器自己的判据**算活着 ——
- *         逐字复用 `lemo-make.mjs` 里那段锁活性判据（`try { process.kill(oldPid, 0); … }` + `ageMs < 6 * 3600 * 1000`；★ 2026-10-07 原写 `lemo-make.mjs:1620-1624`、行号已漂 ⇒ 改符号锚）：「锁里记的 pid 仍存在（`process.kill(pid,0)` 成功或 EPERM）
+ *         逐字复用 `lemo-make.mjs` 里那段锁活性判据（`try { process.kill(oldPid, 0); … }` + `ageMs < 6 * 3600 * 1000`；★ 2026-10-07 原写 `lemo-make.mjs:1767-1771`、行号已漂 ⇒ 改符号锚）：「锁里记的 pid 仍存在（`process.kill(pid,0)` 成功或 EPERM）
  *         且锁龄 < 6h」。这是**最准的 per-slug 信号**：批次每渲一个风格就建这个锁、渲完即删。
  *       · **批次在跑**：`_distill/render-run-*.log` / `_distill/state.json` / `_distill/logs/*.log`
  *         三者**最新 mtime 在 DEFER_ACTIVE_MS（10 min）内** —— 逐条对齐项目既有约定
@@ -84,7 +84,7 @@
  *   LEMO_DISTILL_ROOT  风格技能树（默认 D:/lemo-tools/lib/style-skills）—— F 段变异验证指向**临时副本**
  *                      （与 check-film-aspect.mjs / check-tp-prose.mjs 同名同义）。
  *   LEMO_BATCH_DIR     批次证据目录（默认 D:/lemo-tools/_distill）—— F 段变异验证指向临时目录。
- *   LEMO_LOCK_DIR      并发锁目录（默认 D:/lemo-films）—— 与 `lemo-make.mjs:1745` 同名同义。
+ *   LEMO_LOCK_DIR      并发锁目录（默认 D:/lemo-films）—— 与 `lemo-make.mjs:1892` 同名同义。
  * 退出码：有 FAIL（或失明）→ 1；否则 0。
  *   ★「疑似正在重渲、本次不判」**不算 FAIL**（exit 0），但会**大声打印**并列出本会报的每一条 —— 别当成「通过」。
  */
@@ -102,7 +102,7 @@ const BATCH_DIR = path.resolve(process.env.LEMO_BATCH_DIR || 'D:/lemo-tools/_dis
 const LOCK_DIR = path.resolve(process.env.LEMO_LOCK_DIR || 'D:/lemo-films');
 const DEFER_FRESH_MS = 15 * 60 * 1000;    // 「成片很新」窗口
 const DEFER_ACTIVE_MS = 10 * 60 * 1000;   // 「批次在跑」窗口（批次证据的最新 mtime）
-// ★ 锁的「活着」判据**逐字对齐** `lemo-make.mjs:1752-1759`：pid 仍在 **且** 锁龄 < 6h。别自创阈值。
+// ★ 锁的「活着」判据**逐字对齐** `lemo-make.mjs:1899-1906`：pid 仍在 **且** 锁龄 < 6h。别自创阈值。
 const LOCK_MAX_AGE_MS = 6 * 3600 * 1000;
 const NOW = Date.now();
 
@@ -163,7 +163,7 @@ function batchProbe() {
   return { hits, items };
 }
 
-/** 该 slug 的并发锁是否「活着」—— 判据逐字复用 `lemo-make.mjs:1752-1759`。无锁返回 null（正常态，非失明）。 */
+/** 该 slug 的并发锁是否「活着」—— 判据逐字复用 `lemo-make.mjs:1899-1906`。无锁返回 null（正常态，非失明）。 */
 function lockProbe(slug) {
   const p = path.join(LOCK_DIR, `.${slug}.lock`);
   const m = mtimeOf(p);

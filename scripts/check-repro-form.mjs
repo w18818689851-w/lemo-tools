@@ -11,7 +11,7 @@
  *   `lemo-make.mjs`（**红线文件**，md5 受 `check-redline-md5` 守）的 `--q` 帮助文本明写：
  *     「`--q <k=v&k=v>` 页面参数，**只透传给渲染**（video.mjs）… **默认按 demo 的 `build.sh`
  *      渲染行取**（如 tilt-shift 的 noev），**取不到就不传**」
- *   ⇒ 对**没有 `build.sh` 的风格**，编排器**一个 `--q` 都取不到**（`qIntent()` 见 `lemo-make.mjs:1171-1189`）。
+ *   ⇒ 对**没有 `build.sh` 的风格**，编排器**一个 `--q` 都取不到**（`qIntent()` 见 `lemo-make.mjs:1172-1190`）。
  *   ⇒ 若该风格的 `DEMO.md`「Build notes」里写着「渲染要带 `--q …`」，编排器就**复现不出已发布形态**。
  *   已确认两例（上一批已修，本闸门只**守**它们不再复发、**一个字节都不写库仓**）：
  *     · `hd-2d`：`DEMO.md:127` 渲染行带 `--q tilt=1` —— 没有它产的是 **plain DOF 版**，
@@ -65,7 +65,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ③ 与 `qIntent()` **同口径**（★ 不同口径就会造出「你以为能取到、实际取不到」的假绿）
  * ══════════════════════════════════════════════════════════════════════════════
- *   `build.sh` 侧的 `--q` 抽取**逐字照抄** `qIntent()` 的取值正则（`lemo-make.mjs:1181`；函数体在 1171–1189 行）：
+ *   `build.sh` 侧的 `--q` 抽取**逐字照抄** `qIntent()` 的取值正则（`lemo-make.mjs:1182`；函数体在 1171–1189 行）：
  *     · 先按 `split('\n')` 且**滤掉 `^\s*#` 的整行注释**；
  *     · 再 `lines.find(l => l.includes('video.mjs'))`（**第一处**含 `video.mjs` 的行）；
  *     · 用 `/(?:^|[^-\w])--q\s+("[^"]*"|'[^']*'|\S+)/` 抽值，剥掉首尾引号；
@@ -232,9 +232,9 @@ const STYLES = path.join(OPUSCAR, 'styles');
 // ★ 覆盖点：风格技能树（`_distill.json` 源），同名同义于 check-demo-header / check-tp-prose。
 const DISTILL = path.resolve(process.env.LEMO_DISTILL_ROOT || path.join(HERE, '..', 'lib', 'style-skills'));
 
-/** `qIntent()` 的 needle（`lemo-make.mjs:1178` 的 `l.includes(needle)`）——**逐字相同**，见 ③。 */
+/** `qIntent()` 的 needle（`lemo-make.mjs:1179` 的 `l.includes(needle)`）——**逐字相同**，见 ③。 */
 const Q_NEEDLE = 'video.mjs';
-/** `qIntent()` 的取值正则（`lemo-make.mjs:1181`）——**逐字照抄**，见 ③。 */
+/** `qIntent()` 的取值正则（`lemo-make.mjs:1182`）——**逐字照抄**，见 ③。 */
 const Q_RE = /(?:^|[^-\w])--q\s+("[^"]*"|'[^']*'|\S+)/;
 
 /** 从一行里抽 `--q` 的值（剥首尾引号）；没有 ⇒ `null`。与 `qIntent()` 的 `pick()` 内层同口径。 */
@@ -251,7 +251,7 @@ function shellLines(buildSh) {
 }
 
 /**
- * `build.sh` 侧的 `--q` —— ★ **逐字照抄 `qIntent()`**（`lemo-make.mjs:1171-1189`），见头注释 ③。
+ * `build.sh` 侧的 `--q` —— ★ **逐字照抄 `qIntent()`**（`lemo-make.mjs:1172-1190`），见头注释 ③。
  * 返回 `{ exists, line, raw, q }`：`raw` = 抽到的原值（**保留 `$`**，供诊断），`q` = 编排器**实际能拿到**的值
  * （含 `$` ⇒ `null`）。`exists=false` ⇒ 没有 `build.sh`。
  */

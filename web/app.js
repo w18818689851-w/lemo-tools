@@ -5468,15 +5468,32 @@ async function autoPickLlmService() {
   toast(`已自动切换到可用算力：${firstOk.label}`);
 }
 
-/** ★ 界面入口：顶栏「AI 算力配置」→ 滚到面板卡片并高亮一下（纯前端定位，不发请求）。 */
-function gotoLlmCard() {
-  const card = $('llmCard');
-  if (!card) return;
-  if (card.scrollIntoView) {
-    try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { card.scrollIntoView(); }
+/** ★ 界面入口：滚到某个元素并高亮一下（纯前端定位，不发请求）。
+ *  ★ 统一入口：顶栏「AI 算力配置」/ 分区跳转 chip 都走这里 —— 目标元素挂 .flash 闪一下再摘掉。
+ *  target 可以是 id 字符串（走 $()）或直接给元素；找不到就静默返回。
+ *  flashTarget 可选：要高亮的元素若与滚动目标不同（如分区无边框 ⇒ 闪它的首卡），传进来即可。 */
+function gotoCard(target, flashTarget) {
+  const el = typeof target === 'string' ? $(target) : target;
+  if (!el) return;
+  if (el.scrollIntoView) {
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { el.scrollIntoView(); }
   }
-  card.classList.add('flash');
-  setTimeout(() => card.classList.remove('flash'), 1600);
+  const fl = flashTarget ? (typeof flashTarget === 'string' ? $(flashTarget) : flashTarget) : el;
+  if (!fl) return;
+  fl.classList.add('flash');
+  setTimeout(() => fl.classList.remove('flash'), 1600);
+}
+
+/** ★ 分区跳转：滚到分区标题，并高亮该分区**首卡**（.sect 本身无边框，.flash 闪不出效果）。 */
+function gotoSection(sectId) {
+  const sect = $(sectId);
+  if (!sect) return;
+  gotoCard(sect, sect.querySelector('.card'));
+}
+
+/** ★ 界面入口：顶栏「AI 算力配置」→ 滚到面板卡片并高亮（纯前端定位，不发请求）。 */
+function gotoLlmCard() {
+  gotoCard('llmCard');
 }
 
 // ── 事件绑定 ────────────────────────────────────────────────
@@ -5527,6 +5544,9 @@ function bind() {
   $('btnRefreshFilms').addEventListener('click', () => { loadFilms(); });
   // AI 算力配置：刷新 / 测试连接
   if ($('btnGotoLlm')) $('btnGotoLlm').addEventListener('click', gotoLlmCard);
+  // 分区跳转 chip（出片 / 结果）：滚到分区标题 + 高亮分区首卡
+  if ($('btnGotoMake')) $('btnGotoMake').addEventListener('click', () => gotoSection('sectMake'));
+  if ($('btnGotoOut')) $('btnGotoOut').addEventListener('click', () => gotoSection('sectOut'));
   if ($('btnLlmRefresh')) $('btnLlmRefresh').addEventListener('click', loadLlm);
   if ($('btnLlmValidate')) $('btnLlmValidate').addEventListener('click', validateLlm);
   // ★ 一键检测全部 / 自动挑选可用（标准 §9；两者都**串行**检测，见各自函数注释）

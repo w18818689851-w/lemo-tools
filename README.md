@@ -311,6 +311,7 @@ lemo-make.bat --help
 | `--readcheck-strict` | 关（默认只报告） | 同上；打开后不达标 ⇒ `fail()`（退出码 1） |
 | `--no-poster` | 关（默认出） | 第 7 步「静帧交付图」：`node core/render/still.mjs <demo> <t> --size WxH --out <demo>/out/poster --prefix poster_` → 拷成**输出目录**的 `poster.jpg` |
 | `--poster-t <秒>` | 按 demo 的 `build.sh` 里那条 poster 静帧行取；无该行退 `style.json` 的 `frame_sec`；再没有用 `0` | 同上 |
+| `--no-deliverables` | 关（默认出） | 第 8 步「交付文档」：在**输出目录**产 `TREATMENT.md` + `CREDITS`（与 `poster.jpg` 同级）。`TREATMENT.md` 由编排器基于已有信息生成、如实标注来源（不编造剧情）；`CREDITS` 逐字附上该风格上游自带的 `demo/CREDITS`（实测 43/43 均有） |
 | `--color <default\|bt709>` | `default`（**不设** `LEMO_COLOR`） | **写进 WSL mux 脚本的 `export`**（`core/render/mux.sh` 在 `sh mux.sh` 这个进程的环境里读它；`runWsl` 用 `su -`，**会重置环境** ⇒ 靠 `wsl.exe` 透传无效） |
 
 ★ 阅读时长自检带一道**廉价预判**：先在本 demo 的页面源码里找 `TEXTS` 的痕迹，找不到就**跳过并打印理由**
@@ -544,7 +545,7 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `a09262544f3e415d467dcf412a04994d`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `65942a2c36b0572031a1992724f7acc9`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
 - **27 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`

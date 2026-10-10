@@ -29,6 +29,10 @@
            「这里可切换」已失实（面板已无 profile / Endpoint / Key 等控件，切不了）⇒ 改为「这里只查看连接状态」。
            端点与口令一律**运行时自动注入**，无需手工填写。 -->
     <button class="btn ghost" id="btnGotoLlm" title="跳到「AI 算力配置」面板（默认走 WorkBuddy；端点与口令运行时自动注入，无需手工填写，这里只查看连接状态）">AI 算力配置</button>
+    <!-- ★ 分区跳转 chip（纯前端定位，与 #btnGotoLlm 同一套 scrollIntoView + flash 机制）：
+         长页面 10 张卡 ⇒ 顶栏给「出片」「结果」两个分区入口，点了滚到分区标题并高亮该分区首卡。 -->
+    <button class="btn ghost" id="btnGotoMake" title="跳到「出片」分区（启动任务 / 主题出片 / 声音 / AI 算力接入 / 文案出片）">出片</button>
+    <button class="btn ghost" id="btnGotoOut" title="跳到「结果」分区（实时日志 / 任务列表 / 成片库）">结果</button>
     <button class="btn ghost" id="btnRefreshEnv" title="重新全量探测环境">重新检测</button>
     <button class="btn ghost" id="btnSimulate" title="演练模式：假装这是一台全新机器，预览首次运行引导（不会真的安装）">演练</button>
     <button class="btn ghost" id="btnTheme" title="切换浅色 / 深色主题（默认深色；选择记在本机）">浅色</button>
@@ -60,6 +64,12 @@
   </aside>
 
   <main class="main">
+
+  <!-- ══ 分区 ①：环境与资源（本机体检 + 依赖/模型/素材/插件体检）══
+       ★ 分区只为「读」服务：不改变任何卡的 id / 类名 / 内部结构，只把卡片包进 .sect。
+       ★ 内层卡片保持原有缩进不变（HTML 不敏感），刻意不重排 700 行 ⇒ diff 最小、回归最安全。 -->
+  <div class="sect" id="sectEnv">
+    <h3 class="sect-title">环境与资源</h3>
 
     <!-- 首次运行向导：环境有 fail / warn 时出现。
          ★ 只是**引导**，绝不阻塞 —— 环境有问题照样能点「开始生成」（见 env.mjs 的咨询性定位）。 -->
@@ -95,6 +105,12 @@
       <div class="res-list" id="resList"></div>
     </section>
 
+  </div><!-- /.sect#sectEnv -->
+
+  <!-- ══ 分区 ②：出片（启动任务 / 主题出片 / 声音 / 算力接入 / 文案出片）══ -->
+  <div class="sect" id="sectMake">
+    <h3 class="sect-title">出片</h3>
+
     <section class="card">
       <h2 class="card-title">启动任务</h2>
       <div class="form-grid">
@@ -104,15 +120,15 @@
           <datalist id="styleOptions"></datalist>
         </label>
         <label class="field">
-          <span class="lbl">帧率 --fps</span>
+          <span class="lbl" title="对应命令行参数 --fps">帧率</span>
           <input type="number" id="fFps" class="input" value="24" min="1" step="1">
         </label>
         <label class="field">
-          <span class="lbl">并行数 --workers</span>
+          <span class="lbl" title="对应命令行参数 --workers">并行数</span>
           <input type="number" id="fWorkers" class="input" value="6" min="1" step="1">
         </label>
         <label class="field">
-          <span class="lbl">编码器 --venc</span>
+          <span class="lbl" title="对应命令行参数 --venc">编码器</span>
           <select id="fVenc" class="input">
             <option value="">默认(nvenc)</option>
             <option value="nvenc">nvenc（硬件）</option>
@@ -152,43 +168,46 @@
         <span class="presets-hint">（只改勾选，不会直接启动）</span>
       </div>
 
+      <!-- ★ P0-D：标签只留用户语言，命令行参数名移到 title 悬浮（原来 `--skip-sync` 这类 CLI 名
+           直接印在界面上，对用户是噪声）。 -->
       <div class="checks">
-        <label class="chk"><input type="checkbox" id="fSkipSync"> --skip-sync 跳过库同步</label>
-        <label class="chk"><input type="checkbox" id="fSkipRender"> --skip-render 跳过渲染</label>
-        <label class="chk"><input type="checkbox" id="fAudioOnly"> --audio-only 只跑音频</label>
-        <label class="chk"><input type="checkbox" id="fRenderOnly"> --render-only 只跑渲染</label>
-        <label class="chk"><input type="checkbox" id="fDryRun"> --dry-run 只打印计划</label>
+        <label class="chk" title="对应命令行参数 --skip-sync"><input type="checkbox" id="fSkipSync"> 跳过库同步</label>
+        <label class="chk" title="对应命令行参数 --skip-render"><input type="checkbox" id="fSkipRender"> 跳过渲染</label>
+        <label class="chk" title="对应命令行参数 --audio-only"><input type="checkbox" id="fAudioOnly"> 只跑音频</label>
+        <label class="chk" title="对应命令行参数 --render-only"><input type="checkbox" id="fRenderOnly"> 只跑渲染</label>
+        <label class="chk" title="对应命令行参数 --dry-run"><input type="checkbox" id="fDryRun"> 只打印计划</label>
       </div>
 
       <details class="adv">
         <summary>高级选项</summary>
         <div class="form-grid">
           <label class="field">
-            <span class="lbl">--q（只透传渲染）</span>
+            <span class="lbl" title="对应命令行参数 --q（原样透传给渲染阶段）">透传参数（只透传渲染）</span>
             <input id="fQ" class="input" placeholder="如 noev=1 或 content=content_alt.json" autocomplete="off">
           </label>
           <label class="field">
-            <span class="lbl">--grain</span>
+            <span class="lbl" title="对应命令行参数 --grain">颗粒强度</span>
             <input id="fGrain" class="input" placeholder="如 0 / 0.08" autocomplete="off">
           </label>
           <label class="field wide">
-            <span class="lbl">--out 输出目录</span>
+            <span class="lbl" title="对应命令行参数 --out">输出目录</span>
             <input id="fOut" class="input" placeholder="留空 = D:\lemo-films\<slug>" autocomplete="off">
           </label>
           <label class="field wide">
-            <span class="lbl">--film 影片模块</span>
+            <span class="lbl" title="对应命令行参数 --film">影片模块</span>
             <input id="fFilm" class="input" placeholder="留空 = 用该风格自带的影片模块（如 film_coffee.js）" autocomplete="off">
           </label>
         </div>
         <!-- ★ 起飞前检查开关（CLI 的 --no-preflight）：与上面那排勾选项**同一种写法**（.chk）。
-             勾上 = 不跑起飞前检查直接启动（编排器默认是开启该检查，但**只提示、绝不阻断**）。 -->
+             勾上 = 不跑起飞前检查直接启动（编排器默认是开启该检查，但**只提示、绝不阻断**）。
+             ★ P0-D：CLI 名移进 title。 -->
         <div class="checks">
-          <label class="chk"><input type="checkbox" id="fNoPreflight"> --no-preflight 跳过起飞前检查（勾选 = 不跑预检直接启动）</label>
+          <label class="chk" title="对应命令行参数 --no-preflight"><input type="checkbox" id="fNoPreflight"> 跳过起飞前检查（勾选 = 不跑预检直接启动）</label>
         </div>
       </details>
 
       <div class="form-foot">
-        <button class="btn primary" id="btnRun">开始生成</button>
+        <button class="btn primary cta" id="btnRun">开始生成</button>
         <button class="btn ghost small" id="btnCopyCmd" hidden title="复制这条命令到剪贴板">复制</button>
         <span class="hint" id="cmdPreview"></span>
       </div>
@@ -211,15 +230,21 @@
     <section class="card" id="briefCard">
       <div class="card-head">
         <h2 class="card-title">主题出片 <span class="count" id="briefCount"></span></h2>
+        <span class="card-sub">输入主题，生成一张工单</span>
         <div class="card-tools">
           <button class="btn ghost" id="btnRefreshBriefs" title="重新读工单目录（D:\lemo-films\.briefs）">刷新</button>
         </div>
       </div>
-      <div class="brief-intro">
-        输入主题 → 选风格 → 生成工单。内容是外部 LLM（WorkBuddy）按该风格的 STYLE.md 生成的：
-        在对话里说「处理工单」，它会把工单改成就绪；回到这里点「出片」即可。
-        画面主体沿用库内已有的那个（能改「讲什么」，不能改「画什么」），所以只有这 4 个风格可选。
-      </div>
+      <!-- ★ P0-B：原常驻说明（128 字）搬进可折叠 details（默认收起），卡头只留一句话副标题。
+           文本一字未改；details 默认收起 ⇒ 首屏不再被说明吃掉。 -->
+      <details class="card-about">
+        <summary>这是什么？</summary>
+        <div class="brief-intro">
+          输入主题 → 选风格 → 生成工单。内容是外部 LLM（WorkBuddy）按该风格的 STYLE.md 生成的：
+          在对话里说「处理工单」，它会把工单改成就绪；回到这里点「出片」即可。
+          画面主体沿用库内已有的那个（能改「讲什么」，不能改「画什么」），所以只有这 4 个风格可选。
+        </div>
+      </details>
       <div class="form-grid">
         <label class="field wide">
           <span class="lbl">主题 <b class="req">*</b></span>
@@ -267,7 +292,7 @@
            （点了只把 #briefRatio 设成建议比例并派发 change，不触发任何出片）。 -->
       <div class="brief-aspect-warn" id="briefAspectWarn" hidden></div>
       <div class="form-foot">
-        <button class="btn primary" id="btnBriefCreate">生成工单</button>
+        <button class="btn primary cta" id="btnBriefCreate">生成工单</button>
         <span class="hint" id="briefHint"></span>
       </div>
       <div class="brief-list" id="briefs"></div>
@@ -281,19 +306,24 @@
     <section class="card" id="voiceCard">
       <div class="card-head">
         <h2 class="card-title">声音 <span class="count" id="voiceCount"></span></h2>
+        <span class="card-sub">选配音音色</span>
         <div class="card-tools">
           <button class="btn ghost" id="btnRefreshVoices" title="重新读参考音目录与音色库">刷新</button>
         </div>
       </div>
-      <div class="voice-intro">
-        这里是<b>配音音色</b>：用的是本机部署的 Index-TTS 零样本克隆，音色就是一条参考音频 ——
-        所以「换音色」＝换一条参考音，不用训练。选中的音色与语速会用在<b>下一次出片</b>上，已经在跑的任务不受影响。
-      </div>
+      <!-- ★ P0-B：原常驻说明（93 字）折叠（默认收起）。文本一字未改。 -->
+      <details class="card-about">
+        <summary>这是什么？</summary>
+        <div class="voice-intro">
+          这里是<b>配音音色</b>：用的是本机部署的 Index-TTS 零样本克隆，音色就是一条参考音频 ——
+          所以「换音色」＝换一条参考音，不用训练。选中的音色与语速会用在<b>下一次出片</b>上，已经在跑的任务不受影响。
+        </div>
+      </details>
       <div class="voice-current" id="voiceCurrent"></div>
       <div class="voice-list" id="voiceList"></div>
       <div class="form-grid voice-speed-row">
         <label class="field">
-          <span class="lbl">语速 --speed</span>
+          <span class="lbl" title="对应命令行参数 --speed">语速</span>
           <input type="number" id="fVoiceSpeed" class="input" step="0.05" min="0.5" max="2"
                  value="1.0" inputmode="decimal" autocomplete="off">
           <span class="hint" id="voiceSpeedHint"></span>
@@ -309,7 +339,7 @@
         <div class="vt-row">
           <input id="vtText" class="input" maxlength="300" autocomplete="off"
                  placeholder="试听文本（留空用默认示例句，最多 300 字）">
-          <button class="btn primary" id="btnVoiceTest" title="用当前音色 + 当前语速真的合成一句">试合成一句</button>
+          <button class="btn ghost" id="btnVoiceTest" title="用当前音色 + 当前语速真的合成一句">试合成一句</button>
         </div>
         <div class="vt-state" id="vtState"></div>
         <audio id="vtAudio" class="vt-audio" controls preload="metadata" hidden></audio>
@@ -349,17 +379,23 @@
     <section class="card" id="llmCard">
       <div class="card-head">
         <h2 class="card-title">通用 AI 算力接入</h2>
+        <span class="card-sub">接入你自己的 AI 算力</span>
         <!-- ★ 一眼看出当前生效哪一套（保留 llmCurrentPill 的角色）。 -->
         <span class="llm-current-pill" id="llmCurrentPill">当前未选择算力服务</span>
         <div class="card-tools">
           <button class="btn ghost" id="btnLlmRefresh" title="重新读服务清单与当前生效项（GET /api/llm/services）">刷新</button>
         </div>
       </div>
-      <div class="llm-intro" id="llmIntro">
-        开放式、可插拔的<b>通用 AI 算力</b>接入：<b>不锁定</b>任何算力服务商 / 算力类型 / 部署方式。
-        下面可保存<b>多套</b>算力服务并<b>快速切换</b>；算力类型不限（文本推理 / 图像 / 语音 / 向量 / 代码 / 多模态）。
-        默认<b>不锁定</b>任何算力服务 —— 点「＋ 新增算力服务」即可接入你自己的端点。
-      </div>
+      <!-- ★ P0-B：原常驻说明（118 字）折叠（默认收起）。★ id 保留在**内层 div** 上，
+           文本一字未改 ⇒ test/ui.test.mjs 的 #llmIntro 断言（含 可插拔/不锁定/多套/快速切换、不含 **）不受影响。 -->
+      <details class="card-about">
+        <summary>这是什么？</summary>
+        <div class="llm-intro" id="llmIntro">
+          开放式、可插拔的<b>通用 AI 算力</b>接入：<b>不锁定</b>任何算力服务商 / 算力类型 / 部署方式。
+          下面可保存<b>多套</b>算力服务并<b>快速切换</b>；算力类型不限（文本推理 / 图像 / 语音 / 向量 / 代码 / 多模态）。
+          默认<b>不锁定</b>任何算力服务 —— 点「＋ 新增算力服务」即可接入你自己的端点。
+        </div>
+      </details>
 
       <!-- ① 服务列表（核心）：多套算力的列表，每行「切换 / 编辑 / 删除」，顶部「＋ 新增算力服务」。
            ★ 列表为空时在 #llmListHint 里给空状态提示（不假装有服务）。 -->
@@ -482,7 +518,7 @@
           </label>
         </div>
         <div class="llm-actions">
-          <button class="btn primary" id="btnLlmSave">保存</button>
+          <button class="btn ghost" id="btnLlmSave">保存</button>
           <button class="btn ghost" id="btnLlmCancel">取消</button>
           <button class="btn ghost" id="btnLlmClearKey" title="清掉这套服务已保存的 API-Key（下次测试连接会提示未配置）">清除密钥</button>
           <span class="hint" id="llmFormHint"></span>
@@ -492,7 +528,7 @@
       <!-- ③ 校验区：测试连接 + 三步逐步显示（可达 / 鉴权 / 返回体）。
            ★ 调用类端点只接受 service（选择器）⇒ 测试连接针对**已保存**的服务；新增的请先保存。 -->
       <div class="llm-actions">
-        <button class="btn primary" id="btnLlmValidate">测试连接</button>
+        <button class="btn ghost" id="btnLlmValidate">测试连接</button>
         <button class="btn ghost" id="btnLlmProbeAll" title="对每一套已保存算力【串行】跑一次三步校验（并发会打爆网关），并显示进度（i/N）">一键检测全部</button>
         <button class="btn ghost" id="btnLlmAutoPick" title="【串行】检测全部，把第一个通过的切为当前生效；全不通过会明确提示">自动挑选可用的</button>
         <button class="btn ghost" id="btnLlmTryRun" title="给当前算力服务发一句固定的小测试话（POST /api/llm/invoke，task=chat），把返回的文本显示在下面">试调用</button>
@@ -529,6 +565,7 @@
     <section class="card dub-card mode-script" id="dubCard">
       <div class="card-head">
         <h2 class="card-title">文案出片 <span class="count" id="dubCount"></span></h2>
+        <span class="card-sub">你给什么文案，就念什么</span>
         <div class="card-tools">
           <button class="btn ghost" id="btnDubRefresh" title="重新读已上传的素材（GET /api/dub/sources）">刷新素材</button>
         </div>
@@ -550,19 +587,29 @@
            tabpanel；其 aria-labelledby 随选中项更新（见 app.js 的 renderDubMode）。 -->
       <div id="dubModePanel" role="tabpanel" aria-labelledby="dubModeScript">
 
-      <div class="dub-mode-note dub-keep-only" id="dubKeepNote">
-        <b>你上传的口播视频，画面与声音不会被修改。</b>成片时长与素材一致；
-        我们只在它上面加<b>风格化的字幕与叠加层</b>。请确保口播内容与你填的文案一致
-        —— 文案不对齐时字幕会跟着跑偏。
-      </div>
+      <!-- ★ P0-B：原「形态 2 醒目说明」由 div 改成 details —— 关键警示留在 summary（一行常驻可见），
+           细节折叠。★ 保留 id + 两个类**在 details 元素本身**上：形态 1 下 .dub-keep-only 直接作用于它
+           ⇒ getComputedStyle(#dubKeepNote).display === 'none'（test E1:1595/1601 依赖此点）；
+           形态 2 下它自己的 display 为 block ⇒ test E1:1610/1617 的「!== none」仍成立。 -->
+      <details class="dub-mode-note card-about dub-keep-only" id="dubKeepNote">
+        <summary>你上传的口播视频，画面与声音不会被修改</summary>
+        <div>
+          成片时长与素材一致；我们只在它上面加<b>风格化的字幕与叠加层</b>。请确保口播内容与你填的文案一致
+          —— 文案不对齐时字幕会跟着跑偏。
+        </div>
+      </details>
 
-      <div class="dub-intro">
-        <b>你给什么文案，就念什么。</b>这里是「照着稿子出片」，和上面的「主题出片」正相反 ——
-        那边的内容由外部 LLM 按风格的 STYLE.md 生成，这边<b>一个字都不改</b>，只负责断句、配音、配画面、出字幕。
-        <b>仅文案出片</b>：画面用工具生成的背景，配音走本机 Index-TTS（音色默认跟随「声音」版块）。
-        <b>文案 + 口播视频</b>：你的画面与声音原样保留，只叠字幕与风格化叠加层。
-        两种形态都可以选风格，或交给「自动匹配」按语义挑一个。
-      </div>
+      <!-- ★ P0-B：原常驻说明（196 字，本页最长）折叠（默认收起）。文本一字未改。 -->
+      <details class="card-about">
+        <summary>这是什么？</summary>
+        <div class="dub-intro">
+          <b>你给什么文案，就念什么。</b>这里是「照着稿子出片」，和上面的「主题出片」正相反 ——
+          那边的内容由外部 LLM 按风格的 STYLE.md 生成，这边<b>一个字都不改</b>，只负责断句、配音、配画面、出字幕。
+          <b>仅文案出片</b>：画面用工具生成的背景，配音走本机 Index-TTS（音色默认跟随「声音」版块）。
+          <b>文案 + 口播视频</b>：你的画面与声音原样保留，只叠字幕与风格化叠加层。
+          两种形态都可以选风格，或交给「自动匹配」按语义挑一个。
+        </div>
+      </details>
 
       <div class="form-grid">
         <label class="field wide">
@@ -587,7 +634,7 @@
              它的价值是让用户**核对「系统理解得对不对」**——理解错了，出片再好看也是跑偏。 -->
       <div class="dub-style" id="dubStyleRow">
         <div class="dub-style-line">
-          <span class="lbl">风格 --style</span>
+          <span class="lbl" title="对应命令行参数 --style">风格</span>
           <select id="dubStyle" class="input dub-style-sel" title="自动匹配 = 按文案语义挑风格；不指定 = 保持现有外观"></select>
           <button class="btn ghost" id="btnDubAnalyze"
                   title="POST /api/dub/analyze：段落拆分 + 语义标签 + 风格匹配（默认走规则，即时返回；也可注入外部结果）">分析文案</button>
@@ -649,19 +696,19 @@
            （与加这个开关之前完全一致）。勾选才会把音轨重编码 + 限幅 —— 所以文案必须**诚实**说明代价。 -->
       <div class="dub-block dub-keep-only" id="dubLimitBlock">
         <div class="checks">
-          <label class="chk"><input type="checkbox" id="dubKeepLimit"> --keep-original-limit 把音轨限幅到交付线（只压峰、不动时长/画面）　★ 音频会被<b>重新编码</b>，不再是逐字节原声</label>
+          <label class="chk" title="对应命令行参数 --keep-original-limit"><input type="checkbox" id="dubKeepLimit"> 把音轨限幅到交付线（只压峰、不动时长/画面）　★ 音频会被<b>重新编码</b>，不再是逐字节原声</label>
         </div>
         <span class="hint" id="dubLimitHint">默认关：成片音轨与素材**逐字节相同**（素材自身真峰值超标时才用得到这个开关）。</span>
       </div>
 
       <div class="form-grid dub-params">
-        <label class="field dub-script-only">
-          <span class="lbl">音色 --voice</span>
+        <label class="field dub-script-only dub-voice-field">
+          <span class="lbl" title="对应命令行参数 --voice">音色</span>
           <select id="dubVoice" class="input"></select>
           <span class="hint" id="dubVoiceHint"></span>
         </label>
         <label class="field dub-script-only">
-          <span class="lbl">语速 --speed</span>
+          <span class="lbl" title="对应命令行参数 --speed">语速</span>
           <input type="number" id="dubSpeed" class="input" step="0.05" min="0.5" max="2"
                  value="1.1" inputmode="decimal" autocomplete="off">
         </label>
@@ -672,12 +719,12 @@
              ★ 下面 min/max 只是 HTML 层初始值，app.js 会用 /api/sizes 的 custom.min/max 覆盖它们
              （那一路来自库侧 size.mjs）—— 改下限只需改库，别只改这里。 -->
         <label class="field dub-script-only">
-          <span class="lbl">输出比例 --ratio</span>
+          <span class="lbl" title="对应命令行参数 --ratio">输出比例</span>
           <select id="dubRatio" class="input" title="出片比例：默认 9:16 竖屏"></select>
           <span class="hint" id="dubRatioHint"></span>
         </label>
         <label class="field dub-script-only" id="dubSizeField" hidden>
-          <span class="lbl">自定义尺寸 --size（宽 × 高）</span>
+          <span class="lbl" title="对应命令行参数 --size">自定义尺寸（宽 × 高）</span>
           <span class="size-row">
             <input id="dubSizeW" class="input num" type="number" inputmode="numeric" step="2"
                    min="96" max="8192" placeholder="1080" autocomplete="off">
@@ -688,12 +735,12 @@
           <span class="hint" id="dubSizeHint"></span>
         </label>
         <label class="field dub-script-only">
-          <span class="lbl">句间停顿 --gap</span>
+          <span class="lbl" title="对应命令行参数 --gap">句间停顿</span>
           <input type="number" id="dubGap" class="input" step="0.05" min="0" max="3"
                  value="0.25" inputmode="decimal" autocomplete="off">
         </label>
         <label class="field dub-script-only">
-          <span class="lbl">素材适配 --fit</span>
+          <span class="lbl" title="对应命令行参数 --fit">素材适配</span>
           <select id="dubFit" class="input" title="口播视频比配音长/短时怎么处理">
             <option value="loop">loop（循环，默认）</option>
             <option value="trim">trim（裁掉）</option>
@@ -701,7 +748,7 @@
           </select>
         </label>
         <label class="field">
-          <span class="lbl">片头标题 --title（可选）</span>
+          <span class="lbl" title="对应命令行参数 --title">片头标题（可选）</span>
           <input id="dubTitle" class="input" maxlength="120" autocomplete="off"
                  placeholder="留空 = 不加片头标题">
         </label>
@@ -712,7 +759,7 @@
            ★ 文案与显隐全部由 app.js 算，这里只留一个空壳（默认 hidden，避免闪一下）。 -->
       <div class="dub-crop-warn" id="dubCropWarn" hidden></div>
       <div class="checks dub-script-only">
-        <label class="chk"><input type="checkbox" id="dubKeepAudio"> --keep-original-audio 保留原声作背景</label>
+        <label class="chk" title="对应命令行参数 --keep-original-audio"><input type="checkbox" id="dubKeepAudio"> 保留原声作背景</label>
       </div>
       <div class="dub-keep-only dub-keep-params-note">
         形态 2 不跑 TTS、也不改素材：音色 / 语速 / 句间停顿 / 尺寸 / 素材适配都不适用，已隐藏。
@@ -720,12 +767,18 @@
       </div><!-- /#dubModePanel -->
 
       <div class="form-foot">
-        <button class="btn primary" id="btnDubRun">出片</button>
+        <button class="btn primary cta" id="btnDubRun">出片</button>
         <span class="hint" id="dubRunHint"></span>
       </div>
       <!-- 出片任务的实时状态 + 完成后的成片路径与播放按钮 -->
       <div class="dub-state" id="dubState" hidden></div>
     </section>
+
+  </div><!-- /.sect#sectMake -->
+
+  <!-- ══ 分区 ③：结果（实时日志 / 任务列表 / 成片库）══ -->
+  <div class="sect" id="sectOut">
+    <h3 class="sect-title">结果</h3>
 
     <section class="card">
       <div class="card-head">
@@ -774,6 +827,8 @@
       </div>
       <div class="films" id="films"></div>
     </section>
+
+  </div><!-- /.sect#sectOut -->
 
   </main>
 </div>

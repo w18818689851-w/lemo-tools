@@ -263,7 +263,13 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     + 新增第 6 步「阅读时长自检」与第 7 步「静帧交付图」+ 从 `ORCH_SKIP_STEPS` 手工移除 `core/render/still.mjs`。
 //     ★ 三档默认值（`--render-slots 2` / `--color default` / 默认跑 readcheck 但只报告不阻断 / 默认产 poster）
 //     保证**默认路径的编排行为与输出逐字节不变**（详见 test/README.md 的「本次改了什么」段与 README.md 差异清单）。
-export const ORCH_MD5 = 'a09262544f3e415d467dcf412a04994d';
+//   2026-10-10 第二次更新（**有意改编排器**，同日）：补齐上游「交付 6 件套」缺的两件 —— 新增第 8 步
+//     「交付文档」（`TREATMENT.md` + `CREDITS`，落**输出目录**，与 poster.jpg 同级）+ 新 CLI `--no-deliverables`。
+//     ★ `TREATMENT.md` 由编排器**基于已有信息**生成（上游无样本、由导演 agent 撰写 ⇒ 本项目如实标注来源、不编造剧情）；
+//     `CREDITS` 逐字附上该风格上游自带的 `demo/CREDITS`（实测 43/43 均有）。
+//     ★ 默认路径逐字节不变：不传 `--no-deliverables` 时既有步骤的命令与产物一字不动，仅新增这两个文件与日志行。
+//     ★ partial 模式（`--render-only` / `--audio-only`）也会产出这两件（纯元数据，与渲染/音频产物无依赖）。
+export const ORCH_MD5 = '65942a2c36b0572031a1992724f7acc9';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

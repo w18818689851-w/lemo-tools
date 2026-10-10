@@ -853,7 +853,7 @@ function parseArgs(argv) {
     readcheckStrict: false,  // ② 自检不达标时**阻断**出片（默认只报告）
     noPoster: false,         // ③ 静帧交付图 poster.jpg：跳过
     posterT: null,           // ③ poster 取哪一秒（默认按 demo 的 build.sh）
-    color: 'default',        // ④ 混流色彩空间（default ⇒ 不设 LEMO_COLOR）
+    color: 'default', noDeliverables: false,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -901,6 +901,7 @@ function parseArgs(argv) {
     else if (a === '--no-poster') o.noPoster = true;
     else if (a === '--poster-t') o.posterT = Number(next('--poster-t'));
     else if (a === '--color') o.color = next('--color');
+    else if (a === '--no-deliverables') o.noDeliverables = true;
     else if (!a.startsWith('--')) o.slug = a;
     else fail(`未知参数 ${a}（--help 看用法）`);
   }
@@ -1309,6 +1310,149 @@ function demoHasTexts(demoRel) {
   return walk(root, 0);
 }
 
+/**
+ * ⑧ 交付文档（`TREATMENT.md` / `CREDITS`）—— 补齐上游「交付 6 件套」的最后两件。
+ *
+ * ★ 上游这两件**到底是什么**（**先去上游查证、不自创格式**；实测依据）：
+ *   · `CREDITS` —— 上游**每个风格自带一个**（实测 `ls styles/<slug>/demo/CREDITS` 计数 = **43**，
+ *     GitHub 快照 `e3cb16f` 与真实库一致）。`DIRECTOR.md` §11 规定它 =「影片里每一件第三方素材
+ *     （采样库、音乐、字体、图片、配音引擎）及其来源与许可证」；`MAINTAINING.md` 也把它列进 `demo/` 的提交物。
+ *     形态是**自由散文**（实测两种都在用：`ascii-crt` 是 7 行短文本、`watercolor` 是分节长文本）
+ *     ⇒ 本项目**不重排、不改写**，只加一段「来源说明」后**逐字附上**该风格 demo 的 `CREDITS`。
+ *   · `TREATMENT.md` —— 上游**没有已发布的样本**（实测 `find -iname '*treatment*'` = **0 命中**；
+ *     `MAINTAINING.md` 明说它 `gitignored`、留在本地）。它由**导演 agent** 撰写（`DIRECTOR.md` §4 列了
+ *     8 项内容：三选一结构 / logline+弧线 / benchmark / 分镜表 / 逐秒 beat sheet / cue map /
+ *     声音设计表 / 字幕与标题设计）。★ 本编排器**不是 agent、不编造剧情** ⇒ 只产出一份**基于已有信息**、
+ *     **诚实标注来源**的版本：填**可确证字段**（`style.json` 的 `film`/`line`、本次 `--q`/`--size`/`--fps`、
+ *     时长/帧数、本次跑过的步骤），创作字段如实留空并标注「上游未定义格式，本项目取：由 AI 导演撰写」。
+ *
+ * ★ 落点：**输出目录**（与 `poster.jpg` / 成片同级）。
+ * ★ 默认路径逐字节不变（照 `--color default` 的做法）：不传 `--no-deliverables` 时，既有步骤的命令与产物
+ *   **一字不动**，仅新增这两个文件与它们自己的日志行（与第 6/7 步同型）。`--no-deliverables` ⇒ 只打一行「跳过」。
+ * ★ partial 模式（`--render-only` / `--audio-only`）也会调用它（见 main 里那处的说明）—— 这两件是纯元数据，
+ *   与渲染产物、音频产物**无依赖**。
+ */
+function emitDeliverables({ o, outDir, outSize, qRender, grain, ttsEngine, partial }) {
+  step('交付文档（TREATMENT.md / CREDITS）');
+  if (o.noDeliverables) { info(C.dim('（--no-deliverables）')); return; }
+  fs.mkdirSync(outDir, { recursive: true });
+
+  // 该风格 style.json（缺失 / 坏 ⇒ 字段按「(无)」如实写，不编造）。
+  let sj = {};
+  try { sj = JSON.parse(fs.readFileSync(path.join(CFG.winLib, 'styles', o.slug, 'style.json'), 'utf8')) || {}; }
+  catch { /* 读不到 ⇒ 下面的字段一律走「(无)」 */ }
+  const dur = Number.isFinite(Number(sj.dur)) ? Number(sj.dur) : null;
+  const frames = dur !== null ? Math.round(dur * o.fps) : null;
+  const val = v => (v === null || v === undefined || v === '' ? '(无)' : String(v));
+
+  // 本次生效的「跳过开关」（默认全关 ⇒ 空数组）
+  const skips = [
+    o.skipSync ? '--skip-sync' : null,
+    o.skipAudio ? '--skip-audio' : null,
+    o.skipRender ? '--skip-render' : null,
+    o.audioOnly ? '--audio-only' : null,
+    o.renderOnly ? '--render-only' : null,
+    o.noReadcheck ? '--no-readcheck' : null,
+    o.readcheckStrict ? '--readcheck-strict' : null,
+    o.noPoster ? '--no-poster' : null,
+  ].filter(Boolean);
+  // 各步状态：如实反映本次（默认「跑」；被跳过开关关掉的写「跳过」；partial 模式在提前返回之后
+  // 的步骤写「未跑」）—— **不谎称跑过**。
+  const partialTail = '未跑（partial 模式提前结束）';
+  const pipe = [
+    ['库同步（WSL → Windows 下发字体/素材）', o.skipSync ? '跳过' : '跑'],
+    ['导出事件与字幕（Windows 侧）', '跑'],
+    ['音频链路（TTS → 声线 → ASR → 配乐 → 混音）', o.skipAudio ? '跳过' : '跑'],
+    [`渲染（Windows GPU · ${o.fps}fps）`, o.skipRender ? '跳过' : '跑'],
+    [`混流（WSL mux.sh · ${o.venc}）`, partial ? partialTail : (o.skipRender || o.skipAudio ? '跳过' : '跑')],
+    ['阅读时长自检（readcheck）', partial ? partialTail : (o.noReadcheck ? '跳过' : '跑')],
+    ['静帧交付图（poster.jpg）', partial ? partialTail : (o.noPoster ? '跳过' : '跑')],
+    ['交付文档（TREATMENT.md / CREDITS）', '跑'],
+  ];
+
+  // ── TREATMENT.md ────────────────────────────────────────────────────────────
+  // ★ 结构照 `DIRECTOR.md` §4 的 8 条（上游**未定义机器格式**，故用 §4 的文字要求当骨架）。
+  const treatment = `# TREATMENT.md — ${val(sj.slug || o.slug)}（${val(sj.en)} / ${val(sj.cn)}）
+
+> ★ **来源与口径（诚实标注）**：本文件由编排器 \`lemo-make.mjs\` **自动生成**，**不是**上游
+> \`DIRECTOR.md\` §4 所说的「AI 导演撰写的导演阐述」。上游的 \`TREATMENT.md\` 由**导演 agent** 在动手画之前
+> 撰写（含三选一结构 / logline+弧线 / benchmark / 分镜表 / 逐秒 beat sheet / cue map / 声音设计表 /
+> 字幕与标题设计 8 项）。★ 上游仓库里**没有已发布的 \`TREATMENT.md\` 样本**（实测 \`find -iname
+> '*treatment*'\` = 0 命中；\`DIRECTOR.md\` §4 仅以文字描述其应含内容）⇒ **上游未定义机器格式**。
+> ★ 本编排器**不是 agent、不编造剧情** ⇒ 只填**可从既有信息确证**的字段；创作字段如实留空并标注来源。
+
+## A. 可确证字段（本次编排器的输入）
+
+- 风格 slug：\`${val(o.slug)}\`
+- 风格名：${val(sj.en)} / ${val(sj.cn)}（类别：${val(sj.category_en)} / ${val(sj.category_cn)}）
+- 该风格 demo 片名（\`style.json\` 的 \`film\`）：${val(sj.film)}
+- 该风格 demo 一句话（\`style.json\` 的 \`line\`）：${val(sj.line)}
+  - 中文（\`line_cn\`）：${val(sj.line_cn)}
+- 时长（\`style.json\` 的 \`dur\`）：${dur === null ? '(无)' : dur + 's'}${frames === null ? '' : `；按本次 fps=${o.fps} ⇒ 约 ${frames} 帧`}
+- 本次输出尺寸：${outSize ? `${outSize.w}x${outSize.h}` : '(无)'}（${o.size ? '--size ' + o.size : '--ratio ' + (o.ratio || '默认 9:16')}）
+- 本次页面参数 \`--q\`：${qRender ? '`' + qRender + '`' : '(无)'}
+- 本次颗粒 \`--grain\`：${grain === null || grain === undefined ? '(按脚本/build.sh 默认)' : grain}
+- 本次色彩 \`--color\`：${o.color}
+- 本次配音引擎：${ttsEngine}（来自内容文件的 \`voice.engine\`，缺省 kokoro）
+- 本次生效的跳过开关：${skips.length ? skips.join(' ') : '(无，全部按默认跑)'}
+${partial ? '- ★ **本次为 partial 模式**（`--render-only` / `--audio-only`）：仅跑部分步骤后提前结束。\n' : ''}
+### 本次跑过的步骤
+
+${pipe.map(([label, state], i) => `${i + 1}. ${label}：${state === '跑' ? '跑' : `**${state}**`}`).join('\n')}
+
+## B. \`DIRECTOR.md\` §4 要求的创作字段（本编排器**未生成**）
+
+> 上游未定义这些字段的机器格式（无样本可依）；本项目取：**由 AI 导演 agent 撰写**，编排器不生成。
+> 逐条列出 §4 的要求，便于人工 / agent 补齐。
+
+1. **三个候选结构 + 选定**（§4-1）：上游未定义格式，本项目取「由导演 agent 撰写」⇒ 未生成。
+2. **Logline 与弧线**（§4-2）：同上，未生成。
+3. **Benchmark（learn / don't learn）**（§4-3）：同上，未生成。
+4. **分镜表 shot list**（§4-4）：同上，未生成。
+5. **逐秒 beat sheet**（§4-5）：同上，未生成。
+6. **Cue map（节奏 / 小节 / 配器）**（§4-6）：同上，未生成。
+7. **声音设计表**（§4-7）：同上，未生成。
+8. **字幕与标题设计**（§4-8）：同上，未生成。
+
+> ★ 诚实标注：以上 8 项是**上游对「导演阐述」的要求**，本编排器**不产出**（它不是 agent，不能编造剧情 / 分镜）。
+> 若需要完整 \`TREATMENT.md\`，请让 AI 导演按 \`DIRECTOR.md\` §4 撰写。
+`;
+
+  // ── CREDITS（逐字附上该风格 demo 的 CREDITS + 来源说明）────────────────────────
+  const creditsSrc = path.join(CFG.winLib, 'styles', o.slug, 'demo', 'CREDITS');
+  let creditsBody = null;
+  try { creditsBody = fs.readFileSync(creditsSrc, 'utf8'); } catch { /* 缺 ⇒ 下面的兜底说明 */ }
+  const creditsHeader = `★ 来源（诚实标注）：本文件由编排器 \`lemo-make.mjs\` 从**该风格上游自带的**
+  \`styles/${o.slug}/demo/CREDITS\` **逐字复制**而来（上游 43/43 个风格各带一个，实测
+  \`ls styles/*/demo/CREDITS | wc -l\` = 43）。上游 \`DIRECTOR.md\` §11 规定 \`CREDITS\` =
+  「影片里每一件第三方素材（采样库、音乐、字体、图片、配音引擎）及其来源与许可证」
+  （另见 \`TECHNIQUE.md\` §11）。上游**未定义机器格式**（\`ascii-crt\` 是 7 行短文本、\`watercolor\` 是
+  分节长文本，两种形态都在用）⇒ 本项目**不重排、不改写**，只加本段来源说明后**逐字附上**。
+★ 例外（如实登记）：若本次用 \`--q\` 换了内容、或内容文件声明了别的配音引擎（\`voice.engine\`），
+  上游 \`CREDITS\` 所列素材可能与本次成片不完全一致 —— 以本次运行日志与实际素材为准。
+================================================================================
+`;
+  const credits = creditsBody === null
+    ? `${creditsHeader}\n（该风格上游没有 \`demo/CREDITS\` 文件 —— 无法逐字附上。上游 43/43 均有，缺失属异常。）\n`
+    : `${creditsHeader}\n${creditsBody}`;
+
+  const tPath = path.join(outDir, 'TREATMENT.md');
+  const cPath = path.join(outDir, 'CREDITS');
+  try {
+    fs.writeFileSync(tPath, treatment, 'utf8');
+    fs.writeFileSync(cPath, credits, 'utf8');
+  } catch (e) {
+    // 只报告、不阻断：与 poster 同口径（成片已出，不该因为两份交付文档把整条命令判失败）。
+    warn(`交付文档写入失败（${String(e.message || e).split('\n')[0]}）—— 不影响成片，跳过`);
+    return;
+  }
+  ok(`${tPath}  ${(fs.statSync(tPath).size / 1024).toFixed(1)} KB`);
+  ok(`${cPath}  ${(fs.statSync(cPath).size / 1024).toFixed(1)} KB`);
+  if (creditsBody === null) {
+    warn(`该风格上游缺 demo/CREDITS（实测 43/43 均有，缺失属异常）—— CREDITS 只写了来源说明`);
+  }
+}
+
 const HELP = `
 lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
 
@@ -1375,6 +1519,9 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
                          「出 poster」的静帧行取（全库 43 个风格就是这么定的，如 rubber-hose 43.1、
                          ascii-crt 0、engraving 33.5）；没有该行的风格退到 style.json 的 frame_sec；
                          再没有就用 0
+  --no-deliverables      跳过第 8 步交付文档（默认出片后在输出目录产 TREATMENT.md 与 CREDITS）。
+                         TREATMENT.md 由本编排器**基于已有信息**生成（诚实标注来源，不编造剧情）；
+                         CREDITS 逐字附上该风格上游自带的 demo/CREDITS
   --color <default|bt709>
                          混流色彩空间。default（默认）= **不设** LEMO_COLOR，与改动前逐字节一致；
                          bt709 = 在 WSL 侧 sh mux.sh 的进程里导出 LEMO_COLOR=bt709
@@ -1932,6 +2079,9 @@ async function main() {
       console.log(`  7. 交付图   ${o.noPoster ? '（--no-poster 跳过）'
         : `poster.jpg（t=${pt}s）→ ${path.join(outDir, 'poster.jpg')}`}`);
     }
+    // 8 是 2026-10-10 接入的第三步（⑧ 交付文档）—— 同样要能在干跑里看见。
+    console.log(`  8. 交付文档 ${o.noDeliverables ? '（--no-deliverables 跳过）'
+      : `TREATMENT.md + CREDITS → ${outDir}`}`);
     console.log(C.dim((contentOf(qRender) || contentOf(qEvents) || o.lines)
       ? '\n  换内容/换配音行时：2 的「配音」阶段会先单独跑完并回传 voices/*.json，\n'
         + '  之后 2 的「配乐+混音」与 3 才并行（页面要靠 dur.json 排口播时间窗）。\n'
@@ -2943,6 +3093,12 @@ echo "MIX_OK $(stat -c%s "$MIXOUT") $MIXOUT"
   if (rs.length === 2) info(C.dim(`（音频与渲染并行完成）  ${el()}`));
 
   if (o.audioOnly || o.renderOnly) {
+    // ── 交付文档在 partial 模式（--render-only / --audio-only）也要出 ──────────────
+    // ★ 理由：TREATMENT.md / CREDITS 是**纯元数据**（读 style.json / demo 的 CREDITS / 本次参数），
+    //   与渲染产物、音频产物**无依赖**；partial 模式本就在下面提前 return ⇒ 若只在末尾出，
+    //   partial 模式永远拿不到这两件。且这让该步可被**廉价验证**（不必跑整条重管线）。
+    // ★ 只对 partial 模式生效；正常路径仍在第 8 步出（见 main 末尾）。
+    emitDeliverables({ o, outDir, outSize, qRender, grain, ttsEngine, partial: true });
     console.log(C.ok(`\n完成（部分模式）  ${el()}`));
     return;
   }
@@ -3207,6 +3363,18 @@ echo "MUX_OK $(stat -c%s "$OUT/${o.slug}.mp4") src_frames=$SRC_FRAMES out_frames
   } else {
     step('静帧交付图'); info(C.dim('（--no-poster）'));
   }
+
+  // ── 8. 交付文档 TREATMENT.md / CREDITS（⑧，2026-10-10 接入上游交付清单）──────────
+  // ★ 为什么要有它：上游交付清单（DIRECTOR.md §11）是 6 件套 —— mp4 / poster.jpg / .srt /
+  //   TREATMENT.md / CREDITS / 源码（含一键 build.sh）。编排器此前只产 mp4 + srt + poster.jpg，
+  //   TREATMENT.md 与 CREDITS **从不出** ⇒ 本次补齐这两件（「源码 + build.sh」属**库本身**，
+  //   不在编排器的产出范围）。
+  // ★ 位置：紧随第 7 步（交付图）之后，**不新增步骤框架**，只把上游的交付清单补齐。
+  // ★ 成本：纯文本读写（读 style.json / demo 的 CREDITS，写两个小文件），不开页面、不跑 ffmpeg。
+  // ★ 产出位置：**输出目录**（与 poster.jpg / 成片同级）。
+  // ★ 默认路径逐字节不变（照 --color default 的做法）：不传 --no-deliverables 时，既有步骤的命令与产物
+  //   **一字不动**，仅新增这两个文件与它们自己的日志行（与第 6/7 步同型）。
+  emitDeliverables({ o, outDir, outSize, qRender, grain, ttsEngine, partial: false });
 
   console.log(C.ok(`\n全部完成 · ${(st.size / 1048576).toFixed(1)} MB · 总耗时 ${el()}`));
 }

@@ -17,7 +17,7 @@
  *       （挑选规则同 `check-mux-selection.mjs`：`demo/tools/mux.sh` → `demo/mux.sh`，门槛含 `A="$2"`，
  *        否则回退 `core/render/mux.sh`）。
  *     · ★ 2026-10-07（b85-a）补：**渲染器候选** `styles/<slug>/demo/tools/video_png.mjs`
- *       —— 编排器渲染段按候选探测它替换 `core/render/video.mjs`（`lemo-make.mjs:1655` 的
+ *       —— 编排器渲染段按候选探测它替换 `core/render/video.mjs`（`lemo-make.mjs:1802` 的
  *       `demoRenderRel`，全库现只有 `risograph` 有），故它**在出片路径上**。此前被错列进 B 类
  *       （「不在出片路径的手工脚本」）⇒ **分类过期**，现挪进 A 类。它与 core 版同口径
  *       （未设 ⇒ `h264_nvenc`；显式 `libx264` ⇒ CPU；其它值 ⇒ 报错退出）。
