@@ -397,6 +397,11 @@ node D:/lemo-tools/scripts/check-llm-call-params.mjs # ★ **「业务层不得�
 只要接口通信正常、鉴权有效、能收发提示词并返回合法 LLM 文本就能接入；云端 API / 本地私有化部署 /
 本地推理接口 / 第三方中转一视同仁）。它的对外契约写在共享规格 `_distill/llm-api-接口规格-2026-10-08.md`：
 6 个导出（`PROFILES` / `listProfiles` / `resolveConfig` / `validate` / `chat` / `listModels`）、
+★ **2026-10-10 订正（原句照留，不抹）**：上面这 6 个里 **`listProfiles` 已随「减法」批次整体删除**
+（超出外部参考标准；`test/llm-api.test.mjs` 的「减法回归」用例钉住「不得再导出」），
+且模块**现共 21 个导出**（实测 `node -e "import('./lib/llm-api.mjs').then(m=>console.log(Object.keys(m).length))"`）；
+★ 「6 个导出」这一**口径**本身也已变 —— 现在由 **`scripts/check-llm-api.mjs` 判据①** 逐字核**它自己的**契约导出集，
+**以那道闸门为准**（本行不再维护一份会漂的名单）。
 **`chat()` 永不抛异常**（一切失败归一为 `{ok:false,error:{kind}}`）、默认 profile = `workbuddy`、
 **密钥绝不外泄**（日志 / 文件 / errors / hint 一律脱敏）、覆盖点恰为 6 个 `LEMO_LLM_*`。
 ★ 由 **`node D:/lemo-tools/scripts/check-llm-api.mjs`** 守它的**静态契约**（判据见该闸门头注释，

@@ -967,10 +967,12 @@ test('★★ 多模态·图片内容不外泄：响应体回显图片 base64 ⇒
 // ── ⑧ ★★ PROFILES 只剩 workbuddy（本批核心约束）+ target 判定 ──────
 //   ★★ 2026-10-09：委托方指令「只接 WorkBuddy，其他 provider 一律彻底删除」⇒ 内置表**只剩 workbuddy 一个**。
 //   ★ 这条用例是**专门钉住这个约束**的：防止它被无意改回去（比如哪天又悄悄加回某个 provider）。
-test('★★ PROFILES 只剩 workbuddy：listProfiles() 恰 1 条、默认就是它、11 个 provider 全删（防改回去）', async () => {
+test('★★ PROFILES 只剩 workbuddy：内置表恰 1 条、默认就是它、11 个 provider 全删（防改回去）', async () => {
   rmOverride();
   await withEnv(CLEAN, () => {
-    // ① listProfiles() 恰 1 条，且就是 workbuddy
+    // ① PROFILES（内置表）恰 1 条，且就是 workbuddy
+    //    ★ 2026-10-10 措辞订正：本用例断言的是 `Object.values(PROFILES)`（内置表）——
+    //      原文案写的 `listProfiles()` **已随「减法」批次整体删除**（见本文件顶部的「减法回归」用例）。
     const lp = Object.values(PROFILES).map((p) => ({ id: p.id, isDefault: !!p.isDefault, target: p.target, kind: p.kind }));
     assert.equal(lp.length, 1, `★ 内置 profile 应**恰 1 条**（只剩 workbuddy），实得 ${lp.length}：${lp.map((p) => p.id).join(',')}`);
     assert.equal(lp[0].id, 'workbuddy', '★ 唯一的内置 profile 必须是 workbuddy');
@@ -983,11 +985,11 @@ test('★★ PROFILES 只剩 workbuddy：listProfiles() 恰 1 条、默认就是
     assert.equal(defaults[0].id, 'workbuddy', '★ 默认 profile 必须是 workbuddy');
     // ③ DEFAULT_PROFILE 常量与内置表一致
     assert.equal(DEFAULT_PROFILE, 'workbuddy', '★ DEFAULT_PROFILE 必须是 workbuddy');
-    // ④ 已删的 11 个 provider 一律不得再出现（在 listProfiles() 与 PROFILES 表里都不得有）
+    // ④ 已删的 11 个 provider 一律不得再出现（在 PROFILES 内置表里不得有）
     const GONE = ['anthropic', 'openai-compatible', 'doubao', 'qwen', 'hunyuan', 'deepseek',
       'zhipu', 'kimi', 'siliconflow', 'lmstudio', 'custom'];
     for (const id of GONE) {
-      assert.equal(lp.some((p) => p.id === id), false, `★ 已删 provider「${id}」不得再出现在 listProfiles()`);
+      assert.equal(lp.some((p) => p.id === id), false, `★ 已删 provider「${id}」不得再出现在 PROFILES（内置表）`);
       assert.equal(PROFILES[id], undefined, `★ PROFILES 表里不得再有「${id}」`);
     }
     // ⑤ 默认解析 / 预览也一致
@@ -1027,11 +1029,12 @@ test('★ PROFILES.target 判定：workbuddy = agent；未知 profile 归一为 
     // ★ 未知 profile：`base` 走「未知 profile」兜底（`kind:'custom'`、`target:'model'`）⇒ 归一为 model
     assert.equal(resolveConfig({ profile: 'no-such-profile' }).target, 'model',
       '★ 未知 profile ⇒ 归一为 model（保守：模型 API 的校验最严）');
-    // listProfiles() 也带 target（供面板区分「模型 API / 智能体 API」）
+    // PROFILES（内置表）也带 target（供面板区分「模型 API / 智能体 API」）
+    // ★ 2026-10-10 措辞订正：原写 `listProfiles()`，该函数已删；下面读的是 `Object.values(PROFILES)`。
     const lp = Object.values(PROFILES).map((p) => ({ id: p.id, isDefault: !!p.isDefault, target: p.target, kind: p.kind }));
-    assert.equal(lp.find((p) => p.id === 'workbuddy').target, 'agent', 'listProfiles: workbuddy = agent');
+    assert.equal(lp.find((p) => p.id === 'workbuddy').target, 'agent', 'PROFILES: workbuddy = agent');
     assert.ok(lp.every((p) => p.target === 'agent' || p.target === 'model'),
-      'listProfiles 的 target 只能取 model / agent');
+      'PROFILES 的 target 只能取 model / agent');
     assert.equal(lp.filter((p) => p.target === 'agent').length, 1, '★ 恰一个 agent（workbuddy）');
   });
 });
