@@ -121,9 +121,6 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/briefs/:id` | 读一张工单的当前内容（每次从磁盘读，不缓存） | 同步 |
 | PATCH | `/api/briefs/:id` | 外部 LLM 的推荐回写通道（走状态机校验；直接改文件会绕过它） | 同步 |
 | DELETE | `/api/briefs/:id` | 删除一张工单（running 中的工单不允许删，回 409） | 同步 |
-| GET | `/api/llm/profiles` | 脱敏 profile 列表 + 当前生效 profile | 同步 |
-| GET | `/api/llm/config` | 当前生效配置（key 脱敏，只回 hasKey） | 同步 |
-| POST | `/api/llm/config` | 保存用户覆盖，落盘 `<成片根>/_llm-api.json` | 同步 |
 | POST | `/api/llm/validate` | 跑 validate()（可传临时配置，不必先保存） ★ 2026-10-10 订正（HTTP 收紧后）：「可传临时配置」**已不成立** —— HTTP 层不再从请求体取身份类字段，只保留 `timeoutMs` / `apiKey`；★ 2026-10-10 追加（面板重建后）：面板「三步校验」用本端点（只传 `service` 选择器）⇒ **有面板消费者** | 同步 |
 | POST | `/api/llm/chat` | 跑一次 chat()（**兼容保留**：★ 2026-10-10 订正：实测**无任何后端/脚本**调用本端点（当前**无消费者、保留待用**）；原写「该端点保留供后端/脚本调用」**不成立**（保留作历史）。★ 2026-10-10 面板极简化前，面板「试跑」曾改走 `/api/llm/invoke`；极简化后面板已无「试跑」控件） ★★ 2026-10-10 追加（面板重建后）：面板已重建为**通用算力接入面板**，「试跑」控件**已回归**（走 `/api/llm/invoke`，非本端点）⇒ 本端点（`/api/llm/chat`）**仍无消费者**、保留待用；上述「极简化后无试跑控件」为**该时点**状态（原句保留作历史） | 同步 |
 | POST | `/api/llm/invoke` | 通用 AI 算力调用（chat / image / audio / embedding / custom，转发到模块 invoke()） | 同步 |
@@ -134,14 +131,13 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | DELETE | `/api/llm/services/:id` | ★ 2026-10-10 订正（标准 §7 1.1）：本路由**保留但只回 405 JSON**（写方法非白名单）—— 原句保留作历史：「删除一套算力服务；不存在 ⇒ 404 + 结构化错误」；**删除请改用 `POST /api/llm/services/delete`** | 同步 |
 | POST | `/api/llm/services/active` | **切换当前算力服务**（★ 全局实时生效：切换后所有调用立即走它） | 同步 |
 | POST | `/api/llm/services/delete` | ★ 2026-10-10 新增（标准 §7 1.1 写操作白名单）：删除一套算力服务，body `{id}`；**替代原 `DELETE /api/llm/services/:id`**（写方法一律 POST）；缺 id ⇒ 400、不存在 ⇒ 404 + 结构化错误 | 同步 |
-| GET | `/api/llm/service-templates` | ★ 2026-10-10 新增（标准 §5）：**只读**；返回内置**预填模板**（endpoint / model 等，**无任何密钥**）；不锁定、不自动创建 | 同步 |
 | GET | `/api/resources/scan` | 资源全量/子集扫描（返回 `lib/resources.mjs` 的 `scanAll()`；30s 缓存 + 并发合并） | 同步 |
 | GET | `/api/resources/dirplan` | 目录规划（纯函数、不碰 IO，直接透传） | 同步 |
 | POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
 | POST | `/api/resources/download` | 一键下载（后台任务，日志走既有任务/SSE 通道） | 同步 |
 
-★ 上表共 **61** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
-其余 **59** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
+★ 上表共 **57** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
+其余 **55** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
 `DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
 ★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
 
@@ -151,9 +147,9 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 原先的 profile 下拉 / 适配器 kind / Endpoint / API Key / 接入对象 / 模型（+清单）/ custom 的 path+extract /
 Headers / 超时 / 试跑任务 / 拉取服务清单 / 保存·清除密钥等控件**已从界面移除**（不是从来没有过）。
 后端 `/api/llm/*` 与 `lib/llm-api.mjs` **一字未动**，能力保留在后端、暂不暴露，后期需要用再添加 ——
-故上表列出的 `/api/llm/*` 端点**均仍在**，只是不再有对应的界面控件，仅供后端/脚本调用。 ★ **2026-10-10 订正**：经复核，**当前全仓无任何后端/脚本**实际调用那 4 个 HTTP 端点（`invoke()` 仅被模块内 `chat()` 调；`listModels` / `listProfiles` 仅被各自 handler 调）⇒ 「仅供后端/脚本调用」**不成立**（原句保留作历史）；**如实描述** = 「当前**无消费者**，端点保留待用（委托方『后期需要用再添加』）」。 ★★ **2026-10-10 追加（可操作性事实，★ 委托方应知情）**：面板极简化 + HTTP 层收紧后，**界面上已没有任何入口能改 LLM 端点/口令** —— 端点与口令一律**运行时自动发现**（`SERVER__HOST` / `SERVER__PORT` / `CODEBUDDY_GATEWAY_PASSWORD`）；★ 若要**人工覆盖**，**只有两条途径**：① 环境变量 `LEMO_LLM_BASE` / `LEMO_LLM_KEY`（及 `LEMO_LLM_PROFILE` / `LEMO_LLM_MODEL` / `LEMO_LLM_TIMEOUT_MS` / `LEMO_LLM_HEADERS`）；② **手改**覆盖文件 `<成片根>/_llm-api.json`（默认 `D:/lemo-films/_llm-api.json`）。★ 注意：HTTP 的 `POST /api/llm/config` 已**拒绝**落盘 `baseUrl` / `model` / `headers` / `path` / `extract` / `target`（防已删 provider 经 HTTP 复活），只放行 `profile` / `kind`（白名单）/ `timeoutMs` / `apiKey`。
+故上表列出的 `/api/llm/*` 端点**均仍在**，只是不再有对应的界面控件，仅供后端/脚本调用。 ★ **2026-10-10 订正**：经复核，**当前全仓无任何后端/脚本**实际调用那 4 个 HTTP 端点（`invoke()` 仅被模块内 `chat()` 调；`listModels` / `listProfiles` 仅被各自 handler 调）⇒ 「仅供后端/脚本调用」**不成立**（原句保留作历史）；**如实描述** = 「当前**无消费者**，端点保留待用（委托方『后期需要用再添加』）」。 ★★ **2026-10-10 追加（可操作性事实，★ 委托方应知情）**：面板极简化 + HTTP 层收紧后，**界面上已没有任何入口能改 LLM 端点/口令** —— 端点与口令一律**运行时自动发现**（`SERVER__HOST` / `SERVER__PORT` / `CODEBUDDY_GATEWAY_PASSWORD`）；★ 若要**人工覆盖**，**只有两条途径**：① 环境变量 `LEMO_LLM_BASE` / `LEMO_LLM_KEY`（及 `LEMO_LLM_PROFILE` / `LEMO_LLM_MODEL` / `LEMO_LLM_TIMEOUT_MS` / `LEMO_LLM_HEADERS`）；② **手改**覆盖文件 `<成片根>/_llm-api.json`（默认 `D:/lemo-films/_llm-api.json`）。★ 注意：HTTP 的 `POST /api/llm/config` 已**拒绝**落盘 `baseUrl` / `model` / `headers` / `path` / `extract` / `target`（防已删 provider 经 HTTP 复活），只放行 `profile` / `kind`（白名单）/ `timeoutMs` / `apiKey`。 ★ **2026-10-10 订正（减法）**：`POST /api/llm/config`（连同 `GET /api/llm/config`、`GET /api/llm/profiles`、`GET /api/llm/service-templates`）**已整体删除**（超出外部参考标准）⇒ 上面「该端点拒绝落盘身份类字段」为**该时点**状态（原句保留作历史）；人工覆盖现**只剩** ① 环境变量 ② 手改覆盖文件两条途径。
 
-★★ **2026-10-10 追加（★ 方向变更：《通用AI算力API接入模块》规格）—— 面板已重建为「通用算力接入面板」**（★ 上述「极简化 / 只接 WorkBuddy / 界面无输入控件」是**该时点**的状态，**原句保留作历史**）：现面板（`web/app.js` 的 `renderLlm*` 系列）支持 **多套算力列表 + 新增 / 编辑 / 删除 / 切换**、**完整配置项**（服务名称 / Endpoint / API-Key / 请求头 / 超时 / kind / model / path / extract / target）、**三步校验**（可达 → 鉴权 → 返回体，`POST /api/llm/validate`）、**试跑**（`POST /api/llm/invoke`）与**拉取模型清单**（`POST /api/llm/models`）。⇒ 上表新增的 **5 条 `/api/llm/services*`**（★ **唯一接受配置体的写入路径**）与 `validate` / `models` / `invoke` **均有面板消费者**；`/api/llm/profiles` / `/api/llm/config` / `/api/llm/chat` 为 **legacy**（无面板消费者、保留待用）。★★ **铁律**：**调用类端点只接受 `service`（选择器）**；**配置体只能经 `POST /api/llm/services` 写入**。
+★★ **2026-10-10 追加（★ 方向变更：《通用AI算力API接入模块》规格）—— 面板已重建为「通用算力接入面板」**（★ 上述「极简化 / 只接 WorkBuddy / 界面无输入控件」是**该时点**的状态，**原句保留作历史**）：现面板（`web/app.js` 的 `renderLlm*` 系列）支持 **多套算力列表 + 新增 / 编辑 / 删除 / 切换**、**完整配置项**（服务名称 / Endpoint / API-Key / 请求头 / 超时 / kind / model / path / extract / target）、**三步校验**（可达 → 鉴权 → 返回体，`POST /api/llm/validate`）、**试跑**（`POST /api/llm/invoke`）与**拉取模型清单**（`POST /api/llm/models`）。⇒ 上表新增的 **5 条 `/api/llm/services*`**（★ **唯一接受配置体的写入路径**）与 `validate` / `models` / `invoke` **均有面板消费者**；`/api/llm/chat` 为 **legacy**（无面板消费者、保留待用）；★ **2026-10-10 订正（减法）**：`/api/llm/profiles` / `/api/llm/config` / `/api/llm/service-templates` 已**整体删除**（超出外部参考标准）。★★ **铁律**：**调用类端点只接受 `service`（选择器）**；**配置体只能经 `POST /api/llm/services` 写入**。
 
 ## 为什么需要这一层
 

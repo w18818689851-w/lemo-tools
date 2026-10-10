@@ -238,8 +238,9 @@ const CONTRACT = path.join(ROOT, CONTRACT_REL);
 // ── 规格 §一 / §二 的常量（契约真值；改这里 = 改契约，须先改规格）──────────────
 // ★ 2026-10-09（第 8 轮）**补齐为契约导出全量 9 个**：§一 明列 8 个（原 6 个 + `previewProfile` + `IMAGE_LIMITS`），
 //   §十三.1 又加 `invoke`。原先只查 6 个 ⇒ 失败文案「规格 §一 要求的导出缺失」名不符实（只守 §一 的 6/8）。
-const REQUIRED_EXPORTS = ['PROFILES', 'listProfiles', 'resolveConfig', 'validate', 'chat', 'listModels',
-  'previewProfile', 'IMAGE_LIMITS', 'invoke'];
+// ★ 2026-10-10 订正（减法）：`listProfiles` / `previewProfile` 已随超出参考标准的端点一并删除 ⇒ 本清单收窄为 7 个。
+const REQUIRED_EXPORTS = ['PROFILES', 'resolveConfig', 'validate', 'chat', 'listModels',
+  'IMAGE_LIMITS', 'invoke'];
 const KIND_ENUM = ['unreachable', 'timeout', 'auth', 'rate-limit', 'http-error', 'bad-json',
   'bad-shape', 'empty-output', 'config', 'unknown'];
 // ★ 2026-10-09 追加：新增适配器 kind `workbuddy-gateway`（本机智能体网关：POST /api/v1/runs → SSE 取结果，

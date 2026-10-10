@@ -2119,43 +2119,10 @@ function watchBriefJob(jobId, briefId) {
 //   —— 它们承载的是「按**名字**猜敏感词、其余值原样回传」的**旧口径**（正是 P1 明文外泄的来源）。
 //   现在请求头**只回布尔** `hasHeaders`（见 `llmConfigPayload` / `sanitizeLlmOverride`），不再有「打码对象」。
 
-// ★★ 2026-10-10 收紧（委托方指令「**收紧 HTTP 层，不接受覆盖**」）—— `/api/llm/config` 落盘的 **kind 白名单**。
-//   · 委托方已明令「**只接 WorkBuddy，其他 provider 一律彻底删除**」⇒ 让面板把 `kind` 覆盖成
-//     `anthropic` / `openai-compatible` 等，**等于把已删的 provider 经「落盘覆盖」复活**。
-//   · ★ **实测**：`POST /api/llm/config {kind:'anthropic'}` 会被接受并落盘，随后 `GET /api/llm/config`
-//     的 baseUrl 变成 `ANTHROPIC_BASE_URL`（= 第三方中转 `http://43.139.159.106:3000`）—— 见本批复核报告。
-//   · 只放行 `workbuddy-gateway`（本机智能体网关）。★ `custom` **也不放行**：它是「任意端点」的通用
-//     适配器，同样能把链路指到第三方 ⇒ 与「只接 WorkBuddy」相悖。
-//   · ★ 为什么**不必**放行 `openai-compatible`：`lib/triple-check.mjs` 的 VLM 校验是**进程内直调
-//     `chat()`**、**不走 HTTP** ⇒ 不受本白名单影响（委托方任务书已确认）。
-//   ★ 2026-10-10 订正（委托方新规格《通用AI算力API接入模块》）：模块已重建为**开放式、可插拔、不锁定
-//     服务商**，面板**已提供** `openai-compatible` / `anthropic` / `custom` / `workbuddy-gateway` 四个 kind
-//     入口。故上句「只接 WorkBuddy」仅描述**本 legacy 端点**的有意收窄（本白名单**仍**只放行
-//     `workbuddy-gateway`，值**不动**）；**新增/修改算力服务请走** `POST /api/llm/services`（kind 校验由
-//     模块 `SERVICE_KINDS` 负责，**另一套**口径，不受本白名单约束）。
-const LLM_CONFIG_KINDS = new Set(['workbuddy-gateway']);
-
 // ★★ 2026-10-10 收紧（第二轮，委托方指令「**收紧 HTTP 层，不接受覆盖**」）—— **身份类字段的唯一真值**。
 //   · 含义：**决定「往哪个端点、用什么 kind 发」**的字段（改任一即可把链路指到别处 ⇒ 已删的 provider 复活）。
-//   · 用它的两处（**共用这一份清单**，免得将来两处又漂）：
-//       ① `buildLlmOpts`：/api/llm/* 的所有 handler —— 身份类字段**一律不从请求体取**；
-//       ② `POST /api/llm/config` 落盘侧 —— 身份类字段**一律不可落盘**（除 `profile` / `kind`，见下）。
+//   · 用它的一处：`buildLlmOpts`：/api/llm/* 的所有 handler —— 身份类字段**一律不从请求体取**。
 const LLM_IDENTITY_FIELDS = ['profile', 'kind', 'baseUrl', 'model', 'headers', 'path', 'extract', 'target'];
-// config 落盘侧：身份类里**只有**这两个可写 —— `profile` 须是**已知** profile（现在只剩 `workbuddy`）、
-//   `kind` 须在 `LLM_CONFIG_KINDS` 白名单内；二者各有**独立校验**（见 apiLlmConfigSave）。
-const LLM_CONFIG_WRITABLE_IDENTITY = new Set(['profile', 'kind']);
-/** 落盘侧**禁止**的身份类字段（= 身份类 − 可写的那两个）—— 由上面那份清单**派生**，不另抄一份。 */
-const LLM_CONFIG_DENY_FIELDS = LLM_IDENTITY_FIELDS.filter((k) => !LLM_CONFIG_WRITABLE_IDENTITY.has(k));
-
-// ★★ 2026-10-10 追加（委托方新规格《通用AI算力API接入模块》·**方向变更**）—— 上面 `LLM_CONFIG_KINDS`（②）
-//   与 `LLM_IDENTITY_FIELDS`（③）**维持原样，不放宽**，理由与「放开」落点：
-//   · **铁律不变**：**调用类端点**（validate / models / chat / invoke）**仍不接受**身份类覆盖 ⇒
-//     `LLM_IDENTITY_FIELDS` 仍是 `buildLlmOpts` 的**剥离清单**（唯一变化：多保留一个 `service` **选择器**，
-//     它不是身份类字段，见 buildLlmOpts 函数头）。
-//   · **「配置写入放开」的落点** = **新增** `POST /api/llm/services`（唯一接受配置体的写入路径）——
-//     它**不用**上面这两份清单，而是把 kind/baseUrl/model/headers/timeoutMs/path/extract/target 交给模块
-//     `saveService()`（模块自带 kind 白名单 `SERVICE_KINDS`）。⇒ 「放开写入」与「收紧调用」**各走各路**，
-//     两张清单继续只服务「调用侧」与「legacy `/api/llm/config` 落盘侧」。
 
 // 动态 import：模块尚未落地时这里会抛，调用方兜住（服务照常起；下次请求会重试）。
 let _llmMod = null;
@@ -2163,61 +2130,6 @@ async function loadLlmApi() {
   if (_llmMod) return _llmMod;
   _llmMod = await import('./lib/llm-api.mjs');   // 相对本文件解析
   return _llmMod;
-}
-
-/**
- * ★★ 2026-10-10（标准 §10）：覆盖里的 `services` 数组 → **逐项脱敏**行。
- *   复用模块 `listServices()`（= `/api/llm/services` 的**同一份**脱敏视图）—— 本文件**不写第二份脱敏实现**
- *   （本项目吃过「两份落盘 / 两份真相」的亏）。模块不可用 / 抛异常 ⇒ 回 `[]`：**宁可不回，也绝不透传原始数组**
- *   （原始数组里每项都带明文 `apiKey` —— 这正是本批要堵的 P0）。
- */
-function maskedOverrideServices(mod) {
-  try {
-    if (mod && typeof mod.listServices === 'function') return mod.listServices();
-  } catch { /* 落空 ⇒ 回空数组（绝不回原始明文） */ }
-  return [];
-}
-
-/**
- * ★★ 2026-10-10（标准 §10「安全与信息边界」）—— `/api/llm/config` 的 `override` 回显**允许清单**
- *   （**不是**排除清单）：**只放行清单内**的顶层键，清单外的**一律丢弃**（★ **绝不** `out[k] = v` 透传）。
- *   ★ 与模块 `maskedExtra()` 用 `EXTRA_ECHO_KEYS` 的**同一原则**（「只放行列出的，其余一律不回」）。
- *   ★ 为什么必须这样：P0 的根因就是「只挡**想得到的**键」（顶层 `apiKey`）而非「只放行**白名单**」——
- *     对**未知顶层键**继续 `out[k] = v` 就是**同一类洞**。且触发面**不是纯理论**：`_llm-api.json` 是
- *     模块注释里**明确允许用户手改**的文件 ⇒ 用户手写一个顶层未知键（如 `extra`）里放了密钥 ⇒ 旧写法会
- *     **明文回给前端**。
- *   ★ 清单内容 = 覆盖文件**可能**出现的顶层键（以模块 `normalizeOverride` / `LEGACY_OVERRIDE_KEYS` 的口径为准）：
- *     · 多套服务元字段：`version` / `active`；
- *     · legacy 单份覆盖字段：`profile` / `kind` / `target` / `baseUrl` / `model` / `timeoutMs` / `path` / `extract` / `models`。
- *   ★ `apiKey` / `headers` / `services` **不在此清单**：它们走 `sanitizeLlmOverride()` 里的**特殊处理**
- *     （丢弃 / 布尔 `hasHeaders` / 逐项脱敏）。
- */
-const LLM_OVERRIDE_ECHO_KEYS = new Set([
-  'version', 'active',
-  'profile', 'kind', 'target', 'baseUrl', 'model', 'timeoutMs', 'path', 'extract', 'models',
-]);
-
-/**
- * 把「存储的覆盖」脱敏成可安全回给前端的形状（★ 不含 key 明文 / 不含请求头内容）。
- * ★★ 2026-10-10（标准 §10，委托方 P0/P1）：
- *   · 顶层 `apiKey`（legacy 字段）**永不回显**；
- *   · `headers` **不再回对象**（旧写法按名字猜敏感词、其余**值原样回传** ⇒ 自定义头明文外泄）⇒ 改回**布尔**
- *     `hasHeaders`（与 `/api/llm/services` 的 `hasHeaders` 同口径）；
- *   · `services` 是**数组** ⇒ 逐项走 `maskedOverrideServices()`（★ 旧写法 `out[k]=v` 会把整数组**原样**回传，
- *     每项的 `apiKey` 明文外泄 —— 就是本批的 P0 根因）；
- *   · 其余顶层键 ⇒ **只放行** `LLM_OVERRIDE_ECHO_KEYS` **允许清单**内的，清单外**一律丢弃**（P0 同类收口）。
- */
-function sanitizeLlmOverride(mod, o) {
-  const out = {};
-  for (const [k, v] of Object.entries(o || {})) {
-    if (k === 'apiKey') continue;                                  // ★ 永不回显（顶层 legacy 字段）
-    if (k === 'headers') { out.hasHeaders = !!(v && Object.keys(v).length > 0); continue; }
-    if (k === 'services') { out.services = maskedOverrideServices(mod); continue; }
-    if (!LLM_OVERRIDE_ECHO_KEYS.has(k)) continue;                  // ★ 允许清单外 ⇒ 丢弃（绝不透传未知键）
-    out[k] = v;
-  }
-  out.hasKey = !!(o && o.apiKey);
-  return out;
 }
 
 /**
@@ -2261,57 +2173,6 @@ function buildLlmOpts(body) {
   return o;
 }
 
-/**
- * 面板用的配置视图（★ key 脱敏）。
- * @param {object} mod lib/llm-api.mjs
- * @param {object} cfg resolveConfig() 或 previewProfile() 的结果（★ 前者含 apiKey，**只在本函数内用**）
- * @param {object} ov  要在「覆盖」里回显的对象（预览别的 profile 时传 {}）
- * @param {{hasKey:boolean,keyMask:string}} [keyInfo] 已脱敏的 key 信息（previewProfile 路径直接给；
- *        不给则从 cfg.apiKey 现算）—— 免得为「已脱敏的输入」再造一条分支。
- */
-function llmConfigPayload(mod, cfg, ov, keyInfo) {
-  const override = ov || {};
-  const hasKey = keyInfo ? !!keyInfo.hasKey : !!cfg.apiKey;
-  const keyMask = keyInfo
-    ? String(keyInfo.keyMask || '')
-    : (() => { try { return mod.maskKey ? mod.maskKey(cfg.apiKey) : ''; } catch { return ''; } })();
-  return {
-    profile: cfg.id,
-    label: cfg.label || '',
-    kind: cfg.kind || '',
-    // ★ 接入对象（target）：'model'（底层基础大模型 API，请求必带 model）/ 'agent'（智能体 API，
-    //   模型名仅作本地备注、不强制携带 model）。★ 面板据此切换「模型名」的语义与提示（见 web/app.js）。 ★ 2026-10-10 订正：面板极简化后**已无「模型名」控件**（28 控件 → 9 id、零输入）⇒ 上面「面板据此切换语义与提示」的渲染路径**已不存在**；`target` 仍在返回里（保留待用）。
-    target: cfg.target === 'agent' ? 'agent' : 'model',
-    baseUrl: cfg.baseUrl || '',
-    model: cfg.model || '',
-    models: Array.isArray(cfg.models) ? cfg.models : [],
-    // ★★ 2026-10-10（标准 §10，委托方 P1）：请求头**内容**（头名与头值）**绝不外传** —— 旧写法回的是一个
-    //   「头名 → 值」对象（只对**名字**含敏感词的值打码，其余**原样回传**）⇒ 自定义头明文外泄。
-    //   现**只回一个布尔** `hasHeaders`（= 是否已配置请求头），与 `/api/llm/services` 的 `hasHeaders` 同口径。
-    hasHeaders: typeof cfg.hasHeaders === 'boolean'
-      ? cfg.hasHeaders
-      : !!(cfg.headers && Object.keys(cfg.headers).length > 0),
-    timeoutMs: cfg.timeoutMs,
-    path: cfg.path,
-    extract: cfg.extract,
-    hasKey,
-    // ★ keyMask（如 `sk-K…`）：**掩码不是明文**（模块 maskKey，契约 §四 同口径），
-    //   给面板当「当前已配 key」的提示用（team-lead 2026-10-08 裁定保留）。★ 绝不回 key 本身。
-    keyMask,
-    // ★★ 2026-10-10 追加（新规格·多套算力服务）：回显「新模型」字段，供面板编辑 ——
-    //   · `serviceId` = 本次**生效**的服务 id（无 ⇒ ''）；`servicesEmpty` = 覆盖文件**显式**声明
-    //     「一套服务都没有」（面板据此给「新增一套」的引导）；`retry` / `retryBackoffMs` = 重试策略。
-    //   ★ `previewProfile` 路径传入的对象没有这几个字段 ⇒ 用 `|| ''` / `!!` 兜底，**不崩**。
-    serviceId: cfg.serviceId || '',
-    servicesEmpty: !!cfg.servicesEmpty,
-    retry: cfg.retry,
-    retryBackoffMs: cfg.retryBackoffMs,
-    unknownProfile: !!cfg.unknownProfile,
-    overrideFile: mod.overrideFilePath(),
-    override: sanitizeLlmOverride(mod, override),
-  };
-}
-
 /** 模块缺失 / 抛异常的统一兜底：HTTP 200 + 可操作中文提示（★ 不含任何密钥）。 */
 function llmFail(res, e) {
   const notReady = !!(e && (e.code === 'ERR_MODULE_NOT_FOUND' || /llm-api\.mjs/.test(String(e.message || ''))));
@@ -2324,160 +2185,6 @@ function llmFail(res, e) {
       ...(notReady ? { hint: 'lib/llm-api.mjs 还没落地（另一个智能体在实现）。落地后重开控制台即可。' } : {}),
     },
   });
-}
-
-/**
- * GET /api/llm/profiles —— 脱敏 profile 列表 + 当前生效 profile（§七）。
- */
-async function apiLlmProfiles(req, res) {
-  try {
-    const mod = await loadLlmApi();
-    sendJson(res, 200, { ok: true, data: { profiles: mod.listProfiles(), current: mod.resolveConfig({}).id } });
-  } catch (e) { llmFail(res, e); }
-}
-
-/**
- * GET /api/llm/config —— 当前**生效**配置（key 脱敏，只回 hasKey；§七）。
- * `?profile=<id>` 可**预览**另一个 profile：只给它的内置默认（+env），不带上一 profile 的字段覆盖
- * （否则用户切下拉时会看到「上一个 profile 的 baseUrl 挂在下一个 profile 名下」）。
- * ★ 预览走模块的**正式导出** `previewProfile(id)`（= 该 profile 的默认值 + 不读覆盖文件，已脱敏）——
- *   不再依赖 `resolveConfig(opts, _file)` 的第二个内部形参（team-lead 2026-10-08 批准的契约补充）。
- */
-async function apiLlmConfigGet(req, res, url) {
-  try {
-    const mod = await loadLlmApi();
-    const qp = ((url && url.searchParams.get('profile')) || '').trim();
-    if (qp) {
-      const p = mod.previewProfile(qp);
-      return sendJson(res, 200, {
-        ok: true,
-        data: llmConfigPayload(mod, p, {}, { hasKey: p.hasKey, keyMask: p.keyMask }),
-      });
-    }
-    sendJson(res, 200, { ok: true, data: llmConfigPayload(mod, mod.resolveConfig({}), mod.readOverride()) });
-  } catch (e) { llmFail(res, e); }
-}
-
-/**
- * POST /api/llm/config —— 保存用户覆盖，落盘 `<成片根>/_llm-api.json`（§八；由模块的 saveOverride 落）。
- *
- * 语义（与前端「留空=不改」对齐）：
- *   · `apiKey` 空串/缺省 ⇒ **不改**；`clearKey:true` ⇒ 清掉已存密钥；
- *   · `profile` 须是**已知** profile（现在只剩 `workbuddy`），`kind` 须在白名单（`workbuddy-gateway`）；
- *     二者空串 ⇒ **删掉该项覆盖**（回落到默认）；
- *   · `timeoutMs` 空 ⇒ 删；否则须在 1000–600000；
- *   · `models` 数组 ⇒ 存（面板拉到的候选模型清单）；空数组 / null ⇒ 删该项覆盖。
- * ★★ 2026-10-10 收紧（委托方指令「收紧 HTTP 层，不接受覆盖」）：**身份类字段一律不可落盘** ——
- *   `baseUrl` / `model` / `headers` / `path` / `extract` / `target` 一律**结构化拒绝**（见
- *   `LLM_CONFIG_DENY_FIELDS`）。它们决定「往哪个端点、用什么 kind 发」；若可落盘，就能把**已删的
- *   provider 持久复活**（实测：`{baseUrl:'http://43.139.159.106:3000'}` 曾被接受并落盘 ⇒ 第三方中转）。
- * ★ 删除靠「把值置成 undefined」：模块 saveOverride 是浅合并，JSON 序列化会丢弃 undefined 键。
- * ★ 落盘用模块的 saveOverride（原子写 + 与现有覆盖合并），本文件**不自己读写**那个文件。
- *
- * ★★ 2026-10-10 追加（委托方新规格《通用AI算力API接入模块》·**方向变更**）—— **本端点标注为 legacy**：
- *   · 新规格要「**配置写入放开**」（Endpoint / API-Key / 请求头 / 超时 / 服务名称 + **多套保存、快速切换**）。
- *     该能力**已由新增的 `POST /api/llm/services`（+ `/services/:id` / `/services/active`）承担** ——
- *     它才是「**唯一接受配置体**」的写入路径（kind/baseUrl/model/headers/timeoutMs/path/extract/target 全收）。
- *   · 本端点**保留原样**（向后兼容：既有单份覆盖的读写路径**一字未改**，`{profile,kind,timeoutMs,apiKey,models}`
- *     仍可写、身份类字段仍**结构化拒绝**）—— 原因是：① 面板极简化后**已无消费者**；② 它写的仍是**旧格式**
- *     顶层字段，模块 `normalizeOverride` 会**迁移**成「一套服务」（**向后兼容**，不崩）。
- *   · ★ **不把本端点改接 saveService**：那会让「**调用类端点不接受内联覆盖**」这条**铁律**在**写入侧**
- *     出现第二条语义重复的入口，且会让「本端点拒绝身份类字段」这条**既有回归**（dub-api ㉒）失效。
- *     ⇒ 取舍：**新写入走 `/api/llm/services`；本端点冻结为 legacy**（新面板请勿再用）。
- */
-async function apiLlmConfigSave(req, res) {
-  let body;
-  try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
-
-  try {
-    const mod = await loadLlmApi();
-
-    // ★★ 2026-10-10 收紧（委托方指令「收紧 HTTP 层，不接受覆盖」）：**落盘侧的身份类拦截 + 白名单校验**。
-    //   ① **身份类字段**（`baseUrl` / `model` / `headers` / `path` / `extract` / `target`）**一律不可落盘** ——
-    //      它们决定「往哪个端点、用什么 kind 发」；若可落盘，就能把**已删的 provider 持久复活**。
-    //      ★ **实测（改动前）**：`POST /api/llm/config {baseUrl:'http://43.139.159.106:3000'}` 会被**接受并落盘**，
-    //        随后 `GET /api/llm/config` 的 baseUrl 即变该第三方中转（**持久**生效，比单次请求覆盖更危险）。
-    //      ★ 清单由共用常量 `LLM_CONFIG_DENY_FIELDS` 派生（与 `buildLlmOpts` 的 `LLM_IDENTITY_FIELDS` 同源）。
-    //   ② 身份类里**只有** `profile` / `kind` 可写：`profile` 须**已知**、`kind` 须在白名单（各自校验见下）。
-    //   ★ 拒绝用**结构化** `{ok:false,error:{kind:'config'}}`（HTTP 200），**不是** 500。
-    const denied = LLM_CONFIG_DENY_FIELDS.filter((k) => body[k] !== undefined);
-    if (denied.length) {
-      return sendJson(res, 200, {
-        ok: false,
-        error: {
-          kind: 'config',
-          message: `不接受覆盖：${denied.join(' / ')} 由服务端配置决定，不可经 /api/llm/config 落盘；如需新增/修改算力服务，请用 POST /api/llm/services。`,
-        },
-      });
-    }
-    if (body.profile !== undefined) {
-      const pid = String(body.profile).trim();
-      const known = Object.prototype.hasOwnProperty.call(mod.PROFILES || {}, pid);
-      if (pid !== '' && !known) {
-        return sendJson(res, 200, {
-          ok: false,
-          error: {
-            kind: 'config',
-            message: `未知 profile「${pid}」：只接受内置 profile（当前：${Object.keys(mod.PROFILES || {}).join(' / ') || '（无）'}）。`,
-          },
-        });
-      }
-    }
-    if (body.kind !== undefined) {
-      const kd = String(body.kind).trim();
-      if (kd !== '' && !LLM_CONFIG_KINDS.has(kd)) {
-        return sendJson(res, 200, {
-          ok: false,
-          error: {
-            kind: 'config',
-            message: `不允许的 kind「${kd}」：本接口（legacy）仅放行 ${[...LLM_CONFIG_KINDS].join(' / ')}；其他适配器（openai-compatible / anthropic / custom）请用 POST /api/llm/services。`,
-          },
-        });
-      }
-    }
-
-    const partial = {};
-    if (typeof body.profile === 'string' && body.profile.trim()) partial.profile = body.profile.trim();
-    // ★ 落盘侧**只**接受 `kind` 这一个「可写身份类」字段（已过白名单）；`baseUrl` / `model` / `headers` /
-    //   `path` / `extract` / `target` 已在上面**整段拒绝**（不进 partial）。
-    if (body.kind !== undefined) {
-      const v = String(body.kind).trim();
-      partial.kind = v === '' ? undefined : v;
-    }
-    if (body.timeoutMs !== undefined) {
-      if (body.timeoutMs === '' || body.timeoutMs === null) partial.timeoutMs = undefined;
-      else {
-        const n = Number(body.timeoutMs);
-        if (!Number.isFinite(n) || n < 1000 || n > 600000) {
-          return sendJson(res, 200, {
-            ok: false,
-            error: { kind: 'config', message: `请求超时需在 1000–600000 毫秒之间（收到 ${body.timeoutMs}）` },
-          });
-        }
-        partial.timeoutMs = Math.round(n);
-      }
-    }
-    if (body.clearKey === true) partial.apiKey = undefined;
-    else if (typeof body.apiKey === 'string' && body.apiKey !== '') partial.apiKey = body.apiKey;
-    // ★ 多模型切换：候选模型清单（面板「拉取模型」拉到的）随保存落盘；空数组 ⇒ 删掉该项覆盖。
-    if (body.models !== undefined) {
-      if (body.models === null) partial.models = undefined;
-      else if (Array.isArray(body.models)) {
-        const arr = body.models.map((x) => String(x ?? '').trim()).filter(Boolean);
-        partial.models = arr.length ? arr : undefined;
-      } else {
-        return sendJson(res, 200, { ok: false, error: { kind: 'config', message: 'models 必须是数组' } });
-      }
-    }
-
-    const saved = mod.saveOverride(partial);
-    if (!saved || saved.ok !== true) {
-      const e = (saved && saved.error) || {};
-      return sendJson(res, 200, { ok: false, error: { kind: e.kind || 'config', message: e.message || '保存失败' } });
-    }
-    sendJson(res, 200, { ok: true, data: llmConfigPayload(mod, mod.resolveConfig({}), mod.readOverride()) });
-  } catch (e) { llmFail(res, e); }
 }
 
 /**
@@ -2750,20 +2457,6 @@ async function apiLlmServiceSetActive(req, res) {
   } catch (e) { llmFail(res, e); }
 }
 
-/**
- * GET /api/llm/service-templates —— 列出**预填模板**（★ 脱敏：模板里**只有 endpoint / model 等预填值，
- *   绝无任何密钥**）。★ 语义 = **预填表单**（面板「从模板新建」用它把表单填好，用户**再保存**才成真服务）
- *   —— **不锁定、不自动创建**（与「已保存的算力服务」是两回事）。返回 `{ok:true,data:{templates:[…]}}`。
- *   ★ 2026-10-10 追加（标准 §5）：前端 `web/app.js` 早已调用本端点（`GET /api/llm/service-templates`），
- *     但后端此前**无该路由**（⇒ 404）—— 本处补齐，纯只读。
- */
-async function apiLlmServiceTemplates(req, res) {
-  try {
-    const mod = await loadLlmApi();
-    sendJson(res, 200, { ok: true, data: { templates: mod.listServiceTemplates() } });
-  } catch (e) { llmFail(res, e); }
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
 // ── ★★ 写操作白名单（代码级强制）—— 2026-10-10 追加（标准 §7 1.1）──
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2775,7 +2468,6 @@ async function apiLlmServiceTemplates(req, res) {
 //     既有写路由**逐字不变**（它们不在 `/api/llm/` 前缀内 ⇒ 本白名单**恒放行**）。
 //   ★ `GET` / `HEAD` 是只读，不在判定内。
 const LLM_WRITE_WHITELIST = new Set([
-  'POST /api/llm/config',
   'POST /api/llm/validate',
   'POST /api/llm/chat',
   'POST /api/llm/invoke',
@@ -2910,15 +2602,10 @@ const server = http.createServer(async (req, res) => {
     if (mm && m === 'DELETE') return apiBriefDelete(req, res, mm[1]);
 
     // ── LLM API 配置（/api/llm/*）—— 面板 + 「试跑」（通用调用走 invoke；/api/llm/chat 兼容保留）（契约与铁律见文件头说明）──
-    if (p === '/api/llm/profiles' && m === 'GET') return await apiLlmProfiles(req, res);
-    if (p === '/api/llm/config' && m === 'GET') return await apiLlmConfigGet(req, res, url);
-    if (p === '/api/llm/config' && m === 'POST') return await apiLlmConfigSave(req, res);
     if (p === '/api/llm/validate' && m === 'POST') return await apiLlmValidate(req, res);
     if (p === '/api/llm/chat' && m === 'POST') return await apiLlmChat(req, res);
     if (p === '/api/llm/invoke' && m === 'POST') return await apiLlmInvoke(req, res);
     if (p === '/api/llm/models' && m === 'POST') return await apiLlmModels(req, res);
-    // ★ 2026-10-10 追加（标准 §5）：服务**预填模板**列表（纯只读；前端 `web/app.js` 早已调用）。
-    if (p === '/api/llm/service-templates' && m === 'GET') return await apiLlmServiceTemplates(req, res);
     // ── 算力服务 CRUD（/api/llm/services*，2026-10-10 追加）—— ★ 唯一接受**配置体**的写入路径 ──
     //    （★ 调用类端点仍只接受 `service` 选择器；见文件头「算力服务 CRUD」段的边界说明。）
     if (p === '/api/llm/services' && m === 'GET') return await apiLlmServicesList(req, res);

@@ -69,8 +69,8 @@ process.env.LEMO_FILM_DIR = TMP;
 
 // ★ 动态 import：让上面的 LEMO_FILM_DIR 先生效（静态 import 会被提升到文件顶部）。
 const {
-  PROFILES, DEFAULT_PROFILE, listProfiles, resolveConfig, validate, chat, listModels, invoke,
-  maskKey, overrideFilePath, readOverride, saveOverride, maskedConfig, previewProfile, IMAGE_LIMITS,
+  PROFILES, DEFAULT_PROFILE, resolveConfig, validate, chat, listModels, invoke,
+  maskKey, overrideFilePath, readOverride, saveOverride, maskedConfig, IMAGE_LIMITS,
   // ★ 2026-10-10 追加（多套「算力服务」CRUD）—— 本批新增的 6 个导出，此前**只有一次性探针验过**。
   listServices, getActiveService, serviceById, setActiveService, saveService, deleteService,
   // ★ 2026-10-10 追加（标准 §8 / §11.5）：流式 + 跨服务降级 —— 此前**只有一次性探针验过**（探针已删）。
@@ -648,49 +648,15 @@ test('★ validate()·正常取到文本：content=\'ok\' ⇒ steps.shape.ok 且
   } finally { await stub.close(); }
 });
 
-test('★ previewProfile(id)：面板预览专用 —— 显式 id（不依赖 LEMO_LLM_PROFILE）、不读覆盖文件、不发网络、脱敏', async () => {
-  await withEnv({ ...CLEAN, LEMO_LLM_PROFILE: 'workbuddy' }, async () => {
-    // ① 显式 id
-    const wb = previewProfile('workbuddy');
-    assert.equal(wb.id, 'workbuddy', '★ 必须看显式 id，不看 LEMO_LLM_PROFILE');
-    assert.equal(wb.isDefault, true);
-    assert.equal(wb.kind, 'workbuddy-gateway', '★ workbuddy 已改用智能体网关适配器（见契约 §十六）');
-    assert.equal(wb.baseUrl, '', '干净环境下 workbuddy 的 baseUrl 应为空（不硬写、不硬编码端口）');
-    assert.equal(wb.model, '', '干净环境下 workbuddy 的 model 应为空（不硬写）');
-    assert.equal(wb.hasKey, false);
-    assert.equal(wb.unknownProfile, false);
-    assert.ok(wb.note.length > 0, 'note 应带出来（面板要显示）');
-
-    // ② 不传 / 传空 ⇒ 默认 profile
-    assert.equal(previewProfile().id, 'workbuddy');
-    assert.equal(previewProfile('').id, 'workbuddy');
-
-    // ③ 未知 id 要能识别（面板可据此提示）
-    const unk = previewProfile('no-such-profile');
-    assert.equal(unk.unknownProfile, true);
-    assert.equal(unk.id, 'no-such-profile');
-
-    // ④ ★ 不读覆盖文件（与 resolveConfig 的差异就在这里）
-    rmOverride();
-    fs.writeFileSync(overrideFilePath(),
-      JSON.stringify({ profile: 'workbuddy', baseUrl: 'http://file-base', model: 'file-model' }), 'utf8');
-    try {
-      assert.equal(previewProfile('workbuddy').baseUrl, '', '★ previewProfile **不读**覆盖文件');
-      assert.equal(resolveConfig({}).baseUrl, 'http://file-base', '而 resolveConfig 会读（对照）');
-    } finally { rmOverride(); }
-
-    // ⑤ 脱敏：预览输出绝不含 key 明文
-    const FAKE = 'sk-PREVIEW-abcdefghijklmnop-0123456789';
-    await withEnv({ LEMO_LLM_KEY: FAKE }, () => {
-      const p = previewProfile('workbuddy');
-      assert.equal(p.hasKey, true);
-      assert.equal(p.keyMask, 'sk-P…');
-      assert.ok(!JSON.stringify(p).includes(FAKE), '★ 预览输出不得含 key 明文');
-    });
-  });
+test('★ 减法回归：previewProfile / listProfiles / listServiceTemplates 已随超出参考标准的端点删除（不得再导出）', async () => {
+  const mod = await import('../lib/llm-api.mjs');
+  assert.equal('previewProfile' in mod, false, '★ previewProfile 不得再导出');
+  assert.equal('listProfiles' in mod, false, '★ listProfiles 不得再导出');
+  assert.equal('listServiceTemplates' in mod, false, '★ listServiceTemplates 不得再导出');
+  assert.equal('SERVICE_TEMPLATES' in mod, false, '★ SERVICE_TEMPLATES 不得再导出');
 });
 
-test('★★ 密钥不外泄：listProfiles() / validate() 的任何输出都不含 key 明文（含响应体回显）', async () => {
+test('★★ 密钥不外泄：listServices() / validate() 的任何输出都不含 key 明文（含响应体回显）', async () => {
   const FAKE = 'sk-FAKE-abcdefghijklmnop-0123456789';
   // 桩故意**把 key 回显**在错误体里（模拟服务端回显）⇒ 断言它被脱敏
   const stub = await startStub((req, res) => {
@@ -699,11 +665,11 @@ test('★★ 密钥不外泄：listProfiles() / validate() 的任何输出都不
   });
   try {
     await withEnv({ ...CLEAN, LEMO_LLM_KEY: FAKE }, async () => {
-      const profiles = listProfiles();
-      const pText = JSON.stringify(profiles);
-      assert.ok(!pText.includes(FAKE), '★ listProfiles() 输出里**不得**出现 key 明文');
-      assert.equal(profiles.find((p) => p.id === 'workbuddy').hasKey, true, '应只回 hasKey:true');
-      assert.ok(profiles.every((p) => !('apiKey' in p)), 'listProfiles 项里不得有 apiKey 字段');
+      const svcs = listServices();
+      const pText = JSON.stringify(svcs);
+      assert.ok(!pText.includes(FAKE), '★ listServices() 输出里**不得**出现 key 明文');
+      assert.ok(svcs.every((s) => !('apiKey' in s)), 'listServices 项里不得有 apiKey 字段');
+      assert.ok(svcs.every((s) => typeof s.hasHeaders === 'boolean'), 'listServices 项应回 hasHeaders 布尔（脱敏口径）');
 
       const r = await validate(OAI({ baseUrl: stub.base }));
       const vText = JSON.stringify(r);
@@ -979,7 +945,7 @@ test('★★ PROFILES 只剩 workbuddy：listProfiles() 恰 1 条、默认就是
   rmOverride();
   await withEnv(CLEAN, () => {
     // ① listProfiles() 恰 1 条，且就是 workbuddy
-    const lp = listProfiles();
+    const lp = Object.values(PROFILES).map((p) => ({ id: p.id, isDefault: !!p.isDefault, target: p.target, kind: p.kind }));
     assert.equal(lp.length, 1, `★ 内置 profile 应**恰 1 条**（只剩 workbuddy），实得 ${lp.length}：${lp.map((p) => p.id).join(',')}`);
     assert.equal(lp[0].id, 'workbuddy', '★ 唯一的内置 profile 必须是 workbuddy');
     assert.equal(lp[0].isDefault, true, '★ workbuddy 必须标记 isDefault');
@@ -1001,7 +967,7 @@ test('★★ PROFILES 只剩 workbuddy：listProfiles() 恰 1 条、默认就是
     // ⑤ 默认解析 / 预览也一致
     assert.equal(resolveConfig({}).id, 'workbuddy', '★ 不传 profile ⇒ 默认解析为 workbuddy');
     assert.equal(resolveConfig({}).isDefault, true);
-    assert.equal(previewProfile('workbuddy').target, 'agent');
+    assert.equal(resolveConfig({ profile: 'workbuddy' }).target, 'agent');
   });
 });
 
@@ -1011,12 +977,12 @@ test('★ PROFILES.target 判定：workbuddy = agent；未知 profile 归一为 
     // ★ WorkBuddy 是智能体（规格点名）⇒ agent
     assert.equal(PROFILES.workbuddy.target, 'agent', '★ WorkBuddy 是智能体 ⇒ target=agent');
     assert.equal(resolveConfig({}).target, 'agent', '★ 默认 profile 解析出 agent（不传 profile ⇒ workbuddy）');
-    assert.equal(previewProfile('workbuddy').target, 'agent', 'previewProfile 也应带出 agent');
+    assert.equal(resolveConfig({ profile: 'workbuddy' }).target, 'agent', 'resolveConfig 也应带出 agent');
     // ★ 未知 profile：`base` 走「未知 profile」兜底（`kind:'custom'`、`target:'model'`）⇒ 归一为 model
     assert.equal(resolveConfig({ profile: 'no-such-profile' }).target, 'model',
       '★ 未知 profile ⇒ 归一为 model（保守：模型 API 的校验最严）');
     // listProfiles() 也带 target（供面板区分「模型 API / 智能体 API」）
-    const lp = listProfiles();
+    const lp = Object.values(PROFILES).map((p) => ({ id: p.id, isDefault: !!p.isDefault, target: p.target, kind: p.kind }));
     assert.equal(lp.find((p) => p.id === 'workbuddy').target, 'agent', 'listProfiles: workbuddy = agent');
     assert.ok(lp.every((p) => p.target === 'agent' || p.target === 'model'),
       'listProfiles 的 target 只能取 model / agent');
@@ -1120,7 +1086,7 @@ test('★ 优先级回归：覆盖文件（面板）仍压过运行时线索（�
   });
 });
 
-test('★★ workbuddy 运行时口令不外泄：listProfiles / validate / 错误 detail 均不含 CODEBUDDY_GATEWAY_PASSWORD 明文', async () => {
+test('★★ workbuddy 运行时口令不外泄：listServices / validate / 错误 detail 均不含 CODEBUDDY_GATEWAY_PASSWORD 明文', async () => {
   rmOverride();
   const SECRET = 'gw-WBLEAKCANARY-abcdefghijklmnop-0123456789';
   // 桩：网关**只读**健康检查与 run 都把口令**回显进响应体**（模拟上游回显 ⇒ 模块必须脱敏）。
@@ -1137,13 +1103,13 @@ test('★★ workbuddy 运行时口令不外泄：listProfiles / validate / 错�
       const cfgWb = resolveConfig({});
       assert.equal(cfgWb.model, '', '★ 前置：agent 模式不读 ANTHROPIC_MODEL（cfg.model 为空）');
       assert.equal(cfgWb.apiKey, SECRET, '前置：口令取自网关 env（供调用）');
-      // ① listProfiles()：绝不回口令，且不得含明文
-      const lp = JSON.stringify(listProfiles());
-      assert.ok(!lp.includes(SECRET), '★ listProfiles() 不得含口令明文');
-      assert.ok(!lp.includes('"apiKey"'), '★ listProfiles() 项里不得有 apiKey 字段');
-      // ② previewProfile()：只回 hasKey/keyMask
-      const pv = JSON.stringify(previewProfile('workbuddy'));
-      assert.ok(!pv.includes(SECRET), '★ previewProfile() 不得含口令明文');
+      // ① listServices()：绝不回口令，且不得含明文
+      const lp = JSON.stringify(listServices());
+      assert.ok(!lp.includes(SECRET), '★ listServices() 不得含口令明文');
+      assert.ok(!lp.includes('"apiKey"'), '★ listServices() 项里不得有 apiKey 字段');
+      // ② serviceById()：只回 hasKey/keyMask
+      const pv = JSON.stringify(serviceById('workbuddy'));
+      assert.ok(!pv.includes(SECRET), '★ serviceById() 不得含口令明文');
       // ③ validate()：错误 detail / hint / masked 都不得含明文
       const v = await validate();
       assert.equal(v.ok, false, '桩返回 401 ⇒ validate 应失败');
@@ -1843,7 +1809,7 @@ test('★ 脱敏：listServices() / serviceById() 绝不返回 apiKey 明文（�
 //   ★★ 总耗时受 `opts.timeoutMs` 封顶 —— 重试**不把超时放大成 N 倍**（本批最值钱的一条）。
 //   ★ 用本机桩 + **请求计数**钉住「到底发了几次」。
 
-test('★★ 重试·可重试错：桩先 500 后 200 + retry:1 ⇒ 桩收 2 次、最终成功', async () => {
+test('★★ 重试·默认不叠加（DEFAULT_RETRY=0）：桩先 500 后 200 ⇒ 桩只收 1 次、首次即失败', async () => {
   let count = 0;
   const stub = await startStub((req, res) => {
     count += 1;
@@ -1852,51 +1818,50 @@ test('★★ 重试·可重试错：桩先 500 后 200 + retry:1 ⇒ 桩收 2 �
   });
   try {
     const r = await chat([{ role: 'user', content: 'hi' }],
-      { ...OAI(), baseUrl: stub.base, timeoutMs: 3000, retry: 1, retryBackoffMs: 10 });
-    assert.equal(r.ok, true, `★ 500→200 应最终成功：${JSON.stringify(r.error || '')}`);
-    assert.equal(r.text, 'ok-after-retry');
-    assert.equal(count, 2, `★ 桩应恰收 2 次请求（1 次 500 + 1 次重试），实得 ${count}`);
-    assert.equal(r.meta.attempts, 2, '★ meta.attempts 应为 2（真实发出的请求次数）');
+      { ...OAI(), baseUrl: stub.base, timeoutMs: 3000 });
+    assert.equal(r.ok, false, '★ 默认不重试 ⇒ 首次 500 即失败（已无 opts.retry 覆盖点）');
+    assert.equal(count, 1, `★ 桩应恰收 1 次请求（不重试），实得 ${count}`);
+    assert.equal(r.meta.attempts, 1, '★ meta.attempts 应为 1（真实发出的请求次数）');
   } finally { await stub.close(); }
 });
 
-test('★★ 重试·鉴权错不重试：桩恒 401 + retry:3 ⇒ 桩只收 1 次（4xx 鉴权错绝不重试）', async () => {
+test('★★ 重试·鉴权错不重试：桩恒 401 ⇒ 桩只收 1 次（4xx 鉴权错绝不重试）', async () => {
   let count = 0;
   const stub = await startStub((req, res) => { count += 1; return status(res, 401, '{"error":"nope"}'); });
   try {
     const r = await chat([{ role: 'user', content: 'hi' }],
-      { ...OAI(), baseUrl: stub.base, timeoutMs: 3000, retry: 3, retryBackoffMs: 10 });
+      { ...OAI(), baseUrl: stub.base, timeoutMs: 3000 });
     assert.equal(r.ok, false);
     assert.equal(r.error.kind, 'auth', '401 ⇒ kind=auth');
-    assert.equal(count, 1, `★ 鉴权错绝不重试：桩应只收 1 次（retry:3 也不重试），实得 ${count}`);
+    assert.equal(count, 1, `★ 鉴权错绝不重试：桩应只收 1 次，实得 ${count}`);
     assert.equal(r.meta.attempts, 1, '★ meta.attempts 应为 1');
   } finally { await stub.close(); }
 });
 
-test('★★ 重试·总耗时受 timeoutMs 封顶（重试不把超时乘 N）：恒 503 / 恒挂住 两种桩 + retry:4 + timeoutMs:1000 ⇒ 均 < 2×timeoutMs', async () => {
+test('★★ 重试·总耗时受 timeoutMs 封顶（重试不把超时乘 N）：恒 503 / 恒挂住 两种桩 + timeoutMs:1000 ⇒ 均 < 2×timeoutMs', async () => {
   const TIMEOUT = 1000;
-  // ① 恒 503（快速响应）—— ★ 若不封顶：5 次请求 + 指数退避(200+400+800+1600=3000ms) ≈ 3s
+  // ① 恒 503（快速响应）
   let n503 = 0;
   const stub503 = await startStub((req, res) => { n503 += 1; return status(res, 503, '{"error":"busy"}'); });
   try {
     const t0 = Date.now();
     const r = await chat([{ role: 'user', content: 'hi' }],
-      { ...OAI(), baseUrl: stub503.base, timeoutMs: TIMEOUT, retry: 4 });
+      { ...OAI(), baseUrl: stub503.base, timeoutMs: TIMEOUT });
     const elapsed = Date.now() - t0;
     assert.equal(r.ok, false);
     assert.ok(elapsed < TIMEOUT * 2,
       `★ 503 重试总耗时应受 timeoutMs 封顶（< ${TIMEOUT * 2}ms），实得 ${elapsed}ms（若 ≈3s ⇒ 重试把耗时放大了）`);
     assert.equal(r.meta.attempts, n503, 'meta.attempts 应等于桩真实收到的请求数');
-    assert.ok(n503 <= 5, `attempts 不应超过 1+retry=5，实得 ${n503}`);
+    assert.equal(n503, 1, `★ 默认不重试（DEFAULT_RETRY=0）⇒ 桩应只收 1 次，实得 ${n503}`);
   } finally { await stub503.close(); }
 
-  // ② 恒挂住（每次尝试都会跑满**单次**超时）—— ★★ 若不封顶：5 次 × 1000ms = 5000ms
+  // ② 恒挂住（每次尝试都会跑满**单次**超时）
   let nHang = 0;
   const stubHang = await startStub(() => { nHang += 1; /* 故意不响应 */ });
   try {
     const t0 = Date.now();
     const r = await chat([{ role: 'user', content: 'hi' }],
-      { ...OAI(), baseUrl: stubHang.base, timeoutMs: TIMEOUT, retry: 4 });
+      { ...OAI(), baseUrl: stubHang.base, timeoutMs: TIMEOUT });
     const elapsed = Date.now() - t0;
     assert.equal(r.ok, false);
     assert.equal(r.error.kind, 'timeout', '恒挂住 ⇒ kind=timeout');

@@ -321,7 +321,7 @@
         <!-- ★ 一眼看出当前生效哪一套（保留 llmCurrentPill 的角色）。 -->
         <span class="llm-current-pill" id="llmCurrentPill">当前未选择算力服务</span>
         <div class="card-tools">
-          <button class="btn ghost" id="btnLlmStandalone" title="在独立视图里打开本模块（只显示「通用 AI 算力接入」，其余分区隐藏）">独立视图</button><button class="btn ghost" id="btnLlmRefresh" title="重新读服务清单与当前生效项（GET /api/llm/services）">刷新</button>
+          <button class="btn ghost" id="btnLlmRefresh" title="重新读服务清单与当前生效项（GET /api/llm/services）">刷新</button>
         </div>
       </div>
       <div class="llm-intro" id="llmIntro">
@@ -336,13 +336,6 @@
         <div class="llm-services-head">
           <span class="lbl">已保存的算力服务</span>
           <button class="btn ghost small" id="btnLlmAdd" title="新增一套算力服务（在下方表单里填服务名称标记 / Endpoint / API-Key / 请求头 / 超时）">＋ 新增算力服务</button>
-          <label class="llm-tpl">
-            <span class="lbl">从模板新建</span>
-            <select class="input llm-template-select" id="llmTemplateSelect" title="选一个国产厂商预设模板：只把适配器 / Endpoint / 名称预填进下方表单，不会自动创建服务，也不会锁定服务商；确认后自己点「保存」才成真服务">
-              <option value="">— 选一个预设模板 —</option>
-            </select>
-          </label>
-          <span class="hint" id="llmTplHint"></span>
           <span class="hint" id="llmListHint"></span>
           <span class="hint" id="llmSaveHint"></span>
         </div>
@@ -390,20 +383,6 @@
             <span class="lbl">自定义 API-Key <span class="llm-key-state" id="llmKeyState"></span></span>
             <input id="llmKey" class="input" type="password" placeholder="留空 = 不改" autocomplete="new-password">
             <span class="hint">★ 密钥永不回显；留空表示「不改」</span>
-          </label>
-        </div>
-        <!-- ★ 容错 / 自动重试（规格 §5）：两个「服务对象字段」，随保存落盘、编辑回显。
-             ★ 留空 = 不写这两个字段（与后端默认一致：retry 默认 0 = 不重试）。 -->
-        <div class="form-grid llm-retry">
-          <label class="field">
-            <span class="lbl">重试次数 retry</span>
-            <input id="llmRetry" class="input num" type="number" min="0" max="5" step="1" placeholder="留空 = 不重试（默认 0）">
-            <span class="hint">留空 = 不重试（默认）；仅对超时 / 5xx / 429 等可重试错生效，鉴权 / 参数错不重试</span>
-          </label>
-          <label class="field">
-            <span class="lbl">重试退避 retryBackoffMs</span>
-            <input id="llmRetryBackoff" class="input num" type="number" min="0" max="10000" step="50" placeholder="留空 = 默认 200（0–10000 毫秒）">
-            <span class="hint">每次重试前的等待基数（毫秒，指数退避 base×2^(n−1)）；留空 = 用默认 200</span>
           </label>
         </div>
         <div class="llm-model-row">
@@ -500,28 +479,6 @@
         <div class="llm-step-hint" id="llmStepHint"></div>
       </div>
 
-      <!-- ④ 试跑区：**按当前「算力类型」**真的发一次请求（POST /api/llm/invoke），把结果 / 错误贴出来。
-           ★ 参数区随类型变：占位提示 + 下面这行说明随 task 切（见 app.js 的 syncLlmTaskUi）。 -->
-      <div class="llm-try">
-        <div class="llm-row">
-          <label class="llm-task-pick">
-            <span class="lbl">算力类型</span>
-            <select id="llmTask" class="input llm-task"
-                    title="通用 AI 算力类型（规格：算力类型不限）：文本推理 / 图像生成 / 语音合成 / 向量计算 / 自定义出口">
-              <option value="chat">chat · 文本推理</option>
-              <option value="image">image · 图像生成</option>
-              <option value="audio">audio · 语音合成</option>
-              <option value="embedding">embedding · 向量计算</option>
-              <option value="custom">custom · 自定义出口</option>
-            </select>
-          </label>
-          <input id="llmTryText" class="input" maxlength="500" autocomplete="off"
-                 placeholder="试一句：留空用默认示例句（最多 500 字）">
-          <button class="btn primary" id="btnLlmTry" title="按当前「算力类型」真的发一次请求（POST /api/llm/invoke）">试跑</button>
-        </div>
-        <div class="llm-task-hint" id="llmTaskHint"></div>
-        <div class="llm-try-out" id="llmTryOut"></div>
-      </div>
     </section>
 
     <!-- 文案出片：**你给什么文案，就念什么**（与「主题出片」正相反 —— 那边内容由外部 LLM 按风格生成）。

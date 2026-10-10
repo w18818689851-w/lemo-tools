@@ -1671,10 +1671,6 @@ html[data-theme="light"] {
 }
 .llm-services-head .lbl { color: var(--fg-dim); font-size: 12px; font-weight: 600; }
 .llm-services-head .hint { margin-left: 2px; }
-/* ★ 「从模板新建」：选一个国产厂商预设 ⇒ 只**预填**表单（不自动创建、不锁定服务商）。 */
-.llm-tpl { display: inline-flex; align-items: center; gap: 6px; }
-.llm-tpl .lbl { color: var(--fg-dim); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.llm-template-select { flex: 0 0 auto; min-width: 168px; font-size: 12px; }
 .llm-list { display: flex; flex-direction: column; gap: 6px; }
 .llm-item {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -1712,11 +1708,8 @@ html[data-theme="light"] {
 .llm-model-row .input { flex: 1 1 220px; min-width: 0; }
 .llm-model-row .btn { flex: 0 0 auto; }
 .llm-model-select { margin-top: 6px; }
-/* custom 适配器的 path / extract 两行（随 kind / 算力类型显隐）。 */
+/* custom 适配器的 path / extract 两行（随 kind 显隐）。 */
 .llm-custom { margin-top: 10px; }
-/* ★ 容错 / 自动重试（retry / retryBackoffMs）：独立一行网格，留空 = 不写这两个字段（= 不重试）。 */
-.llm-retry { margin-top: 10px; }
-.llm-retry .hint { word-break: normal; overflow-wrap: anywhere; }
 .llm-headers-field { margin-top: 10px; }
 .llm-headers {
   font-family: var(--mono); font-size: 12px; line-height: 1.5;
@@ -1780,31 +1773,6 @@ html[data-theme="light"] {
 .llm-step-hint:empty { display: none; }
 @keyframes llm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* ── ④ 试跑：按「算力类型」选任务，参数区随类型变 ── */
-.llm-try {
-  margin-top: 12px; padding: 10px;
-  border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
-}
-.llm-try .llm-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.llm-try .llm-row .input { flex: 1 1 320px; min-width: 0; }
-/* ★ 算力类型选择器：窄列、不参与拉伸（其余输入框仍按 flex 撑开） */
-.llm-try .llm-task-pick { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.llm-try .llm-task-pick .lbl { white-space: nowrap; }
-.llm-try .llm-row .llm-task { flex: 0 0 auto; width: auto; min-width: 168px; }
-.llm-task-hint { font-size: 11.5px; color: var(--fg-faint); margin-top: 6px; line-height: 1.6; }
-.llm-try-out { margin-top: 8px; }
-.llm-try-out:empty { display: none; }
-.llm-try-out .llm-out-text {
-  font-size: 12.5px; color: var(--fg); line-height: 1.65;
-  white-space: pre-wrap; word-break: break-word;
-  background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px;
-  padding: 8px 10px; max-height: 220px; overflow: auto;
-}
-.llm-try-out .llm-out-meta { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; font-family: var(--mono); }
-.llm-try-out .llm-out-err { font-size: 12.5px; color: var(--err); line-height: 1.6; word-break: break-word; }
-.llm-try-out .llm-out-err .llm-out-hint { color: var(--warn); display: block; margin-top: 3px; }
-.llm-try-out audio { margin-top: 8px; width: 100%; max-width: 420px; display: block; }
-
 /* ── ★ 接入对象（target）：model 语义随它变（见 app.js 的 applyLlmTargetUi） ── */
 .llm-target { margin-bottom: 6px; }
 
@@ -1820,10 +1788,3 @@ html[data-theme="light"] {
 @media (max-width: 560px) {
   .llm-grid .llm-profile-field { grid-column: 1 / -1; }
 }
-
-/* ── ★ LLM 配置「独立视图」：规格「模块拥有独立软件界面」—— 本模块可独立打开、只显示自己 ──
-   URL 带 ?view=llm（或 #llm）时 body 加 .view-llm ⇒ 隐藏侧栏与其余卡片，只留 #llmCard。
-   ★ 同一份 DOM / JS（不另造一套面板）⇒ 不会出现两份实现各自漂移。 */
-body.view-llm .sidebar { display: none; }
-body.view-llm .main > .card { display: none; }
-body.view-llm .main > #llmCard { display: block; }
