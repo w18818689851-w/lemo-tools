@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 134 条用例 / 覆盖全部 47 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 135 条用例 / 覆盖全部 48 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -224,6 +224,23 @@
  *          ③ **失明三态（判据③）** ①无 `## 文件` 段 / ②有段但段内无围栏代码块 / ③有代码块但 0 条可识别路径
  *            ⇒ 三态均 FAIL +「本闸门已失明」且不输出判据①（★ 2026-10-10 补：原只覆盖态①）；
  *          ④ **★自证**：短路判据①（`if (missing.length) {` → `if (false) {`）⇒ 变异**重新变绿**。
+ *        · `check-visible-hints`（2026-10-10 建，第 48 个；守「**用户可见文案不得引用已删控件 /
+ *          已删 profile / 已失效操作**」—— 两条**减法**指令（API 只接 WorkBuddy + 面板极简化）
+ *          留下的**文案债**；此前 `hintFor()` 的返回串经 `validate().hint` 原样显示在「测试连接」
+ *          下方、顶栏 tooltip 也写着已删控件，而**没有任何闸门能发现**）：
+ *          主夹具 = **合成极小树**（本闸门的事实源是「三个文件里的**用户可见字符串**里有没有
+ *          违禁词」，最小树即可精确摆出四态）；覆盖点 **`LEMO_TOOLS_ROOT`**；
+ *          ★ 失明守卫要求「≥1 条用户可见串」，故阴性 / 变异树里都留中文串；
+ *          ① **阴性对照**（`hintFor` 只返回**成立**的中文文案）⇒ exit 0 且打印判据① ✓；
+ *          ② **变异（判据①(c)）** `hintFor` 的返回串塞「请在面板补齐 Endpoint」⇒ FAIL 并点名
+ *            `lib/llm-api.mjs` 的 `已删引导语「请在面板补齐」`；
+ *          ③ **★反向诱惑（本闸门特有）** 同一句写进**注释**（**不是字符串**）⇒ **必须仍 exit 0**
+ *            （证明「**剥注释、只取字符串**」生效、不假阳）；
+ *          ④ **控件 id 变异**（返回串写 `llmBaseUrl`）/ **profile 变异**（写 `换 kind=openai-compatible`）
+ *            ⇒ 各 FAIL 并点名对应维度；
+ *          ⑤ **失明（判据③）** 三文件都在、但**一个用户可见串都没有** ⇒ FAIL +「本闸门已失明」
+ *            且不输出判据①②；
+ *          ⑥ **★自证**：短路判据②（`if (unregistered.length) {` → `if (false) {`）⇒ 变异**重新变绿**。
  *   ⇒ 两类**共用同一套断言纪律**（见下）。文件名保持 `gate-blindness`（改名会牵动
  *     `test/README.md` 与登记判据），但本文件的**定位**是「闸门守卫 + 核心判据」回归，
  *     不只是失明。
@@ -5548,6 +5565,47 @@ const rfTree = (dir, extraPath) => {
   return dir;
 };
 
+// ── check-visible-hints 夹具 ────────────────────────────────────────────────
+//   事实源 = 「三个目标文件里的**用户可见字符串**（JS = 含中文的串 / HTML = title·placeholder
+//   + 可见文本）里有没有违禁词」；最小树即可精确摆出「阴性 / 变异 / 反向诱惑 / 失明」四态。
+//   ★ 失明守卫要求「≥1 条用户可见串」，故阴性 / 变异树里都留中文串。
+const VH_HTML = '<html><body><button title="跳到「AI 算力配置」面板（默认走 WorkBuddy；这里只查看连接状态）">LLM 配置</button></body></html>\n';
+const VH_APP = "const hint = '运行时口令：未注入（测试连接会提示未配置）';\n";
+const VH_LLM_OK = `export function hintFor(kind) {
+  switch (kind) {
+    case 'config': return '配置不完整：端点与口令由运行时注入（本软件只接 WorkBuddy），无需手工填写。';
+    default: return '未知错误：请查看 errors[].detail。';
+  }
+}
+`;
+const VH_LLM_MUT = `export function hintFor(kind) {
+  switch (kind) {
+    case 'config': return '配置不完整：请在面板补齐 Endpoint / Key / 模型名。';
+    default: return '未知错误：请查看 errors[].detail。';
+  }
+}
+`;
+// ★ 反向诱惑：同一句写进**注释**（**不是字符串**）⇒ 必须仍 exit 0（证明「剥注释」生效）。
+const VH_LLM_COMMENT = `export function hintFor(kind) {
+  // 旧句（历史，勿抹）：'配置不完整：请在面板补齐 Endpoint / Key / 模型名。'
+  switch (kind) {
+    case 'config': return '配置不完整：端点与口令由运行时注入（本软件只接 WorkBuddy），无需手工填写。';
+    default: return '未知错误：请查看 errors[].detail。';
+  }
+}
+`;
+const VH_LLM_ID = "export function hintFor() { return '配置不完整：请到面板的 llmBaseUrl 输入框填写。'; }\n";
+const VH_LLM_PROFILE = "export function hintFor() { return '连接失败：换 kind=openai-compatible 试试，或用别的 profile。'; }\n";
+const VH_LLM_EMPTY = 'export const x = 1;\n';
+const VH_HTML_EMPTY = '<html><body></body></html>\n';
+const VH_APP_EMPTY = 'const x = 1;\n';
+const vhTree = (dir, { llm = VH_LLM_OK, html = VH_HTML, app = VH_APP } = {}) => {
+  wf(path.join(dir, 'lib', 'llm-api.mjs'), llm);
+  wf(path.join(dir, 'web', 'index.html'), html);
+  wf(path.join(dir, 'web', 'app.js'), app);
+  return dir;
+};
+
 test('check-readme-files：阴性对照 + 清单加不存在路径的变异 + 失明三态（无段 / 无代码块 / 0 条路径）⇒ FAIL 并点名', async () => {
   const dir = path.join(TMP, 'rf');
   const N_BLIND = '本闸门已失明';
@@ -5608,6 +5666,61 @@ test('check-readme-files：阴性对照 + 清单加不存在路径的变异 + �
     assert.equal(rm1.code, 0, `短路判据① 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
       '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测判据①');
+  } finally { rm(dir); }
+});
+
+test('check-visible-hints：阴性对照 + 变异（已删引导语）+ 反向诱惑（注释不判）+ 控件 id / profile 变异 + 失明 ⇒ FAIL 并点名', async () => {
+  const dir = path.join(TMP, 'vh');
+  const N_BLIND = '本闸门已失明';
+  const NEEDLE = '已删引导语「请在面板补齐」';        // 判据①(c) 特有文案（逐字抄自闸门源码）
+  try {
+    // ① 阴性对照：hintFor 只返回**成立**的中文文案 ⇒ exit 0 且打印判据① ✓
+    const neg = vhTree(path.join(dir, 'neg'));
+    const r0 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: neg });
+    expectClean(r0, N_BLIND, 'check-visible-hints 阴性对照');
+    assert.ok(r0.out.includes('未登记的违规 0 处'), `阴性对照应打印判据① ✓\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异（判据①(c)）：hintFor 的返回串塞「请在面板补齐 Endpoint」⇒ exit 1 并点名
+    const mut = vhTree(path.join(dir, 'mut'), { llm: VH_LLM_MUT });
+    const r1 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: mut });
+    expectBlind(r1, NEEDLE, 'check-visible-hints 变异（已删引导语）');
+    assert.ok(r1.out.includes('lib/llm-api.mjs'), `变异应点名 lib/llm-api.mjs\n${r1.out.slice(0, 1400)}`);
+
+    // ③ ★反向诱惑（本闸门特有）：同一句写进**注释**（**不是字符串**）⇒ **必须仍 exit 0**
+    //   （证明「剥注释、只取字符串字面量」生效、不假阳 —— 本仓把旧句正当保留在注释里）。
+    const cmt = vhTree(path.join(dir, 'cmt'), { llm: VH_LLM_COMMENT });
+    const r2 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: cmt });
+    expectClean(r2, N_BLIND, 'check-visible-hints 反向诱惑（注释里的旧句不判）');
+    assert.ok(r2.out.includes('未登记的违规 0 处'), `反向诱惑应仍 exit 0 且判据① ✓\n${r2.out.slice(0, 1200)}`);
+
+    // ④ 控件 id 变异 / profile 变异 ⇒ 各 FAIL 并点名对应维度
+    const idm = vhTree(path.join(dir, 'idm'), { llm: VH_LLM_ID });
+    const r3 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: idm });
+    expectBlind(r3, '已删控件id「llmBaseUrl」', 'check-visible-hints 控件 id 变异');
+    const prf = vhTree(path.join(dir, 'prf'), { llm: VH_LLM_PROFILE });
+    const r4 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: prf });
+    expectBlind(r4, '已删profile名「openai-compatible」', 'check-visible-hints profile 变异');
+    assert.ok(r4.out.includes('已删引导语「换 kind=」'), `profile 变异还应点名「换 kind=」\n${r4.out.slice(0, 1400)}`);
+
+    // ⑤ 失明（判据③）：三文件都在、但**一个用户可见串都没有** ⇒ FAIL +「本闸门已失明」
+    const blind = vhTree(path.join(dir, 'blind'),
+      { llm: VH_LLM_EMPTY, html: VH_HTML_EMPTY, app: VH_APP_EMPTY });
+    const r5 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: blind });
+    expectBlind(r5, N_BLIND, 'check-visible-hints 失明（0 条用户可见串）');
+    assert.ok(r5.out.includes('一个用户可见字符串都没提取到'),
+      `失明应点名「一个用户可见字符串都没提取到」\n${r5.out.slice(0, 900)}`);
+    assert.ok(!r5.out.includes(NEEDLE), `失明时不该输出判据①\n${r5.out.slice(0, 900)}`);
+
+    // ⑥ ★自证：把「未登记 ⇒ FAIL」判定**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
+    //   （证明断言真的在测判据②，而不是在测「闸门有没有崩」）。
+    const gdir = path.join(dir, 'gmut');
+    mk(path.join(gdir, 'scripts'));
+    const g = patchGate('check-visible-hints.mjs', path.join(gdir, 'scripts'),
+      [['if (unregistered.length) {', 'if (false) {']]);
+    const rm1 = await run(NODE, [g], { env: { LEMO_TOOLS_ROOT: mut } });
+    assert.equal(rm1.code, 0, `短路判据② 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
+      '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测判据②');
   } finally { rm(dir); }
 });
 

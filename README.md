@@ -125,9 +125,9 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/llm/config` | 当前生效配置（key 脱敏，只回 hasKey） | 同步 |
 | POST | `/api/llm/config` | 保存用户覆盖，落盘 `<成片根>/_llm-api.json` | 同步 |
 | POST | `/api/llm/validate` | 跑 validate()（可传临时配置，不必先保存） | 同步 |
-| POST | `/api/llm/chat` | 跑一次 chat()（**兼容保留**：该端点保留供后端/脚本调用。★ 2026-10-10 面板极简化前，面板「试跑」曾改走 `/api/llm/invoke`；极简化后面板已无「试跑」控件） | 同步 |
+| POST | `/api/llm/chat` | 跑一次 chat()（**兼容保留**：★ 2026-10-10 订正：实测**无任何后端/脚本**调用本端点（当前**无消费者、保留待用**）；原写「该端点保留供后端/脚本调用」**不成立**（保留作历史）。★ 2026-10-10 面板极简化前，面板「试跑」曾改走 `/api/llm/invoke`；极简化后面板已无「试跑」控件） | 同步 |
 | POST | `/api/llm/invoke` | 通用 AI 算力调用（chat / image / audio / embedding / custom，转发到模块 invoke()） | 同步 |
-| POST | `/api/llm/models` | 拉取当前 Endpoint 的可用模型清单（★ 2026-10-10 面板极简化后已无「多模型切换」控件；端点保留供后端/脚本调用） | 同步 |
+| POST | `/api/llm/models` | 拉取当前 Endpoint 的可用模型清单（★ 2026-10-10 面板极简化后已无「多模型切换」控件；★ 2026-10-10 订正：实测**无任何后端/脚本**调用本端点，当前**无消费者、保留待用**；原写「端点保留供后端/脚本调用」**不成立**） | 同步 |
 | GET | `/api/resources/scan` | 资源全量/子集扫描（返回 `lib/resources.mjs` 的 `scanAll()`；30s 缓存 + 并发合并） | 同步 |
 | GET | `/api/resources/dirplan` | 目录规划（纯函数、不碰 IO，直接透传） | 同步 |
 | POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
@@ -144,7 +144,7 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 原先的 profile 下拉 / 适配器 kind / Endpoint / API Key / 接入对象 / 模型（+清单）/ custom 的 path+extract /
 Headers / 超时 / 试跑任务 / 拉取服务清单 / 保存·清除密钥等控件**已从界面移除**（不是从来没有过）。
 后端 `/api/llm/*` 与 `lib/llm-api.mjs` **一字未动**，能力保留在后端、暂不暴露，后期需要用再添加 ——
-故上表列出的 `/api/llm/*` 端点**均仍在**，只是不再有对应的界面控件，仅供后端/脚本调用。
+故上表列出的 `/api/llm/*` 端点**均仍在**，只是不再有对应的界面控件，仅供后端/脚本调用。 ★ **2026-10-10 订正**：经复核，**当前全仓无任何后端/脚本**实际调用那 4 个 HTTP 端点（`invoke()` 仅被模块内 `chat()` 调；`listModels` / `listProfiles` 仅被各自 handler 调）⇒ 「仅供后端/脚本调用」**不成立**（原句保留作历史）；**如实描述** = 「当前**无消费者**，端点保留待用（委托方『后期需要用再添加』）」。 ★★ **2026-10-10 追加（可操作性事实，★ 委托方应知情）**：面板极简化 + HTTP 层收紧后，**界面上已没有任何入口能改 LLM 端点/口令** —— 端点与口令一律**运行时自动发现**（`SERVER__HOST` / `SERVER__PORT` / `CODEBUDDY_GATEWAY_PASSWORD`）；★ 若要**人工覆盖**，**只有两条途径**：① 环境变量 `LEMO_LLM_BASE` / `LEMO_LLM_KEY`（及 `LEMO_LLM_PROFILE` / `LEMO_LLM_MODEL` / `LEMO_LLM_TIMEOUT_MS` / `LEMO_LLM_HEADERS`）；② **手改**覆盖文件 `<成片根>/_llm-api.json`（默认 `D:/lemo-films/_llm-api.json`）。★ 注意：HTTP 的 `POST /api/llm/config` 已**拒绝**落盘 `baseUrl` / `model` / `headers` / `path` / `extract` / `target`（防已删 provider 经 HTTP 复活），只放行 `profile` / `kind`（白名单）/ `timeoutMs` / `apiKey`。
 
 ## 为什么需要这一层
 

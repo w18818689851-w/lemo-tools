@@ -736,7 +736,11 @@ const OVERRIDES = {
       'scripts/check-ref-lines.mjs', 'scripts/check-shell-structure.mjs',
       // ★ 2026-10-08：`check-llm-api.mjs`（守 `lib/llm-api.mjs` 契约）也读它 —— 被测模块 =
       //   `<LEMO_TOOLS_ROOT>/lib/llm-api.mjs`，供非破坏变异（指向临时夹具树）。
-      'scripts/check-llm-api.mjs'],
+      'scripts/check-llm-api.mjs',
+      // ★ 2026-10-10：`check-visible-hints.mjs`（守「用户可见文案不得提及已删控件/已删 profile」）
+      //   也读它 —— 它要按 `<LEMO_TOOLS_ROOT>` 定位待扫文件（`lib/llm-api.mjs` / `web/index.html` / `web/app.js`），
+      //   同样供非破坏变异（指向临时夹具树）。
+      'scripts/check-visible-hints.mjs'],
     what: 'lemo-tools 仓根（本仓自身）',
   },
   LEMO_VOICE_TEST_TMP: {

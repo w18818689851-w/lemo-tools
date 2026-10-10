@@ -2210,7 +2210,7 @@ function llmConfigPayload(mod, cfg, ov, keyInfo) {
     label: cfg.label || '',
     kind: cfg.kind || '',
     // ★ 接入对象（target）：'model'（底层基础大模型 API，请求必带 model）/ 'agent'（智能体 API，
-    //   模型名仅作本地备注、不强制携带 model）。★ 面板据此切换「模型名」的语义与提示（见 web/app.js）。
+    //   模型名仅作本地备注、不强制携带 model）。★ 面板据此切换「模型名」的语义与提示（见 web/app.js）。 ★ 2026-10-10 订正：面板极简化后**已无「模型名」控件**（28 控件 → 9 id、零输入）⇒ 上面「面板据此切换语义与提示」的渲染路径**已不存在**；`target` 仍在返回里（保留待用）。
     target: cfg.target === 'agent' ? 'agent' : 'model',
     baseUrl: cfg.baseUrl || '',
     model: cfg.model || '',
@@ -2405,7 +2405,7 @@ async function apiLlmValidate(req, res) {
 }
 
 /**
- * POST /api/llm/chat —— 跑一次 chat()（**兼容保留**：面板「试跑」已改走 `/api/llm/invoke`；§七）。
+ * POST /api/llm/chat —— 跑一次 chat()（**兼容保留**：面板「试跑」已改走 `/api/llm/invoke`；§七）。 ★ 2026-10-10 订正：面板极简化后**已无「试跑」控件**（本端点与 `/api/llm/invoke` 仍在，当前**无消费者**、保留待用）。
  * body 可给 `prompt`（字符串）或 `messages`（数组）；可带临时配置。
  * 返回 `{ok:true, data:{ok:true,text,usage,meta} | {ok:false,error,meta}}`。
  */
@@ -2428,7 +2428,7 @@ async function apiLlmChat(req, res) {
  * POST /api/llm/invoke —— **通用 AI 算力调用**（chat / image / audio / embedding / custom；契约 §十三）。
  *
  * ★ 转发到模块的**通用入口** `invoke(task, params, opts)` —— 这是规格 v3「算力类型不限」在**服务端**
- *   的落点：面板的「算力类型」选择器选什么，这里就把 `task` 透传给模块（本文件**不**自己拼各家协议）。
+ *   的落点：面板的「算力类型」选择器选什么，这里就把 `task` 透传给模块（本文件**不**自己拼各家协议）。 ★ 2026-10-10 订正：面板极简化后**已无「算力类型」选择器** ⇒ 上面「面板选什么就透传什么」的界面路径**已不存在**（`task` 现由调用方直接给）。
  * ★ **信封与既有 `/api/llm/*` 完全一致**（别另造一套）：`{ok:true, data}` / `{ok:false, error}`，
  *   HTTP 一律 200；模块结果**整体**放 `data`（读 `data.ok` / `data.task` / `data.result` / `data.error`）。
  * ★ **密钥永不回显**：opts 的 apiKey 只在服务端用；模块 `invoke()` 的返回里不含 key（meta 只有
@@ -2466,7 +2466,7 @@ async function apiLlmInvoke(req, res) {
 }
 
 /**
- * POST /api/llm/models —— 拉取当前 Endpoint 的**可用模型清单**（§七；面板「多模型切换」用）。
+ * POST /api/llm/models —— 拉取当前 Endpoint 的**可用模型清单**（§七；面板「多模型切换」用）。 ★ 2026-10-10 订正：面板极简化后**已无「多模型切换」控件**（本端点仍在、当前**无消费者**，保留待用）。
  * body 同 /api/llm/validate（可传**临时配置**，不必先保存）。
  * 返回 `{ok:true, data:{ok:true,models,meta} | {ok:false,error,meta}}`。
  * ★ 模块 `listModels()` **永不抛**：异常接口（非 JSON / 5xx / 超时 / 空 body）一律归一为

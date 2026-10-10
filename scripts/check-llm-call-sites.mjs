@@ -92,7 +92,7 @@
  *     另一个 path `placeholder` 写着 `默认 /chat/completions`；★ 2026-10-09 改用**符号锚** ——
  *     原先写的行号已随界面新增「资源检测」区块而漂，行号引用是**结构性隐患**，见引用纪律第 12 条）
  *     ⇒ 若哪天这些文字落进一个**也有 `fetch`** 的 `.js`（`web/app.js`
- *     就有 `fetch`）⇒ 必误报。
+ *     就有 `fetch`）⇒ 必误报。★ **2026-10-10 订正**：面板极简化后 `web/index.html` 里那两个 LLM 端点占位符**已删**（实测 `https://api.anthropic.com` / `chat/completions` 在 `web/` 下 **0 命中**）⇒ 上面「合法地把端点当 UI 占位文字」的**具体证据已失效**；但「**不纳入 `web/**`**」这条**取舍不变**（前端仍不做推理；且本闸门只收 `.mjs`，`web/**` 是 `.js`/`.html`，本就不在扫描集）—— 故这是**理由过时**，**不是**「排除该取消」。★ 原句保留作历史。
  *   ⇒ 两条**已知盲区**（如实登记）：`test/**` 与 `web/**` 里新写的旁路**本闸门看不见**。
  *   · **端点模式表**（`ENDPOINT_PATTERNS`，LLM 专用）：`chat/completions`、`/v1/messages`、
  *     `/v1/completions`、`api.anthropic.com`、`api.openai.com`、`<host>:12345`（LM Studio 默认端口）。
@@ -428,7 +428,7 @@ console.log('LLM 调用点闸门 —— 守「软件内 LLM 推理任务默认�
 console.log('  判据: ① LLM 端点直连检测 | ② 例外清单（两层语义）| ③ 例外不得失效 | ④ 失明守卫（防空转绿灯）');
 console.log(`  仓根 : ${ROOT}`);
 console.log(`  范围 : lib/** + scripts/**（递归）+ 仓根 *.mjs（非递归）；★ 不扫自己（${SELF}）`);
-console.log(`         ★ 已知盲区：**不纳入** test/**（夹具/桩）与 web/**（前端不做推理、且面板合法地把端点当 UI 占位文字）—— 见头注释 ④`);
+console.log(`         ★ 已知盲区：**不纳入** test/**（夹具/桩）与 web/**（前端不做推理、且面板合法地把端点当 UI 占位文字）—— 见头注释 ④ ★ 2026-10-10 订正：面板极简化后 web/ 已无端点占位符（实测 0 命中）⇒「把端点当 UI 占位文字」这条具体理由已失效；「不纳入 web/**」不变（前端不做推理，且本闸门只收 .mjs）`);
 console.log(`         实测 ${files.length} 个 .mjs / 其中含端点字面量 ${byRel.size} 个`);
 console.log(`  规范 : ${MODULE_REL}（端点字面量 ${moduleEntry.ep.length} 处 / HTTP 调用 ${moduleEntry.hc.length} 处 —— **允许**，它就是通路本身）`);
 console.log('');

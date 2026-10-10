@@ -23,8 +23,12 @@
 
   <div class="top-actions">
     <!-- ★ 界面入口：LLM API 配置面板藏在长页面靠下的位置 ⇒ 顶栏给一个**显眼可达**的跳转按钮
-         （点了滚到卡片并高亮；纯前端定位，不发请求）。 -->
-    <button class="btn ghost" id="btnGotoLlm" title="跳到「LLM API 配置」面板（软件内 LLM 推理默认走 WorkBuddy，这里可切换）">LLM 配置</button>
+         （点了滚到卡片并高亮；纯前端定位，不发请求）。
+         ★★ 2026-10-10 订正（「AI 算力配置」面板极简化：零输入控件）：本按钮 title 原文为
+           「跳到「LLM API 配置」面板（软件内 LLM 推理默认走 WorkBuddy，这里可切换）」——
+           「这里可切换」已失实（面板已无 profile / Endpoint / Key 等控件，切不了）⇒ 改为「这里只查看连接状态」。
+           端点与口令一律**运行时自动注入**，无需手工填写。 -->
+    <button class="btn ghost" id="btnGotoLlm" title="跳到「AI 算力配置」面板（默认走 WorkBuddy；端点与口令运行时自动注入，无需手工填写，这里只查看连接状态）">LLM 配置</button>
     <button class="btn ghost" id="btnRefreshEnv" title="重新全量探测环境">重新检测</button>
     <button class="btn ghost" id="btnSimulate" title="演练模式：假装这是一台全新机器，预览首次运行引导（不会真的安装）">演练</button>
     <button class="btn ghost" id="btnTheme" title="切换浅色 / 深色主题（默认深色；选择记在本机）">浅色</button>

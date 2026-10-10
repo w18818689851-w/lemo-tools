@@ -4607,7 +4607,7 @@ async function validateLlm() {
   $('llmStepHint').textContent = '';
   for (const k of LLM_STEP_ORDER) setLlmStepState(k, 'running', '检测中…');
 
-  // ★ 极简版：不再有表单 ⇒ 后端用**默认 profile（workbuddy）**跑只读校验（GET /api/v1/health）。
+  // ★ 极简版：不再有表单 ⇒ 后端用**默认 profile（workbuddy）**跑只读校验（GET /api/v1/health）。 ★ 2026-10-10 订正：本函数实际发的是**下一行**的 `POST /api/llm/validate`；`GET /api/v1/health` 是**后端** `validate()` 在 `workbuddy-gateway` 分支里对**本机智能体网关**发的只读探针（**网关侧**端点，非本服务端点、前端不直发）。
   const r = await llmReq('/api/llm/validate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
