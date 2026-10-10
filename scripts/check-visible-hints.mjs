@@ -39,6 +39,22 @@
  *     ★★ 但**本闸门不该被删** —— 它守的是一个**方向无关的不变量**（见 ②）。故**换不变量**，
  *        而不是**取消守卫**（★ 铁律：不许为了让闸门变绿去**清空违禁表**）。
  *
+ *   ★★ **2026-10-10 三次订正（把 (c) 维度**加回** —— 上面「(c) 全部撤掉」的裁定**已不成立**）**：
+ *     收窄后**只留**判据①（文案里的 `llm*` 控件 id 必须真实存在）—— ★★ **它抓不到本闸门立闸门时的
+ *     目标缺陷类**：`hintFor()` 返回的那些**引导文案**（经 `validate().hint` → `web/app.js`
+ *     **原样显示给用户**）里**一个 `llm*` token 都没有** ⇒ ★ **把 hint 改回旧的失效版本**
+ *     （如「换用别的 `profile`」「请在面板补齐 <不存在的字段>」）**闸门照样 exit 0**
+ *     ⇒ 用户被指去做**面板上做不到的事**。
+ *     ⇒ **把 (c) 加回**，但**不照抄旧清单**（那会误报）：新判据锚「**已失效的操作**」而不是
+ *     「**已删的名字**」—— 见 ② 的**判据③「面板操作锚点」**。★ 仍守**方向无关**：判据的**真值源**
+ *     （面板词汇表）**每次从 `web/index.html` 现读**，面板怎么重建、词汇表跟着变，判据不用改。
+ *     ★★ **先实测（本仓 2026-10-10）**：`grep web/index.html` 确认面板**现在真有** `#llmBaseUrl`
+ *       （Endpoint）/ `#llmKey`（API-Key）/ `#llmModel`（model）三个输入框，且 `#llmKind` 下拉**真有**
+ *       `openai-compatible` / `anthropic` / `custom` / `workbuddy-gateway` 四个选项
+ *       ⇒ 旧句「请在面板补齐 Endpoint / Key / 模型名」「换 `kind=openai-compatible`」**现在是对的**，
+ *       **不该**判违规；而「换用别的 `profile`」里的 `profile` **面板里没有**
+ *       （面板口径是「**算力服务**」）⇒ **该判**。
+ *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ② 判据：**一个方向无关的不变量**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -69,13 +85,36 @@
  *     · `BACKLOG`（键 = `<相对仓根路径>:<token>`，值 = 「为什么保留」）—— 命中只列 ℹ；
  *       未登记 ⇒ FAIL 并点名 `<文件>:<行号> 不存在的控件id「<token>」`。★ 当前**为空**，但留出口。
  *
- *   **判据③ 失明守卫（防空转绿灯）**（三态，任一即失明）
+ *   ★★ **判据③「面板操作锚点」（2026-10-10 加回；本闸门立闸门时的目标缺陷类就在这）**
+ *     · **不变量**：**用户可见文案里「要求用户去操作的东西」必须能在面板里找到** —— 即文案的
+ *       **操作目标**（字段 / 选项）必须在 `web/index.html` 的**面板词汇表**里**可解析**。
+ *     · **面板词汇表 `PANEL_VOCAB`**（真值源，**每次现读** `web/index.html`）：剥注释 / `<script>` /
+ *       `<style>` 后取 `id="…"` ∪ 可见文本 ∪ `title` / `placeholder` / `aria-label` ∪
+ *       `<option value="…">` 的 value 与 option 文本，**小写、按非字母数字切词**（保留 len≥2 的词）。
+ *     · **操作锚点两类**（从**已剥注释、已抹 `${…}`** 的用户可见串里抽）：
+ *       (i) **祈使宾语**：`<祈使动词> [别的|其他|其它|另一个|某个|一个|该|新|旧] <ASCII 标识符>`
+ *           —— 动词表 `C_VERBS`（填 / 填写 / 补齐 / 选 / 选择 / 勾选 / 换 / 改用 / 换用 / 换成 /
+ *           切到 / 改 / 配置 / 指定 / 输入 / 设为 / 改为）；宾语 = 动词后**到下一个句读/括号**之间的
+ *           ASCII 标识符（`A / B / C` 列表会被**逐个**抽出）；
+ *       (ii) **`kind=<值>`**：同上按标识符处理（面板的 kind 下拉选项）。
+ *       ⇒ 锚点**必须在 `PANEL_VOCAB` 里**（整词或其**全部子词**都在）—— 不在 ⇒ FAIL 并点名
+ *       `<文件>:<行号> 文案指向面板里没有的「<token>」`。
+ *     · **排除（防误报）**：`llm*` / `btnLlm*`（判据① 管）；`LEMO_*` / `CODEBUDDY_*`（环境变量）；
+ *       **函数调用**（标识符后紧跟 `(`，如 `saveService()`）；**URL 片段**（标识符前是 `/`）。
+ *     · **为什么不会误报**（实测见 ④）：文案里合法引用的面板词（`Endpoint` / `Key` / `model` /
+ *       `kind` / `custom` / `extract` / `baseUrl` / `超时`…）**都在词汇表里**；而 `profile`（面板无此
+ *       口径）、`apiSecret` 之类**面板里没有**的词才命中。★ 真值源是**页面本身** ⇒ 面板重建后
+ *       旧文案若**重新成立**（如「补齐 Endpoint / Key / 模型名」），判据**自动放行**。
+ *     · `ANCHOR_BACKLOG`（键 = `<文件>:<token>`）—— 与判据② 同型的两层语义出口（当前**空**）。
+ *
+ *   **判据④ 失明守卫（防空转绿灯）**（四态，任一即失明）
  *     · 一个待扫文件都没读到；或
  *     · **一个用户可见字符串都没提取到**；或
- *     · **`web/index.html` 的 id 集合为空**（判据① 的**参照集合**没了 ⇒ 判定无从谈起）。
- *     ⇒ **FAIL 且明说「本闸门已失明」**，且失明时**不再输出判据①②**。
+ *     · **`web/index.html` 的 id 集合为空**（判据① 的**参照集合**没了 ⇒ 判定无从谈起）；或
+ *     · **面板词汇表为空**（判据③ 的**参照集合**没了）。
+ *     ⇒ **FAIL 且明说「本闸门已失明」**，且失明时**不再输出判据①②③**。
  *
- *   **判据④ `--json`**（照 `check-no-sync-spawn.mjs`：JSON 模式下 stdout 只出 JSON，退出码同非 JSON）。
+ *   **判据⑤ `--json`**（照 `check-no-sync-spawn.mjs`：JSON 模式下 stdout 只出 JSON，退出码同非 JSON）。
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ③ 与「别处」的边界（本闸门**不做**什么，如实登记）
@@ -83,11 +122,18 @@
  *   · **不做语义理解**：不解析 AST、不 import 被测模块；只按**固定抽取法**取串。
  *   · **不是全量「用户可见」**：JS 只认**含中文**的字符串字面量 ⇒ **纯英文**的用户可见串（本仓
  *     目前没有）**看不见**（假阴，如实写）；HTML 不扫 `<option value>` 等**非展示**属性。
- *   · **不判「文案好不好」**：只判「文案里的控件 id 是否**真实存在**」。
- *   · **不判适配器 kind / profile 名**（★ 2026-10-10 订正，**有意收窄**）：新方向下 `anthropic` /
- *     `openai-compatible` / `custom` 是**合法可选 kind**（`#llmKind` 下拉里真实存在）⇒ 出现在
- *     用户可见文案里**不算违规**。初版的 (b) 维度在新方向下 100% 误报 ⇒ **撤掉**。
- *   · **已知盲区**：`${…}` 插值里**用字符串拼出来**的 id（`` `${'llm'+'Foo'}` ``）判不到（假阴）；
+ *   · **不判「文案好不好」**：只判「文案里的控件 id 是否**真实存在**」（判据①）与「文案要求的
+ *     操作目标在不在面板里」（判据③）。
+ *   · **不判适配器 kind / profile「名」本身**（★ 2026-10-10 订正，**有意收窄**）：新方向下
+ *     `anthropic` / `openai-compatible` / `custom` 是**合法可选 kind**（`#llmKind` 下拉里真实存在）
+ *     ⇒ 出现在用户可见文案里**不算违规**（初版的 (b) 维度在新方向下 100% 误报 ⇒ **撤掉**）。
+ *     ★ 但**`kind=<值>` 的「值」由判据③ 管** —— 值必须能在面板词汇表里解析（`kind=foobar` 会命中）。
+ *   · **判据③ 的已知盲区**（如实登记，本仓实测 0 命中）：
+ *     - **纯域名**（`换成 other.example`，前面**没有** `/`）会被当锚点 ⇒ 可能误报（本仓无此文案）；
+ *     - 动词表 `C_VERBS` 之外的祈使（如「替换 `foo`」「选用 `bar`」）**看不见**（假阴）；
+ *     - 锚点只取「动词后到句读/括号」之间 ⇒ 跨句读的目标（「请补齐 Endpoint，以及 Key」的 `Key`）**漏**；
+ *     - `PANEL_VOCAB` 取**整页**可见文本（不限该卡片）⇒ 别的卡片里出现过的词也算「面板里有」（假阴）。
+ *   · **判据① 的已知盲区**：`${…}` 插值里**用字符串拼出来**的 id（`` `${'llm'+'Foo'}` ``）判不到（假阴）；
  *     **别名 / 拼接**出来的串（`'请在面板' + '补齐'`）判不到（假阴）；**动态创建**的 id
  *     （`app.js` 里 `el(...).id = …`）不在 `web/index.html` 的 id 集合里 ⇒ 若文案引用它会被
  *     **误报**（本仓当前无此情形，实测 0）。
@@ -95,11 +141,18 @@
  * ══════════════════════════════════════════════════════════════════════════════
  * ★★ ④ 验证（临时夹具 `D:/lemo-tmp/`，前缀 `p4c-`；全程不动真实仓）
  * ══════════════════════════════════════════════════════════════════════════════
- *   · **阴性对照**：真实仓 ⇒ **exit 0**（实测提取 1114 条用户可见串、命中 0）。
- *   · **变异**：夹具里往某个用户可见串塞一个**不存在的 `llm*` id** ⇒ **exit 1 并点名**。
+ *   · **阴性对照**：真实仓 ⇒ **exit 0**（2026-10-10 实测：提取 **1162** 条用户可见串、参照 id
+ *     **227** 个、面板词汇表 **357** 词；判据① 命中 **0**、判据③ 命中 **0**）。
+ *   · **变异①（判据①）**：夹具里往某个用户可见串塞一个**不存在的 `llm*` id** ⇒ **exit 1 并点名**。
+ *   · **变异③（判据③）**：夹具里塞一个「要求用户去填**面板没有的东西**」的用户可见串
+ *     （如「配置不完整：请在面板补齐 Endpoint / Key / profile。」）⇒ **exit 1 并点名「profile」**。
+ *     ★ **对照**：同一句若写「补齐 Endpoint / Key / 模型名」⇒ **exit 0**（面板**真有**这三个输入框）；
+ *     若写「换 `kind=openai-compatible`」⇒ **exit 0**（`#llmKind` 真有该选项）；若写「换 `kind=foobar`」
+ *     ⇒ **exit 1 并点名「foobar」**。
  *   · **反向诱惑**：同一句写进**注释**（**不是字符串**）⇒ **必须仍 exit 0**（证明「剥注释」生效）。
  *   · **失明**：夹具三个文件都在、但**一个用户可见串都没有** ⇒ **exit 1 +「本闸门已失明」**。
- *   · 同一套断言写在 `test/gate-blindness.test.mjs` 的 `check-visible-hints` 用例里。
+ *   · 同一套断言写在 `test/gate-blindness.test.mjs` 的 `check-visible-hints` 用例里
+ *     （可用 `--only check-visible-hints` 只跑它）。
  *
  * 用法：node scripts/check-visible-hints.mjs [--json]
  * 环境变量：LEMO_TOOLS_ROOT  工具仓根（默认 `<脚本>/..`，与 `check-no-sync-spawn` /
@@ -138,6 +191,24 @@ const ID_ATTR_RE = /\bid\s*=\s*("([^"]*)"|'([^']*)')/g;
 //   ★ 当前**为空**：改造后真实仓 0 命中。这是「留出口」—— 若将来确有一处**必须**保留的
 //     悬空引用且经评估属有意为之，登进这里（只列 ℹ），而**不要**为了让闸门变绿去放宽判据。
 const BACKLOG = new Map(Object.entries({
+  // （空）
+}));
+
+// ── ★★ 判据③「面板操作锚点」（2026-10-10 加回）───────────────────────────────
+//   不变量：**用户可见文案里「要求用户去操作的东西」必须能在面板里找到**。
+//   · 真值源 = `PANEL_VOCAB`（每次现读 `web/index.html`，见 panelVocab()）—— 方向无关。
+//   · 锚点两类：(i) 祈使宾语（动词表见 C_VERBS）；(ii) `kind=<值>`（按标识符处理）。
+const C_VERBS = ['换', '改', '填', '填写', '补齐', '选择', '勾选', '改用', '换用', '换成',
+  '切到', '配置', '指定', '输入', '设为', '改为', '选'];
+const C_VERB_RE = new RegExp(`(?:${C_VERBS.join('|')})\\s*(?:别的|其他|其它|另一个|某个|一个|该|新|旧)?\\s*`, 'g');
+const C_TOKEN_RE = /[A-Za-z][A-Za-z0-9_.-]*/g;
+const C_STOP_RE = /[。；;！？\n（）()]/;                 // 宾语短语的句读 / 括号边界
+const C_LLM_ID_RE = /^(?:btn)?[Ll]lm[A-Za-z]+$/;        // 判据① 的活 ⇒ 判据③ 不重复
+const C_ENV_RE = /^(?:LEMO_|CODEBUDDY_)/i;              // 环境变量名（不是控件）
+
+// ── ANCHOR_BACKLOG：判据③ 已登记的违规（只列 ℹ、不判 FAIL）────────────────────
+//   键 = `<文件>:<token>`；值 = 「为什么保留」。★ 当前**为空**（真实仓 0 命中），留出口。
+const ANCHOR_BACKLOG = new Map(Object.entries({
   // （空）
 }));
 
@@ -250,6 +321,67 @@ function htmlIds(src) {
   return ids;
 }
 
+/**
+ * ★ 判据③ 的**真值源**：从 `web/index.html` 抽「面板词汇表」—— 页面上**真实存在的**
+ *   控件 id ∪ 可见文本 ∪ title/placeholder/aria-label ∪ `<option value>` 的 value 与 option 文本，
+ *   统一**小写、按非字母数字切词**（保留 len≥2 的词）。
+ *   ★ 语义：**一个词只要能在页面里找到，用户就有办法在面板里操作它** ⇒ 文案引用它不算违规。
+ *   ★ 每次**现读**页面 ⇒ 面板重建后旧文案若重新成立，判据自动放行（方向无关）。
+ */
+function panelVocab(src) {
+  const blank = (m) => m.replace(/[^\n]/g, ' ');
+  let text = src.replace(/<!--[\s\S]*?-->/g, blank);
+  text = text.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, blank);
+  const rawVals = [];
+  for (const m of text.matchAll(ID_ATTR_RE)) rawVals.push(m[2] !== undefined ? m[2] : m[3]);
+  for (const m of text.matchAll(/\b(?:title|placeholder|aria-label|value)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+    rawVals.push(m[2] !== undefined ? m[2] : m[3]);
+  }
+  rawVals.push(text.replace(/<[^>]*>/g, ' '));        // 可见文本节点
+  const vocab = new Set();
+  for (const v of rawVals) {
+    if (!v) continue;
+    for (const w of String(v).split(/[^A-Za-z0-9]+/)) if (w.length >= 2) vocab.add(w.toLowerCase());
+  }
+  return vocab;
+}
+
+/** 一个锚点标识符是否**可在面板词汇表里解析**（整词或其**全部子词**都在）。 */
+function anchorResolvable(tok, vocab) {
+  if (C_LLM_ID_RE.test(tok)) return true;             // 判据① 管
+  if (C_ENV_RE.test(tok)) return true;                // 环境变量名
+  const parts = tok.split(/[^A-Za-z0-9]+/).filter((p) => p.length >= 2);
+  if (parts.length === 0) return true;                // 全短词（如 `K`）⇒ 不当锚点
+  return parts.every((p) => vocab.has(p.toLowerCase()));
+}
+
+/**
+ * 从**已剥注释、已抹 `${…}`** 的用户可见串里抽「操作锚点」，返回**不可解析**的那些。
+ *   锚点 = 祈使动词后的 ASCII 标识符（`A / B / C` 列表逐个抽）。
+ *   排除：函数调用（后跟 `(`）、URL 片段（前是 `/`）。
+ */
+function badPanelAnchors(prose, vocab) {
+  const out = [];
+  C_VERB_RE.lastIndex = 0;
+  let m;
+  while ((m = C_VERB_RE.exec(prose)) !== null) {
+    const from = m.index + m[0].length;
+    const tail = prose.slice(from);
+    const stop = tail.search(C_STOP_RE);
+    const span = stop >= 0 ? tail.slice(0, stop) : tail;
+    for (const t of span.matchAll(C_TOKEN_RE)) {
+      const tok = t[0];
+      const abs = from + t.index;
+      if (prose[abs + tok.length] === '(') continue;  // 函数调用（saveService()）
+      if (prose[abs - 1] === '/') continue;           // URL / 路径片段
+      if (anchorResolvable(tok, vocab)) continue;
+      out.push(tok);
+    }
+    if (C_VERB_RE.lastIndex <= m.index) C_VERB_RE.lastIndex = m.index + 1;   // 防空转
+  }
+  return [...new Set(out)];
+}
+
 // ── 前置不可用（exit 2）：三个目标文件**一个都不存在** ⇒ 无法开工 ──────────────
 const existing = TARGETS.filter((t) => fs.existsSync(path.join(ROOT, t.rel)));
 if (existing.length === 0) {
@@ -265,12 +397,13 @@ const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 const strings = [];   // { file, line, text }
 let scanRead = 0;
 let idSet = new Set();
+let panelVocabSet = new Set();
 for (const t of TARGETS) {
   const abs = path.join(ROOT, t.rel);
   let raw;
   try { raw = fs.readFileSync(abs, 'utf8'); } catch { continue; }
   scanRead++;
-  if (t.rel === ID_SOURCE_REL) idSet = htmlIds(raw);   // ★ 判据① 的**参照集合**
+  if (t.rel === ID_SOURCE_REL) { idSet = htmlIds(raw); panelVocabSet = panelVocab(raw); }   // ★ 判据①/③ 的参照集合
   const stripped = t.kind === 'html' ? raw : stripComments(raw);
   const found = t.kind === 'html' ? htmlStrings(stripped) : jsStrings(stripped);
   for (const s of found) {
@@ -295,7 +428,20 @@ for (const s of strings) {
   }
 }
 
-// ── 判据③ 失明守卫（防空转绿灯）─────────────────────────────────────────────
+// ── 判据③ 不变量：文案要求的**操作目标**必须在**面板词汇表**里可解析 ─────────────
+const anchorFindings = [];   // { file, line, token, excerpt }
+const seenA = new Set();
+for (const s of strings) {
+  const prose = stripInterpolations(s.text);
+  for (const tok of badPanelAnchors(prose, panelVocabSet)) {
+    const key = `${s.file}|${s.line}|${tok}`;
+    if (seenA.has(key)) continue;
+    seenA.add(key);
+    anchorFindings.push({ file: s.file, line: s.line, token: tok, excerpt: s.text.replace(/\s+/g, ' ').slice(0, 90) });
+  }
+}
+
+// ── 判据④ 失明守卫（防空转绿灯）─────────────────────────────────────────────
 const blind = [];
 if (scanRead === 0) blind.push(`枚举到 ${TARGETS.length} 个待扫文件，却**一个都没读成功**（路径变了？）`);
 else if (strings.length === 0) {
@@ -304,10 +450,15 @@ else if (strings.length === 0) {
 if (idSet.size === 0) {
   blind.push(`\`${ID_SOURCE_REL}\` 里**一个 \`id="…"\` 都没解析到** ⇒ 判据① 的**参照集合**为空（本闸门已失明）`);
 }
+if (panelVocabSet.size === 0) {
+  blind.push(`\`${ID_SOURCE_REL}\` 里**一个面板词汇都解析不到** ⇒ 判据③ 的**参照集合**为空（本闸门已失明）`);
+}
 
-// ── 判据② 两层语义 ──────────────────────────────────────────────────────────
+// ── 判据②/③ 两层语义 ────────────────────────────────────────────────────────
 const registered = [];     // { key, why, where }
 const unregistered = [];   // { key, where }
+const anchorRegistered = [];
+const anchorUnregistered = [];
 if (blind.length === 0) {
   for (const f of findings) {
     const key = `${f.file}:${f.token}`;
@@ -315,8 +466,16 @@ if (blind.length === 0) {
     if (BACKLOG.has(key)) registered.push({ key, why: BACKLOG.get(key), where });
     else unregistered.push({ key, where });
   }
+  for (const f of anchorFindings) {
+    const key = `${f.file}:${f.token}`;
+    const where = `${f.file}:${f.line} 文案指向面板里没有的「${f.token}」 —— ${f.excerpt}`;
+    if (ANCHOR_BACKLOG.has(key)) anchorRegistered.push({ key, why: ANCHOR_BACKLOG.get(key), where });
+    else anchorUnregistered.push({ key, where });
+  }
   registered.sort((a, b) => (a.where < b.where ? -1 : 1));
   unregistered.sort((a, b) => (a.where < b.where ? -1 : 1));
+  anchorRegistered.sort((a, b) => (a.where < b.where ? -1 : 1));
+  anchorUnregistered.sort((a, b) => (a.where < b.where ? -1 : 1));
 }
 const fails = [];
 if (unregistered.length) {
@@ -326,6 +485,16 @@ if (unregistered.length) {
       + unregistered.map((u) => `     ✘ ${u.where}`).join('\n')
       + `\n     · 修法：把文案里的 id 改成 \`${ID_SOURCE_REL}\` 里**真实存在**的那个（或把该控件补进页面）。`
       + `\n     · 若**确属有意保留** ⇒ 登进本闸门的 \`BACKLOG\`（键 = \`<文件>:<token>\`，值 = 一句「为什么保留」）。`,
+  });
+}
+if (anchorUnregistered.length) {
+  fails.push({
+    crit: '③',
+    detail: `**判据③·未登记的违规** ${anchorUnregistered.length} 处（用户可见文案**要求用户去操作面板里没有的东西**`
+      + ` ⇒ 用户被指去做**面板上做不到的事**）：\n`
+      + anchorUnregistered.map((u) => `     ✘ ${u.where}`).join('\n')
+      + `\n     · 修法：把该目标改成 \`${ID_SOURCE_REL}\` 里**真实存在**的控件/字段/选项（或把该控件补进页面）。`
+      + `\n     · 若**确属有意保留** ⇒ 登进本闸门的 \`ANCHOR_BACKLOG\`（键 = \`<文件>:<token>\`，值 = 一句「为什么保留」）。`,
   });
 }
 
@@ -345,25 +514,32 @@ if (JSON_MODE) {
     scanFiles: scanRead,
     userVisibleStrings: strings.length,
     idSetSize: idSet.size,
+    panelVocabSize: panelVocabSet.size,
     findings: findings.length,
+    anchorFindings: anchorFindings.length,
     registered: registered.map((r) => r.where),
     unregistered: unregistered.map((u) => u.where),
+    anchorRegistered: anchorRegistered.map((r) => r.where),
+    anchorUnregistered: anchorUnregistered.map((u) => u.where),
   }, null, 2));
   process.exitCode = ok ? 0 : 1;
 } else {
-  console.log('「用户可见文案里的控件 id 必须真实存在」闸门 —— 方向无关的不变量（文案 ↔ 实际控件一致）');
+  console.log('「用户可见文案里的控件 id / 操作目标必须真实存在」闸门 —— 方向无关的不变量（文案 ↔ 实际控件一致）');
   console.log('  判据: ① 剥注释后**只取用户可见字符串**（JS=含中文的串，先抹 `${…}` 插值 / HTML=title·placeholder·aria-label + 可见文本），');
   console.log('        逐个断言其中的 `llm*` / `btnLlm*` token 在 web/index.html 的 id 集合里真实存在 |');
-  console.log('        ② 两层语义（BACKLOG ⇒ 只列 ℹ；未登记 ⇒ FAIL） | ③ 失明守卫（0 文件 / 0 用户可见串 / 0 参照 id ⇒ 失明） | ④ `--json`');
+  console.log('        ② 两层语义（BACKLOG ⇒ 只列 ℹ；未登记 ⇒ FAIL） |');
+  console.log('        ③ 面板操作锚点（祈使宾语 / `kind=<值>` 必须在 web/index.html 的**面板词汇表**里可解析）|');
+  console.log('        ④ 失明守卫（0 文件 / 0 用户可见串 / 0 参照 id / 0 面板词汇 ⇒ 失明） | ⑤ `--json`');
   console.log(`  被测: ${ROOT}`);
-  console.log(`  扫描: ${scanRead} 个文件；提取用户可见字符串 ${strings.length} 条；参照 id 集合 ${idSet.size} 个；命中不存在的控件 id ${findings.length} 处`);
+  console.log(`  扫描: ${scanRead} 个文件；提取用户可见字符串 ${strings.length} 条；参照 id 集合 ${idSet.size} 个；面板词汇 ${panelVocabSet.size} 词`);
+  console.log(`        判据① 命中**不存在的控件 id** ${findings.length} 处；判据③ 命中**不可解析的操作锚点** ${anchorFindings.length} 处`);
   console.log('');
 
   if (blindGuard) {
     console.log('✘✘ 本闸门已失明：');
     for (const b of blind) console.log(`   ✘ ${b}`);
     console.log('   ⇒ 「0 处违规」是假的，别信这个绿。请先修路径 / 抽取逻辑，再信本闸门的结论。');
-    console.log('   ⇒ 已失明 ⇒ 判据①② 本次**不输出**（判据③ 是失明守卫本身）。');
+    console.log('   ⇒ 已失明 ⇒ 判据①②③ 本次**不输出**（判据④ 是失明守卫本身）。');
     console.log('');
     console.log('[闸门] 用户可见文案：已失明 ⇒ 一条判据都没可信地跑过 ✘');
     process.exitCode = 1;
@@ -374,13 +550,22 @@ if (JSON_MODE) {
     } else {
       console.log('  ✓ 判据②·已登记的违规 0 处');
     }
+    if (anchorRegistered.length) {
+      console.log(`  ℹ 判据③·已登记的违规 ${anchorRegistered.length} 处（只列、不判 FAIL）：`);
+      for (const r of anchorRegistered) console.log(`     ℹ ${r.where} —— ${r.why}`);
+    } else {
+      console.log('  ✓ 判据③·已登记的违规 0 处');
+    }
     if (fails.length) {
       for (const f of fails) console.log(`\n   ✘ 判据${f.crit}  ${f.detail}`);
     } else {
       console.log(`  ✓ 判据①·未登记的违规 0 处（扫 ${strings.length} 条用户可见串、0 命中）`);
+      console.log(`  ✓ 判据③·未登记的违规 0 处（扫 ${strings.length} 条用户可见串、0 命中）`);
     }
     console.log(`\n[闸门] 用户可见文案：扫描 ${scanRead} 个文件 · 用户可见串 ${strings.length} 条`
-      + ` · 参照 id ${idSet.size} 个 · 命中 ${findings.length} 处（已登记 ${registered.length} / 未登记 ${unregistered.length}）`
+      + ` · 参照 id ${idSet.size} 个 · 面板词汇 ${panelVocabSet.size} 词`
+      + ` · 判据① 命中 ${findings.length} 处（已登记 ${registered.length} / 未登记 ${unregistered.length}）`
+      + ` · 判据③ 命中 ${anchorFindings.length} 处（已登记 ${anchorRegistered.length} / 未登记 ${anchorUnregistered.length}）`
       + ` · 违约 ${fails.length} 处 ${ok ? 'OK' : '✘'}`);
     process.exitCode = ok ? 0 : 1;
   }

@@ -278,11 +278,16 @@ test('★ decide：CJK 归一化后相等即算一致（全角 / 半角 / 空白
 });
 
 // ── ⑤ buildPrompt：提示词 ───────────────────────────────────
-test('buildPrompt：含「严禁创作/改写/润色」约束句，且含传入的 subtitle 与 scriptRef', () => {
+test('buildPrompt：含「严禁创作/改写/润色」约束句；★ 且**不得**把 subtitle / scriptRef 写进提示词（RISK-01）', () => {
   const p = buildPrompt({ subtitle: '该时刻字幕', scriptRef: '原文案内容' });
   assert.ok(/严禁创作/.test(p) && /改写/.test(p) && /润色/.test(p), '必须写死「只做对照检测」的约束');
-  assert.ok(p.includes('【该时刻字幕文本】该时刻字幕'), 'subtitle 必须原样进提示词');
-  assert.ok(p.includes('【原文案（语义基准）】原文案内容'), 'scriptRef 必须原样进提示词');
+  // ★★ RISK-01：答案（该时刻字幕 / 原文案）**绝不能**进提示词 —— 否则一个看不到图的纯文本模型
+  //   只要把这两行照抄进 image_text，`decide()` 的确定性比对就会判「一致」⇒ 画面没被读、质检却
+  //   报通过（静默产坏结论）。判据：模型只能从附图里读字（blind transcription）。
+  assert.ok(!p.includes('该时刻字幕'), '★ 提示词不得含该时刻字幕文本（答案泄漏 ⇒ 质检空转）');
+  assert.ok(!p.includes('原文案内容'), '★ 提示词不得含原文案（答案泄漏）');
+  assert.ok(!/【该时刻字幕文本】/.test(p) && !/【原文案（语义基准）】/.test(p),
+    '★ 那两行答案行必须已从提示词删除');
 });
 
 test('★ buildPrompt：不得出现「读不到就写空」这类给模型台阶的措辞', () => {
@@ -295,15 +300,16 @@ test('★ buildPrompt：不得出现「读不到就写空」这类给模型台�
 
 // ★ 任务书说 buildPrompt「返回字符串数组」「scriptRef 超长被截到 SCRIPT_REF_CAP」——
 //   实测**两条都不对**：它 return [...].join('\n')，是 **string**；
-//   而 SCRIPT_REF_CAP 的截断发生在**上游 verifyTriple**（.slice(0, SCRIPT_REF_CAP)），
-//   buildPrompt 本身**不截断**。这里把真实行为钉下来（而不是照任务书猜）。
-test('★ buildPrompt：真实类型是 string（不是数组），且**不截断** scriptRef（截断在上游 verifyTriple）', () => {
+//   而 SCRIPT_REF_CAP 的截断发生在**上游 verifyTriple**（.slice(0, SCRIPT_REF_CAP)）。
+//   ★ RISK-01 修复后 scriptRef 已**完全不进**提示词（「不截断」这条随之失去意义），
+//     故本用例改为钉「类型仍是 string + scriptRef 无论多长都绝不出现」。
+test('★ buildPrompt：真实类型是 string（不是数组），且**绝不**把 scriptRef 拼进提示词（RISK-01）', () => {
   const p = buildPrompt({ subtitle: 's', scriptRef: 'r' });
   assert.equal(typeof p, 'string', '★ 实测返回 string（内部 join 过），不是字符串数组');
   assert.equal(Array.isArray(p), false);
   const huge = '甲'.repeat(3000);
-  assert.ok(buildPrompt({ subtitle: 's', scriptRef: huge }).includes(huge),
-    '★ buildPrompt 不截断 scriptRef —— 1200 上限由 verifyTriple 施加，改这里不会有任何效果');
+  assert.ok(!buildPrompt({ subtitle: 's', scriptRef: huge }).includes(huge),
+    '★ RISK-01：无论 scriptRef 多长都**不得**出现在提示词里（答案不进提示词）');
 });
 
 // ── 运行器 ──────────────────────────────────────────────────

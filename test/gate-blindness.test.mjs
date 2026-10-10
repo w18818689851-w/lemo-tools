@@ -5662,15 +5662,29 @@ const rfTree = (dir, extraPath) => {
 
 // ── check-visible-hints 夹具 ────────────────────────────────────────────────
 //   事实源 = 「三个目标文件里的**用户可见字符串**（JS = 含中文的串 / HTML = title·placeholder
-//   + 可见文本）里出现的 `llm*` / `btnLlm*` 控件 id 是否在 `web/index.html` 里**真实存在**」。
-//   ★★ 2026-10-10 订正：本闸门已由「守**已删**控件 / profile / 引导语」改造为守**一个方向无关
-//      的不变量** —— 「文案里的控件 id 必须真实存在」；适配器 kind 名（`openai-compatible` /
-//      `anthropic` / `custom`）现在是**合法可选 kind** ⇒ 出现在文案里**不判**（见 ④）。
-//   ★ 判据③ 失明守卫要求「≥1 条用户可见串」**且**「`web/index.html` 的 id 集合非空」
-//     ⇒ 夹具 HTML 必须**至少含 1 个 id**，且阴性 / 变异树里都留中文串。
+//   + 可见文本）里出现的 `llm*` / `btnLlm*` 控件 id 是否在 `web/index.html` 里**真实存在**」，
+//   以及「文案要求的**操作目标**（祈使宾语 / `kind=<值>`）是否能在 `web/index.html` 的
+//   **面板词汇表**里解析」。
+//   ★★ 2026-10-10 订正：本闸门已由「守**已删**控件 / profile / 引导语」改造为守**方向无关的
+//      不变量** —— 「文案里的控件 id 必须真实存在」（判据①）+「文案要求的操作目标必须在面板里」
+//      （判据③）；适配器 kind 名（`openai-compatible` / `anthropic` / `custom`）现在是**合法可选
+//      kind** ⇒ 出现在文案里**不判**（见 ④）；`profile`（面板无此口径）才是判据③ 的目标。
+//   ★ 判据④ 失明守卫要求「≥1 条用户可见串」**且**「`web/index.html` 的 id 集合非空」**且**
+//     「面板词汇表非空」⇒ 夹具 HTML 必须**至少含 1 个 id + 1 个可切词的面板词**，且阴性 / 变异树
+//     里都留中文串。★ 夹具 HTML 里**放上 `#llmKind` 与「适配器类型 kind」标签**，与真实面板同形
+//     （判据③ 要靠它把 `kind` / `openai-compatible` / `anthropic` / `custom` 判为**可解析**）。
 const VH_HTML = '<html><body>\n'
-  + '<button id="btnLlmAdd" title="跳到「AI 算力配置」面板（默认走 WorkBuddy；这里只查看连接状态）">AI 算力配置</button>\n'
+  + '<button id="btnLlmAdd" title="新增一套算力服务（在下方表单里填 Endpoint / API-Key / 请求头 / 超时）">AI 算力配置</button>\n'
+  + '<label>自定义 Endpoint baseUrl</label>\n'
   + '<input id="llmBaseUrl" placeholder="如 https://api.example.com/v1">\n'
+  + '<label>自定义 API-Key</label>\n'
+  + '<input id="llmKey" placeholder="留空 = 不改">\n'
+  + '<label>model</label>\n'
+  + '<input id="llmModel" placeholder="如 my-model-name">\n'
+  + '<label>适配器类型 kind</label>\n'
+  + '<select id="llmKind">'
+  + '<option value="openai-compatible">openai-compatible（OpenAI 兼容）</option>'
+  + '<option value="anthropic">anthropic</option><option value="custom">custom</option></select>\n'
   + '</body></html>\n';
 const VH_APP = "const hint = '运行时口令：未注入（测试连接会提示未配置）';\n";
 const VH_LLM_OK = `export function hintFor(kind) {
@@ -5695,6 +5709,21 @@ const VH_LLM_COMMENT = `export function hintFor(kind) {
 //   / `custom`）现在是**合法可选 kind**（`#llmKind` 下拉里真实存在）⇒ 出现在用户可见文案里
 //   **不算违规** ⇒ 必须 exit 0（初版会把它误报成「已删 profile 名」）。
 const VH_LLM_KIND = "export function h(){ return '连接失败：换 kind=openai-compatible 试试，或用 anthropic / custom 适配器。'; }\n";
+// ★★ 判据③ 变异（2026-10-10 加）：文案**要求用户去操作面板里没有的东西**（`profile` 面板无此口径）
+//   ⇒ 必须 exit 1 并点名「profile」。★ 注意：① 也看不见它（没有 `llm*` token）⇒ 这是判据③ **独有**的靶子。
+const VH_LLM_ANCHOR_MUT = "export function hintFor(){ return '连接失败：请到面板改用别的 profile 适配器。'; }\n";
+// ★ 判据③ 反向诱惑：同一句写进**注释**（不是字符串）⇒ 必须仍 exit 0。
+const VH_LLM_ANCHOR_COMMENT = `export function hintFor(kind) {
+  // 旧句（历史，勿抹）：'连接失败：请到面板改用别的 profile 适配器。'
+  return '连接失败：请改用 custom（自配 extract 路径）。';
+}
+`;
+// ★ 判据③「现在**成立**的旧文案**不**误报」：面板**真有** Endpoint / Key / 模型名 三个输入框
+//   ⇒ 「请在面板补齐 Endpoint / Key / 模型名」现在是对的 ⇒ 必须 exit 0（这是本判据「方向无关」的关键）。
+const VH_LLM_ANCHOR_OK = "export function hintFor(){ return '配置不完整：请在面板补齐 Endpoint / Key / 模型名。'; }\n";
+// ★ 判据③ 变异之二：`kind=<值>` 的**值**不在面板词汇表里（面板只有 openai-compatible / anthropic /
+//   custom）⇒ 必须 exit 1 并点名「foobar」。
+const VH_LLM_KIND_BAD = "export function hintFor(){ return '返回体里找不到文本：换 kind=foobar 试试。'; }\n";
 const VH_LLM_EMPTY = 'export const x = 1;\n';
 const VH_HTML_EMPTY = '<html><body></body></html>\n';
 const VH_APP_EMPTY = 'const x = 1;\n';
@@ -5768,10 +5797,12 @@ test('check-readme-files：阴性对照 + 清单加不存在路径的变异 + �
   } finally { rm(dir); }
 });
 
-test('check-visible-hints：阴性对照 + 变异（不存在的控件 id）+ 反向诱惑（注释不判）+ 合法 kind 不误报 + 失明 ⇒ FAIL 并点名', async () => {
+test('check-visible-hints：阴性对照 + 变异（不存在的控件 id / 面板没有的操作目标）+ 反向诱惑（注释不判）+ 合法 kind 不误报 + 失明 ⇒ FAIL 并点名', async () => {
   const dir = path.join(TMP, 'vh');
   const N_BLIND = '本闸门已失明';
   const NEEDLE = '不存在的控件id「llmFooBar」';        // 判据① 特有文案（逐字抄自闸门源码）
+  const NEEDLE_C = '文案指向面板里没有的「profile」';   // 判据③ 特有文案（逐字抄自闸门源码）
+  const NEEDLE_KBAD = '文案指向面板里没有的「foobar」'; // 判据③·kind= 值不存在的特有文案
   try {
     // ① 阴性对照：文案引用的 `llmBaseUrl` 在 index.html 里**真实存在** ⇒ exit 0 且打印判据① ✓
     const neg = vhTree(path.join(dir, 'neg'));
@@ -5799,7 +5830,32 @@ test('check-visible-hints：阴性对照 + 变异（不存在的控件 id）+ �
     expectClean(r3, N_BLIND, 'check-visible-hints 合法 kind 不误报');
     assert.ok(!r3.out.includes('不存在的控件id'), `合法 kind 不该被判违规\n${r3.out.slice(0, 1200)}`);
 
-    // ⑤ 失明（判据③）：三文件都在、但**一个用户可见串都没有**（且 id 集合为空）⇒ FAIL +「本闸门已失明」
+    // ④b ★★ 判据③ 变异（2026-10-10 加）：文案**要求用户去操作面板里没有的东西**（`profile`）
+    //   ⇒ **exit 1 并点名「profile」**。★ 判据① 看不见它（串里没有 `llm*` token）⇒ 这是判据③ **独有**的靶子。
+    const amut = vhTree(path.join(dir, 'amut'), { llm: VH_LLM_ANCHOR_MUT });
+    const r4 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: amut });
+    expectBlind(r4, NEEDLE_C, 'check-visible-hints 判据③ 变异（面板没有的操作目标）');
+    assert.ok(r4.out.includes('lib/llm-api.mjs'), `判据③ 变异应点名 lib/llm-api.mjs\n${r4.out.slice(0, 1400)}`);
+
+    // ④c ★ 判据③ 反向诱惑：同一句写进**注释**（不是字符串）⇒ 必须仍 exit 0（证明「剥注释」对判据③ 同样生效）。
+    const acmt = vhTree(path.join(dir, 'acmt'), { llm: VH_LLM_ANCHOR_COMMENT });
+    const r4c = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: acmt });
+    expectClean(r4c, N_BLIND, 'check-visible-hints 判据③ 反向诱惑（注释里的旧句不判）');
+    assert.ok(!r4c.out.includes('文案指向面板里没有'), `注释里的旧句不该被判据③ 命中\n${r4c.out.slice(0, 1200)}`);
+
+    // ④d ★★ 判据③「方向无关」的关键对照：面板**真有** Endpoint / Key / 模型名 三个输入框
+    //   ⇒ 旧句「请在面板补齐 Endpoint / Key / 模型名」**现在是对的** ⇒ **必须 exit 0**（不误报）。
+    const aok = vhTree(path.join(dir, 'aok'), { llm: VH_LLM_ANCHOR_OK });
+    const r4d = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: aok });
+    expectClean(r4d, N_BLIND, 'check-visible-hints 判据③ 现在成立的旧文案不误报');
+    assert.ok(!r4d.out.includes('文案指向面板里没有'), `现在成立的旧文案不该被判据③ 命中\n${r4d.out.slice(0, 1200)}`);
+
+    // ④e ★ 判据③ 变异之二：`kind=<值>` 的**值**不在面板词汇表里 ⇒ **exit 1 并点名「foobar」**。
+    const kbad = vhTree(path.join(dir, 'kbad'), { llm: VH_LLM_KIND_BAD });
+    const r4e = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: kbad });
+    expectBlind(r4e, NEEDLE_KBAD, 'check-visible-hints 判据③ 变异（kind 值不存在）');
+
+    // ⑤ 失明（判据④）：三文件都在、但**一个用户可见串都没有**（且 id / 面板词汇集合为空）⇒ FAIL +「本闸门已失明」
     const blind = vhTree(path.join(dir, 'blind'),
       { llm: VH_LLM_EMPTY, html: VH_HTML_EMPTY, app: VH_APP_EMPTY });
     const r5 = await runGate('check-visible-hints.mjs', { LEMO_TOOLS_ROOT: blind });
@@ -5807,6 +5863,7 @@ test('check-visible-hints：阴性对照 + 变异（不存在的控件 id）+ �
     assert.ok(r5.out.includes('一个用户可见字符串都没提取到'),
       `失明应点名「一个用户可见字符串都没提取到」\n${r5.out.slice(0, 900)}`);
     assert.ok(!r5.out.includes(NEEDLE), `失明时不该输出判据①\n${r5.out.slice(0, 900)}`);
+    assert.ok(!r5.out.includes('文案指向面板里没有'), `失明时不该输出判据③\n${r5.out.slice(0, 900)}`);
 
     // ⑥ ★自证：把「未登记 ⇒ FAIL」判定**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
     //   （证明断言真的在测判据②，而不是在测「闸门有没有崩」）。
@@ -5818,6 +5875,17 @@ test('check-visible-hints：阴性对照 + 变异（不存在的控件 id）+ �
     assert.equal(rm1.code, 0, `短路判据② 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
       '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测判据②');
+
+    // ⑥b ★自证（判据③）：把「判据③·未登记 ⇒ FAIL」短路成恒假 ⇒ **判据③ 变异必须重新变绿**（exit 0）
+    //   （证明 ④b/④e 的断言真的在测判据③，而不是在测「闸门有没有崩」）。
+    const gdir2 = path.join(dir, 'gmut2');
+    mk(path.join(gdir2, 'scripts'));
+    const g2 = patchGate('check-visible-hints.mjs', path.join(gdir2, 'scripts'),
+      [['if (anchorUnregistered.length) {', 'if (false) {']]);
+    const rm2 = await run(NODE, [g2], { env: { LEMO_TOOLS_ROOT: amut } });
+    assert.equal(rm2.code, 0, `短路判据③ 后变异应变绿（exit 0），实得 ${rm2.code}\n${rm2.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm2, NEEDLE_C, 'amut'), undefined,
+      '短路判据③ 后正向断言竟然还通过 ⇒ 断言没在测判据③');
   } finally { rm(dir); }
 });
 

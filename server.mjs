@@ -2103,10 +2103,16 @@ function watchBriefJob(jobId, briefId) {
 //      ★★ 2026-10-10 订正（标准 §10「安全与信息边界」· 委托方 P0/P1 缺陷）—— 上面「按**名字**打码」的
 //        **旧口径作废**（原句照留，只补现状）：它只对**名字**含敏感词的头的值打码，而**名字**不含敏感词的
 //        **自定义头**（如 `X-My-Credential`）的值会**原样回传** ⇒ 明文外泄。现**请求头内容（头名与头值）
-//        一律不外传**，`/api/llm/config` 与 `/api/llm/services` **同口径只回布尔** `hasHeaders`。
-//        ★ 同理，`/api/llm/config` 回显的覆盖里 **`services` 数组**（多套算力服务）也**逐项脱敏**（复用模块
+//        一律不外传**，`/api/llm/services` **只回布尔** `hasHeaders`。
+//        ★ 同理，覆盖回显里的 **`services` 数组**（多套算力服务）也**逐项脱敏**（复用模块
 //        `listServices()`，不写第二份脱敏实现）—— 旧写法对数组 `out[k]=v` **整体原样**回传 ⇒ 每项 `apiKey`
 //        明文外泄（P0 根因）。
+//        ★★ 2026-10-10 订正（D6 —— 端点已删）：本段原把上面两句写成「`/api/llm/config` 与
+//        `/api/llm/services` **同口径**只回布尔 `hasHeaders`」与「`/api/llm/config` 回显的覆盖里…」。
+//        `/api/llm/config` 已随「**减法**」批次**整体删除**（配置的**唯一**读写路径 = `POST|GET
+//        /api/llm/services`）⇒ 现口径**只剩** `/api/llm/services`。★ 原句（**保留，不抹**）：
+//          · 「`/api/llm/config` 与 `/api/llm/services` **同口径只回布尔** `hasHeaders`。」
+//          · 「★ 同理，`/api/llm/config` 回显的覆盖里 **`services` 数组**（多套算力服务）也**逐项脱敏**…」
 //   ② **HTTP 一律 200**，错误放 body（`{ok:false,error:{kind,message,hint?}}`）—— 免得前端把 4xx/5xx
 //      当网络故障（本项目 web/app.js 的既有 `api()` 就是按 `!r.ok` 抛错的）。
 //   ③ **模块没就绪 / 抛异常都不崩服务**：动态 import + try/catch 兜底（模块缺失 ⇒ 一句中文提示）。
@@ -2158,8 +2164,12 @@ async function loadLlmApi() {
  * @param {object} body 请求体
  */
 function buildLlmOpts(body) {
-  // ★ 身份类字段**显式剥掉**（护栏：即便将来有人把某个身份类字段误加进下面的白名单，这里也先删掉它）——
-  //   与 `POST /api/llm/config` 落盘侧**共用**同一份 `LLM_IDENTITY_FIELDS`，两处不会漂。
+  // ★ 身份类字段**显式剥掉**（护栏：即便将来有人把某个身份类字段误加进下面的白名单，这里也先删掉它）。
+  //   ★★ 2026-10-10 订正（D6 —— 端点已删）：原句写作「与 `POST /api/llm/config` 落盘侧**共用**同一份
+  //   `LLM_IDENTITY_FIELDS`，两处不会漂」—— `/api/llm/config` 已随「**减法**」批次**整体删除**
+  //   （配置的**唯一**写入路径 = `POST /api/llm/services`，见 apiLlmServiceSave）；且 `LLM_IDENTITY_FIELDS`
+  //   现**只**在本函数里用（`grep` 实测：仅定义处 + 这一处）⇒ 「与落盘侧共用」这句**已不成立**。
+  //   ★ 原句（**保留，不抹**）：与 `POST /api/llm/config` 落盘侧**共用**同一份 `LLM_IDENTITY_FIELDS`，两处不会漂。
   const b = { ...((body && typeof body === 'object') ? body : {}) };
   for (const k of LLM_IDENTITY_FIELDS) delete b[k];
   const o = {};

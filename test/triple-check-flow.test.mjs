@@ -49,6 +49,8 @@ const test = (name, fn) => cases.push({ name, fn });
 // 端点契约（读 lib/triple-check.mjs 确认）：
 //   POST /v1/chat/completions                        → {choices:[{message:{content}}]}（内容由 state.mode 控制）
 //                                                      ★ mode='notext' / 'emptytext' 见下（用例⑪：取不到文本）
+//                                                      ★ mode='echoPrompt' 见下（用例⑭：照抄提示词里的字幕，
+//                                                        扮演「看不到图的纯文本模型」——RISK-01 复现桩）
 //   GET  /api/v0/models/qwen2.5-vl-7b-official       → {state:'loaded'}（让 ensureModelLoaded 立刻返回）
 //   POST /api/v1/models/unload                       → 200 {}（主卸载路径，记录命中次数）
 //   POST /api/v0/models/qwen2.5-vl-7b-official/unload→ 200 {}（兜底路径）
@@ -115,6 +117,15 @@ function startStub() {
       //   'emptytext' 是 200 + 空 content（归一为 empty-output）。二者都**必须**落成「存疑 + errors」。
       if (state.mode === 'notext') return sendJson(res, 200, { error: 'Unexpected endpoint or method' });
       if (state.mode === 'emptytext') return sendJson(res, 200, { choices: [{ message: { content: '   ' } }] });
+      // ★ RISK-01 复现桩：扮演「看不到图的纯文本模型」——把**请求体提示词里**的字幕行抠出来照抄成
+      //   image_text（抄得到 ⇒ 说明答案泄漏进了提示词；抄不到 ⇒ 只能回空串）。用例⑭ 用它做验收。
+      if (state.mode === 'echoPrompt') {
+        const prompt = (body && Array.isArray(body.messages) && typeof body.messages[1]?.content?.[0]?.text === 'string')
+          ? body.messages[1].content[0].text : '';
+        const mm = prompt.match(/【该时刻字幕文本】([^\n]*)/);
+        const content = JSON.stringify({ image_text: mm ? mm[1] : '' });
+        return sendJson(res, 200, { choices: [{ message: { content } }] });
+      }
       const content = state.mode === 'garbage'
         ? '我不知道'
         : JSON.stringify({ image_text: state.fixedText });
@@ -254,7 +265,7 @@ test('① 全一致：桩回填该帧字幕 ⇒ overall=一致、errors 空、fr
   assert.equal(rep.doubtful.length, 0);
 });
 
-test('② ★ 每帧喂 2 张图：messages[1].content 里有 2 个 image_url，且提示词带上了该帧字幕', async () => {
+test('② ★ 每帧喂 2 张图：messages[1].content 里有 2 个 image_url，且提示词**不含**该帧字幕（RISK-01 blind）', async () => {
   resetStub({ mode: 'consistent' });
   const rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true });
 
@@ -270,7 +281,10 @@ test('② ★ 每帧喂 2 张图：messages[1].content 里有 2 个 image_url，
     assert.notEqual(imgs[0].image_url.url, imgs[1].image_url.url, '两张附图内容必须不同（整帧 vs 裁剪）');
 
     const prompt = content[0].text;
-    assert.ok(prompt.includes(`【该时刻字幕文本】${FIXED}`), '★ 提示词里必须带上该帧字幕文本');
+    // ★ RISK-01：提示词里**不得**出现该帧字幕文本 —— 否则看不到图的纯文本模型照抄即可骗过质检。
+    //   模型只能从附图（上面的 2 张图）里读字（blind transcription）。答案由 `decide()` 在代码里比。
+    assert.ok(!prompt.includes(FIXED), '★ RISK-01：提示词里不得出现该帧字幕文本（答案不许泄漏进提示词）');
+    assert.ok(!/【该时刻字幕文本】|【原文案（语义基准）】/.test(prompt), '★ 那两行答案行必须已删除');
 
     // ★ 迁移等价（2026-10-08）：请求体里的模型 / 采样参数 / 流式开关 / system 消息，必须与
     //   迁移前 `askVlm` 自拼的**逐字段相同**（迁移前硬编码的就是这一组值）。
@@ -473,6 +487,30 @@ test('★ ⑬ 回落：面板那套不可达 ⇒ 回落本机 LM 桩、frame.via
   assert.ok(rep.frames[0].panelError, '★ 回落时必须带回面板侧失败原因（绝不静默）');
   assert.match(String(rep.frames[0].panelError), /unreachable|无法连接|connect/i,
     `面板侧失败原因应可读，实得 ${rep.frames[0].panelError}`);
+  setPanelService(`${STUB_ORIGIN}/v1`);       // 复位
+});
+
+// ── ★★ RISK-01 验收用例（答案不得泄漏进提示词）────────────────────────────
+test('★ ⑭ RISK-01：纯文本模型「照抄提示词里的字幕」⇒ 不得判「一致」（答案不许泄漏进提示词）', async () => {
+  // 由来：`buildPrompt` 曾把 `【该时刻字幕文本】<subtitle>` 直接写进提示词 ⇒ 一个看不到图的
+  //   纯文本模型只要把这一行照抄进 image_text，`decide()` 的确定性比对就会判「一致」——
+  //   画面**根本没被读**，质检却报通过（静默产坏结论）。
+  //   ★ 本用例的桩（mode='echoPrompt'）正是这种「照抄提示词」的纯文本模型：
+  //     改前提示词里有答案 ⇒ 桩抄得到 ⇒ 判「一致」⇒ 本用例**必红**；
+  //     改后提示词里已无答案 ⇒ 桩只能抄到空串 ⇒ 绝不判「一致」（回落本机仍读不到字 ⇒ 存疑）。
+  resetStub({ mode: 'echoPrompt' });
+  setPanelService(`${STUB_ORIGIN}/v1`);
+  const rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true, maxFrames: 1 });
+
+  assert.equal(rep.frames.length, 1, 'maxFrames=1 ⇒ 恰好 1 帧');
+  const f = rep.frames[0];
+  assert.notEqual(f.verdict, '一致',
+    `★ 纯文本模型照抄提示词不得判「一致」，实得 ${f.verdict}（imageText=「${f.imageText}」）`);
+  assert.notEqual(rep.overall, '一致', `★ overall 不得为「一致」，实得 ${rep.overall}`);
+  // ★ 第 2 步（面板「成功但没读出字」也回落本机 VLM）—— 本桩正是「成功却读不出字」，
+  //   ⇒ 应回落本机（via=local-vlm）且**如实标注回落原因** panelNoImageText（绝不静默）。
+  assert.equal(f.via, 'local-vlm', `★ 面板读不出字 ⇒ 应回落本机 VLM，实得 via=${f.via}`);
+  assert.equal(f.panelNoImageText, true, '★ 回落原因必须如实标注 panelNoImageText（绝不静默）');
   setPanelService(`${STUB_ORIGIN}/v1`);       // 复位
 });
 
