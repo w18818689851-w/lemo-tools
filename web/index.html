@@ -303,31 +303,122 @@
       </details>
     </section>
 
-    <!-- AI 算力配置（极简版）：软件内涉及 LLM 推理的任务**默认走 WorkBuddy**。
-         ★ WorkBuddy 的端点与口令**一律运行时自动发现**（SERVER__HOST / SERVER__PORT /
-           CODEBUDDY_GATEWAY_PASSWORD，见 lib/llm-api.mjs 的 workbuddy profile）⇒ 界面**无需手工填写**。
-         ★ 其余接入方式（切 profile / 适配器 kind / Endpoint / Key / model / 超时 / 自定义头 / 试跑…）
-           的**后端能力保留**（server.mjs 的 /api/llm/* 一律未动），只是界面上暂不暴露，后期需要用再添加。
-         ★ 「测试连接」按契约分三步**逐步**显示：可达 → 鉴权 → 返回体；任一步失败都给可操作的中文提示。
+    <!-- 通用 AI 算力 API 接入（★ 开放式 / 可插拔）：**不锁定**算力服务商 / 算力类型 / 部署方式。
+         ★ 可保存**多套**算力服务并**快速切换**：列表 + 新增 / 编辑 / 删除 / 切换（列表是核心）。
+         ★ 面板可配（覆盖规格每一项）：服务名称标记 label · 自定义 Endpoint baseUrl · 自定义 API-Key ·
+           自定义请求头 headers · 自定义超时 timeoutMs · 适配器类型 kind · 接入对象 target · model ·
+           custom 适配器的 path / extract。
+         ★ 默认**不锁定**任何算力服务；服务列表为空时给空状态提示（点「＋ 新增算力服务」开始）。
+         ★ 内置「测试连接」：按契约分三步**逐步**显示：可达 → 鉴权 → 返回体；任一步失败都给可操作的中文提示。
+         ★ 契约（server.mjs 的 /api/llm/*）：GET|POST /api/llm/services、GET|DELETE /api/llm/services/:id、
+           POST /api/llm/services/active、POST /api/llm/validate|models|chat|invoke。
+           ★★ 铁律：调用类端点**只接受 service（选择器）**；配置体**只能**经 POST /api/llm/services 写入。
+         ★ 密钥安全：key **永不回显**（只显示「已配置 / 未配置」），输入框留空 = 不改。
          ★ 落盘 D:\lemo-films\_llm-api.json（仓库之外 ⇒ 不进 git）。 -->
     <section class="card" id="llmCard">
       <div class="card-head">
-        <h2 class="card-title">AI 算力配置</h2>
-        <!-- ★ 一眼看出当前默认走哪个（保留 llmCurrentPill 的角色）。 -->
-        <span class="llm-current-pill" id="llmCurrentPill">当前默认：WorkBuddy</span>
+        <h2 class="card-title">通用 AI 算力接入</h2>
+        <!-- ★ 一眼看出当前生效哪一套（保留 llmCurrentPill 的角色）。 -->
+        <span class="llm-current-pill" id="llmCurrentPill">当前未选择算力服务</span>
         <div class="card-tools">
-          <button class="btn ghost" id="btnLlmStandalone" title="在独立视图里打开本模块（只显示「AI 算力配置」，其余分区隐藏）">独立视图</button><button class="btn ghost" id="btnLlmRefresh" title="重新读当前生效配置（GET /api/llm/config）">刷新</button>
+          <button class="btn ghost" id="btnLlmStandalone" title="在独立视图里打开本模块（只显示「通用 AI 算力接入」，其余分区隐藏）">独立视图</button><button class="btn ghost" id="btnLlmRefresh" title="重新读服务清单与当前生效项（GET /api/llm/services）">刷新</button>
         </div>
       </div>
       <div class="llm-intro" id="llmIntro">
-        软件内涉及 <b>AI 算力</b>的任务<b>默认走 <code>workbuddy</code></b>。它的<b>端点与口令自动取自运行时</b>
-        （<code>SERVER__HOST</code> / <code>SERVER__PORT</code> / <code>CODEBUDDY_GATEWAY_PASSWORD</code>），
-        <b>无需手工填写</b>；点下面「测试连接」可随时确认链接是否正常。
+        开放式、可插拔的<b>通用 AI 算力</b>接入：<b>不锁定</b>任何算力服务商 / 算力类型 / 部署方式。
+        下面可保存<b>多套</b>算力服务并<b>快速切换</b>；算力类型不限（文本推理 / 图像 / 语音 / 向量 / 代码 / 多模态）。
+        默认<b>不锁定</b>任何算力服务 —— 点「＋ 新增算力服务」即可接入你自己的端点。
       </div>
 
+      <!-- ① 服务列表（核心）：多套算力的列表，每行「切换 / 编辑 / 删除」，顶部「＋ 新增算力服务」。
+           ★ 列表为空时在 #llmListHint 里给空状态提示（不假装有服务）。 -->
+      <div class="llm-services">
+        <div class="llm-services-head">
+          <span class="lbl">已保存的算力服务</span>
+          <button class="btn ghost small" id="btnLlmAdd" title="新增一套算力服务（在下方表单里填服务名称标记 / Endpoint / API-Key / 请求头 / 超时）">＋ 新增算力服务</button>
+          <span class="hint" id="llmListHint"></span>
+          <span class="hint" id="llmSaveHint"></span>
+        </div>
+        <div class="llm-list" id="llmList"></div>
+      </div>
+
+      <!-- ② 编辑表单：选中 / 新增时显示（覆盖规格每一项配置）。 -->
+      <div class="llm-form" id="llmForm" hidden>
+        <div class="llm-form-title" id="llmFormTitle">新增算力服务</div>
+        <div class="form-grid llm-grid">
+          <label class="field">
+            <span class="lbl">服务名称标记 label</span>
+            <input id="llmLabel" class="input" placeholder="如 我的本地 vLLM / 某云文本推理" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl">适配器类型 kind</span>
+            <select id="llmKind" class="input">
+              <option value="openai-compatible">openai-compatible（OpenAI 兼容）</option>
+              <option value="anthropic">anthropic（Anthropic 兼容）</option>
+              <option value="custom">custom（厂商私有接口）</option>
+              <option value="workbuddy-gateway">workbuddy-gateway（本机智能体网关）</option>
+            </select>
+          </label>
+          <label class="field llm-target-field">
+            <span class="lbl">接入对象 target</span>
+            <select id="llmTarget" class="input llm-target" title="底层基础大模型 API：由模块在请求里下发 model 参数；智能体 API：服务名称标记仅作本地备注，请求体不下发 model">
+              <option value="model">底层基础大模型 API（下发 model 参数）</option>
+              <option value="agent">智能体 API（服务名称标记仅作本地备注）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="lbl">自定义 Endpoint baseUrl</span>
+            <input id="llmBaseUrl" class="input" placeholder="如 https://api.example.com/v1 或 http://127.0.0.1:8000/v1" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl">model</span>
+            <input id="llmModel" class="input" list="llmModelList" placeholder="如 my-model-name（也可点「拉取清单」从端点选）" autocomplete="off">
+            <datalist id="llmModelList"></datalist>
+          </label>
+          <label class="field">
+            <span class="lbl">自定义超时 timeoutMs</span>
+            <input id="llmTimeout" class="input num" type="number" min="1000" max="600000" step="1000" placeholder="默认 30000（1000–600000）">
+          </label>
+          <label class="field">
+            <span class="lbl">自定义 API-Key <span class="llm-key-state" id="llmKeyState"></span></span>
+            <input id="llmKey" class="input" type="password" placeholder="留空 = 不改" autocomplete="new-password">
+            <span class="hint">★ 密钥永不回显；留空表示「不改」</span>
+          </label>
+        </div>
+        <div class="llm-model-row">
+          <button type="button" class="btn ghost small" id="btnLlmModels" title="从当前 Endpoint 拉取可用模型清单（POST /api/llm/models），供下拉切换">拉取清单</button>
+          <select id="llmModelSelect" class="input llm-model-select" hidden title="从端点拉到的可用模型里挑一个（选中即填入 model）"></select>
+          <span class="hint" id="llmModelHint"></span>
+        </div>
+        <label class="field llm-headers-field">
+          <span class="lbl">自定义请求头 headers</span>
+          <textarea id="llmHeaders" class="input llm-headers" rows="3"
+                    placeholder="每行一个：名称: 值（如 X-Api-Version: 2024-01-01）&#10;敏感头的值后端打码成 ••••••，留占位符 = 不改"></textarea>
+          <span class="hint" id="llmHeadersHint">每行一条「名称: 值」；留空该行 = 删除该头</span>
+        </label>
+        <div class="form-grid llm-custom" id="llmCustomRows" hidden>
+          <label class="field">
+            <span class="lbl">请求路径 path（custom 用）</span>
+            <input id="llmPath" class="input" placeholder="默认 /chat/completions" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl">取值路径 extract（custom 用）</span>
+            <input id="llmExtract" class="input" placeholder="点分路径，默认 choices.0.message.content" autocomplete="off">
+          </label>
+        </div>
+        <div class="llm-actions">
+          <button class="btn primary" id="btnLlmSave">保存</button>
+          <button class="btn ghost" id="btnLlmCancel">取消</button>
+          <button class="btn ghost" id="btnLlmClearKey" title="清掉这套服务已保存的 API-Key（下次测试连接会提示未配置）">清除密钥</button>
+          <span class="hint" id="llmFormHint"></span>
+        </div>
+      </div>
+
+      <!-- ③ 校验区：测试连接 + 三步逐步显示（可达 / 鉴权 / 返回体）。
+           ★ 调用类端点只接受 service（选择器）⇒ 测试连接针对**已保存**的服务；新增的请先保存。 -->
       <div class="llm-actions">
         <button class="btn primary" id="btnLlmValidate">测试连接</button>
-        <span class="hint" id="llmSaveHint"></span>
+        <span class="hint" id="llmValidateHint"></span>
       </div>
 
       <!-- 三步校验结果：可达 / 鉴权 / 返回体，**逐步**显示（不是一次性糊出来）。
@@ -337,6 +428,29 @@
         <div class="llm-step" data-step="auth"><span class="llm-step-ico">○</span><span class="llm-step-name">鉴权</span><span class="llm-step-detail"></span></div>
         <div class="llm-step" data-step="shape"><span class="llm-step-ico">○</span><span class="llm-step-name">返回体</span><span class="llm-step-detail"></span></div>
         <div class="llm-step-hint" id="llmStepHint"></div>
+      </div>
+
+      <!-- ④ 试跑区：**按当前「算力类型」**真的发一次请求（POST /api/llm/invoke），把结果 / 错误贴出来。
+           ★ 参数区随类型变：占位提示 + 下面这行说明随 task 切（见 app.js 的 syncLlmTaskUi）。 -->
+      <div class="llm-try">
+        <div class="llm-row">
+          <label class="llm-task-pick">
+            <span class="lbl">算力类型</span>
+            <select id="llmTask" class="input llm-task"
+                    title="通用 AI 算力类型（规格：算力类型不限）：文本推理 / 图像生成 / 语音合成 / 向量计算 / 自定义出口">
+              <option value="chat">chat · 文本推理</option>
+              <option value="image">image · 图像生成</option>
+              <option value="audio">audio · 语音合成</option>
+              <option value="embedding">embedding · 向量计算</option>
+              <option value="custom">custom · 自定义出口</option>
+            </select>
+          </label>
+          <input id="llmTryText" class="input" maxlength="500" autocomplete="off"
+                 placeholder="试一句：留空用默认示例句（最多 500 字）">
+          <button class="btn primary" id="btnLlmTry" title="按当前「算力类型」真的发一次请求（POST /api/llm/invoke）">试跑</button>
+        </div>
+        <div class="llm-task-hint" id="llmTaskHint"></div>
+        <div class="llm-try-out" id="llmTryOut"></div>
       </div>
     </section>
 

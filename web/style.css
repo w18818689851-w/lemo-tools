@@ -1642,7 +1642,7 @@ html[data-theme="light"] {
   line-height: 1.65;
 }
 
-/* ── LLM API 配置面板 ──────────────────────────────────────────
+/* ── 通用 AI 算力接入面板 ──────────────────────────────────────
    ★ 只用两套主题里已有的颜色变量（--ok / --warn / --err / --bg-2 / --line-2…），
      浅色 / 深色自动都对，不另写一份配色。
    ★ 三步校验用「○ 待检 / ⟳ 检测中 / ✓ 通过 / ✗ 未通过」四态，颜色复用 .env-dot 那套语义色。 */
@@ -1652,7 +1652,7 @@ html[data-theme="light"] {
   font-family: var(--mono); font-size: 12px;
   background: var(--bg-3); border-radius: 4px; padding: 1px 5px;
 }
-/* 「当前默认走 WorkBuddy」状态胶囊（规格：当前优先配置 WorkBuddy ⇒ 界面要一眼可见）。 */
+/* 「当前生效」状态胶囊（规格：一眼看出当前生效哪一套算力服务）。 */
 .llm-current-pill {
   font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
   border: 1px solid var(--line-2); background: var(--bg-2); color: var(--fg-dim);
@@ -1660,6 +1660,61 @@ html[data-theme="light"] {
 }
 .llm-current-pill.is-default { color: var(--ok); border-color: var(--ok); }
 .llm-current-pill.is-switched { color: var(--warn); border-color: var(--warn); }
+
+/* ── ① 服务列表（核心）：多套算力，每行「切换 / 编辑 / 删除」 ── */
+.llm-services {
+  margin-top: 4px; padding: 10px 11px;
+  border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
+}
+.llm-services-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.llm-services-head .lbl { color: var(--fg-dim); font-size: 12px; font-weight: 600; }
+.llm-services-head .hint { margin-left: 2px; }
+.llm-list { display: flex; flex-direction: column; gap: 6px; }
+.llm-item {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg);
+}
+.llm-item.is-active { border-color: var(--ok); }
+.llm-item-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 320px; min-width: 0; }
+.llm-item-label { color: var(--fg); font-weight: 600; font-size: 12.5px; }
+.llm-item-kind {
+  font-size: 11px; color: var(--fg-dim); border: 1px solid var(--line-2);
+  border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+}
+.llm-item-url {
+  font-family: var(--mono); font-size: 11.5px; color: var(--fg-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px;
+}
+.llm-item-active {
+  font-size: 11px; font-weight: 600; color: var(--ok); border: 1px solid var(--ok);
+  border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+}
+.llm-item-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.llm-empty { font-size: 12.5px; color: var(--fg-faint); line-height: 1.6; padding: 4px 0; }
+
+/* ── ② 编辑表单（选中 / 新增时显示） ── */
+.llm-form {
+  margin-top: 12px; padding: 10px 11px;
+  border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
+}
+.llm-form-title { font-size: 12.5px; font-weight: 600; color: var(--fg); margin-bottom: 8px; }
+.llm-key-state { font-size: 11px; font-weight: 600; }
+.llm-key-state.ok { color: var(--ok); }
+.llm-key-state.missing { color: var(--warn); }
+/* 多模型切换：model 输入框 + 「拉取清单」按钮同一行；候选下拉在下一行。 */
+.llm-model-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.llm-model-row .input { flex: 1 1 220px; min-width: 0; }
+.llm-model-row .btn { flex: 0 0 auto; }
+.llm-model-select { margin-top: 6px; }
+/* custom 适配器的 path / extract 两行（随 kind / 算力类型显隐）。 */
+.llm-custom { margin-top: 10px; }
+.llm-headers-field { margin-top: 10px; }
+.llm-headers {
+  font-family: var(--mono); font-size: 12px; line-height: 1.5;
+  resize: vertical; min-height: 62px;
+}
 .llm-actions {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   margin-top: 12px;
@@ -1690,6 +1745,47 @@ html[data-theme="light"] {
 }
 .llm-step-hint:empty { display: none; }
 @keyframes llm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ── ④ 试跑：按「算力类型」选任务，参数区随类型变 ── */
+.llm-try {
+  margin-top: 12px; padding: 10px;
+  border: 1px dashed var(--line-2); border-radius: 8px; background: var(--bg-2);
+}
+.llm-try .llm-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.llm-try .llm-row .input { flex: 1 1 320px; min-width: 0; }
+/* ★ 算力类型选择器：窄列、不参与拉伸（其余输入框仍按 flex 撑开） */
+.llm-try .llm-task-pick { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.llm-try .llm-task-pick .lbl { white-space: nowrap; }
+.llm-try .llm-row .llm-task { flex: 0 0 auto; width: auto; min-width: 168px; }
+.llm-task-hint { font-size: 11.5px; color: var(--fg-faint); margin-top: 6px; line-height: 1.6; }
+.llm-try-out { margin-top: 8px; }
+.llm-try-out:empty { display: none; }
+.llm-try-out .llm-out-text {
+  font-size: 12.5px; color: var(--fg); line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 8px 10px; max-height: 220px; overflow: auto;
+}
+.llm-try-out .llm-out-meta { font-size: 11.5px; color: var(--fg-faint); margin-top: 4px; font-family: var(--mono); }
+.llm-try-out .llm-out-err { font-size: 12.5px; color: var(--err); line-height: 1.6; word-break: break-word; }
+.llm-try-out .llm-out-err .llm-out-hint { color: var(--warn); display: block; margin-top: 3px; }
+.llm-try-out audio { margin-top: 8px; width: 100%; max-width: 420px; display: block; }
+
+/* ── ★ 接入对象（target）：model 语义随它变（见 app.js 的 applyLlmTargetUi） ── */
+.llm-target { margin-bottom: 6px; }
+
+/* ── ★ 表单网格观感（沿用极简化前的布局订正）：下拉 / 提示按词折行，不挤在窄列里 ── */
+.llm-grid { grid-auto-flow: row dense; }
+.llm-grid .llm-profile-field { grid-column: span 2; }
+.llm-grid .llm-target-field { grid-column: 1 / -1; }
+/* 独占整行只为「给下拉与提示留出宽度」；控件本身不必跟着拉到 1500px ⇒ 限一个舒适宽度。 */
+.llm-target-field > * { max-width: 760px; }
+/* 提示按「词」折行，不再从词中间折断。 */
+.llm-grid .hint { word-break: normal; overflow-wrap: anywhere; }
+/* 窄屏（面板列数 < 2）时 span 2 会撑出隐式列 ⇒ 退化为整行。 */
+@media (max-width: 560px) {
+  .llm-grid .llm-profile-field { grid-column: 1 / -1; }
+}
 
 /* ── ★ LLM 配置「独立视图」：规格「模块拥有独立软件界面」—— 本模块可独立打开、只显示自己 ──
    URL 带 ?view=llm（或 #llm）时 body 加 .view-llm ⇒ 隐藏侧栏与其余卡片，只留 #llmCard。

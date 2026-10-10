@@ -2134,6 +2134,16 @@ const LLM_CONFIG_WRITABLE_IDENTITY = new Set(['profile', 'kind']);
 /** 落盘侧**禁止**的身份类字段（= 身份类 − 可写的那两个）—— 由上面那份清单**派生**，不另抄一份。 */
 const LLM_CONFIG_DENY_FIELDS = LLM_IDENTITY_FIELDS.filter((k) => !LLM_CONFIG_WRITABLE_IDENTITY.has(k));
 
+// ★★ 2026-10-10 追加（委托方新规格《通用AI算力API接入模块》·**方向变更**）—— 上面 `LLM_CONFIG_KINDS`（②）
+//   与 `LLM_IDENTITY_FIELDS`（③）**维持原样，不放宽**，理由与「放开」落点：
+//   · **铁律不变**：**调用类端点**（validate / models / chat / invoke）**仍不接受**身份类覆盖 ⇒
+//     `LLM_IDENTITY_FIELDS` 仍是 `buildLlmOpts` 的**剥离清单**（唯一变化：多保留一个 `service` **选择器**，
+//     它不是身份类字段，见 buildLlmOpts 函数头）。
+//   · **「配置写入放开」的落点** = **新增** `POST /api/llm/services`（唯一接受配置体的写入路径）——
+//     它**不用**上面这两份清单，而是把 kind/baseUrl/model/headers/timeoutMs/path/extract/target 交给模块
+//     `saveService()`（模块自带 kind 白名单 `SERVICE_KINDS`）。⇒ 「放开写入」与「收紧调用」**各走各路**，
+//     两张清单继续只服务「调用侧」与「legacy `/api/llm/config` 落盘侧」。
+
 // 动态 import：模块尚未落地时这里会抛，调用方兜住（服务照常起；下次请求会重试）。
 let _llmMod = null;
 async function loadLlmApi() {
@@ -2175,6 +2185,16 @@ function sanitizeLlmOverride(o) {
  *   服务端**解析出的那份配置（`workbuddy` 链路）。
  *   ★ **保留**非身份类的调用参数：`timeoutMs` / `apiKey` —— 它们**不改变**「往哪个端点、用什么 kind 发」
  *   （`apiKey` 只是同一条链路上的凭据，不能把链路指向别的 provider）。
+ *
+ * ★★ 2026-10-10 追加（委托方新规格《通用AI算力API接入模块》·**方向变更**）：**新增 `service` 选择器**。
+ *   · `service` = 「**选哪一套已保存的算力服务**」的**选择器**（值 = 服务 id），**不是配置体** ——
+ *     它只让模块去**服务端已保存的那一套**里取 kind/baseUrl/model/headers/…，**不能**把链路指向
+ *     请求体里现编的端点 ⇒ 与「**调用类端点不接受内联覆盖**」这条**铁律不冲突**（铁律守的是
+ *     「不从**请求体**取**配置值**」；选择器只是从**已保存集合**里挑一个）。
+ *   · ★ **为什么不把 `service` 也列进 `LLM_IDENTITY_FIELDS`**：那张表是「**请求体里出现即剥掉**」的
+ *     **禁止清单**；而 `service` 恰恰是**唯一要保留**的选择器 ⇒ 二者语义相反，**不能**同表。
+ *   · ★ `kind` / `baseUrl` / `model` / `headers` / `path` / `extract` / `target` **仍照旧剥掉**（铁律不变）：
+ *     想改这些值，**只有** `POST /api/llm/services` 这一条**写入路径**（见 apiLlmServiceSave）。
  * @param {object} body 请求体
  */
 function buildLlmOpts(body) {
@@ -2183,6 +2203,8 @@ function buildLlmOpts(body) {
   const b = { ...((body && typeof body === 'object') ? body : {}) };
   for (const k of LLM_IDENTITY_FIELDS) delete b[k];
   const o = {};
+  // ★★ 2026-10-10 追加（新规格）：`service` = **选择器**（选哪一套已保存的算力服务）—— 见函数头说明。
+  if (typeof b.service === 'string' && b.service.trim() !== '') o.service = b.service.trim();
   if (b.timeoutMs !== undefined && b.timeoutMs !== '' && b.timeoutMs !== null) {
     const n = Number(b.timeoutMs);
     if (Number.isFinite(n)) o.timeoutMs = n;
@@ -2225,6 +2247,14 @@ function llmConfigPayload(mod, cfg, ov, keyInfo) {
     // ★ keyMask（如 `sk-K…`）：**掩码不是明文**（模块 maskKey，契约 §四 同口径），
     //   给面板当「当前已配 key」的提示用（team-lead 2026-10-08 裁定保留）。★ 绝不回 key 本身。
     keyMask,
+    // ★★ 2026-10-10 追加（新规格·多套算力服务）：回显「新模型」字段，供面板编辑 ——
+    //   · `serviceId` = 本次**生效**的服务 id（无 ⇒ ''）；`servicesEmpty` = 覆盖文件**显式**声明
+    //     「一套服务都没有」（面板据此给「新增一套」的引导）；`retry` / `retryBackoffMs` = 重试策略。
+    //   ★ `previewProfile` 路径传入的对象没有这几个字段 ⇒ 用 `|| ''` / `!!` 兜底，**不崩**。
+    serviceId: cfg.serviceId || '',
+    servicesEmpty: !!cfg.servicesEmpty,
+    retry: cfg.retry,
+    retryBackoffMs: cfg.retryBackoffMs,
     unknownProfile: !!cfg.unknownProfile,
     overrideFile: mod.overrideFilePath(),
     override: sanitizeLlmOverride(override),
@@ -2292,6 +2322,17 @@ async function apiLlmConfigGet(req, res, url) {
  *   provider 持久复活**（实测：`{baseUrl:'http://43.139.159.106:3000'}` 曾被接受并落盘 ⇒ 第三方中转）。
  * ★ 删除靠「把值置成 undefined」：模块 saveOverride 是浅合并，JSON 序列化会丢弃 undefined 键。
  * ★ 落盘用模块的 saveOverride（原子写 + 与现有覆盖合并），本文件**不自己读写**那个文件。
+ *
+ * ★★ 2026-10-10 追加（委托方新规格《通用AI算力API接入模块》·**方向变更**）—— **本端点标注为 legacy**：
+ *   · 新规格要「**配置写入放开**」（Endpoint / API-Key / 请求头 / 超时 / 服务名称 + **多套保存、快速切换**）。
+ *     该能力**已由新增的 `POST /api/llm/services`（+ `/services/:id` / `/services/active`）承担** ——
+ *     它才是「**唯一接受配置体**」的写入路径（kind/baseUrl/model/headers/timeoutMs/path/extract/target 全收）。
+ *   · 本端点**保留原样**（向后兼容：既有单份覆盖的读写路径**一字未改**，`{profile,kind,timeoutMs,apiKey,models}`
+ *     仍可写、身份类字段仍**结构化拒绝**）—— 原因是：① 面板极简化后**已无消费者**；② 它写的仍是**旧格式**
+ *     顶层字段，模块 `normalizeOverride` 会**迁移**成「一套服务」（**向后兼容**，不崩）。
+ *   · ★ **不把本端点改接 saveService**：那会让「**调用类端点不接受内联覆盖**」这条**铁律**在**写入侧**
+ *     出现第二条语义重复的入口，且会让「本端点拒绝身份类字段」这条**既有回归**（dub-api ㉒）失效。
+ *     ⇒ 取舍：**新写入走 `/api/llm/services`；本端点冻结为 legacy**（新面板请勿再用）。
  */
 async function apiLlmConfigSave(req, res) {
   let body;
@@ -2476,6 +2517,12 @@ async function apiLlmInvoke(req, res) {
  *   （默认 profile `workbuddy` = agent 正落此格）。★ 拒绝用 `{ok:false,error:{kind:'config'}}`（面板据此给可操作中文提示）。
  *   ★ 本守卫是**纵深防御**：模块 `listModels()` 自身也已加同口径守卫（另一智能体改 `lib/llm-api.mjs`）——
  *     本文件**不重复它的实现**，只在服务端入口再拦一道（模块守卫若变，这里仍守得住）。
+ * ★★ 2026-10-10 追加（委托方新规格·**方向变更**）：**服务标识从 `profile` 变为 `service`（选择器）**。
+ *   · 守卫的**判据不变**（仍是「解析出的 `target === 'agent'` ⇒ 拒绝拉模型清单」）—— ★ 因为这条是
+ *     **协议性质**决定的（智能体 API 不暴露内部模型），**不是**「只接 WorkBuddy」的产物 ⇒ 新规格下**仍保留**。
+ *   · 变化只在「**选哪一套**」：`opts.service` 现在可选（`buildLlmOpts` 保留它）；不给 ⇒ 用**当前生效**的那套。
+ *   · ★ 新增「显式指定的服务必须存在」的**前置检查** —— 否则未知 service 会被 `resolveConfig` 静默回落到
+ *     当前那套，守卫可能把「找不到服务」**误报**成「智能体 API」（报错名不符实）。
  */
 async function apiLlmModels(req, res) {
   let body;
@@ -2485,6 +2532,13 @@ async function apiLlmModels(req, res) {
   try {
     const mod = await loadLlmApi();
     const opts = buildLlmOpts(body);
+    // ★★ 2026-10-10 追加（新规格）：显式指定的服务必须存在（与模块 `listModels()` 同口径；这里先查是为了**报错准确**）。
+    if (opts.service && !mod.serviceById(opts.service)) {
+      return sendJson(res, 200, {
+        ok: false,
+        error: { kind: 'config', message: `找不到算力服务「${opts.service}」：请先用 /api/llm/services 查看已保存的服务 id` },
+      });
+    }
     // ★ 只做「读」：resolveConfig 不发起任何请求（纯解析配置），拿 target 判守卫。
     let probe = null;
     try { probe = mod.resolveConfig(opts); } catch { probe = null; }
@@ -2500,6 +2554,116 @@ async function apiLlmModels(req, res) {
     }
     const r = await mod.listModels(opts);
     sendJson(res, 200, { ok: true, data: r });
+  } catch (e) { llmFail(res, e); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── ★★ 算力服务 CRUD（/api/llm/services*）—— 2026-10-10 追加（委托方新规格 §5）──
+// ══════════════════════════════════════════════════════════════════════════════
+//   规格：「**开放式、可插拔、不锁定服务商/类型/部署方式**」+「面板可配 Endpoint / API-Key / 请求头 /
+//   超时 / 服务名称标记」+「**支持多套算力保存、快速切换**」+「默认不锁定任何算力服务，用户可自由新增/删除/切换」。
+//
+//   ★★ 与「调用类端点铁律」的边界（**这是本组路由存在的全部理由**）：
+//     · 这 5 条是**唯一**接受**配置体**（kind/baseUrl/model/headers/timeoutMs/path/extract/target）的写入路径；
+//     · **调用类端点**（validate / models / chat / invoke）**仍只接受 `service` 选择器**，不接受任何配置值。
+//
+//   ★ 错误风格（照 server.mjs 既有路由 + LLM 家族的信封）：**结构化** `{ok:false,error:{kind,message}}`，
+//     客户端错误用 **4xx**（缺 id ⇒ 400；未知 id ⇒ 404），**绝不 500**；成功 = `{ok:true,data}`。
+//   ★ 脱敏：模块 `listServices()` / `serviceById()` / `saveService()` 的返回**均已脱敏**（只回 hasKey / keyMask，
+//     headers 里的密钥类字段已打码）—— 本文件**不再二次加工**，避免第二份脱敏口径。
+
+/**
+ * GET /api/llm/services —— 列出全部已保存的算力服务（**脱敏**）+ 当前生效的服务 id。
+ * 返回 `{ok:true,data:{services:[…],active:'<id>'}}`。★ 一套都没有 ⇒ `services:[]`、`active:''`（合法）。
+ */
+async function apiLlmServicesList(req, res) {
+  try {
+    const mod = await loadLlmApi();
+    const services = mod.listServices();
+    const act = mod.getActiveService();
+    sendJson(res, 200, { ok: true, data: { services, active: act ? act.id : '' } });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * GET /api/llm/services/:id —— 单套详情（**脱敏**，供面板编辑回显）。不存在 ⇒ 404 + 结构化错误。
+ */
+async function apiLlmServiceGet(req, res, id) {
+  try {
+    const mod = await loadLlmApi();
+    const svc = mod.serviceById(id);
+    if (!svc) {
+      return sendJson(res, 404, { ok: false, error: { kind: 'config', message: `找不到算力服务「${id}」` } });
+    }
+    sendJson(res, 200, { ok: true, data: svc });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * POST /api/llm/services —— **保存/更新一套**算力服务（★ 本处**接受配置体**）。
+ * body = 服务对象 `{id,label?,kind?,target?,baseUrl?,apiKey?,model?,headers?,timeoutMs?,path?,extract?,active?}`；
+ *   · `id` 必填（= 服务标识标记）；`kind` 须在模块 `SERVICE_KINDS` 内（模块校验）；
+ *   · `active:true` ⇒ 保存后**同时切为当前**（复用模块的切换入口，单一写 active 处）。
+ * 返回 `{ok:true,data:{service,active}}`；校验失败 ⇒ 400 + 结构化错误（模块的 error.message 原样透出）。
+ */
+async function apiLlmServiceSave(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
+  try {
+    const mod = await loadLlmApi();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '请求体必须是「一套算力服务」对象' } });
+    }
+    const r = mod.saveService(body);
+    if (!r || r.ok !== true) {
+      const e = (r && r.error) || {};
+      return sendJson(res, 400, { ok: false, error: { kind: e.kind || 'config', message: e.message || '保存算力服务失败' } });
+    }
+    sendJson(res, 200, { ok: true, data: { service: r.service, active: r.active } });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * DELETE /api/llm/services/:id —— 删除一套算力服务。★ 删的若是**当前生效**那套 ⇒ 模块自动切到剩下的第一套
+ * （都删光 ⇒ 空，合法）。不存在 ⇒ 404 + 结构化错误。
+ * 返回 `{ok:true,data:{deleted,active}}`。
+ */
+async function apiLlmServiceDelete(req, res, id) {
+  try {
+    const mod = await loadLlmApi();
+    const r = mod.deleteService(id);
+    if (!r || r.ok !== true) {
+      const e = (r && r.error) || {};
+      return sendJson(res, 404, { ok: false, error: { kind: e.kind || 'config', message: e.message || `找不到算力服务「${id}」` } });
+    }
+    sendJson(res, 200, { ok: true, data: { deleted: r.deleted, active: r.active } });
+  } catch (e) { llmFail(res, e); }
+}
+
+/**
+ * POST /api/llm/services/active —— **切换当前算力服务**（★ 全局实时生效：切换后所有调用立即走它）。
+ * body = `{id}`。缺 id ⇒ 400；未知 id ⇒ 404（模块 `setActiveService` 明确报错，**不静默**）。
+ * 返回 `{ok:true,data:{active}}`。
+ */
+async function apiLlmServiceSetActive(req, res) {
+  let body;
+  try { body = JSON.parse((await readBody(req)) || '{}'); }
+  catch { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+
+  try {
+    const mod = await loadLlmApi();
+    const id = String((body && body.id) != null ? body.id : '').trim();
+    if (!id) {
+      return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '缺少 id（要切换到的算力服务标识）' } });
+    }
+    const r = mod.setActiveService(id);
+    if (!r || r.ok !== true) {
+      const e = (r && r.error) || {};
+      return sendJson(res, 404, { ok: false, error: { kind: e.kind || 'config', message: e.message || `找不到算力服务「${id}」` } });
+    }
+    sendJson(res, 200, { ok: true, data: { active: r.active } });
   } catch (e) { llmFail(res, e); }
 }
 
@@ -2605,6 +2769,14 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/llm/chat' && m === 'POST') return await apiLlmChat(req, res);
     if (p === '/api/llm/invoke' && m === 'POST') return await apiLlmInvoke(req, res);
     if (p === '/api/llm/models' && m === 'POST') return await apiLlmModels(req, res);
+    // ── 算力服务 CRUD（/api/llm/services*，2026-10-10 追加）—— ★ 唯一接受**配置体**的写入路径 ──
+    //    （★ 调用类端点仍只接受 `service` 选择器；见文件头「算力服务 CRUD」段的边界说明。）
+    if (p === '/api/llm/services' && m === 'GET') return await apiLlmServicesList(req, res);
+    if (p === '/api/llm/services' && m === 'POST') return await apiLlmServiceSave(req, res);
+    if (p === '/api/llm/services/active' && m === 'POST') return await apiLlmServiceSetActive(req, res);
+    mm = /^\/api\/llm\/services\/([^/]+)$/.exec(p);
+    if (mm && m === 'GET') return await apiLlmServiceGet(req, res, mm[1]);
+    if (mm && m === 'DELETE') return await apiLlmServiceDelete(req, res, mm[1]);
 
     if (p.startsWith('/api/')) return sendJson(res, 404, { error: `未知接口 ${m} ${p}` });
 

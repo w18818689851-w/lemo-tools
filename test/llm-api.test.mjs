@@ -71,6 +71,8 @@ process.env.LEMO_FILM_DIR = TMP;
 const {
   PROFILES, DEFAULT_PROFILE, listProfiles, resolveConfig, validate, chat, listModels, invoke,
   maskKey, overrideFilePath, readOverride, saveOverride, maskedConfig, previewProfile, IMAGE_LIMITS,
+  // ★ 2026-10-10 追加（多套「算力服务」CRUD）—— 本批新增的 6 个导出，此前**只有一次性探针验过**。
+  listServices, getActiveService, serviceById, setActiveService, saveService, deleteService,
 } = await import('../lib/llm-api.mjs');
 
 const TTY = process.stdout.isTTY;
@@ -1626,6 +1628,214 @@ test('★ v3·基础算力模式**仍校验服务标识**：target=model 且 mod
       assert.equal(r2.ok, true, `★ agent 模式不校验服务标识（缺 model 也能联通）：${JSON.stringify(r2.error || '')}`);
     });
   } finally { await stub.close(); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ⑬ ★★ 多套「算力服务」存储 + CRUD —— 2026-10-10 新增能力（此前只有一次性探针）──
+// ═══════════════════════════════════════════════════════════════════════════
+//   ★ 覆盖文件模型：`<成片根>/_llm-api.json` = `{version:1, active, services:[…]}`（本测试在 TMP 内）。
+//   ★ 纪律：每条用例**先 rmOverride()、finally 再 rmOverride()** ⇒ 绝不把状态泄漏给后续用例。
+//   ★ 全部走 `withEnv(CLEAN, …)` 隔离外部环境（含 SERVER__* / ANTHROPIC_* 等运行时线索）。
+
+test('★★ 多套服务 CRUD：清空默认 ⇒ 新增两套 ⇒ 列表恰 2 套 ⇒ 切换生效跟着变 ⇒ 删一套剩 1', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      // 无覆盖时：存储视图含**出厂默认** `workbuddy` 一套（★ 可删，不锁死）
+      assert.deepEqual(listServices().map((s) => s.id), ['workbuddy'], '无覆盖时应含出厂默认 workbuddy');
+      // ★ 删掉出厂默认 ⇒ 空 services（合法）
+      const d0 = deleteService('workbuddy');
+      assert.equal(d0.ok, true, `删除 workbuddy 应成功：${JSON.stringify(d0)}`);
+      assert.deepEqual(listServices(), [], '★ 删光后 listServices() 应为空数组（空 services 合法）');
+      assert.equal(getActiveService(), null, '★ 一套都没有时 getActiveService() 应为 null');
+
+      // 新增两套（先清空 ⇒ 恰 2 套，便于逐条断言）
+      const a = saveService({
+        id: 'svc-a', label: 'A 服务', kind: 'openai-compatible', target: 'model',
+        baseUrl: 'http://127.0.0.1:1', apiKey: 'sk-aaaaaaaaaaaa', model: 'ma',
+      });
+      assert.equal(a.ok, true, `saveService svc-a 应成功：${JSON.stringify(a)}`);
+      assert.equal(a.service.id, 'svc-a');
+      assert.equal(a.service.active, true, '★ 空表里保存的第一套应成为当前生效');
+      const b = saveService({
+        id: 'svc-b', label: 'B 服务', kind: 'anthropic', target: 'model',
+        baseUrl: 'http://127.0.0.1:2', apiKey: 'sk-bbbbbbbbbbbb', model: 'mb',
+      });
+      assert.equal(b.ok, true, `saveService svc-b 应成功：${JSON.stringify(b)}`);
+
+      // 列表见 2 套
+      const list = listServices();
+      assert.equal(list.length, 2, `★ 新增两套后应恰 2 套，实得 ${list.length}：${JSON.stringify(list.map((s) => s.id))}`);
+      assert.deepEqual(list.map((s) => s.id).sort(), ['svc-a', 'svc-b']);
+      assert.equal(list.find((s) => s.id === 'svc-a').kind, 'openai-compatible', 'kind 应如实存回');
+      assert.equal(list.find((s) => s.id === 'svc-b').kind, 'anthropic', 'kind 应如实存回');
+
+      // 切换 ⇒ getActiveService() 跟着变；listServices 的 active 标记也跟着变
+      const sw = setActiveService('svc-b');
+      assert.equal(sw.ok, true, `setActiveService svc-b 应成功：${JSON.stringify(sw)}`);
+      assert.equal(sw.active, 'svc-b');
+      assert.equal(getActiveService().id, 'svc-b', '★ 切换后 getActiveService() 必须是 svc-b');
+      assert.equal(getActiveService().baseUrl, 'http://127.0.0.1:2', '★ 生效的应是 svc-b 那套（baseUrl 跟着变）');
+      const list2 = listServices();
+      assert.equal(list2.find((s) => s.id === 'svc-b').active, true, 'svc-b 的 active 标记应为 true');
+      assert.equal(list2.find((s) => s.id === 'svc-a').active, false, 'svc-a 的 active 标记应为 false');
+
+      // 删一套 ⇒ 剩 1 套
+      const del = deleteService('svc-b');
+      assert.equal(del.ok, true, `deleteService svc-b 应成功：${JSON.stringify(del)}`);
+      const list3 = listServices();
+      assert.equal(list3.length, 1, `★ 删一套后应剩 1 套，实得 ${list3.length}`);
+      assert.equal(list3[0].id, 'svc-a');
+      assert.equal(getActiveService().id, 'svc-a', '★ 删掉当前那套后应自动切到剩下的第一套');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ 向后兼容迁移：旧「单份覆盖」格式 ⇒ 自动迁移成「一套服务」（id 取 profile，缺省 workbuddy）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      // 旧格式（单份覆盖）：顶层直接写 baseUrl / apiKey / model（**无** services 数组）
+      fs.writeFileSync(overrideFilePath(),
+        JSON.stringify({ baseUrl: 'http://legacy.example/v1', apiKey: 'sk-legacy123456', model: 'legacy-model' }), 'utf8');
+      const list = listServices();
+      assert.equal(list.length, 1, `★ 旧格式应迁移成恰 1 套服务，实得 ${list.length}`);
+      assert.equal(list[0].id, 'workbuddy', '★ 迁移时 id 取 profile，缺省应是 workbuddy');
+      assert.equal(list[0].baseUrl, 'http://legacy.example/v1', '旧 baseUrl 应迁进该服务');
+      assert.equal(list[0].model, 'legacy-model', '旧 model 应迁进该服务');
+      assert.equal(list[0].active, true, '迁移出的唯一一套应是当前生效');
+      // ★ 迁移后 resolveConfig 仍取到旧字段（「写旧格式、读回旧字段」的既有语义不变）
+      const cfg = resolveConfig({});
+      assert.equal(cfg.baseUrl, 'http://legacy.example/v1', '★ 迁移后 resolveConfig 仍应取到旧 baseUrl');
+      assert.equal(cfg.model, 'legacy-model', '★ 迁移后 resolveConfig 仍应取到旧 model');
+      assert.equal(cfg.apiKey, 'sk-legacy123456', '★ 迁移后 resolveConfig 仍应取到旧 apiKey（模块内部用，不脱敏）');
+      assert.equal(cfg.servicesEmpty, false, '迁移出的服务非空 ⇒ servicesEmpty 应为 false');
+      assert.equal(cfg.serviceId, 'workbuddy', '★ 迁移后生效的服务 id 应是 workbuddy');
+
+      // 旧格式里**显式**写了 profile ⇒ 迁移 id 取它（不一定是 workbuddy）
+      rmOverride();
+      fs.writeFileSync(overrideFilePath(),
+        JSON.stringify({ profile: 'my-custom', baseUrl: 'http://legacy2/v1', model: 'm2' }), 'utf8');
+      assert.equal(listServices()[0].id, 'my-custom', '★ 显式 profile 应作为迁移后的服务 id');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ 空 services：删光 ⇒ chat() 不抛、返回 kind=config 且 message 含「未配置任何算力服务」', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      deleteService('workbuddy');                       // 删掉出厂默认 ⇒ 空 services
+      assert.deepEqual(listServices(), [], '前置：应已删光（空 services 合法）');
+      let r;
+      try {
+        r = await chat([{ role: 'user', content: 'hi' }], {});
+      } catch (e) {
+        assert.fail(`★ 空 services 时 chat() **抛异常了**（应优雅报错、绝不崩）：${(e && e.stack) || e}`);
+      }
+      assert.equal(r.ok, false, '★ 空 services 时 chat() 应 ok:false（不是崩）');
+      assert.equal(r.error.kind, 'config', '★ 应归一为 config 错');
+      assert.match(r.error.message, /未配置任何算力服务/, `★ message 应含「未配置任何算力服务」：${r.error.message}`);
+      assert.equal(resolveConfig({}).servicesEmpty, true, '★ 空 services 时 cfg.servicesEmpty 应为 true');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★ 脱敏：listServices() / serviceById() 绝不返回 apiKey 明文（字段不存在 / 只回掩码）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      const SECRET = 'sk-supersecret-abcdef123456';
+      const saved = saveService({
+        id: 'svc-secret', kind: 'openai-compatible', target: 'model', baseUrl: 'http://127.0.0.1:9',
+        apiKey: SECRET, model: 'm', headers: { Authorization: `Bearer ${SECRET}` },
+      });
+      assert.equal(saved.ok, true, `saveService 应成功：${JSON.stringify(saved)}`);
+      const fromList = listServices().find((s) => s.id === 'svc-secret');
+      const byId = serviceById('svc-secret');
+      assert.ok(fromList && byId, 'listServices() / serviceById() 都应能取到刚存的服务');
+      for (const [name, obj] of [['listServices()', fromList], ['serviceById()', byId], ['saveService() 回执', saved.service]]) {
+        assert.equal(hasOwn(obj, 'apiKey'), false, `★ ${name} 不得含 apiKey 字段（明文泄露）`);
+        assert.ok(!JSON.stringify(obj).includes(SECRET), `★ ${name} 的 JSON 里出现了 key 明文`);
+        assert.equal(obj.hasKey, true, `${name} 应回 hasKey:true`);
+        assert.ok(typeof obj.keyMask === 'string' && obj.keyMask.length > 0 && obj.keyMask !== SECRET,
+          `${name} 应回掩码 keyMask（非明文），实得 ${JSON.stringify(obj.keyMask)}`);
+        assert.ok(!JSON.stringify(obj.headers || {}).includes(SECRET), `★ ${name} 的 headers 泄露了 key 明文`);
+      }
+      // 反向：明文密钥**只**落在覆盖文件里（契约 §八 唯一允许处）
+      assert.ok(fs.readFileSync(overrideFilePath(), 'utf8').includes(SECRET), '覆盖文件应存明文 key（§八）');
+    } finally { rmOverride(); }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ⑭ ★★ 自动重试 / 降级（`httpRequestRetry`）—— 2026-10-10 新增能力 ──────
+// ═══════════════════════════════════════════════════════════════════════════
+//   ★ 只重试**幂等可重试**的失败（网络瞬态 / 408 / 425 / 429 / 5xx）；4xx 鉴权 / 参数错**绝不重试**。
+//   ★★ 总耗时受 `opts.timeoutMs` 封顶 —— 重试**不把超时放大成 N 倍**（本批最值钱的一条）。
+//   ★ 用本机桩 + **请求计数**钉住「到底发了几次」。
+
+test('★★ 重试·可重试错：桩先 500 后 200 + retry:1 ⇒ 桩收 2 次、最终成功', async () => {
+  let count = 0;
+  const stub = await startStub((req, res) => {
+    count += 1;
+    if (count === 1) return status(res, 500, '{"error":"boom"}');
+    return json200(res, { choices: [{ message: { content: 'ok-after-retry' } }] });
+  });
+  try {
+    const r = await chat([{ role: 'user', content: 'hi' }],
+      { ...OAI(), baseUrl: stub.base, timeoutMs: 3000, retry: 1, retryBackoffMs: 10 });
+    assert.equal(r.ok, true, `★ 500→200 应最终成功：${JSON.stringify(r.error || '')}`);
+    assert.equal(r.text, 'ok-after-retry');
+    assert.equal(count, 2, `★ 桩应恰收 2 次请求（1 次 500 + 1 次重试），实得 ${count}`);
+    assert.equal(r.meta.attempts, 2, '★ meta.attempts 应为 2（真实发出的请求次数）');
+  } finally { await stub.close(); }
+});
+
+test('★★ 重试·鉴权错不重试：桩恒 401 + retry:3 ⇒ 桩只收 1 次（4xx 鉴权错绝不重试）', async () => {
+  let count = 0;
+  const stub = await startStub((req, res) => { count += 1; return status(res, 401, '{"error":"nope"}'); });
+  try {
+    const r = await chat([{ role: 'user', content: 'hi' }],
+      { ...OAI(), baseUrl: stub.base, timeoutMs: 3000, retry: 3, retryBackoffMs: 10 });
+    assert.equal(r.ok, false);
+    assert.equal(r.error.kind, 'auth', '401 ⇒ kind=auth');
+    assert.equal(count, 1, `★ 鉴权错绝不重试：桩应只收 1 次（retry:3 也不重试），实得 ${count}`);
+    assert.equal(r.meta.attempts, 1, '★ meta.attempts 应为 1');
+  } finally { await stub.close(); }
+});
+
+test('★★ 重试·总耗时受 timeoutMs 封顶（重试不把超时乘 N）：恒 503 / 恒挂住 两种桩 + retry:4 + timeoutMs:1000 ⇒ 均 < 2×timeoutMs', async () => {
+  const TIMEOUT = 1000;
+  // ① 恒 503（快速响应）—— ★ 若不封顶：5 次请求 + 指数退避(200+400+800+1600=3000ms) ≈ 3s
+  let n503 = 0;
+  const stub503 = await startStub((req, res) => { n503 += 1; return status(res, 503, '{"error":"busy"}'); });
+  try {
+    const t0 = Date.now();
+    const r = await chat([{ role: 'user', content: 'hi' }],
+      { ...OAI(), baseUrl: stub503.base, timeoutMs: TIMEOUT, retry: 4 });
+    const elapsed = Date.now() - t0;
+    assert.equal(r.ok, false);
+    assert.ok(elapsed < TIMEOUT * 2,
+      `★ 503 重试总耗时应受 timeoutMs 封顶（< ${TIMEOUT * 2}ms），实得 ${elapsed}ms（若 ≈3s ⇒ 重试把耗时放大了）`);
+    assert.equal(r.meta.attempts, n503, 'meta.attempts 应等于桩真实收到的请求数');
+    assert.ok(n503 <= 5, `attempts 不应超过 1+retry=5，实得 ${n503}`);
+  } finally { await stub503.close(); }
+
+  // ② 恒挂住（每次尝试都会跑满**单次**超时）—— ★★ 若不封顶：5 次 × 1000ms = 5000ms
+  let nHang = 0;
+  const stubHang = await startStub(() => { nHang += 1; /* 故意不响应 */ });
+  try {
+    const t0 = Date.now();
+    const r = await chat([{ role: 'user', content: 'hi' }],
+      { ...OAI(), baseUrl: stubHang.base, timeoutMs: TIMEOUT, retry: 4 });
+    const elapsed = Date.now() - t0;
+    assert.equal(r.ok, false);
+    assert.equal(r.error.kind, 'timeout', '恒挂住 ⇒ kind=timeout');
+    assert.ok(elapsed < TIMEOUT * 2,
+      `★★ 每次尝试都跑满单次超时时，总耗时仍须 ≤ timeoutMs 量级（< ${TIMEOUT * 2}ms），实得 ${elapsed}ms（若 ≈5s ⇒ 超时被乘了 5 倍）`);
+    assert.equal(nHang, 1, `★ 预算耗尽后不得再发新请求：桩应只收 1 次，实得 ${nHang}`);
+  } finally { await stubHang.close(); }
 });
 
 // ── 运行器 ──────────────────────────────────────────────────

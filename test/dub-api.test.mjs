@@ -1230,6 +1230,191 @@ async function main() {
       notes.push('㉖ models：workbuddy（agent）下守卫拒绝（config 错），带 kind/baseUrl/target 覆盖也仍被拒（不打网关）');
     });
 
+    // ══ ㉗ ★★ 算力服务 CRUD 五条新路由（/api/llm/services*，2026-10-10 追加）══════════
+    //
+    // 由来：委托方新规格《通用AI算力API接入模块》§5 要求「开放式、可插拔、不锁定服务商 / 类型 / 部署方式」
+    //   + 「多套算力保存、快速切换」⇒ 新增这 5 条路由，其中 POST/DELETE 是**唯一接受配置体**的写入路径。
+    //   ★ 它们此前**没有任何永久测试**（只有一次性探针）⇒ 本用例把「成功信封 {ok:true,data}」与
+    //   「错误结构化 {ok:false,error:{kind,message}} 且**绝不 500**」逐条钉住。
+    //   ★ 全程只动**隔离成片根**里的覆盖文件，跑完逐字节还原 —— 绝不碰用户真实盘。
+    await runCase('㉗ ★★ 算力服务 CRUD：GET/POST/DELETE /api/llm/services* + /services/active 成功与错误路径（绝不 500）', async () => {
+      const cfg = await get('/api/llm/config');
+      need(cfg.status === 200 && cfg.json.ok === true, `GET /api/llm/config 应 200，实际 ${cfg.status}`);
+      const overrideFile = String(cfg.json.data.overrideFile);
+      need(path.resolve(overrideFile).startsWith(path.resolve(TEST_FILM_ROOT) + path.sep),
+        `覆盖文件不在隔离根内（拒绝继续，免得写用户真实盘）：${overrideFile}（隔离根 ${TEST_FILM_ROOT}）`);
+      const before = (() => { try { return fs.readFileSync(overrideFile); } catch { return null; } })();
+      const SID = 'svc-http-1';
+      try {
+        // ① GET /api/llm/services ⇒ {ok:true,data:{services,active}}
+        const list0 = await get('/api/llm/services');
+        need(list0.status === 200 && list0.json && list0.json.ok === true && list0.json.data,
+          `GET /services 应 200 + {ok:true,data}，实际 ${list0.status} ${list0.text.slice(0, 200)}`);
+        need(Array.isArray(list0.json.data.services) && typeof list0.json.data.active === 'string',
+          `GET /services 的 data 形状应为 {services:[],active:''}，实际 ${list0.text.slice(0, 200)}`);
+
+        // ② POST /api/llm/services（唯一接受配置体的写入路径）⇒ 200 + {ok:true,data:{service,active}}
+        const SECRET = 'sk-http-secret-abcdef123456';
+        const saved = await postJson(P, '/api/llm/services', {
+          id: SID, label: 'HTTP 测试服务', kind: 'openai-compatible', target: 'model',
+          baseUrl: 'http://127.0.0.1:1', apiKey: SECRET, model: 'm',
+        });
+        need(saved.status === 200 && saved.json && saved.json.ok === true && saved.json.data && saved.json.data.service,
+          `POST /services 应 200 + {ok:true,data:{service}}，实际 ${saved.status} ${saved.text.slice(0, 200)}`);
+        need(saved.json.data.service.id === SID && saved.json.data.service.hasKey === true,
+          `保存回执应是 ${SID} 且 hasKey:true，实际 ${saved.text.slice(0, 240)}`);
+        need(!saved.text.includes(SECRET), `★ 保存回执泄露了 key 明文：${saved.text.slice(0, 240)}`);
+
+        // ③ GET /api/llm/services/:id ⇒ 200 + {ok:true,data:<svc>}（脱敏）
+        const one = await get(`/api/llm/services/${SID}`);
+        need(one.status === 200 && one.json && one.json.ok === true && one.json.data,
+          `GET /services/:id 应 200 + {ok:true,data}，实际 ${one.status} ${one.text.slice(0, 200)}`);
+        need(one.json.data.id === SID && one.json.data.kind === 'openai-compatible'
+          && one.json.data.baseUrl === 'http://127.0.0.1:1',
+        `GET /services/:id 应回该套的 kind/baseUrl，实际 ${one.text.slice(0, 240)}`);
+        need(!one.text.includes(SECRET), `★ 单套详情泄露了 key 明文：${one.text.slice(0, 240)}`);
+
+        // ④ POST /api/llm/services/active ⇒ 200 + {ok:true,data:{active}}
+        const act = await postJson(P, '/api/llm/services/active', { id: SID });
+        need(act.status === 200 && act.json && act.json.ok === true && act.json.data && act.json.data.active === SID,
+          `POST /services/active 应 200 + {ok:true,data:{active:${SID}}}，实际 ${act.status} ${act.text.slice(0, 200)}`);
+        const list1 = await get('/api/llm/services');
+        need(list1.json.data.active === SID, `切换后 GET /services 的 active 应=${SID}，实际 ${list1.text.slice(0, 200)}`);
+
+        // ⑤ DELETE /api/llm/services/:id ⇒ 200 + {ok:true,data:{deleted,active}}
+        const del = await httpSend(P, { method: 'DELETE', path: `/api/llm/services/${SID}` });
+        need(del.status === 200 && del.json && del.json.ok === true && del.json.data && del.json.data.deleted === SID,
+          `DELETE /services/:id 应 200 + {ok:true,data:{deleted:${SID}}}，实际 ${del.status} ${del.text.slice(0, 200)}`);
+        const list2 = await get('/api/llm/services');
+        need(!list2.json.data.services.some((s) => s.id === SID), `删除后列表不应再含 ${SID}`);
+
+        // ⑥ 错误路径：一律**结构化** {ok:false,error:{kind,message}}，且**绝不 500**
+        const errCases = [
+          ['POST /services 空体（缺 id）', await postJson(P, '/api/llm/services', {}), 400],
+          ['POST /services 非法 kind', await postJson(P, '/api/llm/services', { id: 'x-bad', kind: 'bogus-kind' }), 400],
+          ['POST /services 非法 JSON', await postRaw(P, '/api/llm/services', '{ not json '), 400],
+          ['POST /services/active 缺 id', await postJson(P, '/api/llm/services/active', {}), 400],
+          ['GET /services/nope', await get('/api/llm/services/nope'), 404],
+          ['DELETE /services/nope', await httpSend(P, { method: 'DELETE', path: '/api/llm/services/nope' }), 404],
+        ];
+        for (const [label, r, want] of errCases) {
+          need(r.status === want, `${label}：应 HTTP ${want}，实际 ${r.status} ${r.text.slice(0, 200)}`);
+          need(r.status !== 500, `${label}：绝不 500`);
+          need(r.json && r.json.ok === false && r.json.error && typeof r.json.error.kind === 'string'
+            && typeof r.json.error.message === 'string' && r.json.error.message.length > 0,
+          `${label}：应结构化 {ok:false,error:{kind,message}}，实际 ${r.text.slice(0, 240)}`);
+        }
+      } finally {
+        try {
+          if (before === null) fs.unlinkSync(overrideFile);
+          else fs.writeFileSync(overrideFile, before);
+        } catch { /* 尽力而为 */ }
+      }
+      notes.push('㉗ services CRUD：5 条路由成功均 {ok:true,data}；6 条错误路径均结构化 {ok:false,error} 且非 500；覆盖文件已还原');
+    });
+
+    // ══ ㉘ ★★ 铁律：调用类端点只认 `service` 选择器 —— validate 用「所选那套」的 kind/baseUrl，不是请求体的 ══
+    //
+    // 边界（server.mjs 文件头「算力服务 CRUD」段）：调用类端点（validate / models / chat / invoke）
+    //   **只接受 `service` 选择器**，`kind`/`baseUrl`/`model`/`headers`/`path`/`extract`/`target`/`profile`
+    //   一律从请求体**剥掉**（`buildLlmOpts` 的 `LLM_IDENTITY_FIELDS`）⇒ 请求体里的 baseUrl 无法把链路
+    //   指向任意端点 / 第三方中转。★ 本用例是这条安全属性的**直接回归**（此前只有一次性探针）。
+    //   ★ 反向验证：把 `buildLlmOpts` 的身份类剥离摘掉 ⇒ 请求体的 kind/baseUrl 生效 ⇒ 本用例必红。
+    await runCase('㉘ ★★ validate 铁律：带 {service,kind,baseUrl,…} 时用「所选那套」的 kind/baseUrl（请求体的被忽略）', async () => {
+      const cfg = await get('/api/llm/config');
+      const overrideFile = String(cfg.json.data.overrideFile);
+      need(path.resolve(overrideFile).startsWith(path.resolve(TEST_FILM_ROOT) + path.sep),
+        `覆盖文件不在隔离根内（拒绝继续）：${overrideFile}`);
+      const before = (() => { try { return fs.readFileSync(overrideFile); } catch { return null; } })();
+      const SID = 'svc-tie';
+      const SVC_KIND = 'openai-compatible';
+      const SVC_BASE = 'http://127.0.0.1:1';
+      try {
+        const saved = await postJson(P, '/api/llm/services', {
+          id: SID, kind: SVC_KIND, target: 'model', baseUrl: SVC_BASE, model: 'm',
+        });
+        need(saved.status === 200 && saved.json.ok === true, `预置服务应保存成功：${saved.text.slice(0, 200)}`);
+        // 请求体塞「另一套」身份值（anthropic + 别的 baseUrl + profile + target + 自定义头）——必须被忽略
+        const t0 = Date.now();
+        const r = await postJson(P, '/api/llm/validate', {
+          service: SID,
+          profile: 'workbuddy', kind: 'anthropic', baseUrl: 'http://evil.example:1',
+          model: 'evil-model', target: 'model', headers: { Authorization: 'Bearer evil' },
+          path: '/evil', extract: 'evil',
+        });
+        need(r.status === 200 && r.json && r.json.ok === true && r.json.data,
+          `validate 应 200 + {ok:true,data}，实际 ${r.status} ${r.text.slice(0, 240)}`);
+        const d = r.json.data;
+        need(d.service === SID, `★ validate 生效的 service 应是 ${SID}，实际 ${d.service}`);
+        need(d.masked && d.masked.kind === SVC_KIND,
+          `★ 铁律：masked.kind 应是**所选那套**的 ${SVC_KIND}（不是请求体的 anthropic），实际 ${d.masked && d.masked.kind}`);
+        need(d.masked && d.masked.baseUrl === SVC_BASE,
+          `★ 铁律：masked.baseUrl 应是**所选那套**的 ${SVC_BASE}（不是请求体的 http://evil.example:1），实际 ${d.masked && d.masked.baseUrl}`);
+        need(!JSON.stringify(d.masked || {}).includes('evil'),
+          `★ 请求体塞的值泄露进了 masked：${JSON.stringify(d.masked).slice(0, 240)}`);
+        need(Date.now() - t0 < 10000, `validate 应快速返回，实际 ${Date.now() - t0}ms`);
+      } finally {
+        try {
+          if (before === null) fs.unlinkSync(overrideFile);
+          else fs.writeFileSync(overrideFile, before);
+        } catch { /* 尽力而为 */ }
+      }
+      notes.push(`㉘ validate 铁律：请求体带 kind=anthropic/baseUrl=http://evil.example:1，masked 仍为所选那套（${SVC_KIND} / ${SVC_BASE}）`);
+    });
+
+    // ══ ㉙ ★ 未知 id 三处口径（写路径 404；调用路径 200+data.ok:false —— 家族口径，非 bug）══════
+    await runCase('㉙ ★ 未知 id：DELETE /services/nope ⇒ 404；/services/active{nope} ⇒ 404；validate{service:nope} ⇒ 200+data.ok:false', async () => {
+      // ① 写路径：未知 id ⇒ 404 + 结构化
+      const del = await httpSend(P, { method: 'DELETE', path: '/api/llm/services/nope-xyz' });
+      need(del.status === 404 && del.json && del.json.ok === false && del.json.error && del.json.error.kind === 'config',
+        `DELETE 未知 id 应 404 + {ok:false,error:{kind:'config'}}，实际 ${del.status} ${del.text.slice(0, 200)}`);
+      // ② 切换：未知 id ⇒ 404 + 结构化
+      const act = await postJson(P, '/api/llm/services/active', { id: 'nope-xyz' });
+      need(act.status === 404 && act.json && act.json.ok === false && act.json.error && act.json.error.kind === 'config',
+        `POST /services/active 未知 id 应 404 + 结构化，实际 ${act.status} ${act.text.slice(0, 200)}`);
+      // ③ 调用路径：validate 未知 service ⇒ **HTTP 200** + {ok:true, data:{ok:false}}（家族口径：错误放 data 里）
+      const v = await postJson(P, '/api/llm/validate', { service: 'nope-xyz' });
+      need(v.status === 200 && v.json && v.json.ok === true && v.json.data && v.json.data.ok === false,
+        `validate 未知 service 应 200 + {ok:true,data:{ok:false}}（家族口径），实际 ${v.status} ${v.text.slice(0, 240)}`);
+      const blob = JSON.stringify(v.json.data);
+      need(/找不到算力服务/.test(blob), `validate 未知 service 的报错应点名「找不到算力服务」：${v.text.slice(0, 240)}`);
+      notes.push('㉙ 未知 id：DELETE/active ⇒ 404 结构化；validate ⇒ 200 + data.ok:false（家族口径，非 bug）');
+    });
+
+    // ══ ㉚ ★ 空 services：删光 ⇒ validate {} ⇒ 200 + data.ok:false（优雅降级，绝不 500）══════════
+    await runCase('㉚ ★ 空 services：删光所有服务 ⇒ validate {} ⇒ 200 + data.ok:false（优雅降级，绝不 500）', async () => {
+      const cfg = await get('/api/llm/config');
+      const overrideFile = String(cfg.json.data.overrideFile);
+      need(path.resolve(overrideFile).startsWith(path.resolve(TEST_FILM_ROOT) + path.sep),
+        `覆盖文件不在隔离根内（拒绝继续）：${overrideFile}`);
+      const before = (() => { try { return fs.readFileSync(overrideFile); } catch { return null; } })();
+      try {
+        // 删光当前所有服务
+        const list = await get('/api/llm/services');
+        need(list.status === 200 && list.json.ok === true, `GET /services 应 200，实际 ${list.status}`);
+        for (const s of list.json.data.services) {
+          const d = await httpSend(P, { method: 'DELETE', path: `/api/llm/services/${encodeURIComponent(s.id)}` });
+          need(d.status === 200 && d.json.ok === true, `删除 ${s.id} 应成功，实际 ${d.status} ${d.text.slice(0, 200)}`);
+        }
+        const empty = await get('/api/llm/services');
+        need(Array.isArray(empty.json.data.services) && empty.json.data.services.length === 0 && empty.json.data.active === '',
+          `★ 删光后应为 {services:[],active:''}，实际 ${empty.text.slice(0, 200)}`);
+        // validate {} ⇒ 200 + data.ok:false（模块优雅报「未配置任何算力服务」，服务端**绝不** 500）
+        const v = await postJson(P, '/api/llm/validate', {});
+        need(v.status === 200, `★ 空 services 时 validate 必须 200（绝不 500），实际 ${v.status}`);
+        need(v.json && v.json.ok === true && v.json.data && v.json.data.ok === false,
+          `★ 空 services 时 validate 应 {ok:true,data:{ok:false}}，实际 ${v.text.slice(0, 240)}`);
+        need(/未配置任何算力服务/.test(JSON.stringify(v.json.data)),
+          `★ 报错应点名「未配置任何算力服务」：${v.text.slice(0, 240)}`);
+      } finally {
+        try {
+          if (before === null) fs.unlinkSync(overrideFile);
+          else fs.writeFileSync(overrideFile, before);
+        } catch { /* 尽力而为 */ }
+      }
+      notes.push('㉚ 空 services：删光后 validate {} ⇒ 200 + data.ok:false（含「未配置任何算力服务」），非 500');
+    });
+
   } finally {
     // ── 收尾 ──
     if (server && !OPT.keepServer) { await stopServer(server.child); log(C.dim(`  测试服务已停止（pid ${server.child.pid}）`)); }

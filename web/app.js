@@ -2316,7 +2316,7 @@ function checkDubCustomSize() {
   if (w < SIZE_MIN || w > SIZE_MAX || h < SIZE_MIN || h > SIZE_MAX) {
     return { ok: false, error: `宽和高都要在 ${SIZE_MIN}–${SIZE_MAX} 之间` };
   }
-  if (w % 2 || h % 2) return { ok: false, error: '宽和高都必须是**偶数**（H.264 编码要求，如 1080 × 1920）' };
+  if (w % 2 || h % 2) return { ok: false, error: '宽和高都必须是偶数（H.264 编码要求，如 1080 × 1920）' };
   return { ok: true, w, h };
 }
 
@@ -3715,7 +3715,7 @@ function checkCustomSize() {
   if (w < SIZE_MIN || w > SIZE_MAX || h < SIZE_MIN || h > SIZE_MAX) {
     return { ok: false, error: `宽和高都要在 ${SIZE_MIN}–${SIZE_MAX} 之间` };
   }
-  if (w % 2 || h % 2) return { ok: false, error: '宽和高都必须是**偶数**（H.264 编码要求，如 1080 × 1920）' };
+  if (w % 2 || h % 2) return { ok: false, error: '宽和高都必须是偶数（H.264 编码要求，如 1080 × 1920）' };
   return { ok: true, w, h };
 }
 
@@ -4477,27 +4477,88 @@ function focusSearch() {
   s.select?.();
 }
 
-// ── AI 算力配置（/api/llm/*）─────────────────────────────────
+// ── 通用 AI 算力 API 接入（/api/llm/*）─────────────────────────
 //
-// ★★ 2026-10-10 极简改版：面板只保留「WorkBuddy 连接」——
-//   · 默认 profile = workbuddy，其**端点与口令一律运行时自动发现**（SERVER__HOST / SERVER__PORT /
-//     CODEBUDDY_GATEWAY_PASSWORD，见 lib/llm-api.mjs 的 workbuddy profile）⇒ **无需手工填写**。
-//   · 界面上只留：一行状态（当前默认）/ 一行说明 / 「测试连接」按钮 / 三步校验显示。
-//   · 其余接入方式（切 profile / 适配器 kind / Endpoint / Key / model / 超时 / 自定义头 / 试跑…）
-//     的**后端能力保留**（server.mjs 的 /api/llm/* 一律未动），只是界面上暂不暴露，后期需要用再添加。
+// ★★ 2026-10-10 重建：面板从「极简版（零输入控件）」**恢复为通用算力接入面板** ——
+//   委托方规格《通用 AI 算力 API 接入模块》要求：**开放式 / 可插拔**，**不锁定**算力服务商 /
+//   算力类型 / 部署方式；可配「服务名称标记 label / 自定义 Endpoint baseUrl / 自定义 API-Key /
+//   自定义请求头 headers / 自定义超时 timeoutMs」；**支持多套算力保存、快速切换**
+//   （列表 + 新增 / 编辑 / 删除 / 切换）；内置「测试连接」（可达 → 鉴权 → 返回体）。
+//
+// ★ HTTP 契约（server.mjs 的 /api/llm/*）：
+//   GET    /api/llm/services        → { ok, data:{ services:[脱敏…], active:'<id>' } }
+//   GET    /api/llm/services/:id    → 单套详情（编辑回显）
+//   POST   /api/llm/services        → 保存 / 更新一套（★ 配置体**只能**经它写入）
+//   DELETE /api/llm/services/:id    → 删除一套
+//   POST   /api/llm/services/active → { id } ⇒ 切换（全局实时生效）
+//   POST   /api/llm/validate|models|chat|invoke → ★ **只接受 service（选择器）**
 //
 // ★ 三条纪律（本项目铁律）：
 //   ① **后端异常不得搞崩前端**：所有请求走 llmReq()，它把「网络失败 / 非 JSON / 结构异常」
 //      统统兜成 `{ok:false,error}`（本项目既有坑：异常返回把前端搞崩）。
-//   ② **key 永不回显**：界面只显示「已配置 / 未配置」（只读诊断），没有 key 输入框。
+//   ② **key 永不回显**：界面只显示「已配置 / 未配置」（只读诊断）；key 输入框留空 = 不改。
 //   ③ 三步校验**逐步**点亮（可达 → 鉴权 → 返回体），失败给可操作中文提示。
 
 const LLM_STEP_ORDER = ['reachable', 'auth', 'shape'];
 const LLM_STEP_ICO = { pending: '○', running: '⟳', ok: '✓', fail: '✗', skip: '–' };
-const llmState = { current: 'workbuddy', cfg: null, busy: false };
+// ★★ 通用 AI 算力类型（规格：算力类型不限）。
+const LLM_TASKS = ['chat', 'image', 'audio', 'embedding', 'custom'];
+// 各类型的「试跑」输入框占位提示 + 一句说明（参数区随类型变）。
+const LLM_TASK_PLACEHOLDER = {
+  chat: '试一句：留空用默认示例句（最多 500 字）',
+  image: '图像 prompt（如：一只在星空下的猫）',
+  audio: '要合成的文字（如：你好，欢迎使用）',
+  embedding: '要向量化的文本（如：你好世界）',
+  custom: 'custom 请求体（JSON 或原样字符串；留空则用 {}）',
+};
+const LLM_TASK_HINT = {
+  chat: 'chat：走文本推理入口（模块 invoke("chat")，请求体与 chat() 逐字节相同）。',
+  image: 'image：走图像生成（OpenAI 兼容 /images/generations）；anthropic 适配器没有此接口 ⇒ 会明确报错，请用 openai-compatible 或 custom。',
+  audio: 'audio：走语音合成（OpenAI 兼容 /audio/speech，响应为音频字节流，结果以 base64 回传并可试听）。',
+  embedding: 'embedding：走向量计算（OpenAI 兼容 /embeddings，取 data[].embedding）。',
+  custom: 'custom：自定义出口 —— 用表单里的「请求路径 path / 取值路径 extract」，上面输入框的内容作请求体（JSON 或原样字符串）。',
+};
+// ★ 适配器类型（kind）的中文标签（列表展示用；★ 不锁定任何服务商，清单来自表单下拉）。
+const LLM_KIND_LABEL = {
+  'openai-compatible': 'OpenAI 兼容',
+  anthropic: 'Anthropic 兼容',
+  custom: '厂商私有接口',
+  'workbuddy-gateway': '本机智能体网关',
+};
+const llmState = { services: [], active: '', cfg: null, busy: false, models: [], editingId: null };
 
 function llmSleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 function llmSafeStr(o) { try { return JSON.stringify(o).slice(0, 200); } catch { return String(o); } }
+
+/** 当前选中的算力类型（缺省 chat）。 */
+function llmCurrentTask() {
+  const v = $('llmTask') ? $('llmTask').value : 'chat';
+  return LLM_TASKS.includes(v) ? v : 'chat';
+}
+
+/** 把「每行一条 名称: 值」的文本解析成请求头对象（# 开头 / 无冒号的行忽略）。 */
+function parseLlmHeaders(txt) {
+  const out = {};
+  for (const line of String(txt || '').split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s || s.startsWith('#')) continue;
+    const i = s.indexOf(':');
+    if (i < 0) continue;
+    const k = s.slice(0, i).trim();
+    const v = s.slice(i + 1).trim();
+    if (k) out[k] = v;
+  }
+  return out;
+}
+
+/** Endpoint 脱敏展示：隐去 URL 内嵌凭据与查询串里的密钥类参数（后端也会脱敏，这里是第二道）。 */
+function llmMaskUrl(u) {
+  const s = String(u || '');
+  if (!s) return '';
+  return s
+    .replace(/\/\/[^/@\s]+@/, '//•••@')
+    .replace(/([?&](?:key|api_?key|token|access_token|password)=)[^&\s]+/gi, '$1•••');
+}
 
 /** 统一请求：把一切异常兜成 {ok,data|error}，**绝不抛**。 */
 async function llmReq(path, opts) {
@@ -4525,33 +4586,353 @@ function setLlmHint(node, text, isErr) {
 // 免得旧响应盖掉 llmState.cfg（刷新后配置反而回退成旧值）。
 let loadLlmSeq = 0;
 
+/** 当前生效服务的展示名（找不到就退回 id）。 */
+function llmActiveLabel() {
+  const s = llmState.services.find((x) => x && x.id === llmState.active);
+  return (s && (s.label || s.id)) || llmState.active || '';
+}
+
+/** 刷新顶部「当前生效」胶囊（保留 llmCurrentPill 的角色）。 */
+function setLlmPill(activeId) {
+  const pill = $('llmCurrentPill');
+  if (!pill) return;
+  if (!activeId) {
+    pill.textContent = '当前未选择算力服务';
+    pill.className = 'llm-current-pill';
+    return;
+  }
+  // ★ 兼容既有观感：当前生效若是内置 workbuddy ⇒ 显示「当前默认：WorkBuddy」（.is-default）。
+  const isWb = activeId === 'workbuddy';
+  pill.textContent = isWb ? '当前默认：WorkBuddy' : `当前生效：${llmActiveLabel()}`;
+  pill.className = 'llm-current-pill ' + (isWb ? 'is-default' : 'is-switched');
+}
+
+/** 渲染「服务列表」（核心）：多套算力，每行 label / kind / baseUrl(脱敏) / 「当前生效」+ 切换 / 编辑 / 删除。
+ *  ★ 列表为空 ⇒ 给**空状态提示**（不假装有服务）。行内按钮走事件委托（见 bind()）。 */
+function renderLlmServiceList() {
+  const box = $('llmList');
+  if (!box) return;
+  box.textContent = '';
+  const list = Array.isArray(llmState.services) ? llmState.services : [];
+  if (!list.length) {
+    box.appendChild(el('div', 'llm-empty', '尚未配置任何算力服务，点「＋ 新增算力服务」开始。'));
+    return;
+  }
+  for (const s of list) {
+    if (!s || !s.id) continue;
+    const row = el('div', 'llm-item' + (s.id === llmState.active ? ' is-active' : ''));
+    row.dataset.id = s.id;
+    const main = el('div', 'llm-item-main');
+    main.appendChild(el('span', 'llm-item-label', s.label || s.id));
+    main.appendChild(el('span', 'llm-item-kind', LLM_KIND_LABEL[s.kind] || s.kind || '（未指定类型）'));
+    const url = llmMaskUrl(s.baseUrl);
+    main.appendChild(el('span', 'llm-item-url', url || '（未填 Endpoint）'));
+    if (s.id === llmState.active) main.appendChild(el('span', 'llm-item-active', '当前生效'));
+    row.appendChild(main);
+    const acts = el('div', 'llm-item-actions');
+    const mk = (act, text, title) => {
+      const b = el('button', 'btn ghost small', text);
+      b.type = 'button';
+      b.dataset.act = act;
+      b.title = title;
+      if (act === 'use' && s.id === llmState.active) b.disabled = true;
+      return b;
+    };
+    acts.appendChild(mk('use', '切换', '把这套设为当前生效（全局实时生效）'));
+    acts.appendChild(mk('edit', '编辑', '读这套的详情并填进下方表单'));
+    acts.appendChild(mk('del', '删除', '删除这套算力服务'));
+    row.appendChild(acts);
+    box.appendChild(row);
+  }
+}
+
 /**
- * 读当前**生效**配置（GET /api/llm/config）⇒ 刷新一行状态（当前默认）+ 只读诊断（口令是否就绪）。
- * ★ 异常由 llmReq() 兜成 `{ok:false,error}` ⇒ 这里只更新一句中文提示，**绝不抛、绝不白屏**。
+ * 读**服务清单**（GET /api/llm/services）⇒ 渲染列表 + 刷新「当前生效」胶囊 + 一句只读状态。
+ * ★ 异常由 llmReq() 兜成 `{ok:false,error}` ⇒ 这里只更新中文提示，**绝不抛、绝不白屏**。
+ * ★ 护栏：连点「刷新」可重叠，只让**最后一次**请求的结果上屏（旧响应不得覆盖新状态）。
  */
 async function loadLlm() {
   const seq = ++loadLlmSeq;
-  const r = await llmReq('/api/llm/config');
+  const r = await llmReq('/api/llm/services');
   if (seq !== loadLlmSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
   if (!r.ok) {
-    setLlmHint($('llmSaveHint'), '读配置失败：' + llmErrText(r.error)
+    llmState.cfg = null;
+    llmState.services = [];
+    llmState.active = '';
+    renderLlmServiceList();
+    setLlmPill('');
+    setLlmHint($('llmListHint'), '', false);
+    setLlmHint($('llmSaveHint'), '读服务清单失败：' + llmErrText(r.error)
       + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
     return;
   }
   const cfg = r.data || {};
   llmState.cfg = cfg;
-  llmState.current = cfg.profile || 'workbuddy';
-  // ★ 规格「当前优先配置 WorkBuddy」：一眼看出当前默认走哪个。
-  const pill = $('llmCurrentPill');
-  if (pill) {
-    const isDefault = llmState.current === 'workbuddy';
-    pill.textContent = isDefault ? '当前默认：WorkBuddy' : `当前：${cfg.label || llmState.current}`;
-    pill.className = 'llm-current-pill ' + (isDefault ? 'is-default' : 'is-switched');
-  }
-  // ★ 只读诊断：口令（运行时自动发现）是否已就绪 —— 界面**没有** key 输入框，这里只报状态。
-  const km = cfg.keyMask ? `（${cfg.keyMask}）` : '';
+  llmState.services = Array.isArray(cfg.services) ? cfg.services : [];
+  llmState.active = cfg.active || '';
+  renderLlmServiceList();
+  setLlmPill(llmState.active);
+  const n = llmState.services.length;
+  setLlmHint($('llmListHint'), n ? `共 ${n} 套` : '', false);
+  // ★ 这句**始终非空**（I 组就绪判据依赖它非空；也顺带说明当前生效哪套）。
   setLlmHint($('llmSaveHint'),
-    cfg.hasKey ? `运行时口令：已就绪${km}` : '运行时口令：未注入（测试连接会提示未配置）', !cfg.hasKey);
+    n ? `已加载 ${n} 套算力服务${llmState.active ? '，当前生效「' + llmActiveLabel() + '」' : '（尚未选择当前生效项）'}`
+      : '已加载 0 套算力服务（尚未配置）', false);
+}
+
+// ── 编辑表单：字段 ↔ 配置体 ───────────────────────────────────
+/** 把一套服务填进表单（★ 不回显 key；headers 用打码后的值）。 */
+function renderLlmForm(cfg) {
+  if (!cfg) return;
+  $('llmLabel').value = cfg.label || '';
+  if ($('llmKind')) $('llmKind').value = cfg.kind || 'openai-compatible';
+  if ($('llmTarget')) $('llmTarget').value = (cfg.target === 'agent') ? 'agent' : 'model';
+  $('llmBaseUrl').value = cfg.baseUrl || '';
+  $('llmModel').value = cfg.model || '';
+  $('llmTimeout').value = (cfg.timeoutMs !== undefined && cfg.timeoutMs !== null) ? String(cfg.timeoutMs) : '';
+  $('llmPath').value = cfg.path || '';
+  $('llmExtract').value = cfg.extract || '';
+  // 输入框只放**用户覆盖**的头（后端已把敏感值打码成 ••••••；留占位符 = 不改）
+  $('llmHeaders').value = Object.entries(cfg.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const eff = Array.isArray(cfg.effectiveHeaders) ? cfg.effectiveHeaders : [];
+  setLlmHint($('llmHeadersHint'),
+    eff.length
+      ? `每行一条「名称: 值」；留空该行 = 删除该头。当前生效头：${eff.join(', ')}`
+      : '每行一条「名称: 值」；留空该行 = 删除该头', false);
+
+  const st = $('llmKeyState');
+  if (st) {
+    st.textContent = cfg.hasKey ? '已配置' : '未配置';
+    st.className = 'llm-key-state ' + (cfg.hasKey ? 'ok' : 'missing');
+  }
+  const keyInp = $('llmKey');
+  if (keyInp) {
+    keyInp.value = '';
+    const km = cfg.keyMask ? `（已配置 ${cfg.keyMask}）` : '（已配置）';
+    keyInp.placeholder = cfg.hasKey ? `留空 = 不改${km}` : '留空 = 不设置';
+  }
+  renderLlmModelOptions(Array.isArray(cfg.models) ? cfg.models : [], '端点 / 配置');
+  applyLlmTargetUi(cfg);
+  syncLlmTaskUi();
+}
+
+/** 表单重置为「新增」态。 */
+function resetLlmForm() {
+  llmState.editingId = null;
+  if ($('llmFormTitle')) $('llmFormTitle').textContent = '新增算力服务';
+  $('llmLabel').value = '';
+  if ($('llmKind')) $('llmKind').value = 'openai-compatible';
+  if ($('llmTarget')) $('llmTarget').value = 'model';
+  $('llmBaseUrl').value = '';
+  $('llmModel').value = '';
+  $('llmTimeout').value = '';
+  $('llmPath').value = '';
+  $('llmExtract').value = '';
+  $('llmHeaders').value = '';
+  const keyInp = $('llmKey');
+  if (keyInp) { keyInp.value = ''; keyInp.placeholder = '留空 = 不设置'; }
+  const st = $('llmKeyState');
+  if (st) { st.textContent = '未配置'; st.className = 'llm-key-state missing'; }
+  llmState.models = [];
+  renderLlmModelOptions([], '端点 / 配置');
+  setLlmHint($('llmHeadersHint'), '每行一条「名称: 值」；留空该行 = 删除该头', false);
+  setLlmHint($('llmFormHint'), '', false);
+  syncLlmTaskUi();
+}
+
+/** 「＋ 新增算力服务」：清表单 + 显示表单（焦点到名称标记）。 */
+function addLlmService() {
+  resetLlmForm();
+  const form = $('llmForm');
+  if (form) form.hidden = false;
+  $('llmLabel').focus?.();
+}
+
+/** 表单 → 配置体（★ 只经 POST /api/llm/services 写入；includeKey=false 时不带 key）。 */
+function llmFormPayload(includeKey) {
+  const p = {
+    kind: $('llmKind') ? ($('llmKind').value || '') : '',
+    target: $('llmTarget') ? ($('llmTarget').value || 'model') : 'model',
+    label: $('llmLabel') ? $('llmLabel').value.trim() : '',
+    baseUrl: $('llmBaseUrl').value.trim(),
+    model: $('llmModel').value.trim(),
+    timeoutMs: $('llmTimeout').value.trim(),
+    path: $('llmPath').value.trim(),
+    extract: $('llmExtract').value.trim(),
+    headers: parseLlmHeaders($('llmHeaders').value),
+    // ★ 拉取到的候选模型清单随保存落盘 ⇒ 刷新后下拉仍在。
+    models: Array.isArray(llmState.models) ? llmState.models : [],
+  };
+  if (llmState.editingId) p.id = llmState.editingId;
+  if (includeKey) { const k = $('llmKey').value; if (k) p.apiKey = k; }
+  return p;
+}
+
+/** custom 适配器 或 custom 算力类型 才显示 path / extract（其余用不到，藏起来免得误导）。 */
+function syncLlmCustomRows() {
+  const box = $('llmCustomRows');
+  if (box) box.hidden = ($('llmKind').value !== 'custom' && llmCurrentTask() !== 'custom');
+}
+
+/** 算力类型联动：切换 task ⇒ 更新「试跑」占位提示 + 说明 + custom 行显隐。 */
+function syncLlmTaskUi() {
+  const t = llmCurrentTask();
+  const inp = $('llmTryText');
+  if (inp) inp.placeholder = LLM_TASK_PLACEHOLDER[t] || LLM_TASK_PLACEHOLDER.chat;
+  setLlmHint($('llmTaskHint'), LLM_TASK_HINT[t] || '', false);
+  syncLlmCustomRows();
+}
+
+/** 接入对象（target）联动：模型 API ⇒ 下发 model；智能体 API ⇒ 服务名称标记仅作本地备注。 */
+function applyLlmTargetUi(cfg, setValue = true) {
+  const c = cfg || {};
+  const sel = $('llmTarget');
+  const isAgent = (sel ? sel.value : (c.target || 'model')) === 'agent';
+  const mi = $('llmModel');
+  if (mi && setValue) {
+    mi.placeholder = isAgent ? '本地备注，可留空（不会用来指定智能体的底层模型）'
+      : '如 my-model-name（也可点「拉取清单」从端点选）';
+  }
+  setLlmHint($('llmModelHint'), isAgent
+    ? '智能体模式：服务名称标记仅作本地备注，请求时不下发 model。'
+    : '模型模式：发起请求时由模块携带 model 参数（即上面填的值）。', false);
+}
+
+/** ★ 多模型切换：把可用模型清单灌进「下拉选择」+ datalist（两者同源；★ 前端不写死任何模型名）。 */
+function renderLlmModelOptions(models, sourceLabel) {
+  const list = Array.isArray(models) ? models.filter(Boolean).map(String) : [];
+  llmState.models = list;                    // ★ 记下来 ⇒ 保存时一并落盘（下拉在刷新后仍在）
+  const dl = $('llmModelList');
+  if (dl) {
+    dl.textContent = '';
+    for (const m of list) { const o = document.createElement('option'); o.value = m; dl.appendChild(o); }
+  }
+  const sel = $('llmModelSelect');
+  if (!sel) return;
+  sel.textContent = '';
+  if (!list.length) { sel.hidden = true; return; }
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = `— 从 ${list.length} 个可用模型里选（${sourceLabel || '端点'}）—`;
+  sel.appendChild(ph);
+  for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); }
+  sel.hidden = false;
+  sel.value = '';
+}
+
+/** 保存 / 更新一套（★ 配置体**只能**经 POST /api/llm/services 写入）。 */
+async function saveLlmService() {
+  if (llmState.busy) return;
+  const label = $('llmLabel') ? $('llmLabel').value.trim() : '';
+  if (!label) { setLlmHint($('llmFormHint'), '请先填「服务名称标记 label」', true); return; }
+  llmState.busy = true;
+  $('btnLlmSave').disabled = true;
+  setLlmHint($('llmFormHint'), '保存中…', false);
+  const r = await llmReq('/api/llm/services', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(llmFormPayload(true)),
+  });
+  llmState.busy = false;
+  $('btnLlmSave').disabled = false;
+  if (!r.ok) {
+    setLlmHint($('llmFormHint'), '保存失败：' + llmErrText(r.error)
+      + (r.error && r.error.hint ? '（' + r.error.hint + '）' : ''), true);
+    toast('保存失败', true);
+    return;
+  }
+  toast('算力服务已保存');
+  llmState.editingId = null;
+  const form = $('llmForm');
+  if (form) form.hidden = true;
+  await loadLlm();
+}
+
+/** 编辑一套：先本地回显（列表里已有脱敏字段），再拉详情覆盖（GET /api/llm/services/:id）。 */
+async function editLlmService(id) {
+  const local = llmState.services.find((x) => x && x.id === id);
+  llmState.editingId = id;
+  const form = $('llmForm');
+  if (form) form.hidden = false;
+  if ($('llmFormTitle')) $('llmFormTitle').textContent = `编辑算力服务：${(local && local.label) || id}`;
+  setLlmHint($('llmFormHint'), '', false);
+  if (local) renderLlmForm(local);
+  const r = await llmReq('/api/llm/services/' + encodeURIComponent(id));
+  if (r.ok) {
+    const d = r.data || {};
+    renderLlmForm(d.service || d);
+  } else {
+    setLlmHint($('llmFormHint'), '读详情失败：' + llmErrText(r.error) + '（表单显示的是列表里的脱敏字段）', true);
+  }
+}
+
+/** 切换当前生效（POST /api/llm/services/active ⇒ 全局实时生效）。 */
+async function activateLlmService(id) {
+  if (llmState.busy) return;
+  llmState.busy = true;
+  const r = await llmReq('/api/llm/services/active', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  llmState.busy = false;
+  if (!r.ok) { toast('切换失败：' + llmErrText(r.error), true); return; }
+  toast('已切换当前算力服务');
+  await loadLlm();
+}
+
+/** 删除一套（DELETE /api/llm/services/:id）。 */
+async function deleteLlmService(id) {
+  if (llmState.busy) return;
+  const s = llmState.services.find((x) => x && x.id === id);
+  const name = (s && (s.label || s.id)) || id;
+  if (typeof window.confirm === 'function' && !window.confirm(`确定删除算力服务「${name}」？`)) return;
+  llmState.busy = true;
+  const r = await llmReq('/api/llm/services/' + encodeURIComponent(id), { method: 'DELETE' });
+  llmState.busy = false;
+  if (!r.ok) { toast('删除失败：' + llmErrText(r.error), true); return; }
+  if (llmState.editingId === id) { llmState.editingId = null; const f = $('llmForm'); if (f) f.hidden = true; }
+  toast('已删除');
+  await loadLlm();
+}
+
+/** 清掉某套已保存的 key（POST /api/llm/services + clearKey）。 */
+async function clearLlmKey() {
+  if (llmState.busy) return;
+  if (!llmState.editingId) { setLlmHint($('llmFormHint'), '请先在列表里选一套「编辑」后再清除密钥', true); return; }
+  llmState.busy = true;
+  const r = await llmReq('/api/llm/services', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: llmState.editingId, clearKey: true }),
+  });
+  llmState.busy = false;
+  if (!r.ok) { toast('清除密钥失败：' + llmErrText(r.error), true); return; }
+  toast('已清除已保存的密钥');
+  await editLlmService(llmState.editingId);
+}
+
+/** ★ 拉取当前 Endpoint 的可用模型清单（POST /api/llm/models，只传 service 选择器）。 */
+async function fetchLlmModels() {
+  if (llmState.busy) return;
+  if (!llmState.editingId) { setLlmHint($('llmModelHint'), '请先保存这套服务，再从端点拉取清单', true); return; }
+  llmState.busy = true;
+  const btn = $('btnLlmModels');
+  if (btn) btn.disabled = true;
+  setLlmHint($('llmModelHint'), '拉取中…（受配置的超时限制）', false);
+  const r = await llmReq('/api/llm/models', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ service: llmState.editingId }),
+  });
+  llmState.busy = false;
+  if (btn) btn.disabled = false;
+  if (!r.ok) {
+    setLlmHint($('llmModelHint'), '拉取失败：' + llmErrText(r.error), true);
+    toast('拉取模型失败', true);
+    return;
+  }
+  const d = r.data || {};
+  const models = Array.isArray(d.models) ? d.models : (Array.isArray(d) ? d : []);
+  renderLlmModelOptions(models, '端点');
+  applyLlmTargetUi(null, false);
+  toast(models.length ? `已拉取 ${models.length} 个模型` : '端点没有可用模型');
 }
 
 // ── 三步校验：逐步点亮 ───────────────────────────────────────
@@ -4590,27 +4971,36 @@ async function revealLlmSteps(data) {
   }
   const allOk = !!(data && data.ok === true);
   const hint = (data && data.hint) || '';
-  // ★ 顺手用后端 validate() 的 masked.keyMask 刷新只读诊断里的「口令已就绪」提示。
+  // ★ 顺手用后端 validate() 的 masked.keyMask 刷新「已配 key」提示（key 输入框为空时才刷，
+  //   免得把用户刚输入、还没保存的新 key 的掩码显示成「已保存的」）。
   const km = data && data.masked && data.masked.keyMask;
-  if (km) setLlmHint($('llmSaveHint'), `运行时口令：已就绪（${km}）`, false);
+  const keyInp = $('llmKey');
+  if (km && keyInp && keyInp.value === '') keyInp.placeholder = `留空 = 不改（已配置 ${km}）`;
   const h = $('llmStepHint');
   h.textContent = allOk ? '' : (hint || '校验未通过，请按上面的提示调整。');
   h.style.color = allOk ? '' : 'var(--warn)';
   toast(allOk ? '三步校验全部通过' : '校验未通过', !allOk);
 }
 
+/**
+ * 测试连接：对**当前选中 / 生效**的那套服务跑三步校验（可达 → 鉴权 → 返回体）。
+ * ★★ 铁律：调用类端点**只接受 service（选择器）** —— 这里**不传**任何配置体
+ *   （配置体只能经 POST /api/llm/services 写入）。新增的服务请先「保存」再测。
+ */
 async function validateLlm() {
   if (llmState.busy) return;
+  const service = llmState.editingId || llmState.active || '';
   llmState.busy = true;
   $('btnLlmValidate').disabled = true;
   $('llmSteps').hidden = false;
   $('llmStepHint').textContent = '';
+  setLlmHint($('llmValidateHint'),
+    service ? '正在对当前选中的算力服务跑三步校验…' : '未选择任何服务：将用后端默认配置跑三步校验…', false);
   for (const k of LLM_STEP_ORDER) setLlmStepState(k, 'running', '检测中…');
 
-  // ★ 极简版：不再有表单 ⇒ 后端用**默认 profile（workbuddy）**跑只读校验（GET /api/v1/health）。 ★ 2026-10-10 订正：本函数实际发的是**下一行**的 `POST /api/llm/validate`；`GET /api/v1/health` 是**后端** `validate()` 在 `workbuddy-gateway` 分支里对**本机智能体网关**发的只读探针（**网关侧**端点，非本服务端点、前端不直发）。
   const r = await llmReq('/api/llm/validate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify(service ? { service } : {}),
   });
   llmState.busy = false;
   $('btnLlmValidate').disabled = false;
@@ -4626,6 +5016,112 @@ async function validateLlm() {
     return;
   }
   await revealLlmSteps(r.data);
+}
+
+// ── 试跑（按「算力类型」）─────────────────────────────────────
+/** 按当前算力类型把「试跑」输入框的内容拼成模块 invoke() 的 params。 */
+function buildLlmTaskParams(task, raw) {
+  switch (task) {
+    case 'image': return { prompt: raw || '一只在星空下的猫（示例）' };
+    case 'audio': return { input: raw || '你好，这是一次语音合成试跑。' };
+    case 'embedding': return { input: raw || '你好世界' };
+    case 'custom': {
+      if (!raw) return { body: {} };
+      try { return { body: JSON.parse(raw) }; } catch { return { body: raw }; }   // 非 JSON ⇒ 原样字符串
+    }
+    case 'chat':
+    default: return { messages: [{ role: 'user', content: raw || '你好，请用一句话回复「pong」。' }] };
+  }
+}
+
+/**
+ * 试跑：按当前「算力类型」POST /api/llm/invoke（★ 只传 service 选择器 + task/params）。
+ * ★ 异常由 llmReq() 兜成 `{ok:false,error}` ⇒ 这里只渲染结果 / 错误，**绝不抛、绝不白屏**。
+ */
+async function tryLlmInvoke() {
+  if (llmState.busy) return;
+  const service = llmState.editingId || llmState.active || '';
+  if (!service) {
+    renderLlmTryOut({ ok: false, error: { kind: 'no-service', message: '请先保存并在列表里选中一套算力服务' } });
+    return;
+  }
+  llmState.busy = true;
+  $('btnLlmTry').disabled = true;
+  const out = $('llmTryOut');
+  out.textContent = '请求中…（受配置的超时限制）';
+
+  const task = llmCurrentTask();
+  const params = buildLlmTaskParams(task, $('llmTryText').value.trim());
+  const r = await llmReq('/api/llm/invoke', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ service, task, params }),
+  });
+  llmState.busy = false;
+  $('btnLlmTry').disabled = false;
+  renderLlmTryOut(r);
+}
+
+/** 结果 → 一段可读文本（按 task 的 result 形状）。 */
+function llmResultText(d) {
+  const t = d.task || llmCurrentTask();
+  const res = d.result || {};
+  switch (t) {
+    case 'image': {
+      const imgs = Array.isArray(res.images) ? res.images : [];
+      if (!imgs.length) return '(没有图像)';
+      const head = imgs.slice(0, 3).map((s, i) => `  ${i + 1}. ${String(s).slice(0, 120)}${String(s).length > 120 ? '…' : ''}`);
+      return `图像 ${imgs.length} 张：\n${head.join('\n')}${imgs.length > 3 ? `\n  …（共 ${imgs.length} 张）` : ''}`;
+    }
+    case 'audio': {
+      const b64 = res.audio || '';
+      return `音频已返回（base64 ${b64.length} 字符${res.mime ? '，' + res.mime : ''}）`;
+    }
+    case 'embedding': {
+      const vs = Array.isArray(res.vectors) ? res.vectors : [];
+      if (!vs.length) return '(没有向量)';
+      const dim = Array.isArray(vs[0]) ? vs[0].length : 0;
+      const head = Array.isArray(vs[0]) ? vs[0].slice(0, 8).map((x) => (typeof x === 'number' ? x.toFixed(4) : x)).join(', ') : String(vs[0]);
+      return `向量 ${vs.length} 条，维度 ${dim}：\n  [${head}${dim > 8 ? ', …' : ''}]`;
+    }
+    case 'custom': return typeof res.value === 'string' ? res.value : llmSafeStr(res.value);
+    case 'chat':
+    default: return (typeof res.text === 'string') ? res.text : '(空回复)';
+  }
+}
+
+/** 把试跑结果渲染到 #llmTryOut（成功贴文本 / 元信息，失败贴错误 + 可操作提示）。 */
+function renderLlmTryOut(r) {
+  const box = $('llmTryOut');
+  if (!box) return;
+  box.textContent = '';
+  if (!r.ok) {
+    const d = el('div', 'llm-out-err', '请求失败：' + llmErrText(r.error));
+    if (r.error && r.error.hint) d.appendChild(el('span', 'llm-out-hint', r.error.hint));
+    box.appendChild(d);
+    return;
+  }
+  const d = r.data || {};
+  if (d.ok === true) {
+    box.appendChild(el('div', 'llm-out-text', llmResultText(d) || '(空结果)'));
+    // ★ audio：附一个可试听的播放器（base64 data URL；空串则不建）
+    if (d.task === 'audio' && d.result && d.result.audio) {
+      const a = document.createElement('audio');
+      a.controls = true;
+      a.src = `data:${(d.result.mime || 'audio/mpeg')};base64,${d.result.audio}`;
+      box.appendChild(a);
+    }
+    const meta = [];
+    if (d.task) meta.push('task=' + d.task);
+    if (d.meta && d.meta.model) meta.push('model=' + d.meta.model);
+    if (d.meta && d.meta.httpStatus) meta.push('HTTP ' + d.meta.httpStatus);
+    if (d.meta && d.meta.ms !== undefined) meta.push(d.meta.ms + 'ms');
+    if (meta.length) box.appendChild(el('div', 'llm-out-meta', meta.join('  ')));
+  } else {
+    const e = (d && d.error) || {};
+    const err = el('div', 'llm-out-err', '调用失败：' + `[${e.kind || 'unknown'}] ${e.message || ''}`);
+    if (e.detail) err.appendChild(el('span', 'llm-out-hint', String(e.detail).slice(0, 300)));
+    box.appendChild(err);
+  }
 }
 
 /** ★ 界面入口：顶栏「LLM 配置」→ 滚到面板卡片并高亮一下（纯前端定位，不发请求）。 */
@@ -4716,6 +5212,34 @@ function bind() {
   if ($('btnLlmRefresh')) $('btnLlmRefresh').addEventListener('click', loadLlm);
   if ($('btnLlmValidate')) $('btnLlmValidate').addEventListener('click', validateLlm);
   if ($('btnLlmStandalone')) $('btnLlmStandalone').addEventListener('click', toggleLlmStandalone);
+  // 通用算力接入面板：新增 / 保存 / 取消 / 清密钥 / 拉清单 / 试跑 + 列表行内「切换·编辑·删除」（事件委托）
+  if ($('btnLlmAdd')) $('btnLlmAdd').addEventListener('click', addLlmService);
+  if ($('btnLlmSave')) $('btnLlmSave').addEventListener('click', saveLlmService);
+  if ($('btnLlmCancel')) $('btnLlmCancel').addEventListener('click', () => {
+    const f = $('llmForm'); if (f) f.hidden = true; llmState.editingId = null;
+  });
+  if ($('btnLlmClearKey')) $('btnLlmClearKey').addEventListener('click', clearLlmKey);
+  if ($('btnLlmModels')) $('btnLlmModels').addEventListener('click', fetchLlmModels);
+  if ($('btnLlmTry')) $('btnLlmTry').addEventListener('click', tryLlmInvoke);
+  // 表单联动：kind / task ⇒ custom 行显隐；target ⇒ model 语义；model 下拉 ⇒ 填入 model 输入框
+  if ($('llmKind')) $('llmKind').addEventListener('change', syncLlmCustomRows);
+  if ($('llmTask')) $('llmTask').addEventListener('change', syncLlmTaskUi);
+  if ($('llmTarget')) $('llmTarget').addEventListener('change', () => applyLlmTargetUi(null, false));
+  if ($('llmModelSelect')) $('llmModelSelect').addEventListener('change', (e) => {
+    if (e.target.value) $('llmModel').value = e.target.value;
+  });
+  // 列表行内按钮（事件委托，避免每次渲染重绑）
+  if ($('llmList')) $('llmList').addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('button[data-act]') : null;
+    if (!btn || btn.disabled) return;
+    const row = btn.closest('.llm-item');
+    const id = row && row.dataset ? row.dataset.id : '';
+    if (!id) return;
+    const act = btn.dataset.act;
+    if (act === 'use') activateLlmService(id);
+    else if (act === 'edit') editLlmService(id);
+    else if (act === 'del') deleteLlmService(id);
+  });
   window.addEventListener('popstate', applyLlmStandaloneFromUrl);
   // 声音（配音音色）：刷新清单 / 语速输入（改了要立刻反映到命令预览上）
   if ($('btnRefreshVoices')) $('btnRefreshVoices').addEventListener('click', () => loadVoices(false));

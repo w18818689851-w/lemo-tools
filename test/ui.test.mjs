@@ -5,7 +5,7 @@
  * 为什么单独一个入口：`test/README.md` 里如实写着「Web UI 交互：一条都没测」——
  * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  *   ★ 2026-10-08 复核：服务端侧现为 smoke **41** + setup **12** = **53** 条（「42 = 30 + 12」是写本文件时的快照）；
- *     本文件（UI 层）现为 **65** 条（★ 2026-10-09：I 组加 I6 后 64 → 65）。
+ *     本文件（UI 层）现为 **80** 条（★ 2026-10-10：J 组 +6 / K 组 +4 后 75；★ P4 把 I 组 I2/I3/I4 换锚点 + 新增 I7~I11 ⇒ 80）。
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
  * 批次：A/B/C/D（前四批）+ E（第五批：文案出片面板）+ F（第六批：补三处 UI 盲区）
@@ -24,16 +24,16 @@
  *   任务列表的行内「取消」（用户主动取消 ≠ 失败，文案必须中性）、启动表单的「常用组合」预设与「复制」。
  *   ★ 重活一律用**页面内 patch window.fetch** 拦下短路（真 TTS 合成 / 真导入 / 真出片绝不触发）；
  *     真落盘的工单（BRIEF_IDS）与真入队的任务（JOB_IDS）在 finally 里清干净。
- *   I 补的是 **AI 算力配置面板（极简版）**（`/api/llm/*`）—— 此前在 UI 层**零覆盖**（探针只在 `D:/lemo-tmp/`，
- *   不进仓）。★ 2026-10-10 重写：面板已**大幅简化**（只留 WorkBuddy 链接、界面**零输入控件**），
- *   本组改为守「极简」本身：① 顶栏「LLM 配置」入口可达（点了给卡片加 .flash 并滚进视口）；
- *   ② 「当前默认：WorkBuddy」胶囊默认态（含 WorkBuddy + `.is-default`）；③ ★★ `#llmCard` 内
- *   `input` / `select` / `textarea` 数量**全为 0**（防将来被加回控件）；④ `#llmIntro` 明说端点 / 口令
- *   **运行时自动获取、无需手填**；⑤ 骨架不白屏 + `#llmSteps` 恰含 3 步；⑥ **测试连接**：页面内 patch
- *   `window.fetch` 只拦 `POST /api/llm/validate`（桩），点 `#btnLlmValidate` ⇒ 三步「可达 / 鉴权 / 返回体」
- *   **逐步**点亮 + 未捕获异常新增 **0**（★ 绝不指向真实网关）。
- *   ★★ 落盘隔离（纵深防御）：I 组另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向临时树）；新面板已**无写盘
- *     动作**（没有保存 / 试跑按钮）⇒ 不再需要「真实 `D:/lemo-films/_llm-api.json` 逐字节不变」那条红线。
+ *   I 补的是 **通用 AI 算力接入面板**（`/api/llm/*`）—— 此前在 UI 层**零覆盖**（探针只在 `D:/lemo-tmp/`，
+ *   不进仓）。★ 2026-10-10（P4）重写：委托方《通用 AI 算力 API 接入模块》规格要求**开放式 / 可插拔**、
+ *   **不锁定**服务商，面板可配 名称标记 / Endpoint / API-Key / 请求头 / 超时 并**多套保存 + 快速切换**
+ *   ⇒ 本组随之**换锚点**（★ 面板已从「极简零控件」重建为完整配置面板）：① 顶栏「LLM 配置」入口可达（加 .flash 并滚进视口）；
+ *   ② 「当前生效」胶囊三分支（出厂默认 WorkBuddy / 无服务「当前未选择」/ 有服务显 label）；③ 面板**确有**
+ *   配置控件（label/kind/target/baseUrl/model/timeout/key/headers/path/extract）+ 空状态提示；④ 说明文案
+ *   含「可插拔 / 不锁定 / 多套 / 快速切换」；⑤ 骨架不白屏 + `#llmSteps` 恰含 3 步；⑥ **测试连接**：桩
+ *   `POST /api/llm/validate` ⇒ 三步**逐步**点亮 + 未捕获异常新增 **0**（★ 且请求体**只含 service** 选择器）；
+ *   ★★ 新增 I7~I11：多套列表渲染 / 新增一套（断言 POST 请求体）/ 切换（断言 body.id）/ 删除（断言 DELETE）/ 空状态，
+ *   全部用页面内 `window.fetch` 桩驱动，并带**反空转**断言（点前 0 条、点后 1 条）。
  *
  * 用法：
  *   node test/ui.test.mjs                 全部用例
@@ -2909,21 +2909,29 @@ async function main() {
       notes.push(`H5 连派 3 次 change → 按钮仍为 ${w.btns.length} 个（未堆叠）`);
     });
 
-    // ══ I. AI 算力配置面板（极简版：只留 WorkBuddy 链接）══════════════
-    // ★ 2026-10-10 重写：委托方要求把「AI 算力配置」面板**大幅简化** —— 只留 WorkBuddy 一条链接，
-    //   界面**零输入控件**（profile / kind / Endpoint / Key / model / 超时 / 自定义头 / 试跑…全删）。
-    //   ⇒ 本组断言随之改为**守「极简」这件事本身**：入口可达 + 状态胶囊 + **零输入控件** + 运行时说明
-    //     + 骨架不白屏 + 三步「测试连接」。★ 不再测已被删除的旧控件（那是上一版面板的事）。
-    //   ★ 后端 /api/llm/*（server.mjs）与 lib/llm-api.mjs **一字未动** ⇒ 这里只测 UI 层。
-    //   ★ 只用 CDP 真点击 + 页面内 patch fetch（把 POST /api/llm/validate 换成桩），**不打真实网关**。
-    const I_NAMES = ['I1 入口', 'I2 状态胶囊', 'I3 极简零控件', 'I4 运行时说明', 'I5 骨架不白屏', 'I6 测试连接'];
+    // ══ I. 通用 AI 算力接入面板（开放式 / 可插拔 / 多套保存 + 快速切换）══════════
+    // ★★ 2026-10-10（P4）重写：委托方下发《通用 AI 算力 API 接入模块》规格 —— **开放式、可插拔、
+    //   **不锁定**任何服务商 / 类型 / 部署方式；面板要能配 服务名称标记 label / Endpoint baseUrl /
+    //   API-Key / 自定义请求头 headers / 超时 timeoutMs，并**支持多套算力保存与快速切换**。
+    //   ⇒ 面板已从上一轮的「极简零控件」**重建**为完整配置面板（P3 交付）⇒ 本组**换锚点**（★ 只换锚点，
+    //     不削弱断言强度）：I2 改验「当前生效」胶囊的三分支；I3 **反转**为「面板确有配置控件」+ 空状态；
+    //     I4 改验新说明 / 空状态文案；★★ 新增 I7~I11 把「多套列表 / 新增 / 切换 / 删除 / 空状态」钉住。
+    //   ★ HTTP 契约（P2 已落地）：`GET|POST /api/llm/services`、`GET|DELETE /api/llm/services/:id`、
+    //     `POST /api/llm/services/active`、`POST /api/llm/validate|models|chat|invoke`。
+    //     ★★ 铁律：**配置体只能经 `POST /api/llm/services` 写入**；**调用类端点只接受 `service` 选择器**。
+    //   ★ 手法：CDP 真点击 + 页面内 patch `window.fetch`（只拦 `/api/llm/`，其余照走真后端）——
+    //     桩把每次请求记进 `window.__llmReq` ⇒ 每条用例都能做**反空转**（点前 0 条 / 点后 1 条）。
+    //   ★ 落盘隔离（纵深防御）：I 组仍另起一个**专用测试服务**（`LEMO_FILM_DIR` 指向仓外临时树）——
+    //     新面板的写路径（保存 / 删除 / 切换）在用例里**全被桩拦下**，不落任何真实覆盖文件。
+    const I_NAMES = ['I1 入口', 'I2 状态胶囊', 'I3 配置控件', 'I4 说明与空状态', 'I5 骨架不白屏', 'I6 测试连接',
+      'I7 多套列表渲染', 'I8 新增一套', 'I9 切换', 'I10 删除', 'I11 空状态'];
     const iWillRun = !OPT.filter || I_NAMES.some((n) => n.includes(OPT.filter));
     if (iWillRun) {
       log('');
-      log(C.b('  I. AI 算力配置面板（极简版 /api/llm/*）'));
+      log(C.b('  I. 通用 AI 算力接入面板（/api/llm/*，多套保存 + 快速切换）'));
 
       // ★ 仍另起一个**专用测试服务**并把 LEMO_FILM_DIR 隔离到临时树（纵深防御）：
-      //   新面板已**没有写盘动作**（没有保存 / 试跑按钮），但读配置 / 校验仍走真实后端，隔离住更稳。
+      //   写路径（保存 / 删除 / 切换）在用例里被 fetch 桩拦下，但**读**服务清单仍走真实后端 ⇒ 隔离住更稳。
       const llmFilmDir = path.join(CFG.tmpDir, `b4-ui-llm-${process.pid}-${Date.now().toString(36)}`);
       fs.mkdirSync(llmFilmDir, { recursive: true });
       TMP_ROOTS.add(llmFilmDir);                       // 跑完随 cleanupTmpDirs() 递归删掉
@@ -2932,8 +2940,8 @@ async function main() {
       const llmBase = `http://127.0.0.1:${llmServer.port}`;
       log(C.dim(`  LLM 测试服务 → ${llmBase}（覆盖文件隔离到 ${llmFilmDir}）`));
 
-      // ★ 新面板的就绪条件：卡片在 + 「当前默认」胶囊**有文本** + 只读诊断 `#llmSaveHint` **有文本**
-      //   （后者由 loadLlm() 的 GET /api/llm/config 回来后才填 ⇒ 它非空说明初始加载已结束，不是静态 HTML）。
+      // ★ 就绪条件：卡片在 + 「当前生效」胶囊**有文本** + 只读诊断 `#llmSaveHint` **有文本**
+      //   （后者由 loadLlm() 的 GET /api/llm/services 回来后才填 ⇒ 它非空说明初始加载已结束，不是静态 HTML）。
       await cdp.goto(llmBase + '/', 4000);
       const iReady = `!!document.getElementById('llmCard')
         && !!document.getElementById('llmCurrentPill')
@@ -2941,6 +2949,76 @@ async function main() {
         && !!document.getElementById('llmSaveHint')
         && document.getElementById('llmSaveHint').textContent.trim().length > 0`;
       await waitFor(cdp.evalJs, iReady, { timeoutMs: 30000 });
+
+      // ── 桩夹具 + 安装器（I7~I11 与 I2/I3/I4 的空状态分支共用）────────────────
+      // 2 套算力服务（脱敏形状照 `GET /api/llm/services` 的契约：绝不含 key 明文，只给 hasKey / keyMask）。
+      const LLM_FIXTURE = [
+        { id: 'svc-a', label: '我的本地 vLLM', kind: 'openai-compatible', target: 'model',
+          baseUrl: 'http://127.0.0.1:8000/v1', model: 'qwen2.5-7b', timeoutMs: 30000,
+          hasKey: false, keyMask: '', headers: {}, isDefault: false, active: false },
+        { id: 'svc-b', label: '某云文本推理', kind: 'anthropic', target: 'model',
+          baseUrl: 'https://api.example.com/v1', model: 'claude-x', timeoutMs: 60000,
+          hasKey: true, keyMask: 'sk-…', headers: {}, isDefault: false, active: true },
+      ];
+      // ★★ 把 `/api/llm/*` 换成**有状态的页面内桩**（保存 / 切换 / 删除都会真的改 S.services / S.active
+      //   ⇒ 后续 GET 能反映出来，用例可以断言**后置状态**，不只是「请求发出去了」）。
+      //   ★ 反空转支点：每次请求都记进 `window.__llmReq`（安装时清零）。
+      const installLlmStub = async (cfg) => cdp.evalJs(`(() => {
+        if (!window.__origFetch) window.__origFetch = window.fetch;
+        const S = ${JSON.stringify(cfg)};
+        window.__llmReq = [];
+        const json = (payload, status) => new Response(JSON.stringify(payload), { status: status || 200, headers: { 'Content-Type': 'application/json' } });
+        window.fetch = async (input, opts) => {
+          const url = String(input && input.url ? input.url : input);
+          const method = String((opts && opts.method) || (input && input.method) || 'GET').toUpperCase();
+          if (!url.includes('/api/llm/')) return window.__origFetch(input, opts);
+          const body = (opts && typeof opts.body === 'string') ? opts.body : null;
+          window.__llmReq.push({ url, method, body });
+          const after = url.split('/api/llm/services')[1];
+          if (after !== undefined) {
+            const rest = (after || '').split('?')[0];
+            if (rest === '' || rest === '/') {
+              if (method === 'GET') return json({ ok: true, data: { services: S.services || [], active: S.active || '' } });
+              if (method === 'POST') {
+                const p = JSON.parse(body || '{}') || {};
+                const id = p.id || ('svc-new-' + ((S.services || []).length + 1));
+                const svc = Object.assign({}, p, { id, hasKey: !!p.apiKey });
+                S.services = (S.services || []).filter((x) => x.id !== id).concat([svc]);
+                if (!S.active) S.active = id;
+                return json({ ok: true, data: { service: svc, active: S.active } });
+              }
+            }
+            if (rest === '/active' && method === 'POST') {
+              const id = (JSON.parse(body || '{}') || {}).id || '';
+              S.active = id;
+              return json({ ok: true, data: { active: id } });
+            }
+            if (rest.startsWith('/') && rest !== '/active') {
+              const id = decodeURIComponent(rest.slice(1));
+              if (method === 'DELETE') {
+                S.services = (S.services || []).filter((x) => x.id !== id);
+                if (S.active === id) S.active = (S.services[0] && S.services[0].id) || '';
+                return json({ ok: true, data: { deleted: id, active: S.active } });
+              }
+              if (method === 'GET') {
+                const svc = (S.services || []).find((x) => x.id === id);
+                return svc ? json({ ok: true, data: svc }) : json({ ok: false, error: { kind: 'config', message: '找不到算力服务' } }, 404);
+              }
+            }
+          }
+          return json({ ok: true, data: {} });
+        };
+        return true;
+      })()`, { awaitPromise: true });
+      // 点「刷新」（#btnLlmRefresh ⇒ loadLlm()）—— 用**用户真实路径**让桩生效，而不是直调内部函数。
+      const llmRefresh = async () => { await cdp.evalJs(`document.getElementById('btnLlmRefresh').click(); true`); };
+      const llmRows = () => cdp.evalJs(`[...document.querySelectorAll('#llmList .llm-item')].map((r) => r.dataset.id)`);
+      const llmReqLast = (pred) => cdp.evalJs(`(() => { const rs = (window.__llmReq || []).filter((r) => ${pred});
+        return rs.length ? rs[rs.length - 1] : null; })()`);
+      const llmReqCount = (pred) => cdp.evalJs(`(window.__llmReq || []).filter((r) => ${pred}).length`);
+      const postServices = `r.method === 'POST' && r.url.split('?')[0] === '/api/llm/services'`;
+      const postActive = `r.method === 'POST' && r.url.split('?')[0] === '/api/llm/services/active'`;
+      const anyDelete = `r.method === 'DELETE'`;
 
       await runCase('I1 顶栏「LLM 配置」入口可达：按钮在、点了给卡片加高亮并滚进视口', async () => {
         need(await cdp.evalJs(`!!document.getElementById('btnGotoLlm')`), '顶栏没有「LLM 配置」入口按钮 #btnGotoLlm');
@@ -2961,41 +3039,101 @@ async function main() {
         notes.push(`I1 顶栏入口可达：#llmCard 加 .flash；top ${Math.round(beforeTop)} → ${Math.round(afterTop)}`);
       });
 
-      await runCase('I2 「当前默认：WorkBuddy」胶囊：默认态文案含 WorkBuddy 且带 .is-default', async () => {
-        // 新面板没有 profile 下拉 ⇒ 不再有「切到别的 profile」分支（那需要被删掉的下拉）。
-        // 这里只钉住默认态：一进面板就该看到「当前默认：WorkBuddy」+ .is-default。
-        const pill = await cdp.evalJs(`(() => { const n = document.getElementById('llmCurrentPill');
-          return n ? { text: n.textContent, cls: n.className } : null; })()`);
-        need(pill, '面板里没有 #llmCurrentPill（「当前默认」胶囊）');
-        need(/WorkBuddy/.test(pill.text), `默认态胶囊文案是「${pill.text}」，期望含「WorkBuddy」`);
-        need(/当前默认/.test(pill.text), `默认态胶囊文案是「${pill.text}」，期望含「当前默认」`);
-        need(/is-default/.test(pill.cls), `默认态胶囊没有 .is-default 类：${pill.cls}`);
-        notes.push(`I2 胶囊默认态：「${pill.text}」（class=${pill.cls}）`);
+      await runCase('I2 「当前生效服务」胶囊三分支：出厂默认显 WorkBuddy / 无服务显「当前未选择」/ 有服务显该套 label', async () => {
+        // ★ 换锚点（原：只验「当前默认：WorkBuddy」+ .is-default）。新语义下胶囊要说清**当前生效哪一套**：
+        //   ① 出厂默认（隔离落盘根里真实存在的内置 workbuddy）⇒「当前默认：WorkBuddy」+ .is-default；
+        //   ② 一套都没有 ⇒「当前未选择算力服务」（且不带任何状态类）；
+        //   ③ 有服务 ⇒ 显示**该套的 label**（不是 id、不是 WorkBuddy）+ .is-switched。
+        const pillOf = () => cdp.evalJs(`(() => { const n = document.getElementById('llmCurrentPill');
+          return n ? { text: n.textContent.trim(), cls: n.className } : null; })()`);
+        const pill0 = await pillOf();
+        need(pill0, '面板里没有 #llmCurrentPill（「当前生效」胶囊）');
+        need(/当前默认：WorkBuddy/.test(pill0.text), `出厂默认态胶囊文案是「${pill0.text}」，期望含「当前默认：WorkBuddy」`);
+        need(/is-default/.test(pill0.cls), `出厂默认态胶囊没有 .is-default 类：${pill0.cls}`);
+
+        // ② 桩：一套都没有 ⇒ 胶囊必须**如实**说「当前未选择」（不能留着上一态的文字）
+        await installLlmStub({ services: [], active: '' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.getElementById('llmCurrentPill').textContent.trim() !== ${JSON.stringify(pill0.text)}`,
+          { timeoutMs: 8000 });
+        const pillEmpty = await pillOf();
+        need(/当前未选择/.test(pillEmpty.text), `无服务时胶囊文案是「${pillEmpty.text}」，期望含「当前未选择」`);
+        need(!/is-default|is-switched/.test(pillEmpty.cls), `无服务时胶囊不该带 is-default / is-switched：${pillEmpty.cls}`);
+
+        // ③ 桩：2 套、当前生效 = svc-b ⇒ 胶囊显示 svc-b 的 **label**
+        await installLlmStub({ services: LLM_FIXTURE, active: 'svc-b' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.getElementById('llmCurrentPill').textContent.includes('某云文本推理')`,
+          { timeoutMs: 8000 });
+        const pill2 = await pillOf();
+        need(/当前生效/.test(pill2.text), `有服务时胶囊文案是「${pill2.text}」，期望含「当前生效」`);
+        need(pill2.text.includes('某云文本推理'), `胶囊应显示当前生效那套的 label：${pill2.text}`);
+        need(!/WorkBuddy/.test(pill2.text), `当前生效不是 workbuddy 时不该出现 WorkBuddy：${pill2.text}`);
+        need(/is-switched/.test(pill2.cls), `切到用户自建服务时胶囊应带 .is-switched：${pill2.cls}`);
+        notes.push(`I2 胶囊三分支：出厂默认「${pill0.text}」→ 无服务「${pillEmpty.text}」→ 2 套生效 svc-b「${pill2.text}」`);
       });
 
-      await runCase('I3 ★ 极简本身： #llmCard 里 input/select/textarea 数量 === 0（防将来被加回控件）', async () => {
-        // ★★ 本批的**核心约束**：面板只留 WorkBuddy 链接，**一个输入控件都不许有**。
-        //   这条断言就是「极简」的机器可核判据 —— 将来谁把 profile/Endpoint/Key 等控件加回来，它必红。
+      await runCase('I3 ★ 面板**确有**配置控件（label/kind/target/Endpoint/model/超时/Key/请求头/path/extract）+ 空状态提示', async () => {
+        // ★★ 这条是**反转**（原：`#llmCard` 内 input/select/textarea 全为 0）—— 面板已从「极简零控件」
+        //   重建为**完整配置面板**：规格要求的每一项（名称标记 / Endpoint / API-Key / 请求头 / 超时）
+        //   都必须有可输入的控件，否则「开放式可插拔」就是空话。
         const c = await cdp.evalJs(`(() => {
           const card = document.getElementById('llmCard');
           if (!card) return null;
-          const q = (s) => card.querySelectorAll(s).length;
-          return { input: q('input'), select: q('select'), textarea: q('textarea') };
+          const ids = ['llmLabel', 'llmKind', 'llmTarget', 'llmBaseUrl', 'llmModel', 'llmTimeout',
+            'llmKey', 'llmHeaders', 'llmPath', 'llmExtract'];
+          const controls = {};
+          for (const id of ids) { const n = document.getElementById(id);
+            controls[id] = n ? { tag: n.tagName, inCard: card.contains(n) } : null; }
+          return { counts: { input: card.querySelectorAll('input').length, select: card.querySelectorAll('select').length,
+                             textarea: card.querySelectorAll('textarea').length },
+                   controls,
+                   hasForm: !!document.getElementById('llmForm'), hasSave: !!document.getElementById('btnLlmSave'),
+                   hasAdd: !!document.getElementById('btnLlmAdd') };
         })()`);
         need(c, '面板里没有 #llmCard');
-        need(c.input === 0, `#llmCard 里有 ${c.input} 个 <input>（极简版应恰好 0 个）`);
-        need(c.select === 0, `#llmCard 里有 ${c.select} 个 <select>（极简版应恰好 0 个）`);
-        need(c.textarea === 0, `#llmCard 里有 ${c.textarea} 个 <textarea>（极简版应恰好 0 个）`);
-        notes.push(`I3 极简： #llmCard 内 input=${c.input} / select=${c.select} / textarea=${c.textarea}（全部为 0）`);
+        const want = [['llmLabel', 'INPUT'], ['llmKind', 'SELECT'], ['llmTarget', 'SELECT'], ['llmBaseUrl', 'INPUT'],
+          ['llmModel', 'INPUT'], ['llmTimeout', 'INPUT'], ['llmKey', 'INPUT'], ['llmHeaders', 'TEXTAREA'],
+          ['llmPath', 'INPUT'], ['llmExtract', 'INPUT']];
+        for (const [id, tag] of want) {
+          const v = c.controls[id];
+          need(v, `面板里没有配置控件 #${id}（重建后的面板必须能配规格里那一项）`);
+          need(v.inCard, `#${id} 不在 #llmCard 里`);
+          need(v.tag === tag, `#${id} 是 <${v.tag}>，期望 <${tag}>`);
+        }
+        need(c.counts.input >= 5 && c.counts.select >= 2 && c.counts.textarea >= 1,
+          `#llmCard 内控件太少：input=${c.counts.input} / select=${c.counts.select} / textarea=${c.counts.textarea}`);
+        need(c.hasForm && c.hasSave && c.hasAdd, `面板骨架不全：form=${c.hasForm} save=${c.hasSave} add=${c.hasAdd}`);
+
+        // ★ 保留「空状态」这一条：桩一套服务都没有 ⇒ 列表必须给**空状态提示**，且**不假装有行**。
+        await installLlmStub({ services: [], active: '' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `!!document.querySelector('#llmList .llm-empty')`, { timeoutMs: 8000 });
+        const es = await cdp.evalJs(`(() => { const e = document.querySelector('#llmList .llm-empty');
+          return { text: e ? e.textContent.trim() : '', rows: document.querySelectorAll('#llmList .llm-item').length }; })()`);
+        need(es.text.length > 0, '#llmList 的空状态提示是空的');
+        need(/新增算力服务/.test(es.text), `空状态提示「${es.text}」应告诉用户去哪加（含「新增算力服务」）`);
+        need(es.rows === 0, `一套服务都没有时列表却有 ${es.rows} 行`);
+        notes.push(`I3 配置控件齐备：input=${c.counts.input} / select=${c.counts.select} / textarea=${c.counts.textarea}；空状态「${es.text}」（0 行）`);
       });
 
-      await runCase('I4 运行时说明： #llmIntro 明说端点与口令**自动取自运行时**、无需手工填写', async () => {
+      await runCase('I4 面板说明与空状态文案：明说「可插拔 / 不锁定 / 多套 / 快速切换」，且无 markdown 星号', async () => {
+        // ★ 换锚点（原：`#llmIntro` 含「自动取自运行时 / 无需手工填写」——那是**极简版**的说法）。
+        //   新面板的说明要讲清**开放式 / 可插拔 / 不锁定 / 多套 / 快速切换**（规格四要素）。
         const t = await cdp.evalJs(`(document.getElementById('llmIntro') || {}).textContent || ''`);
-        need(/自动取自运行时/.test(t), `#llmIntro 文案「${t}」应含「自动取自运行时」`);
-        need(/无需手工填写/.test(t), `#llmIntro 文案「${t}」应含「无需手工填写」`);
+        for (const k of ['可插拔', '不锁定', '多套', '快速切换']) {
+          need(t.includes(k), `#llmIntro 文案「${t.slice(0, 60)}…」应含「${k}」`);
+        }
         // ★ 判据⑧ 同口径：用户可见文案里不许出现 markdown 星号。
         need(!/\*\*/.test(t), `#llmIntro 含 markdown 星号（用户可见文案不许有）：${t}`);
-        notes.push(`I4 说明： #llmIntro「${t.slice(0, 50)}…」（含「自动取自运行时 / 无需手工填写」）`);
+        // ★ 空状态文案（同一批用户可见文案）也要说人话、也不许有星号。
+        await installLlmStub({ services: [], active: '' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `!!document.querySelector('#llmList .llm-empty')`, { timeoutMs: 8000 });
+        const es = await cdp.evalJs(`(document.querySelector('#llmList .llm-empty') || {}).textContent || ''`);
+        need(es.trim().length > 0, '#llmList 空状态文案为空');
+        need(!/\*\*/.test(es), `空状态文案含 markdown 星号：${es}`);
+        notes.push(`I4 说明： #llmIntro「${t.slice(0, 40)}…」（含 可插拔/不锁定/多套/快速切换）；空状态「${es.trim()}」`);
       });
 
       await runCase('I5 骨架不白屏： #llmCard 有内容、 #llmSteps（三步容器）存在', async () => {
@@ -3022,11 +3160,14 @@ async function main() {
           window.__uncaught = 0;
           window.addEventListener('error', () => { window.__uncaught += 1; });
           window.addEventListener('unhandledrejection', () => { window.__uncaught += 1; });
+          window.__llmReq = [];            // ★ 反空转 / 契约：记录这次「测试连接」发出的请求
           if (!window.__origFetch) {
             window.__origFetch = window.fetch;
             window.fetch = async (input, opts) => {
               const url = String(input && input.url ? input.url : input);
               if (!url.includes('/api/llm/validate')) return window.__origFetch(input, opts);
+              window.__llmReq.push({ url, method: String((opts && opts.method) || 'GET').toUpperCase(),
+                body: opts && typeof opts.body === 'string' ? opts.body : null });
               const payload = { ok: true, data: {
                 ok: false, profile: 'workbuddy',
                 steps: {
@@ -3071,9 +3212,160 @@ async function main() {
         need(exAfter === exBefore,
           `点「测试连接」后新增未捕获异常 ${exAfter - exBefore} 个：${JSON.stringify(cdp.exceptions().slice(exBefore))}`);
         need(inPage === 0, `页面内 error/unhandledrejection 计数为 ${inPage}（应为 0）`);
+        // ★★ 契约铁律：**调用类端点只接受 `service`（选择器）** —— 请求体里**不许**夹带任何配置体字段
+        //   （baseUrl / apiKey / headers / timeoutMs…）。配置体只能经 POST /api/llm/services 写入。
+        const vreqs = await cdp.evalJs(`(window.__llmReq || []).filter((r) => r.url.includes('/api/llm/validate'))`);
+        need(vreqs.length === 1, `点一次「测试连接」应恰好发 1 条 /api/llm/validate，实际 ${vreqs.length} 条（反空转）`);
+        const vbody = JSON.parse(vreqs[0].body || '{}');
+        const badKeys = Object.keys(vbody).filter((k) => k !== 'service');
+        need(badKeys.length === 0,
+          `测试连接请求体夹带了配置体字段：${JSON.stringify(badKeys)}（调用类端点只接受 service 选择器）`);
         // 恢复 fetch（后续 K 组不受影响）
         await cdp.evalJs(`if (window.__origFetch) { window.fetch = window.__origFetch; } true`);
-        notes.push(`I6 测试连接（桩 validate）：三步 可达=${st.reachable.ico} / 鉴权=${st.auth.ico} / 返回体=${st.shape.ico}；提示「${st.hint.slice(0, 40)}」；未捕获异常新增 ${exAfter - exBefore} 个`);
+        notes.push(`I6 测试连接（桩 validate）：三步 可达=${st.reachable.ico} / 鉴权=${st.auth.ico} / 返回体=${st.shape.ico}；提示「${st.hint.slice(0, 40)}」；未捕获异常新增 ${exAfter - exBefore} 个；请求体 ${JSON.stringify(vbody)}（只含 service）`);
+      });
+
+      // ── ★★ 新增 I7~I11：把「多套保存 + 快速切换」这层新能力钉住 ─────────────────
+      //   手法：桩一个**有状态**的 /api/llm/*（见 installLlmStub），走**用户真实点击路径**
+      //   （刷新 / ＋新增 / 保存 / 切换 / 删除），再用 `window.__llmReq` 做**反空转**（点前 0 条 / 点后 1 条）
+      //   并断言**请求体**与**后置状态**。★ 绝不削弱任何既有断言。
+      await runCase('I7 多套列表渲染：桩 2 套 ⇒ 列表 2 行、当前生效那行有标记、每行「切换/编辑/删除」齐', async () => {
+        // ★ 反空转（前置）：此刻页面上是**真后端**的列表（隔离落盘根里只有出厂默认一套），
+        //   里面**不可能**有桩里的 svc-a / svc-b —— 若已经有，就证明不了下面这 2 行来自桩响应。
+        const beforeIds = await llmRows();
+        need(!beforeIds.includes('svc-a') && !beforeIds.includes('svc-b'),
+          `前置失败：刷新前列表里就已经有桩里的 id（${JSON.stringify(beforeIds)}）—— 证明不了这些行来自桩`);
+
+        await installLlmStub({ services: LLM_FIXTURE, active: 'svc-b' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 2`, { timeoutMs: 8000 });
+        const rows = await cdp.evalJs(`[...document.querySelectorAll('#llmList .llm-item')].map((r) => ({
+          id: r.dataset.id, active: r.classList.contains('is-active'),
+          label: (r.querySelector('.llm-item-label') || {}).textContent || '',
+          mark: (r.querySelector('.llm-item-active') || {}).textContent || '',
+          acts: [...r.querySelectorAll('button[data-act]')].map((b) => b.dataset.act) }))`);
+        need(rows.length === 2, `桩给了 2 套，列表渲染出 ${rows.length} 行（刷新前是 ${beforeIds.length} 行）`);
+        const a = rows.find((r) => r.id === 'svc-a'), b = rows.find((r) => r.id === 'svc-b');
+        need(a && b, `两行的 id 应是 svc-a / svc-b：${JSON.stringify(rows.map((r) => r.id))}`);
+        need(a.label === '我的本地 vLLM' && b.label === '某云文本推理',
+          `行的 label 没按桩渲染：${JSON.stringify([a.label, b.label])}`);
+        need(a.active === false && b.active === true,
+          `只有当前生效（svc-b）那行该带 .is-active：${JSON.stringify([a.active, b.active])}`);
+        need(b.mark === '当前生效' && a.mark === '', `「当前生效」标记不对：a「${a.mark}」/ b「${b.mark}」`);
+        for (const r of [a, b]) {
+          need(['use', 'edit', 'del'].every((x) => r.acts.includes(x)), `行 ${r.id} 的按钮不全：${JSON.stringify(r.acts)}`);
+        }
+        const hint = await cdp.evalJs(`document.getElementById('llmListHint').textContent`);
+        need(/共 2 套/.test(hint), `#llmListHint 应显示「共 2 套」，实际「${hint}」`);
+        notes.push(`I7 多套列表：刷新前 ${beforeIds.length} 行（无桩 id）→ 桩 2 套后 ${rows.length} 行（svc-b 带 .is-active +「当前生效」；每行 切换/编辑/删除；#llmListHint「${hint}」）`);
+      });
+
+      await runCase('I8 新增一套：点「＋新增」填表单 + 保存 ⇒ 发出 POST /api/llm/services，请求体含 label/kind/baseUrl/timeoutMs/headers', async () => {
+        await installLlmStub({ services: [], active: '' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `!!document.querySelector('#llmList .llm-empty')`, { timeoutMs: 8000 });
+        // 点「＋ 新增算力服务」⇒ 表单出现（走用户真实路径，不是直接改 DOM）
+        await cdp.evalJs(`document.getElementById('btnLlmAdd').click(); true`);
+        need(await cdp.evalJs(`document.getElementById('llmForm').hidden === false`),
+          '点「＋ 新增算力服务」后 #llmForm 没有显示');
+        // 照规格每一项填：名称标记 / 适配器 / Endpoint / model / 超时 / Key / 请求头
+        await cdp.evalJs(`(() => {
+          document.getElementById('llmLabel').value = '我的本地 vLLM';
+          document.getElementById('llmKind').value = 'openai-compatible';
+          document.getElementById('llmBaseUrl').value = 'http://127.0.0.1:8000/v1';
+          document.getElementById('llmModel').value = 'qwen2.5-7b';
+          document.getElementById('llmTimeout').value = '45000';
+          document.getElementById('llmKey').value = 'sk-test-p4a';
+          document.getElementById('llmHeaders').value = 'X-Api-Version: 2024-01-01';
+          return true; })()`);
+        // ★ 反空转：点「保存」之前，一条 POST /api/llm/services 都不该有
+        const before = await llmReqCount(postServices);
+        need(before === 0, `点「保存」之前就已经发过 ${before} 条 POST /api/llm/services（反空转失败）`);
+        await cdp.evalJs(`document.getElementById('btnLlmSave').click(); true`);
+        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${postServices})`, { timeoutMs: 8000 });
+        const req = await llmReqLast(postServices);
+        need(req.url.split('?')[0] === '/api/llm/services',
+          `配置体写到了 ${req.url}（★ 只允许 POST /api/llm/services 这一条写入口）`);
+        const p = JSON.parse(req.body || '{}');
+        need(p.label === '我的本地 vLLM', `请求体 label=${JSON.stringify(p.label)}`);
+        need(p.kind === 'openai-compatible', `请求体 kind=${JSON.stringify(p.kind)}`);
+        need(p.baseUrl === 'http://127.0.0.1:8000/v1', `请求体 baseUrl=${JSON.stringify(p.baseUrl)}`);
+        need(p.model === 'qwen2.5-7b', `请求体 model=${JSON.stringify(p.model)}`);
+        need(String(p.timeoutMs) === '45000', `请求体 timeoutMs=${JSON.stringify(p.timeoutMs)}`);
+        need(p.headers && p.headers['X-Api-Version'] === '2024-01-01', `请求体 headers=${JSON.stringify(p.headers)}`);
+        need(p.apiKey === 'sk-test-p4a', `请求体 apiKey 没带上（新建时留空 ≠ 不改）`);
+        // 后置状态：保存成功 ⇒ 面板重新拉清单，列表里出现这一套（label 正确）
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 1`, { timeoutMs: 8000 });
+        const label = await cdp.evalJs(`(document.querySelector('#llmList .llm-item-label') || {}).textContent || ''`);
+        need(label === '我的本地 vLLM', `保存后列表里的 label 是「${label}」，期望「我的本地 vLLM」`);
+        notes.push(`I8 新增一套：点前 0 条 → 点后 1 条 POST /api/llm/services（body 含 label/kind/baseUrl/model/timeoutMs/headers/apiKey）；保存后列表 1 行「${label}」`);
+      });
+
+      await runCase('I9 切换当前生效：点某行「切换」⇒ POST /api/llm/services/active 且 body.id 正确（反空转：点前 0 条）', async () => {
+        await installLlmStub({ services: LLM_FIXTURE, active: 'svc-a' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 2`, { timeoutMs: 8000 });
+        const activeBefore = await cdp.evalJs(`(document.querySelector('#llmList .llm-item.is-active') || { dataset: {} }).dataset.id || ''`);
+        need(activeBefore === 'svc-a', `前置失败：当前生效应是 svc-a，实际「${activeBefore}」`);
+        const before = await llmReqCount(postActive);
+        need(before === 0, `点「切换」之前就已经发过 ${before} 条切换请求（反空转失败）`);
+        await cdp.evalJs(`document.querySelector('#llmList .llm-item[data-id="svc-b"] button[data-act="use"]').click(); true`);
+        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${postActive})`, { timeoutMs: 8000 });
+        const req = await llmReqLast(postActive);
+        const b = JSON.parse(req.body || '{}');
+        need(b.id === 'svc-b', `切换请求体 id=${JSON.stringify(b.id)}，期望 svc-b`);
+        // ★ 契约：切换也**只传选择器**（id），不许夹带任何配置体字段。
+        const extra = Object.keys(b).filter((k) => k !== 'id');
+        need(extra.length === 0, `切换请求体夹带了配置体字段：${JSON.stringify(extra)}`);
+        // 后置状态：切换成功 ⇒ 重新拉清单后，胶囊与「当前生效」行都换成 svc-b
+        await waitFor(cdp.evalJs, `document.getElementById('llmCurrentPill').textContent.includes('某云文本推理')`, { timeoutMs: 8000 });
+        const after = await cdp.evalJs(`(document.querySelector('#llmList .llm-item.is-active') || { dataset: {} }).dataset.id || ''`);
+        need(after === 'svc-b', `切换后带 .is-active 的行应是 svc-b，实际「${after}」`);
+        notes.push(`I9 切换：点前 0 条 → 点后 1 条 POST /api/llm/services/active，body={"id":"svc-b"}（无配置体字段）；切换后 .is-active 行 → svc-b、胶囊「某云文本推理」`);
+      });
+
+      await runCase('I10 删除一套：点某行「删除」⇒ DELETE /api/llm/services/<id>（反空转：点前 0 条；删后剩 1 行）', async () => {
+        await installLlmStub({ services: LLM_FIXTURE, active: 'svc-b' });
+        // 删除会走 window.confirm（无头环境默认返回 false ⇒ 不删）⇒ 先让用户「点确定」。
+        await cdp.evalJs(`window.__origConfirm = window.confirm; window.confirm = () => true; true`);
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 2`, { timeoutMs: 8000 });
+        const before = await llmReqCount(anyDelete);
+        need(before === 0, `点「删除」之前就已经发过 ${before} 条 DELETE（反空转失败）`);
+        await cdp.evalJs(`document.querySelector('#llmList .llm-item[data-id="svc-a"] button[data-act="del"]').click(); true`);
+        await waitFor(cdp.evalJs, `(window.__llmReq || []).some((r) => ${anyDelete})`, { timeoutMs: 8000 });
+        const req = await llmReqLast(anyDelete);
+        need(req.url.split('?')[0] === '/api/llm/services/svc-a',
+          `DELETE 打到了 ${req.url}，期望 /api/llm/services/svc-a`);
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 1`, { timeoutMs: 8000 });
+        const left = await llmRows();
+        need(left.length === 1 && left[0] === 'svc-b', `删掉 svc-a 后应只剩 svc-b：${JSON.stringify(left)}`);
+        await cdp.evalJs(`if (window.__origConfirm) window.confirm = window.__origConfirm; true`);
+        notes.push(`I10 删除：点前 0 条 → 点后 1 条 DELETE /api/llm/services/svc-a；删后列表剩 1 行（${JSON.stringify(left)}）`);
+      });
+
+      await runCase('I11 空状态：桩 2 套（2 行）→ 桩 0 套（0 行 + 空状态提示 + 「已加载 0 套」）', async () => {
+        // ★ 反空转做成**状态迁移**：先让列表真的有 2 行，再换成 0 套 ⇒ 行数必须真的 2 → 0。
+        await installLlmStub({ services: LLM_FIXTURE, active: 'svc-a' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs, `document.querySelectorAll('#llmList .llm-item').length === 2`, { timeoutMs: 8000 });
+        await installLlmStub({ services: [], active: '' });
+        await llmRefresh();
+        await waitFor(cdp.evalJs,
+          `document.querySelectorAll('#llmList .llm-item').length === 0 && !!document.querySelector('#llmList .llm-empty')`,
+          { timeoutMs: 8000 });
+        const s = await cdp.evalJs(`(() => { const e = document.querySelector('#llmList .llm-empty');
+          return { text: e ? e.textContent.trim() : '', rows: document.querySelectorAll('#llmList .llm-item').length,
+                   saveHint: document.getElementById('llmSaveHint').textContent,
+                   pill: document.getElementById('llmCurrentPill').textContent.trim() }; })()`);
+        need(s.rows === 0, `0 套时列表却有 ${s.rows} 行`);
+        need(s.text.length > 0, '空状态提示为空');
+        need(/新增算力服务/.test(s.text), `空状态提示「${s.text}」应指路「新增算力服务」`);
+        need(/已加载 0 套/.test(s.saveHint), `只读状态句应如实说「已加载 0 套」，实际「${s.saveHint}」`);
+        need(/当前未选择/.test(s.pill), `0 套时胶囊应显「当前未选择」，实际「${s.pill}」`);
+        // 收尾：把 fetch 还原（K 组在同页跑，别留桩）
+        await cdp.evalJs(`if (window.__origFetch) { window.fetch = window.__origFetch; } true`);
+        notes.push(`I11 空状态：桩 2 套（2 行）→ 桩 0 套（0 行 +「${s.text}」+「${s.saveHint}」+ 胶囊「${s.pill}」）`);
       });
     }
 
