@@ -162,6 +162,39 @@ test('scanAll：注入 envResult 后离线跑通（不起 WSL）', async () => {
   }
 });
 
+// ── ⑬ ★ RISK-11：`_download/` 中转目录占用**可见**（只报，不删）───────────────
+//   ★ 由来：`_dlHttp` 在校验不过（0 字节 / sha256 不符）时把失败件**留在 `_download/`** 并报 `corrupt`
+//     （见本文件 ⑪ 的两条 corrupt 用例：断言失败件 `fs.existsSync(res.tmp) === true`）⇒ 反复失败会让
+//     `_download/` **无上限增长**。
+//   ★ 判据：**中转目录的写入者必须负责它的清理，或至少让它可见**。本模块选**后者**：`scanAll()` 结果里
+//     如实给出 `downloadDir { dir, files, bytes }`，**绝不自动删除**（删文件不可逆 + 不擅动用户文件）。
+//   ★ 这条用例钉住两件事：① 占用**真的被报出来**；② 扫描**不得删**任何中转文件。
+test('★ RISK-11：scanAll 报出 _download/ 占用（files/bytes），且**绝不删**中转文件', async () => {
+  const envResult = {
+    groups: [{ title: 'stub', items: [{ id: 'win.ffmpeg', label: 'stub', status: 'ok', detail: 'stub' }] }],
+    summary: { total: 1, ok: 1, warn: 0, fail: 0 },
+    runnable: true, drift: [], checkedAt: new Date().toISOString(),
+  };
+  const dlDir = path.join(TMP, '_download');
+  // ★ 先清空：前序 ⑪ 的 corrupt 用例会在 `_download/` 留下失败件（正是 RISK-11 的现象）⇒ 清掉以求确定性
+  fs.rmSync(dlDir, { recursive: true, force: true });
+  fs.mkdirSync(dlDir, { recursive: true });
+  const f1 = path.join(dlDir, 'res-rv-risk11-a.bin');
+  const f2 = path.join(dlDir, 'res-rv-risk11-b.bin');
+  fs.writeFileSync(f1, Buffer.alloc(7, 1));
+  fs.writeFileSync(f2, Buffer.alloc(5, 2));
+  const res = await scanAll({ envResult, force: true });
+  assert.ok(res.downloadDir && typeof res.downloadDir === 'object',
+    `scanAll 结果应带 downloadDir 占用对象，实测 ${JSON.stringify(res.downloadDir)}`);
+  assert.equal(res.downloadDir.dir, dlDir, `downloadDir.dir 应等于 <root>/_download，实测 ${res.downloadDir.dir}`);
+  assert.equal(res.downloadDir.files, 2, `downloadDir.files 应报 2，实测 ${res.downloadDir.files}`);
+  assert.equal(res.downloadDir.bytes, 12, `downloadDir.bytes 应报 12，实测 ${res.downloadDir.bytes}`);
+  // ★ 扫描**不得删**：两个文件扫描后仍在（只报占用，不自动清）
+  assert.ok(fs.existsSync(f1) && fs.existsSync(f2), '★ 扫描**不得**删除 _download/ 里的任何文件（只报占用）');
+  fs.rmSync(f1, { force: true });
+  fs.rmSync(f2, { force: true });
+});
+
 test('RESOURCES：注册表非空、id 唯一、schema 合法（契约 §五）', () => {
   const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
   assert.ok(Array.isArray(list) && list.length > 0, 'RESOURCES 应非空');

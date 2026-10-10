@@ -72,13 +72,15 @@ const log = (s = '') => process.stdout.write(`${s}\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── HTTP（node:http 直连，绕开代理）────────────────────────
-// ★★ 客户端预算（2026-10-10 定性 D8②）：`/api/env`、`/api/setup/actions`、**以及 `POST /api/setup/run`**
-//    都会触发 `checkEnv()`（lib/env.mjs —— **3 次串行 wsl.exe 探针**；`apiSetupRun` 更是**不用缓存**、
-//    每个 POST 都全量重探）。WSL **冷启动 / 忙**时，这一次全量探针可远超 60s（实测套件里
+// ★★ 客户端预算（2026-10-10 定性 D8②；★ 修复后订正）：`/api/env`、`/api/setup/actions` 会触发
+//    `checkEnv()`（lib/env.mjs —— **3 次串行 wsl.exe 探针**）。改前 `POST /api/setup/run` 也**每请求都
+//    全量重探**（不用缓存）—— WSL **冷启动 / 忙**时这一次全量探针可远超 60s（实测套件里
 //    `POST /api/setup/run` 偶发 60010ms 客户端超时，1/12）⇒ 用例偶发红（登记 D8②）。
-//    ⇒ 把客户端预算从 60s 提到 **180s**：覆盖冷启动首次探针（服务端单条 wsl 命令上限是
-//    RUN_TIMEOUT_MS=120s）并留余量。**这不是放宽断言**：所有断言（状态码 / 形状 / 计数 / 任务数增量）
-//    一字未改，只是把「等一个**被服务端封顶**的高成本探针」的客户端等待预算对齐到它的真实上界。
+//    ★ 现已修复：`POST /api/setup/run` 改走与 `/api/env` **同一份** envCache（见 ⑪ 的正面断言）。
+//      但**首次 / 过期后**的那一次全量探针仍可能慢（服务端单条 wsl 命令上限 RUN_TIMEOUT_MS=120s）。
+//    ⇒ 客户端预算仍从 60s 提到 **180s**：覆盖冷启动首次探针并留余量。**这不是放宽断言**：所有断言
+//      （状态码 / 形状 / 计数 / 任务数增量）一字未改，只是把「等一个**被服务端封顶**的高成本探针」的
+//      客户端等待预算对齐到它的真实上界。
 const CLIENT_TIMEOUT_MS = 180000;
 function httpSend(port, { method, path: p, headers = {}, body = null, timeoutMs = CLIENT_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
@@ -353,9 +355,54 @@ async function main() {
     const P = server.port;
     const get = (p) => getJson(P, p);
 
-    // ★★ 就绪屏障（2026-10-10 定性 D8②）：本套件起的是**真** server.mjs；`/api/env`、`/api/setup/actions`
-    //    以及 `POST /api/setup/run` 都会触发 lib/env.mjs:checkEnv 的 **3 次串行 wsl.exe 探针**
-    //    （`apiSetupRun` 更是**不用缓存**、每个 POST 都全量重探）。WSL **冷启动 / 忙**时这一次全量探针
+    // ── ⑪ POST /api/setup/run 复用共享 TTL 缓存（D8② 修复的正面断言）──
+    //   缺陷：改前 apiSetupRun 每个 POST 都 `await checkEnv()`（**不用缓存**），而 checkEnv 会串行跑
+    //   3 次 wsl.exe（+1 次 powershell）⇒ WSL 冷启动/忙时单次请求可 > 60s（热态 ≈2.2s）⇒ 偶发超时。
+    //   本用例**正面断言**「同一进程内连续两次 POST 只付一次全量探测」：
+    //     · 第一次 POST（缓存**冷**）必付一次全量探测；
+    //     · 紧随其后 GET /api/env 必须 `cached:true` —— 证明这次 POST **写进了与 /api/env 共享的**
+    //       envCache（若 apiSetupRun 仍直连 checkEnv，这里会变成 cached:false 或又付一次探测）；
+    //     · 第二次 POST 必须**显著更快**（缓存命中，毫秒级）—— 证明它**没有**再付一次全量探测。
+    //   ★ 用 `fallback.<不存在>` 当动作 id：它**会**走到探测（不是上面那条廉价 404 早退），
+    //     且必然被拒（404），绝不真安装（沿用本套件「只测失败/跳过路径」的铁律）。
+    //   ★ 前置条件：此刻服务刚起、envCache 尚冷（server.mjs 启动不做任何 checkEnv 探测）。
+    //     本用例**故意排在下面的「就绪屏障」之前** —— 屏障会预热缓存，排其后就测不出「首次付代价」。
+    await runCase('⑪ POST /api/setup/run 复用共享 TTL 缓存：连续两次 POST 只付一次全量探测', async () => {
+      const id = 'fallback.zz-probe-count-' + Date.now().toString(36);
+      need(!knownActionIds().includes(id), `bogus id「${id}」竟然在 knownActionIds() 里`);
+      const body = { actionId: id };
+
+      const t1 = Date.now();
+      const r1 = await postJson(P, '/api/setup/run', body);
+      const ms1 = Date.now() - t1;
+      need(r1.status === 404, `第一次 POST 应 404（未知动作），实际 ${r1.status}：${r1.text.slice(0, 200)}`);
+      need(r1.json && /未知动作/.test(r1.json.error || ''), `第一次 POST 的 404 文案不对：${r1.text.slice(0, 160)}`);
+
+      // ★ 正面证据①：第一次 POST 之后 /api/env 立刻命中缓存 ⇒ POST 与 /api/env 共用同一份 envCache。
+      const env = await getJson(P, '/api/env');
+      need(env.status === 200, `/api/env 异常：${env.status}`);
+      need(env.json && env.json.cached === true,
+        `第一次 POST 之后 /api/env 未命中缓存（cached=${env.json && env.json.cached}）—— POST 没有写进共享 envCache`);
+
+      const t2 = Date.now();
+      const r2 = await postJson(P, '/api/setup/run', body);
+      const ms2 = Date.now() - t2;
+      need(r2.status === 404, `第二次 POST 应 404，实际 ${r2.status}：${r2.text.slice(0, 200)}`);
+
+      // ★ 正面证据②：第二次 POST 走缓存命中、**不再付全量探测** ⇒ 应显著快于第一次。
+      need(ms2 * 3 < ms1, `第二次 POST 未走缓存：ms2=${ms2}ms 未显著小于 ms1=${ms1}ms（疑似重探）`);
+      need(ms2 < 2000, `第二次 POST 仍花 ${ms2}ms —— 缓存命中应为毫秒级，疑似重探`);
+
+      // 失败路径必须不起任务（沿用本套件纪律）
+      const now = await jobsList(P);
+      need(now.every((j) => j.actionId !== id), `不该为「${id}」起任务`);
+
+      notes.push(`⑪ 冷缓存 POST#1=${ms1}ms（付一次全量探测）→ /api/env cached:true（共用缓存）→ POST#2=${ms2}ms（缓存命中，不再重探）`);
+    });
+
+    // ★★ 就绪屏障（2026-10-10 定性 D8②；★ 修复后：`POST /api/setup/run` 已改用共享 envCache，
+    //    见 ⑪）：本套件起的是**真** server.mjs；`/api/env`、`/api/setup/actions`（仍直连、不缓存）
+    //    会触发 lib/env.mjs:checkEnv 的 **3 次串行 wsl.exe 探针**。WSL **冷启动 / 忙**时这一次全量探针
     //    可远超 60s ⇒ 用例偶发红（登记 2/13；本机复现为 `POST /api/setup/run` 60010ms，1/12）。
     //    ⇒ 这里**先**用一次宽松超时的 `/api/env` 把 WSL 唤醒：探针成本照付（**真探针，不是 sleep**），
     //      但不计入被测用例；随后的用例只面对**已热**的 WSL（另见文件顶 `CLIENT_TIMEOUT_MS` 的预算对齐）。

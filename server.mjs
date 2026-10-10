@@ -449,20 +449,12 @@ async function apiSetupActions(req, res, url) {
   });
 }
 
-// ── API: POST /api/setup/run ────────────────────────────────
-//
-// 真正执行一个安装动作（后台任务，日志走 /api/logs/:id 的 SSE）。
-//
-// ★ 幂等：**先重新检测**（不用 30s 缓存 —— 幂等判断必须基于当下），
-//   对应检测项已经全 ok 就直接返回 skipped，不重装、不建任务。
-// ★ 去重：同一个动作已有排队/运行中的任务 → 直接复用那个任务，不重复入队。
-// ★ 不阻塞：安装失败**不影响**启动渲染任务（环境自检本来就是咨询性的）。
-/**
- * POST /api/setup/run —— 真正执行一个安装动作（后台任务，日志走 /api/logs/:id 的 SSE）。
- *
- * ★ 幂等：先重新检测（不用 30s 缓存）—— 对应检测项已全 ok 就回 skipped，不重装、不建任务。
- * ★ 去重：同一动作已有排队/运行中的任务 → 复用那个任务，不重复入队。
- */
+// ── API: POST /api/setup/run —— 真正执行一个安装动作（后台任务，日志走 /api/logs/:id 的 SSE）。
+// ★ 幂等 → skipped；★ 去重 → 复用。★★ D8②（2026-10-10 修复）：改前**每个 POST 都 `await checkEnv()`**
+//   （不用缓存；checkEnv 串行跑 3 次 wsl.exe +1 次 powershell）⇒ WSL 冷/忙时单请求可 >60s（热态≈2.2s）
+//   ⇒ 测试端偶发超时。现走**与 /api/env 同一份** envCache（TTL 命中即复用 + inflight 去重）。★ 判据：
+//   **廉价的校验不能排在昂贵的探测之后**；同一秒内的重复请求不该重复付全量探测的代价。
+//   ★ 顺序：廉价拒绝（body/格式 → 未知 id 直接 404）→ 昂贵探测（共享缓存）→ 幂等 / 手动 / 去重。
 async function apiSetupRun(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
@@ -471,13 +463,21 @@ async function apiSetupRun(req, res) {
   const actionId = body.actionId;
   if (typeof actionId !== 'string' || !actionId.trim()) return sendJson(res, 400, { error: '缺少 actionId' });
   if (!/^[A-Za-z0-9._-]+$/.test(actionId)) return sendJson(res, 400, { error: `actionId 含非法字符：${actionId}` });
+  // ★ 廉价校验（不付探测代价）：动作 id 只来自静态登记表(knownActionIds) 或派生的 `fallback.<envId>`；
+  //   都不匹配 ⇒ 必是未知动作 ⇒ 直接 404，不为此起 WSL（改前：先全量探测，再 404）。★ 耦合提醒：
+  //   `fallback.` 是 lib/setup.mjs 派生 id 的既有约定；若那边新增别的派生族，这里要同步（否则误判 404）。
+  const known = knownActionIds();
+  if (!known.includes(actionId) && !/^fallback\./.test(actionId)) {
+    return sendJson(res, 404, { error: `未知动作 ${actionId}` });
+  }
 
-  const data = await checkEnv();
+  // ★ 昂贵探测：走与 /api/env **同一份** envCache（TTL 命中即复用；未命中才真探，且并发合并）。
+  const fresh = envCache.peek();
+  const data = fresh.fresh ? fresh.data : await envCache.get(checkEnv);
   const actions = planActions(data);
   const act = actions.find((a) => a.id === actionId);
-
   if (!act) {
-    if (knownActionIds().includes(actionId)) {
+    if (known.includes(actionId)) {
       return sendJson(res, 200, { ok: true, skipped: true, reason: '该检测项已就绪 → 跳过（幂等，不重装）' });
     }
     return sendJson(res, 404, { error: `未知动作 ${actionId}` });

@@ -134,7 +134,7 @@ const USAGE = `dub.mjs —— 把一段自定义文案做成成片（可选配�
                              无空档的区间；单条短于可读下界（字/秒）时向后借时间。
                            不给则依次退：ASR 强制对齐 → VAD 切段 → 均匀分配。
   --title <text>           可选片头标题（居中偏上，淡入淡出）。
-  --out <dir>              输出目录。默认 D:/lemo-films/dub/<文案文件名或时间戳>。
+  --out <dir>              输出目录。默认 D:/lemo-films/dub/<文案文件名>-<时间戳>-<短id>（★ 默认名每次唯一）。
   --dry-run                只打印计划与时间轴，不做重活。
   --echo-cmd               把每次下发到 WSL 的 bash 脚本也打出来（排障用）。
   -h, --help               本帮助。
@@ -804,10 +804,10 @@ async function main() {
   }
 
   // 输出目录
-  const baseName = o.script === '-'
-    ? `stdin-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}`
-    : sanitizeName(path.basename(o.script, path.extname(o.script)));
-  const outDir = o.out ? path.resolve(o.out) : path.join(CFG.outRoot, baseName);
+  // ★ 默认名**每次唯一**（时间戳 + 短 id，照 newOutDir 的做法）—— 两个同名脚本并发跑不再撞同一目录（RISK-02）。
+  //   `--out` 显式给了就原样尊重（控制台传的就是 newOutDir() 的结果）。
+  const baseName = o.script === '-' ? 'stdin' : sanitizeName(path.basename(o.script, path.extname(o.script)));
+  const outDir = o.out ? path.resolve(o.out) : path.join(CFG.outRoot, uniqueOutName(baseName));
   const outWsl = winToWsl(outDir);
 
   // 素材 / 背景存在性
@@ -1219,6 +1219,36 @@ async function main() {
   say(JSON.stringify({ out: outDir, total, peak: mf.peak, truePeak: mf.truePeak, lufs: mf.lufs, frames: frames.map((f) => f.file), verify: verifyDir }));
 
   if (o.verifyTriple) await runTripleCheck({ filmHost: path.join(outDir, 'film.mp4'), scriptText: raw, outDir });
+}
+
+/**
+ * 造一个**本次出片唯一**的默认输出目录名（照 lib/dub.mjs 的 `newOutDir()` 做法：时间戳 + 短随机 id）。
+ *
+ * ★ 为什么默认目录名必须唯一（2026-10-10 修 RISK-02）：旧行为是 `outDir = <outRoot>/<脚本 basename>`
+ *   ⇒ 两个**同名**脚本并发跑会解析出**同一个**目录（实测两次 dry-run 打印的 outDir 逐字节相同）、
+ *   互相交错覆盖，而且因为两边都「写成功」⇒ **静默产出坏成片**。控制台那条路一直安全 ——
+ *   它对每次出片调 `newOutDir()` 拿「时间戳 + 短 id」。
+ * ★ 为什么这里选「唯一化」而不是「加锁」：本项目的跨进程锁（`lib/store.mjs` 的 `acquireLock`）是给
+ *   **毫秒级**临界区设计的（`LOCK_STALE_MS` 只有 30s，超龄即被接管）；而一次出片要跑几分钟 TTS
+ *   ⇒ 拿它守整个 run，第二个进程会把锁当陈旧抢走，互斥**根本不成立**。
+ *   且 dub.mjs 里**没有任何「同名续跑 / 断点续跑」逻辑**（不会检查已有产物再跳过、TTS 每次照跑）
+ *   ⇒ 「同名脚本复用同一目录」不是一项功能，唯一化**不破坏任何既有语义**。
+ * ★ `--out` 显式给了就**原样尊重**（控制台正是显式传 `newOutDir()` 的结果，行为一字不变）。
+ *
+ * ★ 定义位置说明（别往上挪）：本函数放在 `main()` 之后、文件末尾 —— 函数声明会提升，调用方不受位置
+ *   影响。这么做是为了**不在被引用的行号之前增删行**：`test/README.md` / `scripts/*` 用
+ *   `dub.mjs:<行号>` 钉住了 64 / 744 / 933-934 / 1023-1035 / 1088 / 1096-1115 等行，
+ *   `scripts/check-ref-lines.mjs` 会因行号漂移报错（见 `server.mjs` 里同类做法的注释）。
+ */
+function uniqueOutName(baseName) {
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`
+    + `-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+  const hex = '0123456789abcdef';
+  let r = '';
+  for (let i = 0; i < 4; i++) r += hex[Math.floor(Math.random() * 16)];
+  return `${baseName}-${stamp}-${r}`;
 }
 
 main().catch((e) => { bad(`未捕获异常: ${e?.stack || e}`); process.exit(1); });
