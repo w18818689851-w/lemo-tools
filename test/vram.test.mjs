@@ -65,6 +65,8 @@ const state = {
   gpuOkReads: Infinity,              // 允许成功读到的次数；超出后一律返回「读不到」（null）
   gpuReads: 0,
   gpuUsedAfterUnload: null,          // 收到卸载 POST 后把 used 改成这个值（模拟显存回落）
+  // ★ 按模型 id 指定「卸完它之后的 used」——用来构造「只卸本项目模型不够、必须卸别人的」场景（RISK-03 用例 c）
+  gpuUsedAfterUnloadById: null,
   computeApps: '',                   // --query-compute-apps 的原始输出
   spawnCalls: 0,
 };
@@ -162,7 +164,11 @@ const lmServer = http.createServer(async (rq, rs) => {
     const id = String(b.instance_id ?? (url.match(/\/models\/([^/]+)\/unload$/)?.[1] ?? ''));
     if (id) lm.unloadIds.push(id);
     if (id) lm.loaded.delete(id);
-    if (state.gpuUsedAfterUnload !== null) state.gpu.used = state.gpuUsedAfterUnload;
+    // ★ 按模型 id 指定卸完后的 used（用于「只卸本项目模型不够、必须卸别人的」场景）；
+    //   没命中就退回「任意卸载后都落到 gpuUsedAfterUnload」的旧行为
+    const byId = state.gpuUsedAfterUnloadById && state.gpuUsedAfterUnloadById[id];
+    if (byId != null) state.gpu.used = byId;
+    else if (state.gpuUsedAfterUnload !== null) state.gpu.used = state.gpuUsedAfterUnload;
     return json(rs, 200, {});
   }
   if (rq.method === 'GET' && /^\/api\/v0\/models\/[^/]+$/.test(url)) {
@@ -188,6 +194,7 @@ function resetStub(over = {}) {
     gpuOkReads: Infinity,
     gpuReads: 0,
     gpuUsedAfterUnload: null,
+    gpuUsedAfterUnloadById: null,
     computeApps: '',
     spawnCalls: 0,
   }, over);
@@ -195,12 +202,14 @@ function resetStub(over = {}) {
   lm.unloadIds = [];
 }
 
-/** 捕获 console.log（本模块的「腾挪了必须打出来」都走它）。 */
+/** 捕获 console.log **与** console.warn（本模块的「腾挪了 / 动过用户的东西 / 护栏未生效」都走它们）。 */
 async function captureLogs(fn) {
   const logs = [];
-  const orig = console.log;
-  console.log = (...a) => { logs.push(a.map(String).join(' ')); };
-  try { return { logs, value: await fn() }; } finally { console.log = orig; }
+  const origLog = console.log, origWarn = console.warn;
+  const push = (...a) => { logs.push(a.map(String).join(' ')); };
+  console.log = push;
+  console.warn = push;
+  try { return { logs, value: await fn() }; } finally { console.log = origLog; console.warn = origWarn; }
 }
 
 /** 临时设 env，跑完还原。 */
@@ -420,6 +429,10 @@ test('ensureVramFree：拿不到显存读数 ⇒ 跳过但说一声（检查绝�
   assert.equal(value.ok, true, '没有 nvidia-smi 的机器不得被这道检查卡死');
   assert.equal(value.skipped, true);
   assert.equal(value.freeMiB, null);
+  // ★ RISK-04：跳过 ≠ 通过 —— 必须能判别「护栏未生效」，且带明确中文原因
+  assert.equal(value.guardInactive, true, '★ 护栏未生效必须可判别（guardInactive:true）');
+  assert.match(String(value.guardInactiveReason), /nvidia-smi 不可用/, '原因要点名 nvidia-smi 不可用');
+  assert.match(String(value.guardInactiveReason), /未做显存预检/, '原因要明说「本次未做显存预检」');
   assert.ok(logs.some((l) => l.includes('显存预检已跳过') && l.includes('nvidia-smi 不可用')),
     `应打印一行「已跳过 + 原因」，实际：${JSON.stringify(logs)}`);
 });
@@ -461,13 +474,13 @@ test('ensureVramFree：不足 ⇒ 自动卸载常驻模型、腾挪后够用 ⇒
 
   assert.equal(r.ok, true, `腾挪后 7792 ≥ 6700 ⇒ 应放行，实测 ${JSON.stringify(r)}`);
   assert.equal(r.attempted, true, '不足时必须尝试过腾挪');
-  assert.deepEqual(r.tried, [VLM, 'other-model'],
-    'tried 应是「腾挪前就常驻」的那些模型（用来打「腾了什么」）');
+  // ★ RISK-03：只卸本项目自己的模型（VLM）就够 ⇒ **不碰**用户自己的 other-model
+  assert.deepEqual(r.tried, [VLM], 'tried 应是**实际卸掉**的模型（本次只有本项目的 VLM）');
+  assert.deepEqual(r.unloadedOthers, [], '★ 只卸本项目模型就够 ⇒ unloadedOthers 必须为空（没动用户的东西）');
   assert.equal(r.freedMiB, 7500, `腾出应为 7792-292=7500，实测 ${r.freedMiB}`);
   assert.equal(r.freeMiB, 7792);
-  assert.deepEqual(lm.unloadIds.sort(), [VLM, 'other-model'].sort(),
-    '★ 项目既有的 unloadModel（VLM）与「其余常驻模型」两条路都要走到');
-  assert.equal(lm.loaded.size, 0, '桩服务里两个模型都应已被卸掉');
+  assert.deepEqual(lm.unloadIds, [VLM], '★ 只卸本项目模型就够 ⇒ 用户自己的 other-model 一个都不许卸');
+  assert.deepEqual([...lm.loaded], ['other-model'], '★ 用户自己的模型必须**原样常驻**');
   assert.ok(logs.some((l) => l.includes('已卸载 LM Studio 常驻模型') && l.includes('腾出 7500 MiB')),
     `真腾挪了必须打出来（自动动作可回溯），实际：${JSON.stringify(logs)}`);
   assert.equal(r.message, undefined, '够用时不该带失败文案');
@@ -516,6 +529,73 @@ test('ensureVramFree：onShort:"continue" 且真腾出了显存 ⇒ ok:true、�
   assert.match(logs[0], /已卸载 LM Studio 常驻模型.*腾出 7500 MiB/);
   assert.doesNotMatch(logs[0], /拒绝继续|显存不足/,
     'soft 策略不得出现「拒绝继续」那套文案（渲染与 TTS 并行跑，硬拦会打断主题通路）');
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+//  五之二、★ RISK-03 / RISK-04 回归（永久用例 a/b/c/d）
+// ══════════════════════════════════════════════════════════════════════════
+
+test('RISK-03(a)：显存够用 ⇒ 不卸载任何模型（尤其**不动**用户自己的模型）', { skip: !hasHooks }, async () => {
+  resetStub({ gpu: { used: 400, total: 8192 } });    // free 7792 ≥ 6700 ⇒ 一开始就够
+  lm.loaded = new Set([VLM, 'other-model']);         // 用户自己的模型也常驻着
+  const { logs, value: r } = await captureLogs(() => vram.ensureVramFree(6700, { label: 'TTS' }));
+  assert.equal(r.ok, true);
+  assert.equal(r.attempted, false, '够用 ⇒ 不得进入腾挪');
+  assert.deepEqual(lm.unloadIds, [], '★ 够用时一个模型都不许卸（更不许动用户自己的）');
+  assert.deepEqual([...lm.loaded].sort(), [VLM, 'other-model'].sort(), '两个模型都必须原样常驻');
+  assert.deepEqual(logs, [], `成功路径零噪声，实际：${JSON.stringify(logs)}`);
+});
+
+test('RISK-03(b)：只卸本项目模型就够 ⇒ **不碰**用户自己的模型', { skip: !hasHooks }, async () => {
+  resetStub({ gpu: { used: 7900, total: 8192 }, gpuUsedAfterUnload: 400 });   // 卸 VLM 后落到 400 ⇒ 够
+  lm.loaded = new Set([VLM, 'other-model']);
+  const { value: r } = await captureLogs(() => vram.ensureVramFree(6700, { label: 'TTS' }));
+  assert.equal(r.ok, true, '卸本项目模型后够用 ⇒ 放行');
+  assert.deepEqual(r.tried, [VLM], 'tried 只应含本项目实际卸掉的 VLM');
+  assert.deepEqual(r.unloadedOthers, [], '★ unloadedOthers 必须为空 —— 没动用户自己的模型');
+  assert.deepEqual(lm.unloadIds, [VLM], '★ 只卸 VLM，other-model 一个都不许卸');
+  assert.deepEqual([...lm.loaded], ['other-model'], '★ 用户自己的模型必须原样常驻');
+});
+
+test('RISK-03(c)：必须卸其它模型才够 ⇒ 卸了**且** unloadedOthers 如实列出（正面断言）', { skip: !hasHooks }, async () => {
+  // ★ 桩：卸 VLM **不**回落（用户自己的 other-model 也占着卡）；只有卸 other-model 才落到 400
+  resetStub({ gpu: { used: 7900, total: 8192 }, gpuUsedAfterUnloadById: { 'other-model': 400 } });
+  lm.loaded = new Set([VLM, 'other-model']);
+  const { logs, value: r } = await captureLogs(() => vram.ensureVramFree(6700, { label: 'TTS' }));
+
+  assert.equal(r.ok, true, '卸完用户自己的模型后够用 ⇒ 放行');
+  assert.deepEqual(r.tried, [VLM, 'other-model'],
+    'tried 应是**实际卸掉**的全部模型（先本项目、后用户自己的）');
+  assert.deepEqual(r.unloadedOthers, ['other-model'],
+    '★ 必须**如实**列出动了用户自己的哪个模型（unloadedOthers 正面断言）');
+  assert.deepEqual(lm.unloadIds, [VLM, 'other-model'], '先卸 VLM，仍不够才卸 other-model');
+  assert.equal(lm.loaded.size, 0, '两个都卸了');
+  assert.ok(logs.some((l) => l.includes('用户自己') && l.includes('other-model')),
+    `★ 动过用户自己的模型必须**单独 warn 报出来**（绝不静默），实际：${JSON.stringify(logs)}`);
+});
+
+test('RISK-04(d)：拿不到显存读数 ⇒ 能区分出「护栏未生效」且带明确原因（跳过 ≠ 通过）', { skip: !hasHooks }, async () => {
+  resetStub({ gpuOkReads: 0 });                      // nvidia-smi 一律失败 ⇒ 读不到
+  const { logs, value: skip } = await captureLogs(() => vram.ensureVramFree(6700, { label: 'TTS' }));
+
+  // ① 跳过：ok 仍为 true（不阻断出片），但「护栏未生效」必须可判别
+  assert.equal(skip.ok, true, '读不到读数不得阻断出片（那是硬拦，不可取）');
+  assert.equal(skip.skipped, true);
+  assert.equal(skip.guardInactive, true, '★ 护栏未生效必须可判别');
+  assert.equal(typeof skip.guardInactiveReason, 'string', '必须带明确的中文原因');
+  assert.match(skip.guardInactiveReason, /nvidia-smi 不可用/, '原因要点名 nvidia-smi 不可用');
+  assert.match(skip.guardInactiveReason, /未做显存预检/, '原因要明说本次**未做**显存预检');
+  assert.ok(logs.some((l) => l.includes('显存预检已跳过') && l.includes('nvidia-smi 不可用')),
+    `必须打一条 warn 日志说明护栏未生效，实际：${JSON.stringify(logs)}`);
+
+  // ② 检查通过：ok:true、**不**是 skipped、guardInactive:false —— 与①在返回结构上必须能区分开
+  resetStub({ gpu: { used: 400, total: 8192 } });
+  const pass = await vram.ensureVramFree(6700, { label: 'TTS' });
+  assert.equal(pass.ok, true);
+  assert.notEqual(pass.skipped, true, '★ 检查通过**不是**「跳过」');
+  assert.equal(pass.guardInactive, false, '★ 检查通过 ⇒ 护栏生效（guardInactive:false）');
+  assert.notEqual(pass.guardInactive, skip.guardInactive,
+    '★ 核心判据：「跳过」与「通过」在返回结构里必须能区分开');
 });
 
 // ══════════════════════════════════════════════════════════════════════════

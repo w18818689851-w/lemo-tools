@@ -100,7 +100,7 @@ function run(exe, args, opts = {}, { quiet = false, maxRetry = 5, onChunk = null
     const attempt = (n) => {
       let child;
       try {
-        child = spawn(exe, args, { windowsHide: true, ...opts });
+        child = trackChild(spawn(exe, args, { windowsHide: true, ...opts }));
       } catch (e) {
         return resolve({ code: -1, stdout: '', stderr: '', error: e });
       }
@@ -126,7 +126,7 @@ function run(exe, args, opts = {}, { quiet = false, maxRetry = 5, onChunk = null
 /** 异步执行并把输出实时透传（长任务）。 */
 function runLive(exe, args, opts = {}) {
   return new Promise(resolve => {
-    const p = spawn(exe, args, { stdio: 'inherit', windowsHide: true, ...opts });
+    const p = trackChild(spawn(exe, args, { stdio: 'inherit', windowsHide: true, ...opts }));
     p.on('error', e => resolve({ code: -1, error: e }));
     p.on('close', code => resolve({ code }));
   });
@@ -1592,8 +1592,8 @@ async function main() {
   }
   const releaseLock = () => { try { fs.unlinkSync(lockPath); } catch {} };
   process.on('exit', releaseLock);
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { releaseLock(); process.exit(130); });
-  info(C.dim(`并发锁 ${lockPath}${tookOver ? '（接管）' : ''}`));
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { killLiveChildren(); releaseLock(); process.exit(130); });
+  info(C.dim(`并发锁 ${lockPath}${tookOver ? '（接管）' : ''}`)); if (o.slug === SELFTEST_SLUG) return runKillChildrenSelfTest();
 
   // ── 0. 环境自检 ──────────────────────────────────────────
   step('环境自检');
@@ -2914,6 +2914,93 @@ echo "MUX_OK $(stat -c%s "$OUT/${o.slug}.mp4") src_frames=$SRC_FRAMES out_frames
   if (fs.existsSync(srtDst)) ok(srtDst);
 
   console.log(C.ok(`\n全部完成 · ${(st.size / 1048576).toFixed(1)} MB · 总耗时 ${el()}`));
+}
+
+// ───────── 活动子进程登记（信号收尾时杀掉，避免孤儿占显存）─────────
+// ★ 缺陷（RISK-07，实测确认）：原来的信号收尾只 releaseLock()，**不杀在跑的子进程** ——
+//   手工 Ctrl+C 中断出片时，正在跑的 WSL 渲染 / ffmpeg / TTS 子进程会变成孤儿、继续占显存，
+//   而显存是本项目常态瓶颈 ⇒ 后续任务莫名失败或挂死。
+// ★ 为什么用「登记集合」：原实现 spawn 完只挂 on('data')，**没有任何地方记得住子进程对象**
+//   ⇒ 信号里根本无从下手。所以先登记（run / runLive 两个 spawn 入口都要登记），
+//   子进程 exit / error 时注销（注销放在**所有结局**都走得到的地方）。
+// ★ 只做「登记 + 尽力而为地杀」，绝不改命令构造、绝不改退出码语义。
+const liveChildren = new Set();
+
+/**
+ * 把子进程记进活动表，并在它 exit / error 时注销。
+ * ★ 返回 child 本身，方便调用处写成 child = trackChild(spawn(...))（不新增代码行）。
+ * ★ 只认「有 kill 方法的对象」—— 传进来 null / 异常对象时原样返回，绝不抛。
+ */
+function trackChild(child) {
+  if (!child || typeof child.kill !== 'function') return child;
+  liveChildren.add(child);
+  const drop = () => { liveChildren.delete(child); };
+  child.on('exit', drop);
+  child.on('error', drop);
+  return child;
+}
+
+/**
+ * 信号收尾：把活动表里**还活着**的子进程逐个杀掉。
+ * ★ 尽力而为、绝不抛：某一个杀不掉（已被回收 / 无权限）也不能卡住整个退出流程。
+ * ★ 用 child.kill()（默认 SIGTERM）—— 本机 Windows 上它走 TerminateProcess，对
+ *   **直接子进程**（本进程 spawn 出来的 wsl.exe / ffmpeg.exe / node.exe）有效。
+ *   ⚠️ 它**管不到** wsl.exe 在 WSL2 虚拟机里再拉起的孙进程（那是 Linux 侧进程，
+ *   Windows 侧没有对应 pid 可杀）—— 那一路的收尾由 WSL 脚本自己的 trap / 控制台的
+ *   _lemoKillExtra 负责，不在本函数的职责内（本函数只保证「本进程 spawn 的那一层」不留孤儿）。
+ * ★ 不用 taskkill /F /T 这类杀伤面过大的命令：它按**进程树**杀，会误伤同名的
+ *   无关进程（本机常有别的 ffmpeg / wsl 在跑），得不偿失。
+ */
+function killLiveChildren() {
+  for (const child of liveChildren) {
+    try { child.kill(); } catch { /* best-effort：杀不掉就算了，绝不卡住退出 */ }
+  }
+  liveChildren.clear();
+}
+
+// ───────── 测试专用：验证「登记 + 信号收尾杀子进程」这条真路径 ─────────
+// ★ 触发方式：位置参数 slug 写成 SELFTEST_SLUG（见 main 里的钩子）。**不新增 --flag、不新增环境变量**
+//   —— scripts/check-env-overrides.mjs 会把 lemo-make.mjs 里任何未登记的 process.env.X 判红，
+//      check-cli-docs.mjs 也会盯新增的 --flag，两者都不许为了测试去动。
+// ★ 为什么用 process.emit('SIGINT') 而不是「真发一个 SIGINT」：
+//   本机实测（Windows）：child.kill('SIGINT') / process.kill(pid, 'SIGINT') 都走 TerminateProcess，
+//   子进程的 process.on('SIGINT') **根本不执行**（Node 打印的 signal=SIGINT 只是它自己的记账）。
+//   所以「发真信号看桩子进程死没死」在本机做不到；改用 emit —— Node 收到真信号时内部也是
+//   process.emit('SIGINT')，触发的是**同一批**监听器，差别只在「谁投递」。
+// ★ 桩命令只 sleep，不渲染 / 不 TTS / 不联网。
+const SELFTEST_SLUG = '__selftest-kill-children';
+
+function runKillChildrenSelfTest() {
+  // 桩把自己 pid 写进文件，然后睡到天荒地老（不渲染 / 不 TTS / 不联网）。
+  const dir = path.join(CFG.tmpDir, `lemo-selftest-kill-${process.pid}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const pidFile = role => path.join(dir, `${role}.pid`);
+  const code = "require('fs').writeFileSync(process.argv[1], String(process.pid)); setTimeout(function(){}, 600000);";
+  // ★ 桩必须 **detached + stdio:'ignore'**：本机实测，非 detached 的子进程会在**父进程退出时被顺带收掉**
+  //   （不管编排器有没有主动杀它）⇒ 那样「有没有杀」根本区分不出来（测试会假绿）。
+  //   detached 的桩能挺过父进程退出 ⇒ 只有编排器**主动** child.kill() 才能收掉它 —— 判据才成立。
+  // ★ 两个 spawn 入口都要覆盖：run()（缓冲 + 重试）与 runLive()（流式）。
+  const stubOpts = { windowsHide: true, detached: true, stdio: 'ignore' };
+  run(process.execPath, ['-e', code, pidFile('run')], stubOpts, { quiet: true });
+  runLive(process.execPath, ['-e', code, pidFile('live')], stubOpts);
+  const readPid = f => {
+    try { const n = Number(fs.readFileSync(f, 'utf8').trim()); return Number.isInteger(n) && n > 0 ? n : null; }
+    catch { return null; }
+  };
+  return new Promise(resolve => {
+    // 给两个桩进程一点时间把 pid 落盘（桩只 sleep，秒级）
+    setTimeout(() => {
+      console.log(`SELFTEST_DIR=${dir}`);
+      console.log(`SELFTEST_PID_RUN=${readPid(pidFile('run')) ?? 'null'}`);
+      console.log(`SELFTEST_PID_LIVE=${readPid(pidFile('live')) ?? 'null'}`);
+      console.log('SELFTEST_READY');
+      // 等测试从 stdin 打一个字节再触发 —— 把「触发信号收尾」这件事交给测试侧
+      let fired = false;
+      const fire = () => { if (fired) return; fired = true; process.emit('SIGINT'); resolve(); };
+      try { process.stdin.once('data', fire); process.stdin.resume(); } catch { /* stdin 不可用就直接定时触发 */ }
+      setTimeout(fire, 30000);
+    }, 3000);
+  });
 }
 
 main().catch(e => fail(e?.stack || String(e)));

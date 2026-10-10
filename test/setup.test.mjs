@@ -6,9 +6,9 @@
  *
  * ★ 为什么单独一个文件、不并进 test/smoke.mjs：
  *   smoke.mjs 的「19 条用例」是这批优化之前就冻结的验收基线，数量本身就是约定。
- *   安装逻辑的用例另起一个入口，两个数字互不干扰（smoke 仍是 19，这里是 12）。
+ *   安装逻辑的用例另起一个入口，两个数字互不干扰（smoke 仍是 19，这里是 13）。
  *   ★ 2026-10-08 复核：smoke 现为 **41** 条（`STATIC 9 + SERVER 27 + PROCESS 5`）——「19」是更早的快照；
- *     本文件（安装纯逻辑）仍为 **12** 条。
+ *     本文件（安装纯逻辑）仍为 **13** 条。
  *
  * ★ 为什么这些用例**必须**存在：
  *   这台机器环境已 12/12 就绪，「检测到缺失 → 生成安装动作」这条路径**本地永远走不到**。
@@ -30,6 +30,8 @@ import {
   FIXTURES, fixtureClean, fixtureBareWsl, fixturePartialAssets, fixtureReady, fixtureAllMissing,
   knownActionIds, simulateEnv, TIMEOUTS,
 } from '../lib/setup.mjs';
+// ★ driftCheck / CFG：本套件既有的「漂移哨兵」（⑤）本就以 lib/env.mjs 为对象，故一并向它取用。
+import { CFG, driftCheck } from '../lib/env.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -313,6 +315,36 @@ const CASES = [
       // 未知场景要报错而不是静默
       const r3 = await runNode(['lib/setup.mjs', '--simulate=不存在的场景'], { timeoutMs: 30000 });
       assert.notStrictEqual(r3.code, 0, '未知演练场景竟然返回 0');
+    },
+  },
+  {
+    name: '⑬ driftCheck 对「表达式写法」不再静默失明：读不到值 ⇒ 报「无法判定」（≠「无漂移」）',
+    run: () => {
+      // 由来（RISK-13）：编排器把 wslLib/winLib 写成 `process.env.LEMO_LIB_WSL || '...'`（**表达式**），
+      //   而 driftCheck 的正则只认**纯字符串字面量** ⇒ 读不到值 ⇒ 旧版**静默跳过**
+      //   ⇒ 调用方看到「没有漂移」，实际是**根本没比对上**（静默失明）。
+      // 判据：**「匹配不上」必须与「匹配上且一致」区分开**（下面三条正/负断言各钉一条路）。
+      const exprSrc = [
+        'const CFG = {',
+        `  wslLib: process.env.LEMO_LIB_WSL || '${CFG.wslLib}',`,
+        `  winLib: process.env.LEMO_LIB_WIN || '${CFG.winLib}',`,
+        '};',
+      ].join('\n');
+      const gotExpr = driftCheck(exprSrc);
+      const wslExpr = gotExpr.find((d) => d.id === 'drift.wslLib');
+      assert.ok(wslExpr, '★ 表达式写法必须产出可见条目（不再静默失明）');
+      assert.match(wslExpr.msg, /无法判定/, `★ 应明确说「无法判定」，实得：${wslExpr.msg}`);
+
+      // 区分①：纯字面量且**一致** ⇒ 该 key 不产出任何条目（= 真的「无漂移」）
+      const litOk = driftCheck(`const CFG = {\n  wslLib: '${CFG.wslLib}',\n};`);
+      assert.strictEqual(litOk.find((d) => d.id === 'drift.wslLib'), undefined,
+        '字面量且一致 ⇒ 不得产出条目（否则会把「一致」误报成问题）');
+
+      // 区分②：纯字面量但**不一致** ⇒ 报「漂移」（与「无法判定」是两条不同的路）
+      const litDrift = driftCheck("const CFG = {\n  wslLib: '/definitely/not/the/same',\n};");
+      const d2 = litDrift.find((d) => d.id === 'drift.wslLib');
+      assert.ok(d2, '不一致的字面量必须产出条目');
+      assert.match(d2.msg, /漂移/, `不一致应报「漂移」而非「无法判定」，实得：${d2.msg}`);
     },
   },
 ];

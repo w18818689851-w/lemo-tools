@@ -258,7 +258,7 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     **35 改为 37**（实测 `ls styles/*/demo/build.sh | wc -l` = **37**；`hd-2d` / `pictogram-motion`
 //     于第 113 批补入 `build.sh`，35 是旧值）。**只改这一个数、只动这一行注释，不触碰任何代码语义**
 //     （证明见 test/README.md）。这是**有意改编排器**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = '7130414be5906fcb0582c457e232b40b';
+export const ORCH_MD5 = 'c57baac7f042c1d62f01392385c679aa';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;
@@ -3753,3 +3753,102 @@ export const FULL_CASES = [
     },
   },
 ];
+// ── RISK-07（孤儿占显存）：中断出片时，正在跑的子进程必须被收掉 ──────────────────
+// ★ 为什么补在文件**末尾**用 STATIC_CASES.push，而不是插进上面数组字面量的中间：
+//   本仓 scripts/check-ref-lines.mjs 会核对「test/cases.mjs:<行号>」这类引用
+//   （scripts/clean-test-residue.mjs 里就有指向本文件中段的行号），在中间插行会让它们集体漂移。
+//   补在末尾 = 一行都不移动。
+// ★ 被测的是 lemo-make.mjs 的信号收尾：原实现只 releaseLock()，**不杀在跑的子进程**
+//   ⇒ 手工 Ctrl+C 中断出片时，渲染 / ffmpeg / TTS 子进程变孤儿、继续占显存（本项目常态瓶颈）。
+// ★ 为什么不是「真发一个 SIGINT」：本机实测（Windows）child.kill('SIGINT') /
+//   process.kill(pid, 'SIGINT') 都走 TerminateProcess，子进程的 process.on('SIGINT') **根本不执行**
+//   ⇒ 「发真信号看桩子进程死没死」在本机做不到。改为：让编排器自己 process.emit('SIGINT') 走
+//   **同一批**监听器（Node 收真信号时内部也是 emit），测试只做观察者（起进程 / 看 pid 死活 /
+//   看退出码 / 看锁）。
+// ★ 桩命令只 sleep（run + runLive 两个 spawn 入口各一个），不渲染 / 不 TTS / 不联网。
+// ★ 桩进程必须是 **detached**：本机实测，非 detached 的子进程会在**父进程退出时被顺带收掉**
+//   （不管编排器有没有主动杀它）⇒ 那样「有没有杀」区分不出来（测试会假绿）。detached 的桩能
+//   挺过编排器退出 ⇒ 只有编排器主动 child.kill() 才能收掉它，判据才成立。
+// ★ 锁目录用 LEMO_LOCK_DIR 指到临时树 ⇒ 绝不碰 D:/lemo-films 的真实锁。
+STATIC_CASES.push({
+  name: '④ 中断出片时在跑的子进程必须被收掉（RISK-07：孤儿进程占显存）',
+  run: async (ctx) => {
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    const lockDir = path.join(CFG.tmpDir, 'orch-kill-' + process.pid + '-' + Date.now().toString(36));
+    fs.mkdirSync(lockDir, { recursive: true });
+    let child = null;
+    let out = '';
+    let err = '';
+    let selftestDir = null;
+    const pids = [];
+    try {
+      child = spawn(process.execPath, [ctx.orchPath, '__selftest-kill-children'], {
+        cwd: ctx.root, windowsHide: true,
+        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', LEMO_LOCK_DIR: lockDir },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      child.stdout.on('data', (d) => { out += d.toString('utf8'); });
+      child.stderr.on('data', (d) => { err += d.toString('utf8'); });
+
+      // 1) 等编排器把两个桩进程都拉起来并打印 SELFTEST_READY
+      const t0 = Date.now();
+      while (Date.now() - t0 < 30000 && !/SELFTEST_READY/.test(out)) await ctx.sleep(200);
+      assert.match(out, /SELFTEST_READY/,
+        '30s 内没等到 SELFTEST_READY —— 编排器没走到信号收尾这一步。\nstdout:\n' + out + '\nstderr:\n' + err);
+
+      const mDir = /SELFTEST_DIR=(\S+)/.exec(out);
+      const mRun = /SELFTEST_PID_RUN=(\d+)/.exec(out);
+      const mLive = /SELFTEST_PID_LIVE=(\d+)/.exec(out);
+      assert.ok(mDir, '没解析到 SELFTEST_DIR。stdout:\n' + out);
+      assert.ok(mRun, '没解析到 run() 入口的桩 pid。stdout:\n' + out);
+      assert.ok(mLive, '没解析到 runLive() 入口的桩 pid。stdout:\n' + out);
+      selftestDir = mDir[1];
+      const pidRun = Number(mRun[1]);
+      const pidLive = Number(mLive[1]);
+      pids.push(pidRun, pidLive);
+      assert.ok(alive(pidRun), 'run() 入口的桩进程 ' + pidRun + ' 起来后就不在了');
+      assert.ok(alive(pidLive), 'runLive() 入口的桩进程 ' + pidLive + ' 起来后就不在了');
+      ctx.note('④ 两个 detached 桩进程已就位：run=' + pidRun + ' runLive=' + pidLive);
+
+      // 2) 触发信号收尾（编排器侧 process.emit('SIGINT') ⇒ 真信号处理器）
+      child.stdin.write('go\n');
+
+      // 3) 编排器必须以 130 退出（信号收尾的约定退出码）
+      const closed = await new Promise((resolve) => {
+        let done = false;
+        const finish = (v) => { if (!done) { done = true; resolve(v); } };
+        child.on('close', (code, signal) => finish({ code, signal }));
+        setTimeout(() => finish({ code: 'TIMEOUT' }), 20000);
+      });
+      assert.strictEqual(closed.code, 130,
+        '信号收尾后编排器退出码应为 130，实际 ' + JSON.stringify(closed) + '。\nstdout:\n' + out + '\nstderr:\n' + err);
+
+      // 4) ★★ 核心断言：两个 detached 桩进程都必须**真的死了**
+      //    桩是 detached 的 ⇒ 编排器退出**不会**顺带带走它们；只有编排器主动 child.kill()
+      //    才能收掉 ⇒ 这条断言真的能区分「杀了」与「没杀」。
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline && (alive(pidRun) || alive(pidLive))) await ctx.sleep(200);
+      const runStill = alive(pidRun);
+      const liveStill = alive(pidLive);
+      assert.ok(!runStill && !liveStill,
+        '中断后仍有 detached 子进程活着（孤儿、会继续占显存）：run(' + pidRun + ')=' + (runStill ? 'ALIVE' : 'dead')
+        + ' runLive(' + pidLive + ')=' + (liveStill ? 'ALIVE' : 'dead')
+        + ' —— 这正是 RISK-07 的形态：信号收尾只 releaseLock() 不杀在跑的子进程');
+
+      // 5) 并发锁也必须被释放（收尾的既有职责没被破坏）
+      assert.ok(!fs.existsSync(path.join(lockDir, '.__selftest-kill-children.lock')),
+        '信号收尾后并发锁没被释放（releaseLock 的职责被破坏）');
+    } finally {
+      // 收尾：杀掉可能残留的桩（无修复时它们会活着），并清掉临时目录（非递归删）
+      for (const pid of pids) { try { process.kill(pid); } catch { /* 已经没了 */ } }
+      try { if (child && child.exitCode === null) child.kill(); } catch { /* ignore */ }
+      try { fs.rmSync(path.join(lockDir, '.__selftest-kill-children.lock'), { force: true }); } catch { /* ignore */ }
+      try { fs.rmdirSync(lockDir); } catch { /* ignore */ }
+      if (selftestDir && /lemo-selftest-kill-\d+$/.test(selftestDir.replace(/\\/g, '/'))) {
+        try { fs.rmSync(path.join(selftestDir, 'run.pid'), { force: true }); } catch { /* ignore */ }
+        try { fs.rmSync(path.join(selftestDir, 'live.pid'), { force: true }); } catch { /* ignore */ }
+        try { fs.rmdirSync(selftestDir); } catch { /* ignore */ }
+      }
+    }
+  },
+});

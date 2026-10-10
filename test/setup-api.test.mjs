@@ -72,7 +72,15 @@ const log = (s = '') => process.stdout.write(`${s}\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── HTTP（node:http 直连，绕开代理）────────────────────────
-function httpSend(port, { method, path: p, headers = {}, body = null, timeoutMs = 60000 } = {}) {
+// ★★ 客户端预算（2026-10-10 定性 D8②）：`/api/env`、`/api/setup/actions`、**以及 `POST /api/setup/run`**
+//    都会触发 `checkEnv()`（lib/env.mjs —— **3 次串行 wsl.exe 探针**；`apiSetupRun` 更是**不用缓存**、
+//    每个 POST 都全量重探）。WSL **冷启动 / 忙**时，这一次全量探针可远超 60s（实测套件里
+//    `POST /api/setup/run` 偶发 60010ms 客户端超时，1/12）⇒ 用例偶发红（登记 D8②）。
+//    ⇒ 把客户端预算从 60s 提到 **180s**：覆盖冷启动首次探针（服务端单条 wsl 命令上限是
+//    RUN_TIMEOUT_MS=120s）并留余量。**这不是放宽断言**：所有断言（状态码 / 形状 / 计数 / 任务数增量）
+//    一字未改，只是把「等一个**被服务端封顶**的高成本探针」的客户端等待预算对齐到它的真实上界。
+const CLIENT_TIMEOUT_MS = 180000;
+function httpSend(port, { method, path: p, headers = {}, body = null, timeoutMs = CLIENT_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(
       { host: '127.0.0.1', port, path: p, method, headers: { Accept: 'application/json', Connection: 'close', ...headers }, agent: false },
@@ -344,6 +352,16 @@ async function main() {
     server = await startServer();
     const P = server.port;
     const get = (p) => getJson(P, p);
+
+    // ★★ 就绪屏障（2026-10-10 定性 D8②）：本套件起的是**真** server.mjs；`/api/env`、`/api/setup/actions`
+    //    以及 `POST /api/setup/run` 都会触发 lib/env.mjs:checkEnv 的 **3 次串行 wsl.exe 探针**
+    //    （`apiSetupRun` 更是**不用缓存**、每个 POST 都全量重探）。WSL **冷启动 / 忙**时这一次全量探针
+    //    可远超 60s ⇒ 用例偶发红（登记 2/13；本机复现为 `POST /api/setup/run` 60010ms，1/12）。
+    //    ⇒ 这里**先**用一次宽松超时的 `/api/env` 把 WSL 唤醒：探针成本照付（**真探针，不是 sleep**），
+    //      但不计入被测用例；随后的用例只面对**已热**的 WSL（另见文件顶 `CLIENT_TIMEOUT_MS` 的预算对齐）。
+    //      **不改任何断言**（形状 / 计数 / 任务数一字未动）。
+    const warm = await httpSend(P, { method: 'GET', path: '/api/env' });
+    need(warm.status === 200, `就绪屏障：/api/env 预热失败（${warm.status}）`);
 
     // 起服务后立刻记一份任务基线（跑完必须与它一致 —— 一个任务都不该新增）
     const baselineJobIds = new Set((await jobsList(P)).map((j) => j.id));

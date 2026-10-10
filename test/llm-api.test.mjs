@@ -117,27 +117,51 @@ async function withEnv(vars, fn) {
 const rmOverride = () => { try { fs.unlinkSync(overrideFilePath()); } catch { /* 没有就算了 */ } };
 
 // ── 本地桩服务（node:http，127.0.0.1:0，用完关闭）─────────────
-function startStub(handler) {
-  return new Promise((resolve) => {
+// ★★ 坏端口守卫（2026-10-10 定性 D8①）：`fetch()`（undici —— `chat()` 的客户端）**拒绝**连接 WHATWG
+//    规范的「坏端口」名单（2049 / 6666–6669 / 6679 / 6697 / 1719–1723 …），抛
+//    `TypeError: fetch failed`（`cause.message === 'bad port'`）；而 `node:http` 直连**同一端口**正常。
+//    本机动态端口范围是 **1024–15000**（`netsh int ipv4 show dynamicport tcp`）⇒ `listen(0)` 偶发被
+//    内核分到坏端口 ⇒ 桩「连不上」→ `chat()` 归一为 `unreachable` ⇒ 「容错·auth」「v4·workbuddy」等
+//    用例偶发红（实测并发下 ~0.5%，与近期改动无关）。⇒ 桩一律**重试到非坏端口**（端口仍由内核分配，
+//    ⇒ 不与别的进程相撞）。**这不是放宽断言**：只是让桩落在一个 `fetch` 允许的端口上。
+const BAD_PORTS = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+  101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179,
+  389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601,
+  636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566,
+  6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080,
+]);
+/** 起一个监听套接字（127.0.0.1:0）并**保证端口不在 `fetch` 的坏端口名单里**（否则换端口重试）。 */
+function listenSafe(handler) {
+  return new Promise((resolve, reject) => {
     const srv = http.createServer(handler);
     srv.on('clientError', () => { /* 客户端中途 abort 是预期的，别让它把测试搞崩 */ });
-    srv.listen(0, '127.0.0.1', () => {
+    srv.once('error', reject);
+    const tryListen = () => srv.listen(0, '127.0.0.1', () => {
       const { port } = srv.address();
-      resolve({
-        base: `http://127.0.0.1:${port}`,
-        port,
-        close: () => new Promise((r) => {
-          try { srv.closeAllConnections?.(); } catch { /* ignore */ }
-          srv.close(() => r());
-        }),
-      });
+      if (BAD_PORTS.has(port)) { srv.close(() => tryListen()); return; }   // ★ 坏端口 ⇒ 换一个
+      resolve(srv);
     });
+    tryListen();
+  });
+}
+function startStub(handler) {
+  return listenSafe(handler).then((srv) => {
+    const { port } = srv.address();
+    return {
+      base: `http://127.0.0.1:${port}`,
+      port,
+      close: () => new Promise((r) => {
+        try { srv.closeAllConnections?.(); } catch { /* ignore */ }
+        srv.close(() => r());
+      }),
+    };
   });
 }
 /** 拿一个「确定没人监听」的端口基址（连通性失败夹具：**不去连真外网**）。 */
 async function closedBase() {
-  const srv = http.createServer(() => { /* never */ });
-  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  // ★ 同样避开坏端口 —— 否则失败来自 `fetch` 的「bad port」而非真正的「端口没人监听」（语义跑偏）。
+  const srv = await listenSafe(() => { /* never */ });
   const { port } = srv.address();
   await new Promise((r) => srv.close(r));
   return `http://127.0.0.1:${port}`;

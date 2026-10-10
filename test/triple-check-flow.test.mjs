@@ -60,6 +60,7 @@ function startStub() {
     fixedText: '你好世界',      // 桩「从画面上读到」的字（= 真实烧录字幕，篡改用例里它保持不变）
     unloaded: false,           // GET state 的返回依据（true → 'not-loaded'，让 unloadModel 的复核通过）
     unloadV1FakeFail: false,   // true → v1 卸载返回 200 + {error:...}（假成功）⇒ 触发 v0 兜底
+    stateMode: 'ok',           // 'ok' | 'destroy'；'destroy' → GET state **直接断连**（复核请求必失败）
     frameRequests: 0,          // 真正的「每帧一次」chat 请求数（不含 ensureModelLoaded 的预热触发）
     chatBodies: [],            // 每次帧 chat 请求的**请求体**（供断言 2 张图 / 提示词含字幕）
     unloadV1: 0,
@@ -84,6 +85,8 @@ function startStub() {
 
     if (m === 'GET' && p === '/api/v0/models/qwen2.5-vl-7b-official') {
       state.statePolls++;
+      // ★ RISK-14 复现桩：'destroy' = 复核请求**直接断连**（客户端 fetch 抛错，模拟 LM Studio 不可达）
+      if (state.stateMode === 'destroy') { req.socket.destroy(); return; }
       return sendJson(res, 200, { state: state.unloaded ? 'not-loaded' : 'loaded' });
     }
     if (m === 'POST' && p === '/api/v1/models/unload') {
@@ -186,6 +189,7 @@ function resetStub({ mode = 'consistent', fixedText = FIXED, unloadV1FakeFail = 
   STUB_STATE.mode = mode;
   STUB_STATE.fixedText = fixedText;
   STUB_STATE.unloadV1FakeFail = unloadV1FakeFail;
+  STUB_STATE.stateMode = 'ok';          // ★ 复位：否则后续用例的复核会一直断连
   STUB_STATE.unloaded = false;          // ★ 每次都要复位：否则 ensureModelLoaded 会一直等到超时
   STUB_STATE.frameRequests = 0;
   STUB_STATE.chatBodies = [];
@@ -396,6 +400,33 @@ test('★ ⑩ 兜底：v1 卸载返回「200 + {"error":...}」假成功 ⇒ 回
   assert.ok(STUB_STATE.unloadV1 >= 1, 'v1 端点应被打过');
   assert.ok(STUB_STATE.unloadV0 >= 1, `★ v1 假成功 ⇒ 必须回落 v0，实得 unloadV0=${STUB_STATE.unloadV0}`);
   assert.equal(rep.vram.unloadOk, true);
+});
+
+test('★ ⑮ RISK-14：卸载请求成功、但**复核请求失败**（LM Studio 不可达）⇒ unloadOk=false 且打出 warn（绝不乐观假成功）', async () => {
+  // 由来：unloadModel() 的收尾曾是 `} catch { /* ignore */ } return true;` —— 复核那次 fetch
+  //   **自己抛错**（典型：LM Studio 已不可用 / 已退出）时被吞掉，然后**乐观返回 true**
+  //   ⇒ 调用方以为「已经卸载、显存已释放」，实际**可能没卸** ⇒ 后续 TTS / 渲染静默挂死。
+  // 判据：**「复核做不了」≠「卸载成功」** ⇒ 复核失败必须 return false，并 warn 明确原因。
+  // 本用例：卸载 POST 正常 200（请求本身成功）；复核 GET 直接断连（fetch 必抛错）⇒ 必须 false。
+  resetStub({ mode: 'consistent' });
+  STUB_STATE.stateMode = 'destroy';    // ★ 复核请求必失败（不是 200、也不是 5xx，而是连接被断）
+  const logs = [];
+  const origLog = console.log;
+  console.log = (...a) => { logs.push(a.map(String).join(' ')); };
+  let rep;
+  try {
+    // ★ timeoutMs 给小：让 ensureModelLoaded 的轮询（它也读 state 接口）快速放弃，别拖 300s。
+    rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true, maxFrames: 1, timeoutMs: 800 });
+  } finally {
+    console.log = origLog;
+    STUB_STATE.stateMode = 'ok';       // 复位，避免影响后续用例
+  }
+
+  assert.ok(STUB_STATE.unloadV1 >= 1, '★ 卸载请求本身必须被发出（本用例只让「复核」失败）');
+  assert.equal(rep.vram.unloadOk, false,
+    '★ 复核做不了 ⇒ 绝不能乐观返回 true（假成功）—— 否则调用方以为显存已释放');
+  assert.ok(logs.some((l) => /无法复核/.test(l)),
+    `★ 复核失败必须打出一条明确的 warn（说明为什么无法判定），实得日志：${JSON.stringify(logs)}`);
 });
 
 test('★ ⑪ 取不到判定文本（200 + {"error":…} 的「假成功」形状 / 200 + 空 content）⇒ 该帧 存疑 + errors、ok=false（**绝不**静默当成一致）', async () => {
