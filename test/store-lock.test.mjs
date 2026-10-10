@@ -21,6 +21,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const TMP_BASE = process.env.LEMO_TMP || 'D:/lemo-tmp';   // ★ 非 C 盘
 const dir = path.join(TMP_BASE, `store-lock-${process.pid}-${Date.now().toString(36)}`);
@@ -73,4 +75,81 @@ test('saveIndex 写出的 savedAt 是 ISO 字符串（与 prune-jobs / clean-tes
   assert.equal(typeof savedAt, 'string', `savedAt 应为字符串（ISO），实际 ${typeof savedAt}`);
   assert.match(savedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
     `savedAt 应是 ISO 8601（如 2026-10-09T00:00:00.000Z），实际 ${savedAt}`);
+});
+
+// ── ★★ D7 回归（2026-10-10）：跨进程锁必须**真正互斥** ────────────────────────
+//
+// ★ 由来：修 RISK-05（`lib/llm-api.mjs` 覆盖文件并发丢数据）时发现 `store.mjs` 的 `acquireLock`
+//   **不是互斥的**：旧实现 `writeFileSync(LOCK_FILE, 内容, {flag:'wx'})` 先建**空文件**再写内容，
+//   存在「锁文件在、内容还没写」的窗口 ⇒ 另一进程读到空串 ⇒ `holder=NaN` ⇒ 旧判据判**陈旧** ⇒
+//   `unlinkSync` 删掉**赢家**的锁 ⇒ 两个进程都自认持锁（8 子进程实测最多 2~3 个同时「拿锁成功」）。
+//
+// ★ 本用例的判据（**改前必红、改后必绿**）：8 个子进程各自反复 `acquireLock()`，
+//   拿到锁后在临界区里把「当前持有者」写进共享 `holder` 文件；若读到的前一位持有者不是自己
+//   ⇒ 说明**同一时刻有两个持有者** ⇒ 记一条 violation。跑完断言 violations **为空**。
+//
+// ★ 隔离：只碰 `D:/lemo-tmp/store-lock-mutex-*` 临时树，跑完递归删；子进程用**独立的** LEMO_FILM_DIR。
+const MUTEX_CHILD_SRC = [
+  "import fs from 'node:fs';",
+  "import path from 'node:path';",
+  'const dir = process.argv[2];',
+  'const storePath = process.argv[3];',
+  'process.env.LEMO_FILM_DIR = dir;',
+  'const store = await import(storePath);',
+  'store.loadIndex();',
+  "const root = path.join(dir, '.console');",
+  "const holderFile = path.join(root, 'holder');",
+  "const violFile = path.join(root, 'violations');",
+  'const me = String(process.pid);',
+  'for (let i = 0; i < 12; i++) {',
+  '  if (store.acquireLock()) {',
+  "    let prev = '';",
+  "    try { prev = fs.readFileSync(holderFile, 'utf8').trim(); } catch {}",
+  '    if (prev && prev !== me) {',
+  "      try { fs.appendFileSync(violFile, prev + ' -> ' + me + '\\n'); } catch {}",
+  '    }',
+  '    fs.writeFileSync(holderFile, me);',
+  '    const t = Date.now(); while (Date.now() - t < 15) {}',
+  "    fs.writeFileSync(holderFile, '');",
+  '    store.releaseLock();',
+  '  } else {',
+  '    const t = Date.now(); while (Date.now() - t < 3) {}',
+  '  }',
+  '}',
+  "process.stdout.write('DONE ' + me + '\\n');",
+  '',
+].join('\n');
+
+test('★★ D7：8 子进程争抢跨进程写锁 —— 任一时刻**至多 1 个持有者**（改前必红）', async () => {
+  const mdir = path.join(TMP_BASE, `store-lock-mutex-${process.pid}-${Date.now().toString(36)}`);
+  fs.rmSync(mdir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(mdir, '.console'), { recursive: true });
+  const childPath = path.join(mdir, 'lock-child.mjs');
+  fs.writeFileSync(childPath, MUTEX_CHILD_SRC, 'utf8');
+  const storePath = fileURLToPath(new URL('../lib/store.mjs', import.meta.url));
+  const N = 8;
+  const kids = [];
+  try {
+    for (let i = 0; i < N; i++) {
+      kids.push(spawn(process.execPath, [childPath, mdir, pathToFileURL(storePath).href],
+        { stdio: ['ignore', 'pipe', 'pipe'] }));
+    }
+    const outs = await Promise.all(kids.map((p) => new Promise((res) => {
+      let o = ''; let e = '';
+      p.stdout.on('data', (d) => { o += d; });
+      p.stderr.on('data', (d) => { e += d; });
+      p.on('close', (code) => res({ code, o, e }));
+    })));
+    for (let i = 0; i < N; i++) {
+      assert.equal(outs[i].code, 0, `子进程 ${i} 非零退出（stderr: ${outs[i].e}）`);
+      assert.match(outs[i].o, /DONE \d+/, `子进程 ${i} 未跑到完成（out: ${outs[i].o}）`);
+    }
+    const violPath = path.join(mdir, '.console', 'violations');
+    const viol = fs.existsSync(violPath) ? fs.readFileSync(violPath, 'utf8').trim() : '';
+    assert.equal(viol, '',
+      `★ 互斥被破坏：同一时刻出现了两个持有者（"前一位 -> 后一位"）：\n${viol}`);
+  } finally {
+    for (const k of kids) { try { k.kill(); } catch { /* ignore */ } }
+    try { fs.rmSync(mdir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
 });

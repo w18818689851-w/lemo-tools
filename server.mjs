@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkEnv, CFG } from './lib/env.mjs';
+import { checkEnv, CFG, makeTtlCache } from './lib/env.mjs';
 import * as jobs from './lib/jobs.mjs';
 import * as store from './lib/store.mjs';
 import * as briefs from './lib/briefs.mjs';
@@ -115,7 +115,7 @@ function readBody(req, limit = 1 << 20) {
     const chunks = [];
     req.on('data', (d) => {
       n += d.length;
-      if (n > limit) { reject(new Error('请求体过大')); req.destroy(); return; }
+      if (n > limit) { const e = new Error('请求体过大'); e.code = 'BODY_TOO_LARGE'; reject(e); req.resume(); return; }   // ★ D4：带 code（区分「体过大」与「不是合法 JSON」）；只**丢弃**剩余体、**不 destroy** —— 否则响应发不出去，客户端只见 ECONNRESET、看不到这条 400
       chunks.push(d);
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
@@ -204,7 +204,7 @@ function serveStatic(req, res, urlPath) {
 async function apiRun(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const slug = body.slug;
   if (typeof slug !== 'string' || !slug.trim()) return sendJson(res, 400, { error: '缺少 slug' });
@@ -363,7 +363,12 @@ function apiPrecheck(req, res, url) {
 
 // ── API: GET /api/env（缓存 30s）───────────────────────────
 const ENV_TTL_MS = 30000;
-let envCache = { at: 0, data: null, inflight: null };
+// ★★ D3（2026-10-10）：TTL 缓存 + inflight 去重抽到 lib/env.mjs:makeTtlCache ——
+//   它在**任何结局**（成功 / 失败 / 抛错 / 超时）都用 `finally` 复位 inflight。
+//   改前这里用 `.then`/`.catch` 复位 ⇒ 探针**不 settle**（WSL/powershell 挂起）时 inflight 永不复位
+//   ⇒ `/api/env`（及 setup 的两个端点）**永久卡死且不自愈**（`?force=1` 也救不回来）。
+//   ★ 见 lib/env.mjs:run —— 它现在有默认超时（RUN_TIMEOUT_MS），探针再也不会无限挂住。
+const envCache = makeTtlCache(ENV_TTL_MS);
 
 /**
  * 把「安装动作」挂到检测结果上 —— **只在服务端做一次**，前端不重新推导。
@@ -410,17 +415,12 @@ async function apiEnv(req, res, force, url) {
     return sendJson(res, 200, { ...withSetup(d), cached: false, cacheAgeMs: 0, simulated: sim });
   }
 
-  const fresh = envCache.data && Date.now() - envCache.at < ENV_TTL_MS;
-  if (!force && fresh) {
-    return sendJson(res, 200, { ...withSetup(envCache.data), cached: true, cacheAgeMs: Date.now() - envCache.at });
+  const fresh = envCache.peek();
+  if (!force && fresh.fresh) {
+    return sendJson(res, 200, { ...withSetup(fresh.data), cached: true, cacheAgeMs: fresh.ageMs });
   }
-  // 并发请求只跑一次全量探测（探测要起 WSL，成本高）
-  if (!envCache.inflight) {
-    envCache.inflight = checkEnv()
-      .then((d) => { envCache = { at: Date.now(), data: d, inflight: null }; return d; })
-      .catch((e) => { envCache.inflight = null; throw e; });
-  }
-  const data = await envCache.inflight;
+  // 并发请求只跑一次全量探测（探测要起 WSL，成本高）—— inflight 去重，**任何结局都复位**（见 makeTtlCache）
+  const data = await envCache.get(checkEnv);
   sendJson(res, 200, { ...withSetup(data), cached: false, cacheAgeMs: 0 });
 }
 
@@ -466,7 +466,7 @@ async function apiSetupActions(req, res, url) {
 async function apiSetupRun(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const actionId = body.actionId;
   if (typeof actionId !== 'string' || !actionId.trim()) return sendJson(res, 400, { error: '缺少 actionId' });
@@ -607,7 +607,7 @@ async function apiResourcesDirplan(req, res) {
 async function apiResourcesImport(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const id = body.id;
   const srcPath = body.path;
@@ -664,7 +664,7 @@ function buildResourceDownloadScript(id) {
 async function apiResourcesDownload(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const id = body.id;
   if (typeof id !== 'string' || !id.trim()) return sendJson(res, 400, { error: '缺少 id' });
@@ -844,7 +844,7 @@ function apiStyle(req, res, slug) {
 async function apiReveal(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const slug = body.slug;
   if (typeof slug !== 'string' || !slug.trim()) return sendJson(res, 400, { error: '缺少 slug' });
@@ -1203,7 +1203,7 @@ function apiBriefList(req, res) {
 async function apiBriefCreate(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const r = briefs.createBrief({ topic: body.topic, slug: body.slug, lang: body.lang, ratio: body.ratio, size: body.size });
   if (!r.ok) return sendJson(res, r.code, { error: r.error });
@@ -1344,7 +1344,7 @@ function apiVoiceTestAudio(req, res, file) {
 async function apiVoiceTest(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return sendJson(res, 400, { error: '缺少 name' });
@@ -1415,7 +1415,7 @@ async function apiVoiceSources(req, res) {
 async function apiVoiceImport(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const r = await voices.prepareVoiceImport({ file: body.file, name: body.name });
   if (!r.ok) return sendJson(res, r.code || 400, { error: r.error });
@@ -1575,7 +1575,7 @@ async function apiDubUpload(req, res, url) {
 async function apiDubPreview(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const script = typeof body.script === 'string' ? body.script : '';
   if (!script.trim()) return sendJson(res, 400, { error: 'script 不能为空（先粘贴一段文案）' });
@@ -1657,7 +1657,7 @@ async function apiDubStyles(req, res) {
 async function apiDubAnalyze(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const script = typeof body.script === 'string' ? body.script : '';
   if (!script.trim()) return sendJson(res, 400, { error: 'script 不能为空（先粘贴一段文案）' });
@@ -1705,7 +1705,7 @@ async function apiDubAnalyze(req, res) {
 async function apiDubRun(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const v = dub.validateRunBody(body);
   if (!v.ok) return sendJson(res, 400, { error: v.error });
@@ -1874,7 +1874,7 @@ function apiBriefGet(req, res, id) {
 async function apiBriefPatch(req, res, id) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return sendJson(res, 400, { error: '请求体必须是一个 JSON 对象' });
   }
@@ -1914,7 +1914,7 @@ function apiBriefProcessable(req, res, url) {
 async function apiBriefRun(req, res, id) {
   let body = {};
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { error: '请求体不是合法 JSON' }); }
+  catch (e) { return sendJson(res, 400, { error: bodyReadError(e) }); }
 
   const b = briefs.getBrief(id);
   if (!b) {
@@ -2194,7 +2194,7 @@ function llmFail(res, e) {
 async function apiLlmValidate(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+  catch (e) { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: bodyReadError(e) } }); }
 
   try {
     const mod = await loadLlmApi();
@@ -2211,7 +2211,7 @@ async function apiLlmValidate(req, res) {
 async function apiLlmChat(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+  catch (e) { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: bodyReadError(e) } }); }
 
   try {
     const mod = await loadLlmApi();
@@ -2244,7 +2244,7 @@ async function apiLlmChat(req, res) {
 async function apiLlmInvoke(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+  catch (e) { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: bodyReadError(e) } }); }
 
   try {
     const mod = await loadLlmApi();
@@ -2285,7 +2285,7 @@ async function apiLlmInvoke(req, res) {
 async function apiLlmModels(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+  catch (e) { return sendJson(res, 200, { ok: false, error: { kind: 'config', message: bodyReadError(e) } }); }
 
   try {
     const mod = await loadLlmApi();
@@ -2367,7 +2367,7 @@ async function apiLlmServiceGet(req, res, id) {
 async function apiLlmServiceSave(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+  catch (e) { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: bodyReadError(e) } }); }
 
   try {
     const mod = await loadLlmApi();
@@ -2396,7 +2396,7 @@ async function apiLlmServiceSave(req, res) {
 async function apiLlmServiceDelete(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+  catch (e) { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: bodyReadError(e) } }); }
 
   try {
     const mod = await loadLlmApi();
@@ -2440,7 +2440,7 @@ function apiLlmServiceDeleteGone(req, res, id) {
 async function apiLlmServiceSetActive(req, res) {
   let body;
   try { body = JSON.parse((await readBody(req)) || '{}'); }
-  catch { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: '请求体不是合法 JSON' } }); }
+  catch (e) { return sendJson(res, 400, { ok: false, error: { kind: 'config', message: bodyReadError(e) } }); }
 
   try {
     const mod = await loadLlmApi();
@@ -2494,10 +2494,32 @@ function llmWriteAllowed(method, path) {
   return LLM_WRITE_WHITELIST.has(`${method} ${path}`);
 }
 
+/**
+ * 读体 / 解析失败时的**用户可读**文案（★ D4，2026-10-10）。
+ * `readBody` 超限抛的错带 `code === 'BODY_TOO_LARGE'` —— 那是「请求体过大」，
+ * 不能跟「不是合法 JSON」混为一谈（旧代码一律报后者，误导排查）。
+ * ★ 判据只此一处，各 handler 的 catch 都调它，免得 20 处文案各自漂移。
+ * ★ 定义位置在 readBody 之后（函数声明提升 ⇒ 调用方不受位置影响）：避免在 `server.mjs:2070`
+ *   之前增删行 —— 那个行号被 `test/README.md` 的引用钉住（check-ref-lines 会因行号漂移报错）。
+ */
+function bodyReadError(e) {
+  return (e && e.code === 'BODY_TOO_LARGE') ? '请求体过大' : '请求体不是合法 JSON';
+}
+
 // ── 路由 ────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
-  const p = decodeURIComponent(url.pathname);
+  // ★★ D1（2026-10-10）：URL 解析 / 解码**必须在 try 之内**（或就地 try/catch）——
+  //   畸形 %-编码（如 `GET /%`）会让 `decodeURIComponent` 抛 `URIError`；而本回调是 **async** ⇒
+  //   同步抛错变成**未捕获的 Promise 拒绝** ⇒ Node 22 默认**直接退出**（长驻控制台被打挂，
+  //   且**不走 SIGINT 收尾** ⇒ 在跑的 lemo-make / WSL 渲染子进程变孤儿、占着显存）。
+  //   ⇒ 就地捕获，回**结构化 400**（不是 500，更不是把进程打挂）。
+  let url, p;
+  try {
+    url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
+    p = decodeURIComponent(url.pathname);
+  } catch {
+    return sendJson(res, 400, { error: '请求路径不是合法的 URL 编码' });
+  }
   const m = req.method || 'GET';
 
   try {
@@ -2623,7 +2645,10 @@ const server = http.createServer(async (req, res) => {
 
     return serveStatic(req, res, p);
   } catch (e) {
-    if (!res.headersSent) sendJson(res, 500, { error: String(e && e.message || e) });
+    // ★★ D5（2026-10-10）：兜底 500 **不回原始异常文本** —— 它可能含本机绝对路径 / 堆栈
+    //   （项目一贯口径：对外响应「不含堆栈、不含内部路径」）。原始错误只打到**服务端日志**，便于排查。
+    console.error('✗ 未处理的请求异常：', (e && e.stack) || e);
+    if (!res.headersSent) sendJson(res, 500, { error: '服务内部错误（详情见服务端日志）' });
     else try { res.end(); } catch { /* ignore */ }
   }
 });
@@ -2820,17 +2845,44 @@ start();
   if (stuck.length) console.log(`  主题工单：${stuck.length} 张上次没跑完的 running 工单已改成 failed（可点「重试」）`);
 }
 
-// 控制台退出时，把还在跑的任务一起收掉 —— 否则会留下占 GPU 的孤儿进程
+// 控制台退出时，把还在跑的任务一起收掉 —— 否则会留下占 GPU 的孤儿进程。
+//
+// ★★ 这是**唯一**的收尾实现：`SIGINT` / `SIGTERM` 与「进程级兜底」
+//   （`uncaughtException` / `unhandledRejection`）都调它 —— **绝不写第二份**，
+//   否则两条路径会漂移，而兜底那条最容易漏掉「终止在跑的子进程」。
 let closing = false;
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    if (closing) process.exit(0);
-    closing = true;
-    console.log('\n  正在停止…');
+function shutdown(reason, exitCode = 0) {
+  if (closing) process.exit(exitCode);
+  closing = true;
+  console.log(`\n  正在停止…${reason ? `（${reason}）` : ''}`);
+  try {
     const q = jobs.queueState();
     if (q.running) jobs.cancelJob(q.running.id);
     for (const w of q.waiting) jobs.cancelJob(w.id);
     jobs.flushPersist();     // 别让 500ms 去抖把最后一次状态变化吞掉
-    setTimeout(() => process.exit(0), 800).unref?.();
-  });
+  } catch (e) {
+    // ★ 收尾本身出错也要**继续退出** —— 否则「兜底」会把进程卡在坏状态里。
+    console.error('  （收尾时出错，仍继续退出）', (e && e.message) || e);
+  }
+  setTimeout(() => process.exit(exitCode), 800).unref?.();
 }
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => shutdown(`收到 ${sig}`, 0));
+}
+
+// ── 进程级兜底（D1 的第二道防线）────────────────────────────
+//
+// ★ 为什么必须有：本服务**长驻**。任何一处 async 回调里同步抛错 ⇒ 未捕获的 Promise 拒绝
+//   ⇒ Node 22 默认**直接退出**，而且**不走 SIGINT 收尾** ⇒ 在跑的渲染子进程不被终止、
+//   变成**占显存的孤儿**（显存是本项目常态瓶颈，会把后续任务卡死）。
+//   ★ 与 SIGINT **同源**：调同一个 `shutdown()` —— 收尾动作逐字一致，不写第二份。
+// ★ 兜底后**退出**（码 1）而不是继续跑：走到这里说明进程状态已无法保证一致，
+//   「收尾后退出」比「带着坏状态继续跑」安全。退出码 1 与 SIGINT 的正常退出（0）区分开。
+process.on('uncaughtException', (e) => {
+  console.error('\n✗ 未捕获异常（进程级兜底）：', (e && e.stack) || e);
+  shutdown('未捕获异常', 1);
+});
+process.on('unhandledRejection', (e) => {
+  console.error('\n✗ 未处理的 Promise 拒绝（进程级兜底）：', (e && e.stack) || e);
+  shutdown('未处理的 Promise 拒绝', 1);
+});

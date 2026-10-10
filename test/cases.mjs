@@ -1018,6 +1018,23 @@ export const SERVER_CASES = [
     },
   },
   {
+    // ★★ D1 回归（2026-10-10）：一条畸形 %-编码路径**不能**把长驻控制台打挂。
+    //   改前：server.mjs 的 `new URL(...)` / `decodeURIComponent(...)` 写在 try **之外**，
+    //   而 createServer 回调是 **async** ⇒ 同步抛错变成**未捕获的 Promise 拒绝** ⇒ Node 22 直接退出
+    //   （实测：`GET /%` ⇒ 进程 exit=1，后续请求 ECONNRESET；且不走 SIGINT 收尾 ⇒ 渲染子进程成孤儿）。
+    //   断言（**正面**）：① 该请求拿到**结构化 400**（不是把进程打挂）；② 紧跟一条正常请求仍 200（进程还活着）。
+    name: '③ 畸形 %-编码路径 → 结构化 400 且服务仍存活（D1）',
+    run: async (ctx) => {
+      const bad = await ctx.get('/%');
+      assert.strictEqual(bad.status, 400, `畸形路径状态码 ${bad.status}（期望 400）body=${bad.text.slice(0, 200)}`);
+      assert.ok(bad.json && typeof bad.json.error === 'string' && bad.json.error,
+        `响应不是结构化错误：${bad.text.slice(0, 200)}`);
+      // 进程存活判据：紧接一条正常请求仍能拿到 200（进程死了这里会 ECONNREFUSED / 超时）。
+      const alive = await ctx.get('/api/jobs');
+      assert.strictEqual(alive.status, 200, `畸形请求后服务已不可用（${alive.status}）—— 进程被打挂了`);
+    },
+  },
+  {
     name: '③ 非法 slug → 400（注入防护）',
     run: async (ctx) => {
       const r = await ctx.post('/api/run', { slug: '../etc/passwd', opts: [] });

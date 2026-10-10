@@ -61,6 +61,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // ── ★ 先把成片根指到临时目录（**必须在 import 模块之前**：CFG.exportDir 在 env.mjs 加载时定值）
 const TMP = `D:/lemo-tmp/llm-api-test-${process.pid}-${Date.now().toString(36)}`;
@@ -2477,6 +2479,195 @@ test('★ §11.5 validate()·流式 bad-shape：流式增量类型非法 ⇒ sha
       assert.equal(r.steps.shape.kind, 'bad-shape', '★ 流式路径的 bad-shape 必须硬失败');
     } finally { await stub.close(); rmOverride(); }
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ⑭ ★★ RISK-05：覆盖文件的「并发写 / 坏文件」不丢用户数据 ──────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//   缺陷：`saveOverride` 原子写的 tmp 名**固定**（`<file>.tmp`）+ 整段 read-modify-write **没有跨进程锁**
+//   ⇒ ① 并发写同一 tmp 互相踩（实测 EPERM，写整个失败）；② `readOverride()` 读到半截文件返回 `{}`
+//     ⇒ 后续「合并写回」把用户真实的覆盖文件（含**全部密钥**）**整份清空**。
+//   修法（照 lib/store.mjs 的 `saveIndex` / lib/dub.mjs 的 `saveIndex` 范式）：tmp 名带 pid + 序号、
+//     拿 store.mjs 的跨进程写锁、锁拿不到仍「重读 + 合并」、★ 盘上文件**存在却解析不了 ⇒ 拒绝写**。
+
+test('★★ RISK-05·坏文件：盘上覆盖文件解析不了时 saveOverride / saveService **拒绝写入**，绝不整份清空密钥', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      // 半截文件（外部工具手改坏 / 崩溃残留）——**含用户真实密钥**
+      const RAW = '{"version":1,"active":"svc-real","services":[{"id":"svc-real","apiKey":"sk-REAL-USER-KEY-abcdef0123456789","baseUrl":"http://x"';
+      fs.writeFileSync(overrideFilePath(), RAW, 'utf8');
+      // ① 直接调 saveOverride
+      const r = saveOverride({ active: 'svc-new', services: [{ id: 'svc-new', apiKey: 'sk-new' }] });
+      assert.equal(r.ok, false, '★ 读到坏文件必须**拒绝写入**（否则会把用户真实密钥整份清空）');
+      assert.equal(r.error.kind, 'config');
+      assert.equal(fs.readFileSync(overrideFilePath(), 'utf8'), RAW, '★ 拒绝写入后盘上内容必须**一字未动**');
+      // ② 走 CRUD 入口（saveService）也必须拒绝（同一条写路径）
+      const s = saveService({ id: 'svc-x', kind: 'openai-compatible', target: 'model',
+        baseUrl: 'http://127.0.0.1:1', apiKey: 'sk-x', model: 'm' });
+      assert.equal(s.ok, false, '★ saveService 走同一写路径 ⇒ 同样必须拒绝');
+      assert.equal(fs.readFileSync(overrideFilePath(), 'utf8'), RAW, '★ saveService 也必须一字未动');
+      // ③ **读**路径的既有契约不变：坏文件仍降级为「无覆盖」（不抛）
+      assert.deepEqual(readOverride(), {}, '★ 读路径契约不变：坏文件仍视为「无覆盖」');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ RISK-05·锁拿不到（照 test/store-lock.test.mjs 的姿势）：saveOverride 仍「重读 + 合并」⇒ 不丢盘上服务与密钥', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    // ★ 把锁文件做成**目录** ⇒ `acquireLock()` 必失败（与 store-lock.test.mjs 的夹具同款，不依赖并发时序）
+    const LOCK_DIR = path.join(path.dirname(overrideFilePath()), '.console', 'index.lock');
+    try {
+      fs.mkdirSync(LOCK_DIR, { recursive: true });
+      const KEY = 'sk-ONDISK-KEY-abcdef0123456789';
+      fs.writeFileSync(overrideFilePath(), JSON.stringify({ version: 1, active: 'svc-a',
+        services: [{ id: 'svc-a', apiKey: KEY, baseUrl: 'http://a' }, { id: 'svc-b', apiKey: 'sk-b' }] }), 'utf8');
+
+      const r = saveOverride({ active: 'svc-b' });   // 只改 active、**不带 services** ⇒ 若不合并就会只剩空 services
+
+      assert.equal(r.ok, true, '未拿到锁不该让写入失败（best-effort：宁可有竞态，也不阻塞用户保存）');
+      const disk = JSON.parse(fs.readFileSync(overrideFilePath(), 'utf8'));
+      assert.deepEqual(disk.services.map((s) => s.id).sort(), ['svc-a', 'svc-b'],
+        '★ 未拿到锁仍应「重读 + 合并」⇒ 盘上两套服务都要在（若只剩空表，说明写路径把盘上内容盖掉了）');
+      assert.equal(disk.services.find((s) => s.id === 'svc-a').apiKey, KEY, '★ 盘上服务的密钥不得丢');
+      assert.equal(disk.active, 'svc-b', '本次的改动（active）应生效');
+      // ★ 降级 warn 只由 `warnOnce` 打一次（本套件前面若干 CRUD 用例的临时树里没有 `.console` ⇒ 早触发过去重）
+      //   ⇒ 这里不断言 warn 文案，只断言**行为**（上面三条）。`warnOnce` 的去重语义见 lib/llm-api.mjs。
+    } finally {
+      try { fs.rmdirSync(LOCK_DIR); } catch { /* ignore */ }
+      rmOverride();
+    }
+  });
+});
+
+// ── ★★ 并发写的「重读 + 合并」：用**确定性夹具**复现「读到之后、写回之前盘上被改」（不必靠真并发时序）──
+//   ★ 姿势与 `test/store-lock.test.mjs` 一致：**用夹具把那个危险交错摆出来**，而不是赌多进程的时序
+//     （真多进程是**概率性**的，会偶发假红；下面的确定性夹具每次都走同一条路，且**改前必红**）。
+//   ★ 两条规则见 lib/llm-api.mjs 的 `saveOverride`（照 lib/store.mjs 的 `saveIndex` 范式）。
+
+test('★★ RISK-05·并发写不丢数据（规则②）：盘上在本进程「读到之后、写回之前」多出来的服务，必须被保留', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      const OTHER_KEY = 'sk-OTHER-KEY-abcdef0123456789';
+      const write = (svcs) => fs.writeFileSync(overrideFilePath(),
+        JSON.stringify({ version: 1, active: 'base', services: svcs }), 'utf8');
+      write([{ id: 'base', apiKey: 'sk-base', baseUrl: 'http://base' }]);
+      // ① 本进程「读一次」⇒ 快照里只有 base
+      assert.deepEqual(listServices().map((s) => s.id), ['base']);
+      // ② 另一个进程在我们读之后、写回之前，往盘上**加了一套 other**（含密钥）
+      write([{ id: 'base', apiKey: 'sk-base', baseUrl: 'http://base' },
+        { id: 'other', apiKey: OTHER_KEY, baseUrl: 'http://other' }]);
+      // ③ 本进程按**自己那份已过时的**服务表写回 ⇒ 必须「重读 + 合并」⇒ 保住 other
+      const r = saveOverride({ version: 1, active: 'base',
+        services: [{ id: 'base', apiKey: 'sk-base', baseUrl: 'http://base' },
+          { id: 'mine', apiKey: 'sk-mine', baseUrl: 'http://mine' }] });
+      assert.equal(r.ok, true);
+      const disk = JSON.parse(fs.readFileSync(overrideFilePath(), 'utf8'));
+      const ids = disk.services.map((s) => s.id);
+      assert.ok(ids.includes('other'),
+        `★ 并发写回**不得抹掉**别的进程刚加的 other（实得 ${ids.join(',')}）—— 改前这里必红`);
+      assert.ok(ids.includes('mine'), '本次新增的 mine 也要在');
+      assert.equal(disk.services.find((s) => s.id === 'other').apiKey, OTHER_KEY, '★ other 的密钥不得丢');
+    } finally { rmOverride(); }
+  });
+});
+
+test('★★ RISK-05·并发写不丢数据（规则①）：别的进程**删掉**的服务，本进程的写回不得把它「复活」', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    try {
+      const write = (svcs) => fs.writeFileSync(overrideFilePath(),
+        JSON.stringify({ version: 1, active: 'base', services: svcs }), 'utf8');
+      write([{ id: 'base', apiKey: 'sk-base' }, { id: 'victim', apiKey: 'sk-victim' }]);
+      // ① 本进程读到 base + victim
+      assert.deepEqual(listServices().map((s) => s.id).sort(), ['base', 'victim']);
+      // ② 另一个进程把 victim 删了
+      write([{ id: 'base', apiKey: 'sk-base' }]);
+      // ③ 本进程仍持有 victim（过时视图）并写回 ⇒ 必须**跟着删**，不得复活 victim
+      const r = saveOverride({ version: 1, active: 'base',
+        services: [{ id: 'base', apiKey: 'sk-base' }, { id: 'victim', apiKey: 'sk-victim' }] });
+      assert.equal(r.ok, true);
+      const ids = JSON.parse(fs.readFileSync(overrideFilePath(), 'utf8')).services.map((s) => s.id);
+      assert.ok(!ids.includes('victim'),
+        `★ 别人删掉的 victim 不得被写回「复活」（实得 ${ids.join(',')}）—— 改前这里必红`);
+      assert.ok(ids.includes('base'));
+    } finally { rmOverride(); }
+  });
+});
+
+// ★★ 多进程并发保存（真实进程 + 屏障）：N 个子进程各自保存一套**唯一**的服务。
+//   ★ 屏障（照 test/prune-jobs.test.mjs 的姿势）：子进程先自旋等一个 `go` 文件 ⇒ 全部**同时**开跑，
+//     最大化「读盘 → 写回」的交错（否则子进程自然错峰 ⇒ 假绿）。
+//   ★★ 本用例断言的是**恒成立**的不变量：文件**永不被写坏**（始终可解析）、盘上原有服务的**密钥绝不丢**、
+//     每个子进程的 `saveService()` **永不抛**（都拿到结构化结果）。★ 不断言「N 套一条不少」—— 原因：
+//     `lib/store.mjs` 的 `acquireLock` 在**高并发**下**不是严格互斥**的（实测：它「先 `wx` 创建、再写
+//     pid」不是原子操作 ⇒ 另一进程能读到**刚创建的空锁文件**、判成陈旧锁而删掉别人那把 ⇒ 两个持有者并存）。
+//     那条更强的断言会**概率性假红**（N=8 实测约 4/10 丢 1~2 套），不适合做常驻用例；
+//     「一条不少」的严格复现见报告里的一次性并发探针（N≤4 稳定全绿）。
+const CONC_N = 6;
+const CONC_CHILD_SRC = [
+  "import fs from 'node:fs';",
+  "const mod = await import(process.env.MOD_URL);",
+  "const go = process.env.GO_FILE;",
+  "const id = process.env.SVC_ID;",
+  "process.stdout.write('READY\\n');",
+  "while (!fs.existsSync(go)) { /* spin */ }",
+  "const r = mod.saveService({ id, label: id, kind: 'openai-compatible', target: 'model',",
+  "  baseUrl: 'http://127.0.0.1:1', apiKey: 'sk-' + id + '-0123456789abcdef', model: 'm' });",
+  "process.stdout.write('RESULT ' + JSON.stringify({ id, ok: r.ok }) + '\\n');",
+  "process.exit(0);",
+].join('\n');
+
+test('★★ RISK-05·多进程并发保存：文件绝不被写坏、原有密钥绝不丢、每个 saveService 都永不抛', async () => {
+  const LIB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib');
+  const dir = path.join(TMP, `conc-${Date.now().toString(36)}`);
+  fs.mkdirSync(path.join(dir, '.console'), { recursive: true });   // ★ 锁文件落在 .console ⇒ 必须存在
+  const OVERRIDE = path.join(dir, '_llm-api.json');
+  const GO = path.join(dir, 'go');
+  const CHILD = path.join(TMP, 'conc-child.mjs');
+  const BASE_KEY = 'sk-BASE-KEY-abcdef0123456789';
+  fs.writeFileSync(OVERRIDE, JSON.stringify({ version: 1, active: 'base',
+    services: [{ id: 'base', label: 'base', kind: 'openai-compatible', target: 'model',
+      baseUrl: 'http://127.0.0.1:1', apiKey: BASE_KEY, model: 'm' }] }), 'utf8');
+  fs.writeFileSync(CHILD, CONC_CHILD_SRC, 'utf8');
+
+  const kids = [];
+  try {
+    for (let i = 0; i < CONC_N; i++) {
+      const id = `svc-${i}`;
+      const p = spawn(process.execPath, [CHILD], {
+        env: { ...process.env, LEMO_FILM_DIR: dir, MOD_URL: pathToFileURL(path.join(LIB, 'llm-api.mjs')).href,
+          SVC_ID: id, GO_FILE: GO },
+        windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const rec = { id, out: '', err: '' };
+      p.stdout.on('data', (d) => { rec.out += d; });
+      p.stderr.on('data', (d) => { rec.err += d; });
+      kids.push({ id, p, rec });
+    }
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let t = 0; t < 600 && !kids.every((k) => k.rec.out.includes('READY')); t++) await wait(10);
+    assert.ok(kids.every((k) => k.rec.out.includes('READY')), '子进程应全部就绪（否则夹具问题）');
+    fs.writeFileSync(GO, 'go', 'utf8');                      // ★ 放行：全部同时开跑
+    await Promise.all(kids.map((k) => new Promise((res) => k.p.on('close', res))));
+
+    // ① 文件**始终可解析**（原子写 + 各写各的 tmp ⇒ 不会被写坏）—— JSON.parse 失败会直接抛
+    const disk = JSON.parse(fs.readFileSync(OVERRIDE, 'utf8'));
+    // ② 盘上原有服务的**密钥绝不丢**（并发写回不得清空别人）
+    const base = disk.services.find((s) => s.id === 'base');
+    assert.ok(base, '★ 并发保存后 base 必须还在（不得被整份清空）');
+    assert.equal(base.apiKey, BASE_KEY, '★ base 的密钥不得丢');
+    // ③ 每个子进程的 saveService 都**拿到了结构化结果**（永不抛、永不静默崩）
+    for (const k of kids) {
+      assert.ok(/RESULT \{"id"/.test(k.rec.out),
+        `子进程 ${k.id} 未产出结构化结果（stderr: ${k.rec.err.trim()}）—— saveService 应永不抛`);
+    }
+  } finally {
+    for (const k of kids) { try { k.p.kill(); } catch { /* ignore */ } }
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
 });
 
 // ── 运行器 ──────────────────────────────────────────────────

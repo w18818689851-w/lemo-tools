@@ -38,7 +38,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
-import { CFG } from '../lib/env.mjs';               // 只借常量；env.mjs 顶层无副作用
+import { CFG, run, makeTtlCache } from '../lib/env.mjs';   // 只借常量与 run()/缓存；env.mjs 顶层无副作用
 import { knownActionIds } from '../lib/setup.mjs';  // 只借「静态登记的动作 id」；顶层无副作用
 
 // ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
@@ -304,6 +304,43 @@ async function main() {
 
   let server = null;
   try {
+    // ── ★★ D3（2026-10-10）：run() 超时 + inflight 复位（**桩命令**模拟挂起，绝不真跑 WSL）──
+    //   改前：lib/env.mjs 的 run() **没有任何超时** ⇒ 探针挂起则永不 resolve；而 server.mjs 的
+    //   apiEnv 只在 .then/.catch 复位 inflight ⇒ 一次挂起就把 /api/env 永久卡在 inflight 且不自愈。
+    await runCase('⑩ run() 超时：桩命令挂起 ⇒ 按 opts.timeout 封顶返回（timedOut=true，code=-2）', async () => {
+      const t0 = Date.now();
+      const r = await run(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { timeout: 400 });
+      const ms = Date.now() - t0;
+      need(r.timedOut === true, `未标记超时：${JSON.stringify({ code: r.code, timedOut: r.timedOut })}`);
+      need(r.code === -2, `超时退出码应为 -2，实际 ${r.code}`);
+      need(ms < 5000, `超时没有生效（耗时 ${ms}ms，而桩命令会挂 60s）`);
+      notes.push(`⑩ 桩命令（node 挂 60s）在 ${ms}ms 内被 run() 按 timeout=400ms 掐断，code=-2`);
+    });
+
+    await runCase('⑩b inflight 复位：探针超时 / 抛错后缓存都能**再次发起**（不是永久卡死）', async () => {
+      const cache = makeTtlCache(30000);
+      let calls = 0;
+      const probe = () => { calls++; return run(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { timeout: 300 }); };
+      const a = await cache.get(probe);
+      need(a.timedOut === true, `第一次 probe 未超时：${JSON.stringify(a)}`);
+      // ★ 关键：inflight 若没复位，第二次 get() 会复用**同一个已 settle 的 promise** ⇒ calls 不会变 2。
+      const b = await cache.get(probe);
+      need(b.timedOut === true, `第二次 probe 未超时：${JSON.stringify(b)}`);
+      need(calls === 2, `超时后 inflight 未复位：probe 只被调了 ${calls} 次（应 2 次）`);
+
+      // 反面：probe **抛错**（不是超时）时也要复位 —— finally 的「任何结局」。
+      const cache2 = makeTtlCache(30000);
+      let calls2 = 0;
+      const boom = () => { calls2++; return Promise.reject(new Error('probe 失败')); };
+      let threw = false;
+      try { await cache2.get(boom); } catch { threw = true; }
+      need(threw, 'probe 抛错应向上传播（不能被吞）');
+      let threw2 = false;
+      try { await cache2.get(boom); } catch { threw2 = true; }
+      need(threw2 && calls2 === 2, `抛错后 inflight 未复位：calls=${calls2}（应 2）`);
+      notes.push('⑩b 探针超时后第二次 get 重新发起（calls=2）；探针抛错后同样复位（calls=2）');
+    });
+
     server = await startServer();
     const P = server.port;
     const get = (p) => getJson(P, p);
