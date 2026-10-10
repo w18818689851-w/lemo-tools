@@ -2397,6 +2397,123 @@ test('★ §10 extra 为空 ⇒ 脱敏回显里没有 extra 字段（既有调�
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ── ⑯ ★★ `validate()` 探针与 `chat()` 同口径（对齐参考 §11.5）—— 2026-10-10 ──
+// ═══════════════════════════════════════════════════════════════════════════
+//   缺陷：`validate()` 的探针**只走非流式**（`buildRequest`）—— 既不认 `cfg.forceStream`，也**没有**
+//   `chat()` 那套「被 `400 + code=11101` 拒 ⇒ 自动改走流式重试」的兜底。而官方 WorkBuddy 接口
+//   **只接受流式**（非流式 ⇒ 400 code=11101）⇒ 一套**完全正确**的「只接受流式」端点，会被本软件
+//   自己的「测试连接」判为「配置错误」，而实际 `chat()` 是通的。
+//   ★ 本批修复：`validate()` 探测**两条都做**（不是二选一）——
+//     ① `forceStream:true` ⇒ 探测**直接走流式**（不先发注定被拒的非流式）；
+//     ② 非流式被 `400+11101` 拒 ⇒ **自动改走流式再探一次**（复用 `isNonStreamRejected` / `chatViaStreamAggregate`）。
+//   ★ 纪律：本机桩（复现官方 11101 行为）+ 临时成片根（TMP）；**绝不真打外网**；每条先 `rmOverride()` +
+//     `withEnv(CLEAN)`，`finally` 还原。
+//   ★ 回归：`workbuddy-gateway`（本机网关）路径不变 —— 见上面「v4·workbuddy 网关 validate()」那条
+//     （只读 `GET /api/v1/health`、断言无 POST）；「路径取不到 ⇒ bad-shape 硬失败」见「validate()·安全网」那条。
+
+test('★★ §11.5 validate()·forceStream:true ⇒ 探针直接走流式（本改动验收用例）：桩只接受流式 ⇒ ok:true 且**没有**先发注定被拒的非流式', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    // ★ 桩复现官方 WorkBuddy 行为：请求体 `stream` 不为 true ⇒ 400 code=11101；流式 ⇒ SSE。
+    const stub = await startRecStub((req, res, rec) => {
+      if (req.method === 'GET') return json200(res, { data: [] });      // 第 1 步可达性探针（GET /models）
+      if (rec.stream) return sseChat(res, ['Pong!', ' 🏓']);
+      return status(res, 400, JSON.stringify({ code: 11101, msg: 'Non-stream chat request is currently not supported' }));
+    });
+    try {
+      assert.equal(stub.seen.length, 0, '发之前应 0 条');
+      const r = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890', forceStream: true }));
+      assert.equal(r.ok, true, `★ forceStream ⇒ 应三步全过：${JSON.stringify(r.errors)}`);
+      assert.equal(r.steps.reachable.ok, true);
+      assert.equal(r.steps.auth.ok, true);
+      assert.equal(r.steps.shape.ok, true);
+      assert.deepEqual(r.errors, []);
+      // ★★ 直接证据：探针**恰 1 条 POST**、且 `stream===true` —— 证明**没有**先发一次注定被拒的非流式。
+      //   ★ 第 1 步的 `GET /models`（可达性）不计入：它**不是**探针 POST。
+      const posts = stub.seen.filter((s) => s.method === 'POST');
+      assert.equal(posts.length, 1, `★ 探针 POST 应恰 1 条，实得 ${posts.length}：${JSON.stringify(stub.seen.map((s) => `${s.method} ${s.url} stream=${s.stream}`))}`);
+      assert.equal(posts[0].stream, true, '★ 该唯一探针必须是流式（stream===true）');
+      assert.equal(posts.every((s) => s.stream === true), true, '★ 全程**不得**出现任何非流式 POST');
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
+test('★★ §11.5 validate()·11101 兜底：forceStream:false + 桩只接受流式 ⇒ 自动改走流式仍 ok:true（桩收 2 条 POST：1 非流式被拒 + 1 流式）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const stub = await startRecStub((req, res, rec) => {
+      if (req.method === 'GET') return json200(res, { data: [] });
+      if (rec.stream) return sseChat(res, ['streamed-', 'ok']);
+      return status(res, 400, JSON.stringify({ code: 11101, msg: 'Non-stream chat request is currently not supported' }));
+    });
+    try {
+      assert.equal(stub.seen.length, 0, '发之前应 0 条');
+      const r = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890' }));
+      assert.equal(r.ok, true, `★ 400+11101 应自动改走流式并三步全过：${JSON.stringify(r.errors)}`);
+      assert.equal(r.steps.reachable.ok, true);
+      assert.equal(r.steps.auth.ok, true);
+      assert.equal(r.steps.shape.ok, true);
+      assert.deepEqual(r.errors, []);
+      // ★★ 直接证据：探针 POST **依次** [非流式, 流式]，共 2 条（1 条被拒 + 1 条兜底）。
+      const posts = stub.seen.filter((s) => s.method === 'POST');
+      assert.deepEqual(posts.map((s) => s.stream), [false, true], `★ 探针 POST 应依次 [非流式, 流式]，实得 ${JSON.stringify(posts.map((s) => s.stream))}`);
+      assert.equal(posts.length, 2, `★ 应恰 2 次 POST，实得 ${posts.length}`);
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
+test('★★ §11.5 validate()·反向对照：桩对**任何** POST 都回 400+11101 ⇒ 必须 ok:false（兜底不得吞掉真失败）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const stub = await startRecStub((req, res) => {
+      if (req.method === 'GET') return json200(res, { data: [] });
+      return status(res, 400, JSON.stringify({ code: 11101, msg: 'Non-stream chat request is currently not supported' }));
+    });
+    try {
+      // (a) 非流式被拒 ⇒ 兜底改走流式 ⇒ 流式被**同一** 400 拒 ⇒ 仍必须失败（证明兜底只救「改流式能成」的端点）
+      const a = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890' }));
+      assert.equal(a.ok, false, '★ 兜底不得吞掉真失败（流式也被 400+11101 拒 ⇒ ok:false）');
+      assert.equal(a.steps.auth.ok, false, '★ 应归 auth 步失败');
+      assert.equal(a.steps.auth.kind, 'http-error', '★ 400 ⇒ http-error');
+      assert.ok(a.errors.length >= 1, '应有 errors 记录');
+      const postsA = stub.seen.filter((s) => s.method === 'POST');
+      assert.deepEqual(postsA.map((s) => s.stream), [false, true], '★ 非流式被拒 ⇒ 自动改走流式（共 2 条）');
+
+      // (b) forceStream:true 直走流式 ⇒ 也被同一 400 拒 ⇒ 仍必须失败
+      stub.seen.length = 0;
+      const b = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890', forceStream: true }));
+      assert.equal(b.ok, false, '★ 直走流式也失败 ⇒ ok:false');
+      assert.equal(b.steps.auth.kind, 'http-error');
+      const postsB = stub.seen.filter((s) => s.method === 'POST');
+      assert.deepEqual(postsB.map((s) => s.stream), [true], '★ forceStream ⇒ 只发 1 条流式');
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
+test('★ §11.5 validate()·流式 bad-shape：流式增量类型非法 ⇒ shape 步硬失败（安全网在流式路径也成立）', async () => {
+  await withEnv(CLEAN, async () => {
+    rmOverride();
+    const stub = await startRecStub((req, res, rec) => {
+      if (req.method === 'GET') return json200(res, { data: [] });
+      if (rec.stream) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        // ★ 增量 `content` 不是字符串（对象）⇒ 流式核心应报 bad-shape
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: { bad: true } } }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      return status(res, 400, JSON.stringify({ code: 11101, msg: 'Non-stream chat request is currently not supported' }));
+    });
+    try {
+      const r = await validate(OAI({ baseUrl: stub.base, apiKey: 'sk-test-1234567890', forceStream: true }));
+      assert.equal(r.ok, false, '★ 流式增量类型非法 ⇒ 不得判 ok');
+      assert.equal(r.steps.shape.ok, false);
+      assert.equal(r.steps.shape.kind, 'bad-shape', '★ 流式路径的 bad-shape 必须硬失败');
+    } finally { await stub.close(); rmOverride(); }
+  });
+});
+
 // ── 运行器 ──────────────────────────────────────────────────
 async function main() {
   const t0 = Date.now();
