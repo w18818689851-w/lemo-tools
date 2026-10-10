@@ -12,7 +12,7 @@ node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（13 条）
-node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（12 条，★ 绝不真安装；★ 2026-10-10 补 1 条「未知 id 在探测之前就 404」—— 钉 `apiSetupRun` 先查 id 白名单、不空跑整轮环境探测）
+node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（12 条，★ 绝不真安装；★ 2026-10-10 ⑪ 从**一次冷启动**钉住三件事：① 未知 id 的 404 **不付探测**（实测 22ms ≪ 冷态全量探测 6519ms —— 钉 `apiSetupRun` 先查 id 白名单、不空跑整轮环境探测）、② `GET /api/setup/actions` 写进**共享** `envCache`（随后 `/api/env` 必 `cached:true`）、③ `POST /api/setup/run` 读同一份缓存（实测 1ms，不再每请求重探））
 node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（82 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见）
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）

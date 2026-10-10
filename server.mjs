@@ -429,13 +429,13 @@ async function apiEnv(req, res, force, url) {
 // 「首次运行向导」的数据源：当前环境该装什么、哪些能自动装、哪些只能手动。
 // ★ 纯咨询 + 可执行**描述**，不执行任何东西。
 /**
- * GET /api/setup/actions —— 「首次运行向导」的数据源：当前环境该装什么、哪些能自动装。
- *
- * ★ 返回动作清单 + auto/manual 计数；本接口纯咨询，真正执行走 POST /api/setup/run。
+ * GET /api/setup/actions —— 向导数据源（★ D8② 续 2026-10-10：非演练路径改走与
+ * `/api/env` 同一份 envCache，完整理由见文末「§setup 端点共用 envCache」）。
  */
 async function apiSetupActions(req, res, url) {
   const sim = url?.searchParams.get('simulate') || ARGV.simulateEnv || null;
-  const data = sim ? simulateEnv(sim) : await checkEnv();
+  const f = sim ? null : envCache.peek();
+  const data = sim ? simulateEnv(sim) : (f.fresh ? f.data : await envCache.get(checkEnv));
   if (!data) return sendJson(res, 400, { error: `未知演练场景 ${sim}` });
   const actions = planActions(data);
   sendJson(res, 200, {
@@ -2896,3 +2896,28 @@ process.on('unhandledRejection', (e) => {
   console.error('\n✗ 未处理的 Promise 拒绝（进程级兜底）：', (e && e.stack) || e);
   shutdown('未处理的 Promise 拒绝', 1);
 });
+
+// ── §setup 端点共用 envCache（D8② 续，2026-10-10）─────────────────────────────
+//
+// ★ 本段是 `apiSetupActions` 头注释点名的「文末理由」，**故意写在这里**：本文件有多个被
+//   `test/README.md` / 其它闸门**用裸行号钉住**的位置（如 `server.mjs:2070`），
+//   ★ 在那些行号**之前**增删行会让引用整体漂移（`check-ref-lines` 的判据 (d) 只判「非空」、
+//   **判不出漂移**）⇒ 所以新增长文一律落在**所有被钉行号之后**（同 `dub.mjs` 的 `uniqueOutName` 做法）。
+//
+// ★ 由来（改前的真实浪费）：`GET /api/setup/actions` 与 `POST /api/setup/run` 改前都
+//   **每请求 `await checkEnv()`**（串行 3 次 `wsl.exe` + 1 次 `powershell`，热态 ≈2.2 s、
+//   WSL 冷启动可 > 60 s）。而 `web/app.js` 里 **`/api/env`、`/api/setup/actions` 各自每 60 s
+//   轮询一次** ⇒ 叠加起来**每分钟白起两轮全量探针**；`POST` 那条还会让用例偶发 60010 ms 超时
+//   （登记 D8②，1/12）。
+// ★ 判据（两处一致）：**廉价的校验不能排在昂贵的探测之后；同一秒内的重复请求不该重复付
+//   全量探测的代价**。落地 = 三个端点共用**同一份** `envCache`（`makeTtlCache`，TTL 命中即复用、
+//   未命中才真探且并发合并 inflight）。★ **绝不另写第二份缓存**。
+// ★ 为什么缓存 `/api/setup/actions` **不会**让向导看到陈旧动作：`web/app.js` 的刷新流程是
+//   `await loadEnv(true)`（`?force=1` ⇒ 重探并**回填**本缓存）→ `await loadSetup()`（本接口），
+//   **顺序执行** ⇒ 读到的是刚探完的新数据；安装完成后的刷新走的正是这条路径。
+//   ★ 附带修掉一处**不一致**：改前 60 s 轮询里 `loadEnv(false)` 读缓存、而本接口重探
+//   ⇒ 同一屏上「环境」与「动作」可能来自**两次不同的探测**；现在两者同源。
+// ★ 另一处「廉价校验提前」（同批 `apiSetupRun`）：**未知 actionId 在昂贵探测之前就 404**
+//   （判据同源）—— 实测 6778 ms → 12 ms。其前提是「动作 id 只来自 `knownActionIds()` ∪
+//   `fallback.<envId>` 两族」，已对着 `lib/setup.mjs` 的 `planActions()` 核实（只有
+//   `AUTO[it.id]` / `MANUAL[it.id]` / `` `fallback.${it.id}` `` 三处产 id）。
