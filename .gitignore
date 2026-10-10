@@ -32,3 +32,12 @@ _tmp_gsa/
 _tmp_pl/
 _tmp_semantic/
 .bak/
+
+# ★★ 2026-10-10 补：**测试往仓根写的临时目录**（按 `process.pid` 命名、跑完自删）。
+#   ★ 由来：`test/triple-check-flow.test.mjs` 的 `.tmp-triple-flow-<pid>` 在一次**被中断**的
+#     测试运行里**没跑到清理** ⇒ 残留在仓根、且**未被忽略** ⇒ 有被误提交的风险。
+#   ★ 三个模式是全仓实测的（`grep` 出来的），**一并忽略**：
+#     `.tmp-triple-flow-*`（triple-check-flow）/ `.tmp-scan-test-*` / `.tmp-wsl-scan`。
+.tmp-triple-flow-*/
+.tmp-scan-test-*/
+.tmp-wsl-scan/

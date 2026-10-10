@@ -5,7 +5,7 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 138 条用例 / 覆盖全部 51 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 139 条用例 / 覆盖全部 52 个闸门）
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -5014,6 +5014,7 @@ const llmCallTree = (dir) => {
   fs.copyFileSync(path.join(TOOLS, 'lib', 'llm-api.mjs'), path.join(dir, 'lib', 'llm-api.mjs'));
   fs.copyFileSync(path.join(TOOLS, 'lib', 'triple-check.mjs'), path.join(dir, 'lib', 'triple-check.mjs'));
   fs.copyFileSync(path.join(TOOLS, 'lib', 'resources.mjs'), path.join(dir, 'lib', 'resources.mjs'));
+  fs.copyFileSync(path.join(TOOLS, 'lib', 'vram.mjs'), path.join(dir, 'lib', 'vram.mjs'));   // ★ 2026-10-10：vram.mjs 已进 EXCEPTIONS ⇒ 判据③ 要求它存在，漏拷会让阴性对照误红
   return dir;
 };
 /** 一个**不走模块**的旁路（第 3 行就是「端点字面量 + fetch」）—— 判据① 的靶子。 */
@@ -5028,8 +5029,20 @@ const BYPASS_SRC = [
   '}',
   '',
 ].join('\n');
+/**
+ * 一个调用 **LM Studio 模型生命周期端点**（= `lib/vram.mjs` 那类）的旁路 —— 判据① 的靶子（变异 D）。
+ * ★ 第 3 行就是「端点字面量（`/api/v0/models`）+ `fetch`」⇒ 必须被闸门点名（钉住 2026-10-10 新补的端点模式真的生效）。
+ */
+const VRAM_BYPASS_SRC = [
+  '// 夹具：一个调用 LM Studio 模型生命周期端点（vram 那类）的旁路',
+  'export async function go(base) {',
+  '  const r = await fetch(`${base}/api/v0/models`);',
+  '  return r.json();',
+  '}',
+  '',
+].join('\n');
 
-test('check-llm-call-sites：阴性对照 + 判据① 旁路变异 + 判据③ 例外失效两变异 + 失明两态', async () => {
+test('check-llm-call-sites：阴性对照 + 判据① 旁路变异（含模型生命周期端点）+ 判据③ 例外失效两变异 + 登记承重反向对照 + 失明两态', async () => {
   const dir = path.join(TMP, 'llmcs');
   const N_BLIND = '本闸门已失明';
   try {
@@ -5046,6 +5059,15 @@ test('check-llm-call-sites：阴性对照 + 判据① 旁路变异 + 判据③ �
     expectBlind(r1, '直接打 LLM 端点', 'check-llm-call-sites 变异A');
     assert.ok(r1.out.includes('lib/bypass.mjs:3'), `变异A 应点名 lib/bypass.mjs:3\n${r1.out.slice(0, 1600)}`);
 
+    // ②′ 变异 D（判据①，2026-10-10 补）：`lib/vram-bypass.mjs` 调用 **LM Studio 模型生命周期端点**
+    //    （`/api/v0/models`，= vram 那类）⇒ exit 1 并点名 —— 钉住**新补的端点模式**真的生效。
+    const d = llmCallTree(path.join(dir, 'd'));
+    wf(path.join(d, 'lib', 'vram-bypass.mjs'), VRAM_BYPASS_SRC);
+    const rD = await run(NODE, [copyGate('check-llm-call-sites.mjs', d)]);
+    expectBlind(rD, '直接打 LLM 端点', 'check-llm-call-sites 变异D（模型生命周期端点）');
+    assert.ok(rD.out.includes('lib/vram-bypass.mjs:3'), `变异D 应点名 lib/vram-bypass.mjs:3\n${rD.out.slice(0, 1600)}`);
+    assert.ok(rD.out.includes('lmstudio-models'), `变异D 应报出 kind=lmstudio-models\n${rD.out.slice(0, 1600)}`);
+
     // ③ 变异 B（判据③）：把已登记例外的**文件删掉** ⇒ exit 1 并报「登记的文件不存在」
     const b = llmCallTree(path.join(dir, 'b'));
     rm(path.join(b, 'lib', 'triple-check.mjs'));
@@ -5061,9 +5083,24 @@ test('check-llm-call-sites：阴性对照 + 判据① 旁路变异 + 判据③ �
     const cStep1 = csrc;
     csrc = csrc.replace('http://127.0.0.1:12345', 'http://127.0.0.1:1234');
     assert.notEqual(csrc, cStep1, '夹具自身失效：变异C 第二步（去掉 :12345）没生效');
+    const cStep2 = csrc;
+    // ★ 2026-10-10：端点模式表新增了 LM Studio 模型生命周期端点（`/api/v0/models`、`/api/v1/models/unload`）
+    //   ⇒ 变异C 必须**连它们一起**改掉，否则 triple-check.mjs 仍含可识别端点 ⇒ 判据③ 不报「已找不到任何端点」（假绿）。
+    csrc = csrc.replace(/api\/v1\/models/g, 'api/v1/modelX').replace(/api\/v0\/models/g, 'api/v0/modelX');
+    assert.notEqual(csrc, cStep2, '夹具自身失效：变异C 第三步（去掉 LM Studio 模型生命周期端点）没生效');
     wf(path.join(c, 'lib', 'triple-check.mjs'), csrc);
     const r3 = await run(NODE, [copyGate('check-llm-call-sites.mjs', c)]);
     expectBlind(r3, '已找不到**任何** LLM 端点字面量', 'check-llm-call-sites 变异C');
+
+    // ④′ 反向对照（判据② 登记承重，2026-10-10 补）：把 `lib/vram.mjs` 从 `EXCEPTIONS` **摘掉**
+    //    ⇒ 它立刻从 ℹ 变**判据① FAIL**（exit 1 并点名）—— 证明那条登记**真的在起作用**（不是摆设）。
+    //    夹具：llmCallTree（含真 vram.mjs）+ 把闸门源码里 vram 那条登记**整条删掉**。
+    const rev = llmCallTree(path.join(dir, 'rev'));
+    const gateRev = patchGate('check-llm-call-sites.mjs', path.join(rev, 'scripts'),
+      [[/  \{\n    rel: 'lib\/vram\.mjs',[\s\S]*?\n  \},\n/, '']]);
+    const rRev = await run(NODE, [gateRev]);
+    expectBlind(rRev, '直接打 LLM 端点', 'check-llm-call-sites 反向对照（摘掉 vram 登记）');
+    assert.ok(rRev.out.includes('lib/vram.mjs:'), `反向对照应点名 lib/vram.mjs（登记摘掉后它成了未登记旁路）\n${rRev.out.slice(0, 1600)}`);
 
     // ⑤ 失明①（扫到 0 个文件）：只放闸门副本，连 `lib/` 都没有 ⇒ exit 2 +「本闸门已失明」
     const e1 = path.join(dir, 'empty'); mk(path.join(e1, 'scripts'));
@@ -5988,6 +6025,77 @@ test('check-llm-freeze-hash：冻结→一致 + 变异（改被冻结文件不�
     const gp = patchGate('check-llm-freeze-hash.mjs', path.join(d3, 'scripts'),
       [['const same = prevFp === cur.fingerprint;', 'const same = true;']]);
     const rm1 = await run(NODE, [gp], {});
+    assert.equal(rm1.code, 0, `短路判据① 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
+    assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
+      '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测判据①');
+  } finally { rm(dir); }
+});
+
+// ── 12n. check-llm-call-params.mjs（「业务层不得用身份类显式配置压掉面板算力」，2026-10-10 建，第 52 个）──
+//   ★ 扫描根**按脚本自身位置**推导（**无** env 覆盖点）⇒ 夹具 = 「闸门拷进 `<夹具>/scripts/` +
+//     **整份 `lib/`** + `server.mjs`」—— ★ 少了 `server.mjs`，判据④ 的「调用数下限」会触发**失明**。
+/** 造一棵 call-params 夹具树（★ 返回**夹具根目录**）。 */
+const cpTree = (dir) => {
+  copyGate('check-llm-call-params.mjs', dir);
+  copyLib(dir);
+  fs.copyFileSync(path.join(TOOLS, 'server.mjs'), path.join(dir, 'server.mjs'));
+  return dir;
+};
+const cpGate = (dir) => path.join(dir, 'scripts', 'check-llm-call-params.mjs');
+/** 真阳夹具：一个**给 `chat()` 传身份类配置**的业务模块（判据① 要抓的就是它）。 */
+const CP_BYPASS = "import { chat } from './llm-api.mjs';\n"
+  + 'export async function ask(messages) {\n'
+  + "  return await chat(messages, { kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1', model: 'hard-coded' });\n"
+  + '}\n';
+/** 反向诱惑夹具：同一句写进**注释**（**不是代码**）⇒ 必须**不判**。 */
+const CP_COMMENT = '// 说明：本模块**不**自己钉配置（反例：chat(msgs, { kind: \'x\', baseUrl: \'y\' })）\n'
+  + "import { chat } from './llm-api.mjs';\n"
+  + 'export async function ask(messages) { return await chat(messages, { timeoutMs: 5000 }); }\n';
+
+test('check-llm-call-params：阴性对照 + 变异（传身份类键）+ 反向诱惑（注释不判）+ 失明（调用数不足）⇒ FAIL 并点名', async () => {
+  const dir = path.join(TMP, 'cp');
+  const N_BLIND = '本闸门已失明';
+  // ★ needle 必须是**判据① 输出特有**的文案 —— 我第一版用了「身份类键」，而它在闸门**表头**里也印
+  //   （`身份类键: kind / baseUrl / model / target`）⇒ 失明时照样出现 ⇒ 「失明时不该输出判据①」那条断言假红。
+  const NEEDLE = '未登记的身份类实参';
+  try {
+    // ① 阴性对照：真实树整份拷进夹具 ⇒ exit 0（例外只列不判）
+    const neg = cpTree(path.join(dir, 'neg'));
+    const r0 = await run(NODE, [cpGate(neg)], {});
+    expectClean(r0, N_BLIND, 'check-llm-call-params 阴性对照');
+    assert.ok(r0.out.includes('没有未登记的身份类实参'), `阴性对照应打印判据① ✓\n${r0.out.slice(0, 1200)}`);
+
+    // ② 变异（判据①）：新写一个给 chat() 传 kind/baseUrl/model 的业务模块 ⇒ exit 1 并点名
+    const mut = cpTree(path.join(dir, 'mut'));
+    wf(path.join(mut, 'lib', 'bypass-caller.mjs'), CP_BYPASS);
+    const r1 = await run(NODE, [cpGate(mut)], {});
+    expectBlind(r1, NEEDLE, 'check-llm-call-params 变异（传身份类键）');
+    assert.ok(r1.out.includes('bypass-caller.mjs'), `变异应点名该文件\n${r1.out.slice(0, 1400)}`);
+    for (const k of ['kind', 'baseUrl', 'model']) {
+      assert.ok(r1.out.includes(k), `变异应点名身份类键「${k}」\n${r1.out.slice(0, 1400)}`);
+    }
+
+    // ③ ★反向诱惑：同一句写进**注释** ⇒ **必须仍 exit 0**（证明「剥注释」生效、不假阳）
+    const cmt = cpTree(path.join(dir, 'cmt'));
+    wf(path.join(cmt, 'lib', 'comment-caller.mjs'), CP_COMMENT);
+    const r2 = await run(NODE, [cpGate(cmt)], {});
+    expectClean(r2, N_BLIND, 'check-llm-call-params 反向诱惑（注释里的提及不判）');
+
+    // ④ 失明（判据④）：删掉 server.mjs ⇒ 抽到的调用数掉到下限以下 ⇒ exit 2 +「本闸门已失明」
+    const bd = cpTree(path.join(dir, 'blind'));
+    fs.rmSync(path.join(bd, 'server.mjs'));
+    const r3 = await run(NODE, [cpGate(bd)], {});
+    expectBlind(r3, N_BLIND, 'check-llm-call-params 失明（模块调用数不足）');
+    assert.ok(r3.out.includes('次模块调用'), `失明应说明抽到的调用数\n${r3.out.slice(0, 900)}`);
+    assert.ok(!r3.out.includes(NEEDLE), `失明时不该输出判据①\n${r3.out.slice(0, 900)}`);
+
+    // ⑤ ★自证：把「未登记 ⇒ 计入 fails」**短路成恒假** ⇒ 变异必须重新变绿（exit 0）
+    const gdir = path.join(dir, 'gmut');
+    cpTree(gdir);
+    wf(path.join(gdir, 'lib', 'bypass-caller.mjs'), CP_BYPASS);
+    const g = patchGate('check-llm-call-params.mjs', path.join(gdir, 'scripts'),
+      [['for (const h of unregistered) fails.push(', 'for (const h of []) fails.push(']]);
+    const rm1 = await run(NODE, [g], {});
     assert.equal(rm1.code, 0, `短路判据① 后变异应变绿（exit 0），实得 ${rm1.code}\n${rm1.out.slice(0, 900)}`);
     assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'), undefined,
       '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测判据①');

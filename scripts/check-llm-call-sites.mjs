@@ -13,6 +13,8 @@
  *     · `lib/llm-api.mjs` —— **规范通路本身**（模块必须自己知道各家端点）⇒ 允许；
  *     · `lib/triple-check.mjs` —— **已登记的例外**（★ **推理调用已迁完**，剩余端点字面量只服务
  *       「模型生命周期」的预热 / 卸载；见 ② 与登记表）。
+ *     ★ **2026-10-10 更新**：又登记了 `lib/resources.mjs`（资源探活，2026-10-09）与 `lib/vram.mjs`
+ *       （模型生命周期：查已加载 / 卸载，2026-10-10）⇒ 现共 **3** 条已登记例外（见登记表）。
  *   而**没有任何闸门在守这件事**：谁新写一个 `fetch('https://api.openai.com/v1/chat/completions')`，
  *   不会有任何断言响 ⇒ 立此闸门。
  *   ★ 本闸门与 `check-llm-api.mjs` **正交**：后者守「模块**内部**的契约」（导出 / 不抛 / 默认 profile /
@@ -38,15 +40,20 @@
  *     · 误报长什么样：**某文件同时**有「一句把端点当**说明文字**的字符串」（如
  *       `note: 'POST {baseUrl}/chat/completions …'`）**和**一处**与 LLM 无关**的 `fetch` ⇒ 会命中。
  *       ★ 这正是本闸门**宁可收窄**的地方：端点模式表**只收 LLM 专用**的字面量（见 ④），
- *       不认 `/api/v1/models` 这类**模型管理**端点（实测 `lib/vram.mjs` 就是「卸载 7B」的调用，
- *       **不是推理** ⇒ 有意不判）。
+ *       不认与 LLM 无关的通用 `fetch`。
+ *       ★★ **2026-10-10 订正**：旧表**不认** LM Studio 的**模型管理**端点（`/api/v0/models`、
+ *       `/api/v1/models/unload`）⇒ 实测 `lib/vram.mjs`（「查已加载 / 卸载」的调用，**不是推理**）
+ *       因此**静默漏检** —— ★ 这比「已登记例外」更糟（例外至少**可见**，漏检连名单都不进）。
+ *       ⇒ 已把这两个端点**补进模式表**（让闸门**能看见**它），并把 `lib/vram.mjs` **登记**进
+ *       `EXCEPTIONS`（与 `lib/triple-check.mjs` 的「模型生命周期」例外**同类**）。
  *     · ★ **只列不判（ℹ）**：文件里**有端点字面量、但没有 HTTP 调用** ⇒ 只列 ℹ
  *       （多为「注释残留 / 纯文案」，如 `scripts/check-ref-lines.mjs` 那条；见 ⑤）。
  *
  *   **判据② 例外清单（两层语义）**
  *     · **已登记**（`EXCEPTIONS` 里的文件，带**理由**（「为什么还没迁」/「为什么不迁」）+ **归属批次**）⇒ **只列 ℹ、不判 FAIL**。
  *     · **没登记** ⇒ 判据① 的 FAIL（这就是「两层语义」的另一半）。
- *     · 当前登记 **2** 条：`lib/triple-check.mjs`（模型生命周期）、`lib/resources.mjs`（资源探活、非推理）
+ *     · 当前登记 **3** 条：`lib/triple-check.mjs`（模型生命周期）、`lib/resources.mjs`（资源探活、非推理）、
+ *       `lib/vram.mjs`（模型生命周期：查已加载 / 卸载；★ 2026-10-10 补登记，见 ① 的订正）
  *       （理由与批次见登记表注释）。
  *
  *   **判据③ 例外不得「失效」**（双向守卫的另一半，照 `check-env-overrides.mjs` 的思路）
@@ -95,7 +102,8 @@
  *     就有 `fetch`）⇒ 必误报。★ **2026-10-10 订正**：面板极简化后 `web/index.html` 里那两个 LLM 端点占位符**已删**（实测 `https://api.anthropic.com` / `chat/completions` 在 `web/` 下 **0 命中**）⇒ 上面「合法地把端点当 UI 占位文字」的**具体证据已失效**；但「**不纳入 `web/**`**」这条**取舍不变**（前端仍不做推理；且本闸门只收 `.mjs`，`web/**` 是 `.js`/`.html`，本就不在扫描集）—— 故这是**理由过时**，**不是**「排除该取消」。★ 原句保留作历史。
  *   ⇒ 两条**已知盲区**（如实登记）：`test/**` 与 `web/**` 里新写的旁路**本闸门看不见**。
  *   · **端点模式表**（`ENDPOINT_PATTERNS`，LLM 专用）：`chat/completions`、`/v1/messages`、
- *     `/v1/completions`、`api.anthropic.com`、`api.openai.com`、`<host>:12345`（LM Studio 默认端口）。
+ *     `/v1/completions`、`api.anthropic.com`、`api.openai.com`、`<host>:12345`（LM Studio 默认端口）、
+ *     `/api/v0/models`、`/api/v1/models/unload`（LM Studio **模型生命周期**；★ 2026-10-10 补，见 ②）。
  *   · **HTTP 调用模式表**（`HTTP_PATTERNS`）：`fetch(`、`http(s).request(`、`http(s).get(`、`axios`、
  *     `XMLHttpRequest`、`undici`。
  *
@@ -104,11 +112,16 @@
  *      `test/gate-blindness.test.mjs` 的 `check-llm-call-sites` 用例里）
  * ══════════════════════════════════════════════════════════════════════════════
  *   · 夹具按「落点由脚本自身位置推导」的写法（见 ⑥）**整棵拷到临时目录**：把本闸门拷进
- *     `<tmp>/scripts/`，再往 `<tmp>/lib/` 放真 `llm-api.mjs` 与 `triple-check.mjs`。
+ *     `<tmp>/scripts/`，再往 `<tmp>/lib/` 放真 `llm-api.mjs` 与登记表里的**每个**例外文件
+ *     （`triple-check.mjs` / `resources.mjs` / `vram.mjs`；漏拷一个 ⇒ 判据③ 报「登记的文件不存在」⇒ 阴性对照误红）。
  *   · **阴性对照** ⇒ exit 0 且不含失明文案。
  *   · **变异 A（判据①）**：`<tmp>/lib/bypass.mjs` 里写一处 `fetch('https://api.openai.com/v1/chat/completions')`
  *     ⇒ **exit 1** 并点名 `lib/bypass.mjs:<行>`。
  *   · **变异 B（判据③）**：删掉 `<tmp>/lib/triple-check.mjs` ⇒ **exit 1** 并报「登记的文件不存在」。
+ *   · **变异 D（判据①）**（★ 2026-10-10 补）：`<tmp>/lib/vram-bypass.mjs` 里写一处
+ *     `` fetch(`${base}/api/v0/models`) `` ⇒ **exit 1** 并点名 —— 钉住**新补的** LM Studio 模型生命周期端点模式真的生效。
+ *   · **反向对照（判据② 登记承重）**（★ 2026-10-10 补）：把 `lib/vram.mjs` 从 `EXCEPTIONS` **摘掉**
+ *     ⇒ `lib/vram.mjs` 立刻从 ℹ 变**判据① FAIL**（**exit 1** 并点名它）—— 证明那条登记**真的在起作用**。
  *   · **失明两态**（空树 / 规范通路缺失）⇒ **exit 2 + 「本闸门已失明」**，且**不输出判据①②③**。
  *   · **★自证**：分别**短路**判据① 的比较、判据③ 的比较 ⇒ 对应变异**重新变绿**（证明判据**承重**）。
  *
@@ -158,6 +171,12 @@ const ENDPOINT_PATTERNS = [
   { kind: 'anthropic-host', re: /api\.anthropic\.com/ },
   { kind: 'openai-host', re: /api\.openai\.com/ },
   { kind: 'lmstudio-port', re: /(?:https?:\/\/)?(?:[\w.-]+|\[[0-9a-f:]+\]):12345/ },
+  // ★ 2026-10-10 补：LM Studio 的**模型生命周期**端点（查已加载模型 / 卸载模型）——
+  //   由来：`lib/vram.mjs` 直连这两个端点，但旧模式表只收「推理」端点 ⇒ 该文件**静默漏检**
+  //   （★ 比「已登记例外」更糟：例外至少**可见**，静默漏检连名单都不进）。
+  //   补进来 ⇒ 闸门**能看见**它，再把它登记进 `EXCEPTIONS`（与 `lib/triple-check.mjs` 的模型生命周期例外**同类**）。
+  { kind: 'lmstudio-models', re: /\/api\/v0\/models/ },
+  { kind: 'lmstudio-unload', re: /\/api\/v1\/models\/unload/ },
 ];
 // ── ★★ HTTP 调用模式表（在**剥注释+字符串+正则**后的代码体里找）──────────────
 const HTTP_PATTERNS = [
@@ -194,6 +213,19 @@ const EXCEPTIONS = [
       + '★ 若日后要真正调用 LM Studio 做推理 ⇒ **必须**走 `lib/llm-api.mjs` 的 `chat()`，不得在此直连。',
     batch: '**不迁**（资源探活、非推理；按资源模块规格 §一 的边界有意保留）',
     kinds: ['lmstudio-port'],
+  },
+  {
+    rel: 'lib/vram.mjs',
+    why: '★ **只服务模型生命周期，不做推理**（2026-10-10 补登记；★ 该文件此前是**静默漏检** —— '
+      + '旧端点模式表只收「推理」端点 ⇒ 闸门看不见它，连「已登记例外」都不是）：'
+      + '`lmLoadedModels()` 的 `GET ${LM_BASE}/api/v0/models`（查哪些模型 `state=loaded`）与 '
+      + '`unloadById()` 的 `POST ${LM_BASE}/api/v1/models/unload`（按 `instance_id` 卸载）—— '
+      + '一个提示词都不发、不取回任何判定文本。'
+      + '★ 与 `lib/triple-check.mjs` 的「模型生命周期」例外**同类**：按规格 `_distill/llm-api-接口规格-2026-10-08.md` §10.5 的边界，'
+      + '模型加载 / 卸载属 `lib/vram.mjs`，**不并入** `lib/llm-api.mjs`（该模块只管「发一次对话、取回文本」）⇒ 此处**有意保留**。'
+      + '★ 若日后要在此真正做推理 ⇒ **必须**走 `lib/llm-api.mjs` 的 `chat()`，不得直连。',
+    batch: '**不迁**（模型生命周期，按规格 §10.5 的边界有意保留）',
+    kinds: ['lmstudio-models', 'lmstudio-unload'],
   },
 ];
 

@@ -134,18 +134,34 @@ function startStub() {
 // ── 起桩 → 设环境变量 → 动态 import（★ 顺序绝不能反）──────────────
 const { server: STUB, port: STUB_PORT, state: STUB_STATE } = await startStub();
 const STUB_ORIGIN = `http://127.0.0.1:${STUB_PORT}`;
+// ★ 第二个桩：扮演「面板里当前生效的那套算力服务」（与本机 LM Studio 桩分开 ⇒ 能区分到底打到了谁）。
+const { server: PANEL_STUB, port: PANEL_PORT, state: PANEL_STATE } = await startStub();
+const PANEL_ORIGIN = `http://127.0.0.1:${PANEL_PORT}`;
 process.env.LEMO_LMSTUDIO_BASE = STUB_ORIGIN;   // ★ 必须在 import triple-check 之前
+
+// ★★ 成片根（= LLM 覆盖文件 `_llm-api.json` 所在）也必须在 import 之前指到临时树 ——
+//   `askVlm()` 的「面板优先」会读「当前生效的算力服务」，若成片根还是默认的 `D:\lemo-films`，
+//   就会去读用户**真实**的 `_llm-api.json`（含真实密钥）⇒ 既可能外泄、也可能真发请求。
+//   ★ 每进程唯一（带 pid）：与下方 `TMP_ROOT` 同源；`prepareFixture()` 开头重建、末行清理。
+const TMP_ROOT = path.join(ROOT, `.tmp-triple-flow-${process.pid}`);
+process.env.LEMO_FILM_DIR = TMP_ROOT;
+// ★ 清掉外部 LLM 覆盖点（若有），免得它们插在「覆盖文件」之上、把面板服务遮蔽掉。
+for (const k of ['LEMO_LLM_PROFILE', 'LEMO_LLM_BASE', 'LEMO_LLM_KEY', 'LEMO_LLM_MODEL',
+  'LEMO_LLM_HEADERS', 'LEMO_LLM_TIMEOUT_MS']) delete process.env[k];
 
 const tc = await import('../lib/triple-check.mjs');
 const { verifyTriple, sampleTimes, LM_BASE } = tc;
+// ★ 面板服务的写入口（`askVlm()` 走的就是这套「当前生效的算力服务」）。
+const llm = await import('../lib/llm-api.mjs');
+const { saveService, setActiveService } = llm;
 const dc = await import('../lib/dub-core.mjs');
 const { runWsl, winToWsl, shq, parseSrt } = dc;
 
 // ── 测试夹具（非 C 盘）───────────────────────────────────────────
-// ★ 根目录**按进程唯一**（带 `process.pid`）：`prepareFixture()` 开头 `rmSync(TMP_ROOT)` 重建、
-//   末尾 `rmSync(TMP_ROOT)` 清理 ⇒ 写死共享路径时两个进程同时跑会互删对方成片/字幕
-//   （实测并发：一进程 10/1 failed，单独跑 11 passed）。
-const TMP_ROOT = path.join(ROOT, `.tmp-triple-flow-${process.pid}`);
+// ★ `TMP_ROOT` 已在**上方 import 之前**定义（`LEMO_FILM_DIR` 要用它，必须先设）—— 此处只定义它的子路径。
+//   ★ 根目录**按进程唯一**（带 `process.pid`）：`prepareFixture()` 开头 `rmSync(TMP_ROOT)` 重建、
+//     末尾 `rmSync(TMP_ROOT)` 清理 ⇒ 写死共享路径时两个进程同时跑会互删对方成片/字幕
+//     （实测并发：一进程 10/1 failed，单独跑 11 passed）。
 const FILM = path.join(TMP_ROOT, 'film.mp4');
 const SRT = path.join(TMP_ROOT, 'film.srt');
 const OUT = path.join(TMP_ROOT, 'out');
@@ -167,6 +183,27 @@ function resetStub({ mode = 'consistent', fixedText = FIXED, unloadV1FakeFail = 
   STUB_STATE.statePolls = 0;
 }
 
+/** 复位「面板桩」到一致模式并清计数（用例⑫⑬ 用）。 */
+function resetPanelStub() {
+  PANEL_STATE.mode = 'consistent';
+  PANEL_STATE.fixedText = FIXED;
+  PANEL_STATE.unloaded = false;
+  PANEL_STATE.frameRequests = 0;
+  PANEL_STATE.chatBodies = [];
+}
+
+/**
+ * 在临时成片根里写一套「当前生效」的算力服务并切过去 —— `askVlm()` 的「面板优先」路径就走它。
+ * ★ 默认指向本机桩 `STUB`（既有用例①-⑪ 的桩断言因此保持不变）；用例⑫⑬ 会改成面板桩 / 不可达地址。
+ * @param {string} baseUrl 该服务的 baseUrl（形如 `http://127.0.0.1:PORT/v1`）
+ */
+function setPanelService(baseUrl) {
+  const r = saveService({ id: 'panel-svc', label: 'panel', kind: 'openai-compatible', target: 'model', baseUrl, model: 'qwen2.5-vl-7b-official', apiKey: 'sk-test', timeoutMs: 30000 });
+  if (!r.ok) throw new Error(`saveService 失败：${JSON.stringify(r.error)}`);
+  const a = setActiveService('panel-svc');
+  if (!a.ok) throw new Error(`setActiveService 失败：${JSON.stringify(a.error)}`);
+}
+
 async function prepareFixture() {
   fs.rmSync(TMP_ROOT, { recursive: true, force: true });
   fs.mkdirSync(EMPTY_DIR, { recursive: true });
@@ -182,6 +219,7 @@ async function prepareFixture() {
 }
 
 const closeStub = () => new Promise((r) => STUB.close(() => r()));
+const closePanelStub = () => new Promise((r) => PANEL_STUB.close(() => r()));
 
 /** 复现 verifyTriple 的抽帧计划（用它自己算出的 filmDur）—— 用于断言「帧数 == 计划数」。 */
 function planOf(rep, maxFrames) {
@@ -310,7 +348,7 @@ test('④ 桩返回垃圾（"我不知道"）⇒ 该帧 存疑（parseVerdict �
   assert.ok(rep.doubtful.length >= 1, 'doubtful 应非空');
 });
 
-test('⑤ 桩连续 500 ⇒ 该帧 errors 有记录、verdict=存疑、ok=false；且桩收到 2 次 chat（重试真的发生）', async () => {
+test('⑤ 桩连续 500 ⇒ 该帧 errors 有记录、verdict=存疑、ok=false；且桩收到 4 次 chat（(面板+回落)×重试）', async () => {
   resetStub({ mode: 'http500' });
   const rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true, maxFrames: 1 });
 
@@ -320,7 +358,10 @@ test('⑤ 桩连续 500 ⇒ 该帧 errors 有记录、verdict=存疑、ok=false�
   assert.ok(f.error, '失败帧应记录 error');
   assert.equal(rep.ok, false, '有 errors ⇒ ok=false');
   assert.ok(rep.errors.length >= 1, 'errors 应有记录');
-  assert.equal(STUB_STATE.frameRequests, 2, `★ 应恰好 2 次 chat 请求（1 次 + 1 次重试），实得 ${STUB_STATE.frameRequests}`);
+  // ★ 请求数已随「面板优先 + 回落」变成 4：每次 `askVlm` = 面板(1) + 失败后回落本机(1) = 2；
+  //   `askVlmRetry` 再整体重试一遍 ⇒ 2×2 = 4。★ 这是**新语义**（见 lib/triple-check.mjs 的 askVlm 注释），
+  //   不是放宽断言 —— 仍钉死精确次数，只是口径从「1+1」变成「(1+1)×2」。
+  assert.equal(STUB_STATE.frameRequests, 4, `★ 应恰好 4 次 chat 请求（(面板1+回落1)×重试2），实得 ${STUB_STATE.frameRequests}`);
 
   // ★ 全部帧都失败时，卸载仍必须被调用（verifyTriple 里 unloadModel 在循环之后、无论成败都执行）
   assert.ok(STUB_STATE.unloadV1 >= 1, '★ 全部帧失败时 unload 也必须被调用');
@@ -364,7 +405,8 @@ test('★ ⑪ 取不到判定文本（200 + {"error":…} 的「假成功」形�
     assert.equal(rep.ok, false, `${mode}: 有 errors ⇒ ok=false`);
     assert.ok(rep.errors.length >= 1, `${mode}: errors 应有记录`);
     assert.equal(rep.overall, '存疑', `${mode}: overall 应为存疑，实得 ${rep.overall}`);
-    assert.equal(STUB_STATE.frameRequests, 2, `★ ${mode}: 应恰好 2 次 chat（1 次 + 1 次重试），实得 ${STUB_STATE.frameRequests}`);
+    // ★ 同用例⑤：面板(1)+回落本机(1) × 重试(2) = 4（新语义，非放宽）。
+    assert.equal(STUB_STATE.frameRequests, 4, `★ ${mode}: 应恰好 4 次 chat（(面板1+回落1)×重试2），实得 ${STUB_STATE.frameRequests}`);
   }
 });
 
@@ -398,20 +440,60 @@ test('⑨ 抽帧计划为空 ⇒ verifyTriple 抛错（消息含「抽帧计划�
   );
 });
 
+// ── ★★ 本批验收用例（「算力全局可用 / 面板优先」）───────────────────────────
+test('★ ⑫ 面板优先：面板那套可达 ⇒ 只打面板桩、本机 LM 桩 0 条、frame.via=panel', async () => {
+  // 由来（委托方规格）：「AI 算力板块内接入的所有模型为项目全局可用，项目里全部业务功能都可以使用该算力……
+  //   算力配置修改、模型切换之后，全局所有业务同步生效」。⇒ `askVlm()` 必须**面板优先**。
+  //   改前：`askVlm` 给 `chat()` 传显式 target/kind/baseUrl/model（优先级①）⇒ 把面板（③）压掉 ⇒ 本用例必红。
+  resetStub({ mode: 'consistent' });
+  resetPanelStub();
+  setPanelService(`${PANEL_ORIGIN}/v1`);      // 面板当前生效 → 面板桩
+  const rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true, maxFrames: 1 });
+
+  assert.equal(rep.frames.length, 1, 'maxFrames=1 ⇒ 恰好 1 帧');
+  assert.equal(PANEL_STATE.frameRequests, 1, `★ 面板桩应收到 1 条帧请求，实得 ${PANEL_STATE.frameRequests}`);
+  assert.equal(STUB_STATE.frameRequests, 0, `★ 面板可达时**不得**打本机 LM 桩，实得 ${STUB_STATE.frameRequests}`);
+  assert.equal(rep.frames[0].via, 'panel', `★ via 应为 panel（走了面板路径），实得 ${rep.frames[0].via}`);
+  assert.equal(rep.frames[0].verdict, '一致', '面板桩回填该帧字幕 ⇒ 应判一致');
+  setPanelService(`${STUB_ORIGIN}/v1`);       // 复位，避免影响后续用例
+});
+
+test('★ ⑬ 回落：面板那套不可达 ⇒ 回落本机 LM 桩、frame.via=local-vlm、带回面板侧失败原因', async () => {
+  // 理由：画面校验需要「多模态图片输入」，面板那套可能是纯文本模型；委托方明令「核心能力不可删减」
+  //   ⇒ 面板路径失败时**必须**回落本机 VLM，且**如实标注**走了哪条路（绝不静默）。
+  resetStub({ mode: 'consistent' });
+  resetPanelStub();
+  setPanelService('http://127.0.0.1:1/v1');   // 没人监听 ⇒ 连接被拒（不可达）
+  const rep = await verifyTriple({ filmHost: FILM, scriptText: SCRIPT_TEXT, outDir: OUT, quiet: true, maxFrames: 1 });
+
+  assert.equal(rep.frames.length, 1, 'maxFrames=1 ⇒ 恰好 1 帧');
+  assert.equal(PANEL_STATE.frameRequests, 0, '面板不可达 ⇒ 面板桩不应收到帧请求');
+  assert.equal(STUB_STATE.frameRequests, 1, `★ 应回落到本机 LM 桩 1 次，实得 ${STUB_STATE.frameRequests}`);
+  assert.equal(rep.frames[0].via, 'local-vlm', `★ via 应为 local-vlm（回落成功），实得 ${rep.frames[0].via}`);
+  assert.ok(rep.frames[0].panelError, '★ 回落时必须带回面板侧失败原因（绝不静默）');
+  assert.match(String(rep.frames[0].panelError), /unreachable|无法连接|connect/i,
+    `面板侧失败原因应可读，实得 ${rep.frames[0].panelError}`);
+  setPanelService(`${STUB_ORIGIN}/v1`);       // 复位
+});
+
 // ── 运行器 ──────────────────────────────────────────────────────
 async function main() {
   const t0 = Date.now();
   log('');
   log(C.dim('test/triple-check-flow.test.mjs —— verifyTriple() 主流程端到端（桩 LM Studio）'));
-  log(C.dim(`  桩地址 ${STUB_ORIGIN}   （★ 绝不连 127.0.0.1:12345）`));
+  log(C.dim(`  本机桩 ${STUB_ORIGIN} / 面板桩 ${PANEL_ORIGIN}   （★ 绝不连 127.0.0.1:12345）`));
+  log(C.dim(`  临时成片根 ${TMP_ROOT}（LLM 覆盖文件也在此，★ 绝不碰 D:\\lemo-films\\_llm-api.json）`));
   log('');
 
   try {
     await prepareFixture();
+    // ★ 写「当前生效」的算力服务（默认指向本机桩）—— `askVlm()` 的「面板优先」路径从此打到桩。
+    setPanelService(`${STUB_ORIGIN}/v1`);
   } catch (e) {
     log(C.bad(`  ✗ 环境缺失，无法继续：${e.message}`));
     log(C.bad('  本测试需要 WSL + ffmpeg/ffprobe。请先确认 `wsl -d Ubuntu-24.04 -- ffmpeg -version` 可用。'));
     await closeStub();
+    await closePanelStub();
     process.exitCode = 1;
     return;
   }
@@ -433,6 +515,7 @@ async function main() {
     }
   } finally {
     await closeStub();
+    await closePanelStub();
     try { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 
