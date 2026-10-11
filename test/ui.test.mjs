@@ -4229,8 +4229,8 @@ async function main() {
       const mSetVal = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
         n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true }));
         n.dispatchEvent(new Event('change', { bubbles: true })); return n.value; })()`);
-      /** `--q` 的值按空白切段（与 CLI 原样透传的口径一致）。 */
-      const mQToks = (s) => String(s || '').trim().split(/\s+/).filter(Boolean);
+      /** `--q` 的值按「`&` 或空白」切段（`&` 是库侧契约的分隔符；空白是历史手写形态，见 R 组）。 */
+      const mQToks = (s) => String(s || '').trim().split(/[&\s]+/).filter(Boolean);
 
       // ★ 不硬编码风格名：从 /api/demos 逐个试 /api/style-switches，取**第一个扫到开关**的风格。
       //   （「风格目录变了 / 库更新了」不该让本用例误红；找不到任何一个才判失败 = 判据真的空转。）
@@ -4447,8 +4447,8 @@ async function main() {
       const nSetVal = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
         n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true }));
         n.dispatchEvent(new Event('change', { bubbles: true })); return n.value; })()`);
-      /** `--q` 的值按空白切段（与 CLI 原样透传的口径一致）。 */
-      const nQToks = (s) => String(s || '').trim().split(/\s+/).filter(Boolean);
+      /** `--q` 的值按「`&` 或空白」切段（`&` 是库侧契约的分隔符；空白是历史手写形态，见 R 组）。 */
+      const nQToks = (s) => String(s || '').trim().split(/[&\s]+/).filter(Boolean);
 
       // ★ 不硬编码风格名：从 `/api/style-switches` 里**动态**分类（库更新了不该让用例误红；
       //   连一个「有 content 开关 + 有 content*.json」的风格都找不到才判失败 = 判据真空转）。
@@ -5267,6 +5267,198 @@ async function main() {
         } finally {
           await qRestoreConfirm();
         }
+      });
+    }
+
+    // ══ R. `--q` 的**分隔符契约**（`&` 语义）—— 开关助手拼多 token 的回归钉 ═══════════════
+    //
+    // 缺陷（本轮审计抓到的，P2 · **会静默产出错误内容**）：`--q` 是**透传**给库仓渲染页的查询串，
+    //   契约是 **`&` 分隔**（库侧 demo 用 `new URLSearchParams(location.search)` 读它；编排器侧用
+    //   `/(?:^|&)content=/` 解析）。而「开关助手」原先用**空格**拼 token ⇒ 用户在面板里点**两个及以上**
+    //   chip（或一个 chip + 一个内容文件）时，`--q` 变成 `nosub=1 frame=1` 这种形状 ⇒ **后面的键全被吞进
+    //   第一个键的值里**（`new URLSearchParams('nosub=1 frame=1')` 只解析出 `['nosub']`）⇒ 页面与编排器
+    //   **双双按默认走**，画面 / 配音文本 / 海报一起错，**且不报错**。这正是「开关助手」的主用途（挑多个开关）。
+    // ★ 本组钉三件事：
+    //   ① 点**两个** chip ⇒ `#fQ` 里两个键**都在**、分隔符是 `&`；`#cmdPreview` 里的 `--q` 也正确；
+    //   ② 点**一个** chip + 选**一个**内容文件 ⇒ `--q` 里 `content=<文件>` **能被解析出来**；
+    //   ③ 手写**空格分隔**的输入 ⇒ 被**规范化成 `&`**（且至少**仍能正确解析**）。
+    // ★★ 断言一律走**真解析语义**（页面内 `new URLSearchParams` + 编排器那条 `/(?:^|&)key=/` 正则），
+    //    **不只**断言字符串包含 —— 否则「空格分隔」这种缺陷态也能骗过「包含」式断言。
+    // ★ 铁律沿用本套件：只读 DOM / 只调纯读的 `buildOpts()` / 只打本机测试服务；**绝不真出片**。
+    log('');
+    log(C.b('  R. `--q` 的分隔符契约（& 语义）—— 开关助手拼多 token 的回归钉'));
+
+    const R_NAMES = ['R1 点两个 chip', 'R2 点一个 chip + 选一个内容文件', 'R3 手写空格分隔的输入被规范化'];
+    const rWillRun = !OPT.filter || R_NAMES.some((n) => n.includes(OPT.filter));
+    if (rWillRun) {
+      // ★ 先导航到干净文档（Q 组在页面里装过 confirm 桩，别把残留带进来）。
+      await cdp.goto(base + '/', 4000);
+      const rReady = `!!document.getElementById('fQ') && !!document.getElementById('btnQSwitches')
+        && !!document.getElementById('qSwitches') && !!document.getElementById('cmdPreview')`;
+      await waitFor(cdp.evalJs, rReady, { timeoutMs: 30000 });
+
+      const rSetSlug = (slug) => cdp.evalJs(`(() => { const f = document.getElementById('fSlug');
+        f.value = ${JSON.stringify(slug)}; f.dispatchEvent(new Event('input', { bubbles: true }));
+        f.dispatchEvent(new Event('change', { bubbles: true })); return f.value; })()`);
+      const rSetVal = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true }));
+        n.dispatchEvent(new Event('change', { bubbles: true })); return n.value; })()`);
+      /** 面板开着就先强制收起（点按钮是「开↔关」切换，不先收起会把面板点关）。 */
+      const rClosePanel = () => cdp.evalJs(`(() => { const b = document.getElementById('qSwitches');
+        if (b) b.hidden = true; return true; })()`);
+      /** 真点「开关助手」并等到某个 chip 出现。 */
+      const rOpenPanel = async (anyKey) => {
+        await cdp.evalJs(`document.getElementById('btnQSwitches').click(); true`);
+        await waitFor(cdp.evalJs, `(() => { const b = document.getElementById('qSwitches');
+          if (!b || b.hidden) return null; const c = [...b.querySelectorAll('.chip')];
+          return c.length ? c.map((x) => x.dataset.key) : null; })()`, { timeoutMs: 15000 });
+        if (anyKey) {
+          need(await cdp.evalJs(`[...document.querySelectorAll('#qSwitches .chip')].some((x) => x.dataset.key === ${JSON.stringify(anyKey)})`),
+            `#qSwitches 里没有 chip「${anyKey}」`);
+        }
+      };
+      const rClickChip = (k) => cdp.evalJs(`(() => { const b = [...document.querySelectorAll('#qSwitches .chip')]
+        .find((x) => x.dataset.key === ${JSON.stringify(k)}); if (!b) return false; b.click(); return true; })()`);
+      /**
+       * ★★ **页面内真解析**：把 `#fQ` 的值当查询串解析 ——
+       *   与库侧 `new URLSearchParams(location.search)` 同一口径，另附 `keys` / `kv` / 是否有空白。
+       */
+      const rParse = (expr) => cdp.evalJs(`(() => {
+        const v = ${expr};
+        const usp = new URLSearchParams(v);
+        const keys = [...usp.keys()];
+        const kv = {}; for (const k of keys) kv[k] = usp.get(k);
+        return { v, keys, kv, hasAmp: v.indexOf('&') >= 0, hasSpace: /\\s/.test(v) };
+      })()`);
+      /** 从 `buildOpts()` 里取 `--q` 的值（与 startRun 提交的是**同一条**真路径）。 */
+      const rQVal = () => cdp.evalJs(`(() => { const o = buildOpts().opts; const i = o.indexOf('--q');
+        return { q: i >= 0 ? o[i + 1] : null, cmd: document.getElementById('cmdPreview').textContent }; })()`);
+      /** 把 key 转义成能安全塞进页面正则字面量的形状（在 Node 侧算，再注入）。 */
+      const rEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // ★ 不硬编码风格名：从 `/api/style-switches` 里**动态**挑
+      //   ① 开关数 ≥ 2 的风格（R1/R3）；② 既有 content 开关 + `content*.json` + 另有**别的**开关（R2）。
+      const rDemos = await get('/api/demos');
+      need(rDemos.status === 200 && rDemos.json && Array.isArray(rDemos.json.styles),
+        `GET /api/demos → ${rDemos.status}（拿不到 styles）`);
+      let rMulti = null, rContent = null, rScanned = 0;
+      for (const s of rDemos.json.styles) {
+        const r = await get(`/api/style-switches?slug=${encodeURIComponent(s.slug)}`);
+        if (r.status !== 200 || !r.json || !Array.isArray(r.json.switches)) continue;
+        rScanned++;
+        const keys = r.json.switches.map((x) => x.key);
+        if (!rMulti && keys.length >= 2) rMulti = { slug: s.slug, keys };
+        const files = Array.isArray(r.json.contentFiles) ? r.json.contentFiles : [];
+        const others = keys.filter((k) => k !== 'content');
+        if (!rContent && keys.includes('content') && files.length && others.length >= 1) {
+          rContent = { slug: s.slug, keys, files, other: others[0] };
+        }
+        if (rMulti && rContent) break;
+      }
+      need(rScanned > 0, '全库风格经 /api/style-switches 都拿不到 switches ⇒ R 组判据空转（可能已失效）');
+
+      // ① 点两个 chip ⇒ 两个键都在、分隔符是 `&`、命令预览也正确
+      await runCase('R1 点两个 chip ⇒ #fQ 里两个键都在、分隔符是 `&`；#cmdPreview 的 --q 也正确', async () => {
+        need(rMulti, '全库没有「开关数 ≥ 2」的风格 ⇒ R1 空转（判据可能已失效）');
+        const k1 = rMulti.keys[0], k2 = rMulti.keys[1];
+        await rClosePanel();
+        await rSetSlug(rMulti.slug);
+        await rSetVal('fQ', '');
+        await rOpenPanel(k1);
+
+        need(await rClickChip(k1), `点不到 chip「${k1}」`);
+        need(await rClickChip(k2), `点不到 chip「${k2}」`);
+
+        // ★ 真解析（URLSearchParams）
+        const p = await rParse(`document.getElementById('fQ').value`);
+        need(p.keys.includes(k1) && p.keys.includes(k2),
+          `★ 点两个 chip 后 #fQ 里两个键没都在（URLSearchParams 只解析出 ${JSON.stringify(p.keys)}）：${JSON.stringify(p.v)}`);
+        need(p.hasAmp === true, `★ 点两个 chip 后 #fQ 里没有 & 分隔符（说明仍按空格拼）：${JSON.stringify(p.v)}`);
+        need(p.hasSpace === false, `★ 点两个 chip 后 #fQ 里仍有空白：${JSON.stringify(p.v)}`);
+        need(p.kv[k1] === '1' && p.kv[k2] === '1', `两个键的值都应是 "1"：${JSON.stringify(p.kv)}`);
+
+        // ★ 编排器侧口径：/(?:^|&)key=/ 两个键都命中
+        const reHit = await cdp.evalJs(`(() => { const v = document.getElementById('fQ').value;
+          return { a: /(?:^|&)${rEsc(k1)}=/.test(v), b: /(?:^|&)${rEsc(k2)}=/.test(v) }; })()`);
+        need(reHit.a === true && reHit.b === true,
+          `编排器那条 /(?:^|&)key=/ 没同时命中两个键：${JSON.stringify(reHit)}（v=${JSON.stringify(p.v)}）`);
+
+        // ★ 提交路径 + 命令预览
+        const f = await rQVal();
+        need(f.q === p.v, `buildOpts() 的 --q 值应与 #fQ 一致：${JSON.stringify(f.q)} vs ${JSON.stringify(p.v)}`);
+        need(f.cmd.includes(`--q ${p.v}`), `#cmdPreview 里没有「--q ${p.v}」：「${f.cmd}」`);
+
+        await rSetVal('fQ', '');   // 复位
+        notes.push(`R1 风格 ${rMulti.slug}：点 ${k1}+${k2} ⇒ #fQ「${p.v}」（URLSearchParams keys=${JSON.stringify(p.keys)}，含 & 无空白）；#cmdPreview 含「--q ${p.v}」`);
+      });
+
+      // ② 点一个 chip + 选一个内容文件 ⇒ content 能被解析出来
+      await runCase('R2 点一个 chip + 选一个内容文件 ⇒ --q 里 content=<文件> 能被解析出来（真解析，不只字符串包含）', async () => {
+        need(rContent, '全库没有「content 开关 + content*.json + 另有别的开关」的风格 ⇒ R2 空转');
+        const other = rContent.other;
+        await rClosePanel();
+        await rSetSlug(rContent.slug);
+        await rSetVal('fQ', '');
+        await rOpenPanel(other);
+        await waitFor(cdp.evalJs, `(() => { const s = document.getElementById('qContent');
+          return !!s && s.options.length > 1; })()`, { timeoutMs: 15000 });
+
+        // 点一个**非 content** 的 chip
+        need(await rClickChip(other), `点不到 chip「${other}」`);
+        // 选一个**真实**内容文件（走真 change 路径）
+        const target = rContent.files[rContent.files.length - 1];
+        await cdp.evalJs(`(() => { const s = document.getElementById('qContent'); s.value = ${JSON.stringify(target)};
+          s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+
+        const p = await rParse(`document.getElementById('fQ').value`);
+        // ★ 真解析：URLSearchParams 必须能把 content 解出来（这正是缺陷态会失败的地方）
+        need(p.kv.content === target,
+          `★ --q 里 content 解不出来（URLSearchParams.get('content')=${JSON.stringify(p.kv.content)}，期望 ${JSON.stringify(target)}）：${JSON.stringify(p.v)}`);
+        need(p.keys.includes(other),
+          `★ 另一个键「${other}」被吞掉了（keys=${JSON.stringify(p.keys)}）：${JSON.stringify(p.v)}`);
+        // ★ 编排器侧口径：/(?:^|&)content=([^&]*)/
+        const reHit = await cdp.evalJs(`(() => { const v = document.getElementById('fQ').value;
+          const m = v.match(/(?:^|&)content=([^&]*)/); return m ? m[1] : null; })()`);
+        need(reHit === target,
+          `编排器那条 /(?:^|&)content=/ 没解出 ${JSON.stringify(target)}：${JSON.stringify(reHit)}（v=${JSON.stringify(p.v)}）`);
+        // 提交路径 + 命令预览
+        const f = await rQVal();
+        need(f.q === p.v, `buildOpts() 的 --q 应与 #fQ 一致：${JSON.stringify(f.q)} vs ${JSON.stringify(p.v)}`);
+        need(f.cmd.includes(`content=${target}`), `#cmdPreview 里没有 content=${target}：「${f.cmd}」`);
+
+        await rSetVal('fQ', '');   // 复位
+        notes.push(`R2 风格 ${rContent.slug}：点 ${other} + 选内容文件 ${target} ⇒ #fQ「${p.v}」；URLSearchParams.get('content')=${JSON.stringify(p.kv.content)}；正则口径=${JSON.stringify(reHit)}`);
+      });
+
+      // ③ 手写空格分隔的输入 ⇒ 被规范化成 `&`（且至少仍能正确解析）
+      await runCase('R3 手写空格分隔的输入 ⇒ 被规范化成 `&`（且至少仍能正确解析）', async () => {
+        need(rMulti, '全库没有「开关数 ≥ 2」的风格 ⇒ R3 空转');
+        const k1 = rMulti.keys[0], k2 = rMulti.keys[1];
+        await rClosePanel();
+        await rSetSlug(rMulti.slug);
+        // ★ 手写**空格分隔**（历史上本控制台自己就产出这种）—— 切分必须**同时认 `&` 与空白**
+        await rSetVal('fQ', `${k1}=1 ${k2}=1`);
+        await rOpenPanel(k1);
+
+        // ① 「至少仍能正确解析」：空格分隔的两个键，chips 选中态都该亮（证明切分认空白）
+        const onBoth = await cdp.evalJs(`(() => { const get = (k) => { const b = [...document.querySelectorAll('#qSwitches .chip')]
+          .find((x) => x.dataset.key === k); return b ? b.classList.contains('on') : null; };
+          return { a: get(${JSON.stringify(k1)}), b: get(${JSON.stringify(k2)}) }; })()`);
+        need(onBoth.a === true && onBoth.b === true,
+          `★ 空格分隔的「${k1}=1 ${k2}=1」没被切成两个 token（chips 选中态 ${JSON.stringify(onBoth)}）—— 切分没认空白`);
+
+        // ② 写回时规范化成 `&`：点 k1 关掉再开 ⇒ 两次写回后应是 `k2=1&k1=1`（无空白、含 `&`）
+        need(await rClickChip(k1), `点不到 chip「${k1}」`);
+        need(await rClickChip(k1), `再点不到 chip「${k1}」`);
+        const p = await rParse(`document.getElementById('fQ').value`);
+        need(p.hasSpace === false, `★ 写回后 #fQ 仍有空白（未规范化成 &）：${JSON.stringify(p.v)}`);
+        need(p.hasAmp === true, `★ 写回后 #fQ 里没有 & 分隔符：${JSON.stringify(p.v)}`);
+        need(p.keys.includes(k1) && p.keys.includes(k2),
+          `写回后两个键没都在（keys=${JSON.stringify(p.keys)}）：${JSON.stringify(p.v)}`);
+        need(p.kv[k1] === '1' && p.kv[k2] === '1', `写回后两个键的值都应是 "1"：${JSON.stringify(p.kv)}`);
+
+        await rSetVal('fQ', '');   // 复位
+        notes.push(`R3 手写「${k1}=1 ${k2}=1」（空格）⇒ 切分认空白（两 chip 均 .on）；点 ${k1} 两下后规范化成 #fQ「${p.v}」（无空白、含 &）`);
       });
     }
 

@@ -1015,12 +1015,10 @@ function apiStyleSwitches(req, res, slug) {
   //   ② `<ID>.get|has|includes('x')`（ID ∈ 判据① 那组；`(?<![\w$.])` 防 `myQ.has` 一类误吃）
   //   ③ 内联链式（无中间变量）：`new URLSearchParams(location.search).get|has|includes('x')`
   //   ④ 既有写法：`location.search.includes('x')`（上游实测 3 处这么写，判据②③ 都盖不到）
-  //   ★★ 引号一律写成 `\u0027` / `\u0022`（= `'` / `"`），**不要**在正则字面量里写裸引号：
-  //     本项目多个闸门（含冻结集里的 `check-llm-call-params.mjs`）用的是一个**不认正则字面量**的
-  //     剥注释器 —— 裸引号会让它以为`字符串开了没关`，**把该文件之后的代码全吞掉** ⇒ 闸门报`已失明`。
-  //     实测：写 `['"]` 时 `check-llm-call-params` 剥完只剩 19729/127043 字符、抽到 0 次调用（下限 5）；
-  //     写成 `['"]` 后恢复正常。★ 这是**闸门的已知局限**（同一份剥注释器在 9 个闸门里各有一份），
-  //     我方选择`不触发它`而不是去改冻结集里的闸门（改一处会与另 8 份不一致）。
+  //   ★ 下面三条正则按**正常写法**写（裸引号 `['"]` 即可）—— 见本文件上方那段「历史注记」：
+  //     曾经为了绕开某个闸门「不认正则字面量」的局限，这里的引号要写成 `\u0027` / `\u0022`；
+  //     **该局限已根治**（剥注释器统一抽成 `lib/js-scan.mjs` 并认正则字面量），故该规避**作废**。
+  //     实测：本段用裸引号 `['"]` 时 `check-llm-call-params` 仍 exit 0（违约 0 处）。
   const RE_INLINE = /new\s+URLSearchParams\s*\(\s*(?:document\.)?location\.search\s*\)\s*\.(?:get|has|includes)\(['"]([A-Za-z0-9_]+)['"]\)/g;
   const RE_INC = /location\.search\.includes\(['"]([A-Za-z0-9_]+)['"]/g;
   const idRes = [...paramsIds].sort().map((id) =>

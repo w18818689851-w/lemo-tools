@@ -570,7 +570,15 @@ const OVERRIDES = {
       // ★ 2026-10-10 补：`clean-test-residue.mjs` 也把 `LEMO_FILM_DIR` 当**成片根覆盖点**
       //   （`process.env.LEMO_FILM_DIR || 'D:/lemo-films'`；它从成片根派生 `.briefs` / `.console` / `.locks-test`）
       //   ⇒ 补进 readers 让判据② 也守它。
-      'scripts/clean-test-residue.mjs'],
+      'scripts/clean-test-residue.mjs',
+      // ★ 2026-10-11 补：`check-llm-global-effect.mjs`（算力配置全局生效闸门）**在 import 被测模块之前**
+      //   把 `process.env.LEMO_FILM_DIR = TMP` 指到仓外临时树（`D:/lemo-tmp/...`，非 C 盘），
+      //   好让覆盖文件 `<成片根>/_llm-api.json` 落在临时树里（见其头注释 ③ 隔离）。
+      //   它原先**不在** readers 清单里 ⇒ 判据③ 只打一条 ℹ「新读者未登记」（实测确认）。
+      //   补进来后判据② 会守它 —— 已核「不会误伤」：该文件 `:71` 的 `process.env.LEMO_FILM_DIR = TMP;`
+      //   是**真代码**（剥注释/字符串后仍在），判据② 立刻满足；`childActive()` 里 `env:{…LEMO_FILM_DIR:filmDir}`
+      //   是**属性名**（不产生 `process.env.LEMO_FILM_DIR`），不影响判定。
+      'scripts/check-llm-global-effect.mjs'],
     what: '成片根（lib/env.mjs 的 exportDir；★ 曾被硬编码过一段时期，见头注释 ①）',
   },
   // ★ 2026-10-09 追加：测试残留清理工具的**备份目录覆盖点**。
@@ -1028,9 +1036,16 @@ const regPairs = [...Object.values(OVERRIDES), ...Object.values(EXTERNAL)].reduc
 const realPairs = [...byVar.values()].reduce((a, s) => a + s.size, 0);   // 去重后的 (文件, 变量) 对
 
 const ok = unregistered.length === 0 && gone.length === 0 && blind.length === 0 && !libFail;
-// ★ 本闸门自己**不扫自己**（见 ⑤）⇒ 它作为 `LEMO_OPUSCAR` 读者的那一条**不在**「扫到」里 ⇒ 差额 -N 是预期的。
+// ★ 「登记了、但**不在扫描范围**」的读者（两类：① 本闸门自己，见 ⑤；② `test/` 下的读者 —— 本闸门只扫
+//   `lib/**` + `scripts/**` + 仓根 `*.mjs`）⇒ 它们不进 `realPairs`，把「(文件,变量) 对」差额往**负**方向拉。
+//   ★★ 但**差额 ≠ 这一项**：差额 = (扫到但未登记) − (登记但不在扫描范围)，两项都可能非零
+//   ⇒ **别只凭差额的符号/大小下结论**。实测订正（2026-10-11）：本批补登记前差额是 **+1**（不是原先
+//     那句文案写的 −N —— 它只算了后一项、漏了前一项，方向写反了）；补登记后两项各 2、净差额 **0**。
+const scannedRels = new Set(files.map((f) => path.relative(ROOT, f).replace(/\\/g, '/')));
 const selfReaders = [...Object.values(OVERRIDES), ...Object.values(EXTERNAL)]
   .reduce((a, e) => a + e.readers.filter((r) => r === `scripts/${SELF}`).length, 0);
+const offScanReaders = [...Object.values(OVERRIDES), ...Object.values(EXTERNAL)]
+  .reduce((a, e) => a + e.readers.filter((r) => !scannedRels.has(r)).length, 0);
 
 if (JSON_OUT) {
   console.log(JSON.stringify({
@@ -1073,9 +1088,11 @@ console.log('');
 console.log(`★ 期望值：登记 ${regVars} 条（覆盖点 ${Object.keys(OVERRIDES).length} + 非覆盖点 ${Object.keys(EXTERNAL).length}）`
   + ` / 真实语料 ${realVars} 个变量 / **差额 ${realVars - regVars}**；`
   + `(文件, 变量) 对：登记 ${regPairs} / 扫到 ${realPairs} / 差额 ${realPairs - regPairs}（共 ${hits.length} 处出现）`);
-if (selfReaders) {
-  console.log(`       ★ 其中 ${selfReaders} 个登记读者是**本闸门自己**（不扫自己，见头注释 ⑤）⇒ 不在「扫到」里，`
-    + `故差额 -${selfReaders} 是**预期的**（登记它正是为了让判据② 守住「库仓扫描根覆盖点被删」）`);
+if (offScanReaders) {
+  console.log(`       ★ 登记读者里有 ${offScanReaders} 个**不在扫描范围**（本闸门自己 ${selfReaders} 个，见头注释 ⑤；`
+    + `其余在 \`test/\` 下）⇒ 它们不进「扫到」，把差额往**负**方向拉`);
+  console.log(`       ★ 差额 = (扫到但未登记) − (登记但不在扫描范围)：当前净差额 ${realPairs - regPairs}`
+    + `（未登记那部分见判据③，只列；两项都可能非零 ⇒ 别只看差额符号）`);
 }
 console.log('');
 

@@ -211,42 +211,71 @@ test('RESOURCES：注册表非空、id 唯一、schema 合法（契约 §五）'
 });
 
 // ── ★ 防再分叉：同一句 fix 文案只许有一处来源 ────────────────────────────────
-//   由来（2026-10-11）：assets.inst 的 fix 文案原本**抄了三份**，三份会各自漂，而且**没有闸门守**：
-//     ① lib/env.mjs 的 warn('assets.inst', …) 第 4 参（生产路径 /api/env）；
-//     ② 本模块 assets.inst 台账条目的 fix（生产路径 /api/resources/scan）；
-//     ③ lib/setup.mjs 的 fixturePartialAssets()（演练路径 /api/env?simulate=partial 与 --simulate）。
-//   现正文只写在 lib/env.mjs 的 ASSETS_INST_FIX，另两处 import 它（零行为变更：三处值逐字节相同）。
+//   由来（2026-10-11）：这些 fix 文案原本各**抄了三份**，三份会各自漂，而且**没有闸门守**：
+//     ① lib/env.mjs 的 warn/fail 第 4 参（生产路径 /api/env）；
+//     ② lib/resources.mjs 对应台账条目的 fix（生产路径 /api/resources/scan）；
+//     ③ lib/setup.mjs 的演练夹具（演练路径 /api/env?simulate=… 与 --simulate）。
+//   现正文只写在 lib/env.mjs 的常量里，另两处 import 它（零行为变更：三处值逐字节相同）。
 //   ★ 断言必须**有牙**：直接取三处的**值**互比（不是「断言非空」），并断言这句文案在三个文件的源码里
 //     只作为**字面量**出现在 lib/env.mjs 一处 —— 谁再把文案抄回去（或抄回去还抄歪了），这条当场变红。
+//   ★ 覆盖：`ASSETS_INST_FIX`（assets.inst，2026-10-11 第一批收口）+
+//     2026-10-11 第二批收口的 `ASSETS_FONTS_FIX` / `LIB_WIN_FIX` / `WSL_NODE_FIX`。
+//   ★★ 第二批**只收口这 3 句**的理由（本批的取舍，见 lib/env.mjs 那三个常量的说明）：
+//     它们是**仅有的**同时满足「**三处**字面量逐字节相同」+「无插值」的精确重复 ⇒ 无条件零行为变更。
+//     其余重复只登记、本次不动（按**实测**分三类）：
+//       ㈠ 两处精确重复（env ↔ setup，resources 侧值不同）：win.ffmpeg / win.gpu / wsl.alive /
+//          wsl.ffmpeg / tool.sync + lib.wsl 的 warn 文案（`可能 clone 不完整，重新 clone`）——
+//          ★ 同样零插值 ⇒ 收口**也能**无条件零行为变更，本批未做（取舍：只有 2 处、漂移面小于
+//          本批那 4 条 3 处的）⇒ 可收口候选。
+//       ㈡ 三处精确重复但含 `${CFG.wslLib}` 插值：lib.wsl / wsl.venv（fail 文案）—— 且 setup 夹具
+//          把该值硬编码 ⇒ 收口是**条件**行为变更。
+//       ㈢ 近重复（env ↔ resources 值本就不同）：win.platform / win.ffmpeg / win.gpu / wsl.alive /
+//          wsl.ffmpeg / tool.sync —— 在 env ↔ resources 这一维收口会改输出文本。
+const FIX_SINGLE_SOURCE = [
+  { constName: 'ASSETS_INST_FIX', itemId: 'assets.inst' },
+  { constName: 'ASSETS_FONTS_FIX', itemId: 'assets.fonts' },
+  { constName: 'LIB_WIN_FIX', itemId: 'lib.win' },
+  { constName: 'WSL_NODE_FIX', itemId: 'wsl.node' },
+];
 
-test('★ 防再分叉：assets.inst 的 fix 文案只有一处来源（env.mjs 的 ASSETS_INST_FIX）', async () => {
-  const { ASSETS_INST_FIX } = await import('../lib/env.mjs');
-  assert.ok(typeof ASSETS_INST_FIX === 'string' && ASSETS_INST_FIX.length > 0,
-    'lib/env.mjs 应导出非空的 ASSETS_INST_FIX');
-
-  // ① 值比：env.mjs 的常量 == resources.mjs 台账条目的 fix
-  const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
-  const inst = list.find((e) => e.id === 'assets.inst');
-  assert.ok(inst, 'RESOURCES 里找不到 assets.inst');
-  assert.equal(inst.fix, ASSETS_INST_FIX,
-    `assets.inst 的 fix 与 lib/env.mjs 的 ASSETS_INST_FIX 不一致：\n`
-    + `  台账 fix = ${JSON.stringify(inst.fix)}\n`
-    + `  常量     = ${JSON.stringify(ASSETS_INST_FIX)}`);
-
-  // ② 值比：setup.mjs 演练夹具的 fix 也同源（否则 --simulate 会演一份假事实）
-  const { fixturePartialAssets } = await import('../lib/setup.mjs');
-  const fixFixture = fixturePartialAssets().groups.flatMap((g) => g.items)
-    .find((i) => i.id === 'assets.inst').fix;
-  assert.equal(fixFixture, ASSETS_INST_FIX,
-    `fixturePartialAssets 的 assets.inst fix 与 ASSETS_INST_FIX 不一致：${JSON.stringify(fixFixture)}`);
-
-  // ③ 文本扫描：这句文案只许在 lib/env.mjs 里作为字面量出现（另两处必须是 import 引用）
+test('★ 防再分叉：这 4 句 fix 文案各自只有一处来源（lib/env.mjs 的常量）', async () => {
+  const env = await import('../lib/env.mjs');
+  const { FIXTURES } = await import('../lib/setup.mjs');
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
   const files = ['lib/env.mjs', 'lib/resources.mjs', 'lib/setup.mjs'];
-  const hits = files.filter((f) => fs.readFileSync(path.join(repoRoot, f), 'utf8').includes(ASSETS_INST_FIX));
-  assert.deepEqual(hits, ['lib/env.mjs'],
-    '这句文案只许写在 lib/env.mjs 一处（本项目铁律：同一句文案不要有两处）；'
-    + `实得字面量出现在：${hits.join(', ') || '（一处都没有！）'}`);
+  const srcCache = Object.fromEntries(files.map((f) => [f, fs.readFileSync(path.join(repoRoot, f), 'utf8')]));
+  const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
+  // 演练夹具（全部场景合起来，覆盖这 4 个 id）
+  const fixtureItems = Object.values(FIXTURES).flatMap((f) => f.make().groups).flatMap((g) => g.items);
+
+  for (const { constName, itemId } of FIX_SINGLE_SOURCE) {
+    const val = env[constName];
+    assert.ok(typeof val === 'string' && val.length > 0, `lib/env.mjs 应导出非空的 ${constName}`);
+
+    // ① 值比：env.mjs 的常量 == resources.mjs 台账条目的 fix
+    const entry = list.find((e) => e.id === itemId);
+    assert.ok(entry, `RESOURCES 里找不到 ${itemId}`);
+    assert.equal(entry.fix, val,
+      `${itemId} 的 fix 与 lib/env.mjs 的 ${constName} 不一致：\n`
+      + `  台账 fix = ${JSON.stringify(entry.fix)}\n  常量     = ${JSON.stringify(val)}`);
+
+    // ② 值比：setup.mjs 演练夹具里**带 fix 的**同一 id 项也同源（否则 --simulate 会演一份假事实）
+    const fx = fixtureItems.filter((i) => i.id === itemId && i.fix);
+    assert.ok(fx.length >= 1, `演练夹具里找不到带 fix 的 ${itemId}（--simulate 演不到这条提示）`);
+    for (const f of fx) {
+      assert.equal(f.fix, val,
+        `演练夹具 ${itemId} 的 fix 与 ${constName} 不一致：${JSON.stringify(f.fix)}`);
+    }
+
+    // ③ 文本扫描：这句文案只许在 lib/env.mjs 里作为**字面量**出现（另两处必须是 import 引用）
+    //   ★ 比对的是**源码里的字面量形态**（含 `\\` 转义），而不是运行期值 —— 值里带反斜杠的
+    //     （如 `D:\\WSL\\…`）在源码里是转义过的，直接 `includes(值)` 会匹配不到（实测踩过）。
+    const literal = JSON.stringify(val).slice(1, -1);
+    const hits = files.filter((f) => srcCache[f].includes(literal));
+    assert.deepEqual(hits, ['lib/env.mjs'],
+      `${constName} 的文案只许写在 lib/env.mjs 一处（本项目铁律：同一句文案不要有两处）；`
+      + `实得字面量出现在：${hits.join(', ') || '（一处都没有！）'}`);
+  }
 });
 
 // ── ⑨ mount 接线（堵「有导出 ≠ 有功能」的假绿）───────────────────────────────

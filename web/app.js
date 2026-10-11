@@ -3584,9 +3584,25 @@ function syncAngleHint() {
 // ★ 只增删「这一个键那一段」：用户在 #fQ 里手写的其它内容一律不动（见 qToggleSwitch）。
 // ★ 拿不到开关时显示服务端给的 note，**不留空面板**（这个助手失败不该挡住「开始生成」那条主路）。
 
-/** `--q` 的值按空白切成分段（与 CLI 把它原样透传的口径一致）。 */
+/**
+ * `--q` 的值切成分段。
+ *
+ * ★★ 分隔符是 **`&`**（不是空格）—— 这是**下游的硬契约**，实测依据：
+ *   · 库侧 `core/render/still.mjs` 的 usage 写的是 `[--q 'k=v&..']`；
+ *   · 库侧 demo 页用 `new URLSearchParams(location.search)` 读它（只按 `&` 切）；
+ *   · 编排器侧用 `/(?:^|&)content=/` 解析 `content=`。
+ *   ⇒ ★ 用**空格**拼的 `nosub=1 content=a.json` 在两侧都**解析不出 `content`**
+ *     （`URLSearchParams` 只认 `nosub` 一个键，`content` 被吞进它的值里）⇒ **静默按默认走**。
+ *     本函数与 `qToggleSwitch` / `qSetContent` 的 `join` **必须**同改（曾经错在 `join(' ')`）。
+ *
+ * ★ 切分**同时认 `&` 与空白**：`#fQ` 是自由文本框，用户可能手写了空格分隔的 token
+ *   （本控制台自己**历史上就产出过**这种）⇒ 认下来、写回时统一成 `&`，相当于顺手修正历史输入。
+ * ★ **取舍（如实写明）**：因此**值里不能含空白**（`content=my file.json` 会被切成两段）。
+ *   对本项目**没有影响**：开关键实测都是 `[A-Za-z0-9_]+`，`content*.json` 的文件名实测**都不含空格**；
+ *   真要带空白的值，本来就该 URL 编码后写（`%20`）。
+ */
 function qTokens(v) {
-  return String(v || '').trim().split(/\s+/).filter(Boolean);
+  return String(v || '').trim().split(/[&\s]+/).filter(Boolean);
 }
 
 /** 某个 key 在分段里落在第几段（`key` 或 `key=<任意值>` 都算；找不到 = -1）。 */
@@ -3606,7 +3622,7 @@ function qToggleSwitch(key) {
   let on;
   if (i >= 0) { tokens.splice(i, 1); on = false; }
   else { tokens.push(`${key}=1`); on = true; }
-  inp.value = tokens.join(' ');
+  inp.value = tokens.join('&');   // ★ 分隔符必须是 `&`（见 qTokens 的说明；曾错用空格）
   // 走既有链路：syncPreview（重拼命令预览）会由 bind() 里挂的 'input' 监听触发。
   inp.dispatchEvent(new Event('input', { bubbles: true }));
   return on;
@@ -3641,7 +3657,7 @@ function qSetContent(v) {
   const i = qKeyIndex(tokens, 'content');
   if (i >= 0) tokens.splice(i, 1);
   if (v) tokens.push(`content=${v}`);
-  inp.value = tokens.join(' ');
+  inp.value = tokens.join('&');   // ★ 分隔符必须是 `&`（见 qTokens 的说明；曾错用空格）
   inp.dispatchEvent(new Event('input', { bubbles: true }));
 }
 

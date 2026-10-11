@@ -3481,10 +3481,10 @@ function runKillChildrenSelfTest() {
  *       -maxrate 2M -bufsize 4M -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -f mp4 "$out.part"
  *     # 成功 mv "$out.part" "$out"；失败 rm 掉 .part 并 exit 1
  *
- * ★★ 与上游的**唯一**差异（本项目**最高优先级**硬规则，不许照抄上游这一点）：**编码器必须走 GPU**。
- *   上游那条命令硬写 `libx264`（CPU）；本项目**编码器跟随既有的 `--venc`**（默认 `nvenc`），
- *   参数**照抄本项目已验证可用的组合** —— 即 `core/render/mux.sh` 的 `case "${LEMO_VENC:-}" in` 里
- *   两块 `VARG`（下面 `varg` 逐字抄它，**不自己发明 nvenc 参数**）。
+ * ★★ 与上游的差异（本项目**最高优先级**硬规则要求第 ① 条，不许照抄上游这一点）—— 逐字比对后实测**三条**：
+ *   ① **编码器必须走 GPU**：上游硬写 `libx264`（CPU）；本项目**跟随既有的 `--venc`**（默认 `nvenc`），
+ *      参数照抄本项目已验证的组合（`core/render/mux.sh` 的两块 `VARG`，下面 `varg` 逐字抄它，**不自己发明**）；
+ *   ② nvenc 的 `-cq` 取 **23**（上游 nvenc 分支是 `29`）；③ `-maxrate 2M -bufsize 4M` **无条件加**（上游只在 libx264 分支加）。★ ②③ 均**有意**（照 `mux.sh`），非笔误。
  *
  * ★ 落点与命名（**上游未定义本项目这一层，本项目取**）：**本次输出目录**内的 `<slug>-720p.mp4`。
  *   理由：本项目「一个成片一个输出目录」是交付模型（mp4 / .srt / poster.jpg / 交付文档同处），

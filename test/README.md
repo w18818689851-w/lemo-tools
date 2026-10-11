@@ -13,7 +13,7 @@ node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自�
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（19 条，★ ⑭⑮⑯：采样库**单库可选** —— 默认仍是 `instruments all`、库名清单逐字比对上游 `tools/fetch.sh` 的 `$LIBS`）
 node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（13 条，★ 绝不真安装；★ 2026-10-10 ⑪ 从**一次冷启动**钉住三件事：① 未知 id 的 404 **不付探测**（实测 22ms ≪ 冷态全量探测 6519ms —— 钉 `apiSetupRun` 先查 id 白名单、不空跑整轮环境探测）、② `GET /api/setup/actions` 写进**共享** `envCache`（随后 `/api/env` 必 `cached:true`）、③ `POST /api/setup/run` 读同一份缓存（实测 1ms，不再每请求重探））
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（112 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见；★ L 组 7 条（2026-10-11）：上一批 5 个 UI 入口的**进仓**回归钉 —— 启动表单 `#runRatio`→`--ratio` / `#runSizeW·H`→`--size`（★ 且**奇数尺寸不传**的反向断言）、`#fNoPreflight`→`--no-preflight`、`#fFilm`→`--film`、算力面板 `#btnLlmTryRun`→`POST /api/llm/invoke`（页面内 fetch 桩，绝不真发外网）+ 侧栏 `.style-item` 中英名/slug 真值比对 + 浅色 hover 底色对比度盲区）；★ P 组 6 条（2026-10-11）：断点式分镜 `--stills-only` 的**进仓**回归钉 —— `#fStillsOnly`/`#btnStillsOnly`/`#stillsConfirm` 三件套就位且 title 说清语义、默认**不传**该开关（逐字节不变）、勾上就传、点按钮 ⇒ 自动勾上并提交一条带该开关的任务（页面内 `window.fetch` 桩 + 反空转「点前 0 条 / 点后 1 条」）、横幅显隐判据（仅「含该开关 + done」才亮）、点「确认出片」⇒ **重提交同表单且不传该开关**（横幅文案明写不是「续跑」））
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（115 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见；★ L 组 7 条（2026-10-11）：上一批 5 个 UI 入口的**进仓**回归钉 —— 启动表单 `#runRatio`→`--ratio` / `#runSizeW·H`→`--size`（★ 且**奇数尺寸不传**的反向断言）、`#fNoPreflight`→`--no-preflight`、`#fFilm`→`--film`、算力面板 `#btnLlmTryRun`→`POST /api/llm/invoke`（页面内 fetch 桩，绝不真发外网）+ 侧栏 `.style-item` 中英名/slug 真值比对 + 浅色 hover 底色对比度盲区）；★ P 组 6 条（2026-10-11）：断点式分镜 `--stills-only` 的**进仓**回归钉 —— `#fStillsOnly`/`#btnStillsOnly`/`#stillsConfirm` 三件套就位且 title 说清语义、默认**不传**该开关（逐字节不变）、勾上就传、点按钮 ⇒ 自动勾上并提交一条带该开关的任务（页面内 `window.fetch` 桩 + 反空转「点前 0 条 / 点后 1 条」）、横幅显隐判据（仅「含该开关 + done」才亮）、点「确认出片」⇒ **重提交同表单且不传该开关**（横幅文案明写不是「续跑」））
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
 node test/briefs.test.mjs        # 「主题工单」数据层 + 接口 + UI 的测试（16 条，★ 含「控制台出片写进 _jobs 独立目录、不覆盖样板片」+「--ratio 的 `:` 判据」「filmUrl 指向本次产物」）
@@ -61,7 +61,7 @@ node test/readcheck-probe.test.mjs # 上游 `core/render/readcheck.mjs` 三个�
 
 | 用例 | 断言 |
 |---|---|
-| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `d8d75f806b5524d7495f9ae0ed87c25e` |
+| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `d2209b52db0255e926b20300910056dd` |
 
 控制台只是**包装层**，绝不能改编排器。这条是整个项目的红线，失败信息直说「编排器被改动了 —— 控制台不应该修改它」。
 
@@ -605,6 +605,12 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 `c46d76b7b8f2569a67cc09a6eb266ce3` → `d8d75f806b5524d7495f9ae0ed87c25e`。红线本身**未动**（仍然拦人）。
 （历史箭头保留：上面 `:570` 的 `dfb37003… → c46d76b7…` 与 `_distill/AGENT-BRIEF.md` 的同型记录**不改值**。）
 
+★ **2026-10-11（同日再一处 · 纯注释）**：`emitWebCut` 的头注释订正 —— 它原称与上游 `tools/web_cuts.sh`「**唯一**差异 = 编码器走 GPU」，
+**逐字比对后不成立**：实测差异有**三条**（① 编码器 nvenc vs libx264；② nvenc 的 `-cq` 取 **23**，上游 nvenc 分支是 **29**；
+③ `-maxrate 2M -bufsize 4M` **无条件加**，上游只在 `libx264` 分支加）。★ **行为一字未改**（②③ 都是**有意**照 `core/render/mux.sh` 的组合），
+**错的是那句结论** ⇒ 按「先判哪侧对、再订正错的一侧」订正注释。故基线 md5 由
+`d8d75f806b5524d7495f9ae0ed87c25e` → `d2209b52db0255e926b20300910056dd`（★ **零行漂移**：唯一 hunk `-3481,10 +3481,10`、numstat `4 4`）。
+
 ★ **2026-10-11 第十五批（`ui.test.mjs` +4 条 → 89）：本批 3 个新 UI 入口的进仓回归钉 + 新端点的降级分支。**
 - `#fWebCut` → `--web-cut`；`#fColor` → `--color bt709`（★ 且选 `default` **不传** `--color` 的反向断言）；
   `#fLines` → `--lines`。
@@ -1067,7 +1073,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（112 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条 + 第十四批 7 条 + 第十五批 4 条 + 第十六批 1 条 + 第十七批 5 条 + **第十八批 4 条** + **第十九批 6 条**（P 组：断点式分镜 `--stills-only` 的进仓回归钉） + **第十九批 3 条**）
+## `test/ui.test.mjs` 覆盖了什么（115 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条 + 第十四批 7 条 + 第十五批 4 条 + 第十六批 1 条 + 第十七批 5 条 + **第十八批 4 条** + **第十九批 6 条**（P 组：断点式分镜 `--stills-only` 的进仓回归钉） + **第十九批 3 条** + **第二十批 3 条**）
 <!-- ★ 2026-10-10 订正：本标题原写「69 条」，与入口行不一致（**旧漂移**）。上列批次之和确为 69，
      另 6 条来自其后未逐批列出的批次 ⇒ 总数改为 **75**（★ 以本文件「测试入口」表那一行为准）。
      ★ 另：2026-10-10「AI 算力配置」面板极简化时，I 组 6 条被**同数重写**（6 换 6）⇒ 总数不变。★ 2026-10-10 第二轮（通用算力模块重建）：I 组换锚点 + 新增 I7~I11（多套列表/新增/切换/删除/空状态）⇒ ui.test 由 75 → **80**；同轮 llm-api.test 71 → **78**、dub-api.test 27 → **31**。 -->
@@ -1270,6 +1276,37 @@ test/README.md      本文件
 
 > ★ 用例分三组跑：`STATIC_CASES`（不起服务）→ `SERVER_CASES`（服务在跑）→ `PROCESS_CASES`（在本进程里 `import lib/jobs.mjs` 起独立队列，验 WSL 侧进程组 / 内存裁剪）。
 > `PROCESS_CASES` **必须排在 `SERVER_CASES` 之后**：它会往 `.console` 写任务记录，等服务把历史读完再写，测试服务的内存里就不会带着这些测试任务、收尾时也不会被它写回去。
+
+---
+
+## ★ 改动后必跑（2026-10-11 立）
+
+本仓的质量防线是**两层**，不是一层：
+
+1. **52 个闸门** `scripts/check-*.mjs` —— 每次改动都全跑（报「52/52 绿」）；
+2. **32 个测试入口** `test/*.test.mjs` —— ★★ **此前从未一次性全跑过**（每次都只跑「受影响的几个」+ `test/smoke.mjs`）。
+
+⇒ **改完任何东西，跑这一条**（全套 32 入口，**串行**，约 7–10 分钟 —— 两次实测 **429.1s / 600.8s**，
+差值来自本机负载；大头是 `ui` 124–288s / `gate-blindness` ~130s / `review` 67s）：
+
+```bash
+node scripts/run-all-tests.mjs                    # 全套；全绿 ⇒ 退出码 0，有失败 ⇒ 非 0（可直接给脚本 / CI 用）
+node scripts/run-all-tests.mjs --filter dub       # 只跑文件名含 "dub" 的入口（快，改动小的时候）
+node scripts/run-all-tests.mjs --json D:/lemo-tmp/run-all.json   # 额外落一份机器可读汇总
+```
+
+**为什么不能只看闸门**：「52/52 闸门绿」**≠**「全部测试绿」—— 闸门各守各的判据，**跑不到**测试入口里
+那些集成 / 端到端断言。上一批的真实代价就是最好的说服材料：
+
+> 主控**第一次**把 32 个入口全跑 ⇒ **31 绿 / 1 红**：`test/gate-blindness.test.mjs` 报
+> **133 passed / 7 failed** —— 一处**潜伏了 3 批**的真回归：第 11 批把 9 个闸门的剥注释器抽成
+> `lib/js-scan.mjs` 后，该测试的**自证段夹具**没带上这个新模块 ⇒ 子进程 `ERR_MODULE_NOT_FOUND`
+> ⇒ 7 条自证全废。**连续三批的闸门全绿，没有一条闸门能看见它**，只有「跑全套」能。
+
+跑器还会处理**陈旧并发锁**：某入口报「已有另一个 lemo-make 在跑同一个 demo」时 ⇒ 先 `tasklist`
+确认那个 pid 死活 ⇒ **已死**则按编排器处置指引（报错里写着「确认它已死掉后删掉这个文件再重试」）
+删锁并**重试一次**；**还活着**则等它。每步都打日志说清「删了哪个锁、为什么」。
+逐入口日志落在 `D:/lemo-tmp/run-all-tests/<时间戳>/`（非 C 盘）。
 
 ---
 
