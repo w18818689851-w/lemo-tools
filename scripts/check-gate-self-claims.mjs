@@ -147,7 +147,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
+import { stripComments as scanComments } from '../lib/js-scan.mjs';   // ★ 共享剥注释器
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // ★ 覆盖点：工具仓根（同名同义于 check-doc-coverage / check-line-endings / check-redline-md5）。
 const TOOLS_ROOT = path.resolve(process.env.LEMO_TOOLS_ROOT || path.join(HERE, '..'));
@@ -178,12 +178,13 @@ const stripStar = (l) => l.replace(/^[\s*]+/, '');
 /**
  * 剥掉**代码体**里的注释（块注释 + 行注释）。★ 判据②③ 必须用它 —— 否则头注释/代码注释
  * 里的 `判据①` / `失明` 会自己满足判据（实测踩过，见头注释 ③）。
+ * ★ 2026-10-11：原实现是**两条正则**（块注释 `/*…*` + `/` 一组、行注释一组，且用 `[^:\\]`
+ *   避开 `http://`）——它**不认字符串 / 正则字面量**（字符串里的 `//` 会被当注释删掉）。现统一到
+ *   的**状态机**（`{ blank: false }` = 删注释、保换行、保字符串；★ 认正则字面量）。
+ *   ★ 实测（2026-10-11）：换实现后 52 个 `check-*.mjs` 的 `bodyNC` 字节都变，但本闸门
+ *     判据②（`labelOrdinals`）/ 判据③（`失明` / `blind`）的**结论 0 变化**、stdout 逐字节不变。
  */
-function stripComments(s) {
-  let t = s.replace(/\/\*[\s\S]*?\*\//g, '');
-  t = t.replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
-  return t;
-}
+const stripComments = (s) => scanComments(s, { blank: false });
 
 // ── 判据①：退出码声明 / 实际 ────────────────────────────────────────────────
 /** 规范声明行：行首（剥 ` * ` 后）= 可选的 `★ ④ ` 前缀 + `退出码` / `退出码语义` + `:` / `：`。 */

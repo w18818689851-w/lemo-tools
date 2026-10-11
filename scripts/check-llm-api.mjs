@@ -252,7 +252,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
+import { stripComments } from '../lib/js-scan.mjs';   // ★ 共享剥注释器（默认口径：抹注释、保字符串）
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** ★ 覆盖点：工具仓根（同名同义于 check-doc-coverage / check-env-overrides / check-gate-self-claims）。 */
 const ROOT = path.resolve(process.env.LEMO_TOOLS_ROOT || path.join(HERE, '..'));
@@ -345,32 +345,7 @@ const SRC_LABEL = {
   runtime: '运行时线索（ANTHROPIC_*/OPENAI_*）', builtin: '内置默认（profile 表）',
 };
 
-// ── ★ 剥注释（**保留字符串字面量**）—— 状态机；行号不变 ─────────────────────
-//   ★ 顺序关键：**先判注释、再判引号** ⇒ 注释里的引号 / 反引号不会把状态机带偏；
-//     而字符串里的 `/*` 也安全（进入字符串态后不再判注释）。
-function stripComments(src) {
-  const out = src.split('');
-  const n = src.length;
-  const blank = (a, b) => { for (let k = a; k < b; k++) if (out[k] !== '\n') out[k] = ' '; };
-  let i = 0, q = null;
-  while (i < n) {
-    const c = src[i], c2 = src[i + 1];
-    if (q) {
-      if (c === '\\') { i += 2; continue; }
-      if (c === q) { q = null; i++; continue; }
-      i++; continue;
-    }
-    if (c === '/' && c2 === '/') { const s = i; while (i < n && src[i] !== '\n') i++; blank(s, i); continue; }
-    if (c === '/' && c2 === '*') {
-      const s = i; i += 2;
-      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++;
-      i = Math.min(n, i + 2); blank(s, i); continue;
-    }
-    if (c === "'" || c === '"' || c === '`') { q = c; i++; continue; }
-    i++;
-  }
-  return out.join('');
-}
+// 剥注释（**保留字符串字面量**、行号不变）—— 实现见 `lib/js-scan.mjs`（★ 认正则字面量，根治「正则里裸引号把状态机带偏」）。
 
 // ── ★ 剥注释 + 字符串（状态机；行号不变）—— 逐字照抄 check-env-overrides 的 codeOnly ──
 //   用途：判据①(a)(b) / ② / ④ / ⑤ 的「代码体」。

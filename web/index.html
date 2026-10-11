@@ -473,6 +473,24 @@
             </select>
             <span class="hint" id="fColorHint">选「默认」不传 --color</span>
           </label>
+          <!-- ★ 渲染后端（环境变量 LEMO_ANGLE）：**不是 CLI 参数**，所以命令预览里不会出现它 ——
+               它由服务端落到这次渲染子进程的环境里（库侧 core/render/browser.mjs 读它，
+               非 default 的值会变成 Chromium 的 --use-angle=<值>）。
+               ★ 留空 = **不设**该变量（= 库自己选，在 Windows 上等价于 default）——
+                 这是「不传时行为逐字节不变」的落点，别给它填默认值。 -->
+          <label class="field">
+            <span class="lbl" title="环境变量 LEMO_ANGLE：渲染子进程的 Chromium 图形后端。留空 = 不设（库自己选）">渲染后端</span>
+            <input id="fAngle" class="input" list="angleOptions" autocomplete="off"
+                   placeholder="留空 = 不设（库自己选）">
+            <datalist id="angleOptions">
+              <option value="gl"></option>
+              <option value="vulkan"></option>
+              <option value="d3d11"></option>
+              <option value="swiftshader"></option>
+              <option value="metal"></option>
+            </datalist>
+            <span class="hint" id="fAngleHint">留空不设 LEMO_ANGLE</span>
+          </label>
           <label class="field">
             <span class="lbl" title="对应命令行参数 --lines（demo 目录下的 .json 文件名；★ 本控制台自产参数，上游没有）">清单文件</span>
             <input id="fLines" class="input" placeholder="如 lines.json" autocomplete="off">

@@ -4416,6 +4416,253 @@ async function main() {
         notes.push(`M5 ascii-crt ⇒ [${acKeys.join(',')}]（含 \`.has()\` 形态的 nosub）；backrooms ⇒ [${brKeys.join(',')}]（三个全是 \`.has()\`）；全库 ${scannedStyles} 个风格扫描：Map/Set 味儿键名 0 个`);
       });
     }
+
+    // ══ N. 本批 2 个新 UI 入口的进仓回归钉 ═══════════════════════
+    //   ① `#qContent`（内容文件下拉：`?content=<文件>.json` 的**真实**可选值 —— 取值来自库仓 demo 目录，
+    //      配 `GET /api/style-switches` 的新字段 `contentFiles`）
+    //   ② `#fAngle`（环境变量 LEMO_ANGLE：渲染子进程的 Chromium 图形后端，**不是 CLI 参数**）
+    // ★ 铁律（沿用本套件）：绝不真发外网、绝不真出片 —— 这几条只读 DOM / 只调纯读的 `buildOpts()` /
+    //   只打本机测试服务的端点；`POST /api/run` 一律带 `--dry-run --skip-sync`（不渲染/不混流/几秒结束，
+    //   与 C2/C3 同一套纪律），或干脆用页面内 fetch 桩拦下、只记 body。
+    log('');
+    log(C.b('  N. 本批 2 个新 UI 入口的进仓回归钉（#qContent 内容文件下拉 / #fAngle 渲染后端）'));
+
+    const N_NAMES = ['N1 GET /api/style-switches 的 contentFiles', 'N2 内容文件下拉 #qContent',
+      'N3 渲染后端 #fAngle', 'N4 GET /api/console 的 renderEnv', 'N5 LEMO_ANGLE 真透传'];
+    const nWillRun = !OPT.filter || N_NAMES.some((n) => n.includes(OPT.filter));
+    if (nWillRun) {
+      // ★ 先导航到干净文档（M 组在页面里点过开关助手，别把残留带进来）。
+      await cdp.goto(base + '/', 4000);
+      const nReady = `!!document.getElementById('fQ') && !!document.getElementById('btnQSwitches')
+        && !!document.getElementById('qSwitches') && !!document.getElementById('fAngle')
+        && !!document.getElementById('fAngleHint') && !!document.getElementById('fSlug')`;
+      await waitFor(cdp.evalJs, nReady, { timeoutMs: 30000 });
+
+      /** ★ 提交参数：`startRun()` 提交前调的就是 `buildOpts()` ⇒ 直接调页面里的真函数（纯读，无副作用）。 */
+      const nForm = () => cdp.evalJs(`(() => { const b = buildOpts();
+        return { slug: b.slug, opts: b.opts, angle: b.angle, cmd: document.getElementById('cmdPreview').textContent }; })()`);
+      const nSetSlug = (slug) => cdp.evalJs(`(() => { const f = document.getElementById('fSlug');
+        f.value = ${JSON.stringify(slug)}; f.dispatchEvent(new Event('input', { bubbles: true }));
+        f.dispatchEvent(new Event('change', { bubbles: true })); return f.value; })()`);
+      const nSetVal = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true }));
+        n.dispatchEvent(new Event('change', { bubbles: true })); return n.value; })()`);
+      /** `--q` 的值按空白切段（与 CLI 原样透传的口径一致）。 */
+      const nQToks = (s) => String(s || '').trim().split(/\s+/).filter(Boolean);
+
+      // ★ 不硬编码风格名：从 `/api/style-switches` 里**动态**分类（库更新了不该让用例误红；
+      //   连一个「有 content 开关 + 有 content*.json」的风格都找不到才判失败 = 判据真空转）。
+      const nDemos = await get('/api/demos');
+      need(nDemos.status === 200 && nDemos.json && Array.isArray(nDemos.json.styles),
+        `GET /api/demos → ${nDemos.status}（拿不到 styles）`);
+      let nPick = null, nNoKey = null, nScanned = 0;
+      for (const s of nDemos.json.styles) {
+        const r = await get(`/api/style-switches?slug=${encodeURIComponent(s.slug)}`);
+        if (r.status !== 200 || !r.json || !Array.isArray(r.json.switches)) continue;
+        nScanned++;
+        const hasKey = r.json.switches.some((x) => x.key === 'content');
+        const files = Array.isArray(r.json.contentFiles) ? r.json.contentFiles : [];
+        if (hasKey && files.length && !nPick) nPick = { slug: s.slug, files, json: r.json };
+        if (!hasKey && !nNoKey) nNoKey = { slug: s.slug, json: r.json };
+      }
+      need(nScanned > 0, '全库风格经 /api/style-switches 都拿不到 switches ⇒ N 组判据空转');
+
+      // ① GET /api/style-switches 的新字段 contentFiles
+      await runCase('N1 GET /api/style-switches 的 contentFiles：只列 demo 目录下**真实存在**的 content*.json（正例非空 / 无关风格为空 / 降级也回空数组）', async () => {
+        need(nPick, '全库没有「既有 content 开关、又有 content*.json」的风格 ⇒ N1 正例半边空转（判据可能已失效）');
+        for (const f of nPick.files) {
+          need(/^content.*\.json$/i.test(f), `${nPick.slug} 的 contentFiles 混进了非 content*.json：${JSON.stringify(f)}`);
+        }
+        need(nPick.files.length >= 2, `${nPick.slug} 的 contentFiles 只有 ${nPick.files.length} 个（实测该风格有多个变体）`);
+        // ★★ 最强的一条有牙断言：服务端给的清单必须与**直接读该风格 demo 目录**得到的 content*.json **逐一相等**
+        //     —— 证明这个字段是真读了库仓，不是硬造/漏列。（库仓不在本机时跳过并如实记录，绝不静默放过。）
+        const stylesRoot = process.env.LEMO_STYLES_ROOT
+          ? path.resolve(process.env.LEMO_STYLES_ROOT)
+          : path.join(process.env.LEMO_LIB_WIN || 'D:\\lemo-opuscar', 'styles');
+        const demoDir = path.join(stylesRoot, nPick.slug, 'demo');
+        let realFiles = null;
+        try {
+          realFiles = fs.readdirSync(demoDir, { withFileTypes: true })
+            .filter((e) => e.isFile() && /^content.*\.json$/i.test(e.name))
+            .map((e) => e.name).sort();
+        } catch { realFiles = null; }
+        if (realFiles) {
+          need(JSON.stringify(nPick.files) === JSON.stringify(realFiles),
+            `★ contentFiles 与直接读 demo 目录的结果不一致（硬造/漏列）：\n  服务端 ${JSON.stringify(nPick.files)}\n  实读   ${JSON.stringify(realFiles)}`);
+        } else {
+          notes.push(`N1 ⚠️ 库仓 demo 目录读不到（${demoDir}）⇒ 「与实读一致」这条交叉核对跳过（其余断言仍有效）`);
+        }
+        // 反例：没有 content 开关的风格，contentFiles 必须是空数组（不硬造清单）
+        if (nNoKey) {
+          need(Array.isArray(nNoKey.json.contentFiles) && nNoKey.json.contentFiles.length === 0,
+            `${nNoKey.slug} 没有 content 开关，contentFiles 却是 ${JSON.stringify(nNoKey.json.contentFiles)}（应空数组）`);
+        }
+        // 降级：不存在的 slug ⇒ 200 + contentFiles:[]
+        const bad = await get(`/api/style-switches?slug=__no_such_${Date.now()}__`);
+        need(bad.status === 200 && Array.isArray(bad.json.contentFiles) && bad.json.contentFiles.length === 0,
+          `降级分支应回 contentFiles:[]：${bad.status} ${JSON.stringify(bad.json)}`);
+        notes.push(`N1 ${nPick.slug} contentFiles=${JSON.stringify(nPick.files)}（${nPick.files.length} 个，与实读${realFiles ? '一致' : '未核对'}）；` +
+          `${nNoKey ? `${nNoKey.slug}（无 content 开关）⇒ []` : '（无「无 content 开关」的风格可对照）'}；降级 ⇒ []`);
+      });
+
+      // ② 内容文件下拉 #qContent
+      await runCase('N2 内容文件下拉 #qContent：选真实变体 ⇒ #fQ 出现 content=<文件>；选「不传」⇒ 消失；不弄丢手写内容；无 content 开关的风格不画下拉', async () => {
+        need(nPick, '没有可测的风格（无 content 开关 + content*.json）⇒ N2 空转');
+        await nSetSlug(nPick.slug);
+        await nSetVal('fQ', 'KEEPME=1');       // ★ 手写内容，全程不许被弄丢
+        // 真点「开关助手」（不是直接调函数 —— 钉住按钮真接上了线）
+        await cdp.evalJs(`document.getElementById('btnQSwitches').click(); true`);
+        const opt = await waitFor(cdp.evalJs, `(() => { const s = document.getElementById('qContent');
+          if (!s) return null; return { vals: [...s.options].map((o) => o.value), n: s.options.length }; })()`, { timeoutMs: 15000 });
+        need(opt, `#qContent 没出现（风格 ${nPick.slug} 有 content 开关 + ${nPick.files.length} 个变体文件，应画下拉）`);
+        need(opt.vals.includes(''), `#qContent 缺少「不传」空值选项：${JSON.stringify(opt.vals)}`);
+        for (const f of nPick.files) need(opt.vals.includes(f), `#qContent 缺变体文件选项「${f}」：${JSON.stringify(opt.vals)}`);
+        need(opt.n === nPick.files.length + 1, `#qContent option 数 ${opt.n} ≠ 文件数 ${nPick.files.length}+1（多出的应是「不传」）`);
+
+        // 选一个真实变体 ⇒ #fQ 出现 content=<文件>
+        const target = nPick.files[nPick.files.length - 1];
+        await cdp.evalJs(`(() => { const s = document.getElementById('qContent'); s.value = ${JSON.stringify(target)};
+          s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+        const onVal = await cdp.evalJs(`document.getElementById('fQ').value`);
+        need(nQToks(onVal).includes(`content=${target}`), `选了「${target}」后 #fQ 里没有 content=${target}：${JSON.stringify(onVal)}`);
+        need(onVal.includes('KEEPME=1'), `★ 选内容文件把手写内容弄丢了：${JSON.stringify(onVal)}`);
+        const onCmd = (await nForm()).cmd;      // 命令预览里也要出现（--q 原样透传）
+        need(onCmd.includes(`content=${target}`), `#cmdPreview 里没有 content=${target}：「${onCmd}」`);
+
+        // 选「不传」⇒ 那一段消失，手写的还在
+        await cdp.evalJs(`(() => { const s = document.getElementById('qContent'); s.value = '';
+          s.dispatchEvent(new Event('change', { bubbles: true })); return s.value; })()`);
+        const offVal = await cdp.evalJs(`document.getElementById('fQ').value`);
+        need(!nQToks(offVal).some((t) => t.startsWith('content=')), `选「不传」后 content= 还在：${JSON.stringify(offVal)}`);
+        need(offVal.includes('KEEPME=1'), `★ 取消内容文件把手写内容弄丢了：${JSON.stringify(offVal)}`);
+
+        // ★ 没有 content 开关的风格 ⇒ **不画**下拉（选了也没人读，绝不造假控件）。
+        //   面板开着时换风格会自动重拉（bind 里 fSlug change → loadQSwitches）。
+        if (nNoKey) {
+          await nSetSlug(nNoKey.slug);
+          // ★ 换风格是**异步重拉**（fSlug change → loadQSwitches）：必须轮询到重拉**完成**，
+          //   否则第一拍读到的还是上一个风格残留的 #qContent（waitFor 见到 'present' 会立刻返回 = 假绿/假红）。
+          let gone = 'present';
+          const tg = Date.now();
+          while (Date.now() - tg < 15000) {
+            gone = await cdp.evalJs(`(() => { const b = document.getElementById('qSwitches');
+              if (!b || b.hidden) return 'hidden'; return document.getElementById('qContent') ? 'present' : 'absent'; })()`);
+            if (gone !== 'present') break;
+            await sleep(250);
+          }
+          need(gone !== 'present',
+            `${nNoKey.slug} 没有 content 开关，重拉后却仍画了 #qContent（状态=${gone}）—— 不该造假控件`);
+        }
+
+        await nSetVal('fQ', '');   // 复位
+        notes.push(`N2 风格 ${nPick.slug}：下拉 ${opt.n} 项（不传 + ${nPick.files.length} 文件）；选「${target}」⇒ #fQ「${onVal}」→ 选不传 ⇒「${offVal}」；` +
+          `${nNoKey ? `${nNoKey.slug}（无 content 开关）⇒ 不画下拉` : '（无对照风格）'}`);
+      });
+
+      // ③ 渲染后端 #fAngle（环境变量 LEMO_ANGLE）—— 纯读 buildOpts().angle + fetch 桩钉住请求体真带 angle
+      await runCase('N3 渲染后端 #fAngle：填 gl ⇒ buildOpts().angle="gl" 且提交请求体带 angle；留空 ⇒ ""（不改变旧行为）；且不进命令预览', async () => {
+        await nSetSlug(state.slugA);
+        // ① 留空 ⇒ angle 为空串（服务端据此**不设** LEMO_ANGLE，与旧版逐字节一致）
+        await nSetVal('fAngle', '');
+        const empty = await nForm();
+        need(empty.angle === '', `#fAngle 留空时 buildOpts().angle 应是空串，实测 ${JSON.stringify(empty.angle)}`);
+        // ★ 它不是 CLI 参数 ⇒ 命令预览里永远不该出现它
+        need(!empty.cmd.includes('use-angle') && !empty.cmd.includes('LEMO_ANGLE'),
+          `#fAngle 不该进命令预览（它不是 CLI 参数）：「${empty.cmd}」`);
+        const hintEmpty = await cdp.evalJs(`document.getElementById('fAngleHint').textContent`);
+        need(/留空/.test(hintEmpty), `留空时 #fAngleHint 应说明「留空 = 不设」，实测 ${JSON.stringify(hintEmpty)}`);
+
+        // ② 填 gl ⇒ angle="gl" + 提示文案改口
+        await nSetVal('fAngle', 'gl');
+        const gl = await nForm();
+        need(gl.angle === 'gl', `#fAngle=gl 时 buildOpts().angle 应是 "gl"，实测 ${JSON.stringify(gl.angle)}`);
+        const hintGl = await cdp.evalJs(`document.getElementById('fAngleHint').textContent`);
+        need(hintGl.includes('gl') && !/留空/.test(hintGl), `填 gl 后 #fAngleHint 应变口，实测 ${JSON.stringify(hintGl)}`);
+
+        // ③ 真接线：装页面内 fetch 桩拦下 POST /api/run 只记 body（绝不真出片），走真按钮 startRun() 的同一入口。
+        //    EventSource 也一并桩掉：startRun 拿到空 job.id 后会挂日志流，不桩就会真打一次 /api/logs/。
+        await cdp.evalJs(`(() => {
+          window.__nRealFetch = window.fetch.bind(window);
+          window.__nRealES = window.EventSource;
+          window.__nRunBodies = [];
+          window.EventSource = function () { return { addEventListener() {}, close() {} }; };
+          window.fetch = function (u, o) {
+            const s = String(u); const m = String((o && o.method) || 'GET').toUpperCase();
+            if (s.indexOf('/api/run') >= 0 && m === 'POST') {
+              window.__nRunBodies.push(String((o && o.body) || ''));
+              return Promise.resolve({ ok: true, status: 200,
+                text: async () => JSON.stringify({ ok: true, job: { id: '', status: 'canceled', opts: [] } }) });
+            }
+            return window.__nRealFetch.apply(this, arguments);
+          };
+          return true;
+        })()`);
+        await cdp.evalJs(`document.getElementById('btnRun').disabled = false; startRun(true); true`);
+        await waitFor(cdp.evalJs, `window.__nRunBodies.length > 0`, { timeoutMs: 10000 });
+        const body = await cdp.evalJs(`window.__nRunBodies[window.__nRunBodies.length - 1]`);
+        const parsed = JSON.parse(body);
+        need(parsed.angle === 'gl', `★ 提交请求体里 angle 应是 "gl"，实测 ${JSON.stringify(parsed.angle)}（body=${body}）`);
+        need(parsed.slug === state.slugA, `请求体 slug 应是 ${state.slugA}，实测 ${JSON.stringify(parsed.slug)}`);
+
+        // ④ 留空 ⇒ 请求体 angle 为空串（服务端据此不设）
+        await cdp.evalJs(`window.__nRunBodies = []; true`);
+        await nSetVal('fAngle', '');
+        await cdp.evalJs(`document.getElementById('btnRun').disabled = false; startRun(true); true`);
+        await waitFor(cdp.evalJs, `window.__nRunBodies.length > 0`, { timeoutMs: 10000 });
+        const body2 = JSON.parse(await cdp.evalJs(`window.__nRunBodies[window.__nRunBodies.length - 1]`));
+        need(body2.angle === '', `留空时请求体 angle 应是空串，实测 ${JSON.stringify(body2.angle)}`);
+
+        // 收尾：还原 fetch / EventSource
+        await cdp.evalJs(`if (window.__nRealFetch) { window.fetch = window.__nRealFetch; }
+          if (window.__nRealES) { window.EventSource = window.__nRealES; } true`);
+        await nSetVal('fAngle', '');   // 复位
+        notes.push(`N3 留空 ⇒ angle=""、#fAngleHint「${hintEmpty}」；填 gl ⇒ angle="gl"、#fAngleHint「${hintGl}」；请求体 angle 实测 "gl"→""（fetch 桩拦下，未真出片）`);
+      });
+
+      // ④ GET /api/console 的新字段 renderEnv（只读快照）+ POST /api/run 非法 angle ⇒ 400（不 spawn）
+      await runCase('N4 GET /api/console 的 renderEnv.LEMO_ANGLE（只读快照）；POST /api/run 非法 angle ⇒ 400（形状校验，绝不 spawn）', async () => {
+        const con = await get('/api/console');
+        need(con.status === 200 && con.json && con.json.renderEnv && 'LEMO_ANGLE' in con.json.renderEnv,
+          `GET /api/console 缺 renderEnv.LEMO_ANGLE 字段：${con.status} ${JSON.stringify(con.json && con.json.renderEnv)}`);
+        // 非法 angle 一律 400（形状校验只允许 A-Za-z0-9._-，≤32）——绝不进队列、绝不 spawn
+        for (const bad of ['gl;rm -rf /', 'a'.repeat(40), 'gl vulkan', '../x']) {
+          const r = await post('/api/run', { slug: state.slugA, opts: ['--dry-run'], angle: bad });
+          need(r.status === 400, `非法 angle ${JSON.stringify(bad)} 应 400，实测 ${r.status}（${JSON.stringify(r.json)}）`);
+        }
+        // 合法值应被接受（用 dry-run，几秒结束；此处只验「不 400」）
+        const ok = await post('/api/run', { slug: state.slugA, opts: ['--dry-run', '--skip-sync'], angle: 'gl' });
+        need(ok.status === 200 && ok.json && ok.json.ok === true, `合法 angle=gl 应 200：${ok.status} ${JSON.stringify(ok.json)}`);
+        if (ok.json && ok.json.job && ok.json.job.id) JOB_IDS.add(ok.json.job.id);
+        notes.push(`N4 renderEnv 字段存在（实测 ${JSON.stringify(con.json.renderEnv)}）；非法 angle ×4 ⇒ 400；合法 gl ⇒ 200`);
+      });
+
+      // ⑤ LEMO_ANGLE 真透传（服务端把这次提交的值落到 process.env；下一次「不传」⇒ 还原成启动时继承到的值）
+      await runCase('N5 LEMO_ANGLE 真透传：提交 angle=gl ⇒ /api/console.renderEnv.LEMO_ANGLE="gl"；再不带 angle 提交 ⇒ 还原成启动时继承到的值（硬规则：不传 ⇒ 逐字节不变）', async () => {
+        const inherited = process.env.LEMO_ANGLE || null;   // 测试进程与测试服务同源（spawnServer 用 {...process.env}）
+        const pollEnv = async (want) => {
+          const t0 = Date.now();
+          let last;
+          while (Date.now() - t0 < 20000) {
+            const c = await get('/api/console');
+            last = (c.status === 200 && c.json && c.json.renderEnv) ? c.json.renderEnv.LEMO_ANGLE : undefined;
+            if (last === want) return last;
+            await sleep(250);
+          }
+          throw new Error(`等待 renderEnv.LEMO_ANGLE=${JSON.stringify(want)} 超时（最后一次=${JSON.stringify(last)}）`);
+        };
+        // ① 提交 angle=gl ⇒ 环境里应立刻是 gl（enqueueRender 在入队前同步落值）
+        const r1 = await post('/api/run', { slug: state.slugA, opts: ['--dry-run', '--skip-sync'], angle: 'gl' });
+        need(r1.status === 200 && r1.json && r1.json.ok === true, `提交 angle=gl 应 200：${r1.status} ${JSON.stringify(r1.json)}`);
+        if (r1.json && r1.json.job && r1.json.job.id) JOB_IDS.add(r1.json.job.id);
+        await pollEnv('gl');
+        // ② 不带 angle 再提交 ⇒ 还原成启动时继承到的值（不是硬编码 null）
+        const r2 = await post('/api/run', { slug: state.slugA, opts: ['--dry-run', '--skip-sync'] });
+        need(r2.status === 200 && r2.json && r2.json.ok === true, `不带 angle 提交应 200：${r2.status} ${JSON.stringify(r2.json)}`);
+        if (r2.json && r2.json.job && r2.json.job.id) JOB_IDS.add(r2.json.job.id);
+        await pollEnv(inherited);
+        notes.push(`N5 angle=gl ⇒ renderEnv.LEMO_ANGLE="gl"；再不带 ⇒ 还原成 ${JSON.stringify(inherited)}（= 启动时继承值，硬规则「不传 ⇒ 逐字节不变」）`);
+      });
+    }
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）

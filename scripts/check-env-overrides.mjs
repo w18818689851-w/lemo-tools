@@ -798,6 +798,15 @@ const EXTERNAL = {
   // ★ 2026-10-09 追加：**本机智能体网关**的三个外部约定（宿主/网关进程注入；本项目只读来拼 baseUrl 与鉴权，
   //   **不重定向任何路径或工具**）⇒ 按本文件头注释 ③ 归 `EXTERNAL`（只登记、不判 FAIL）✓
   //   ★★ `CODEBUDDY_GATEWAY_PASSWORD` 是**口令** ⇒ 这里登记的只是**变量名**，★ 值**绝不落盘/进日志** ✓
+  // ★ 2026-10-11 追加：**渲染图形后端**（`LEMO_ANGLE`）—— 控制台把它透传给渲染子进程的 Chromium
+  //   （上游 `core/README.md` 把它列为**用户可设环境变量**；本项目上一批给它加了 UI 控件）。
+  //   ★ 它**不重定向任何路径或工具**（只选图形后端）⇒ 按头注释 ③ 归 `EXTERNAL`（只登记、不判 FAIL）✓
+  //   ★ 读者只在 `server.mjs`：`INHERITED_ANGLE = process.env.LEMO_ANGLE`（记住控制台启动时继承到的值）
+  //     与 `applyRenderAngle()` 里三处「设 / 还原 / 删」—— 判据② 从此守着这几处不被删。
+  LEMO_ANGLE: {
+    readers: ['server.mjs'],
+    why: '渲染子进程的 **Chromium 图形后端**（gl / vulkan / d3d11…；控制台按本次提交注入，默认**不设**该变量）',
+  },
   SERVER__PORT: {
     readers: ['lib/llm-api.mjs'],
     why: '本机智能体网关的**监听端口**（宿主注入；★ 端口**动态**，代码里**不硬编码**）',

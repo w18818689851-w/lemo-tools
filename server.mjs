@@ -193,6 +193,73 @@ function serveStatic(req, res, urlPath) {
   });
 }
 
+// ── 渲染子进程的 Chromium 图形后端（LEMO_ANGLE）──────────────────
+//
+// ★ 读它的是**库侧** core/render/browser.mjs 的一行：
+//     const angle = process.env.LEMO_ANGLE || (process.platform === 'darwin' ? 'metal' : 'default');
+//   非 default 的值会变成 Chromium 的「--use-angle=<值>」；不设 / 设成 default 都表示**不传**该参数。
+//   ⇒ 在 Windows 上「不设」与「default」逐字节等价，所以本控制台把「默认」实现成**不设该变量**。
+//   ★ 上游认的取值（core/render/browser.mjs 头注释）：metal | gl | vulkan | swiftshader …（外加 default）。
+// ★ 注入点 = **本进程的 process.env**：渲染子进程（node lemo-make.mjs）由 lib/jobs.mjs 用
+//   「{ ...process.env, ... }」起，编排器再用「{ ...process.env, ... }」起 core/render/video.mjs，
+//   video.mjs 里的 browser.mjs 就读到了。这条链上**不需要**改任何别的文件（lemo-make.mjs 是红线）。
+// ★ 硬规则：**不传 ⇒ 与旧版逐字节一致** —— 不只是「不设」，而是还原成**控制台启动时**继承到的那个值
+//   （控制台自己没启动时带 LEMO_ANGLE，还原后就是「不设」）。
+const ANGLE_RE = /^[A-Za-z0-9._-]{1,32}$/;
+const INHERITED_ANGLE = process.env.LEMO_ANGLE;   // 控制台进程启动时继承到的值（undefined = 本来就没有）
+
+/** 把「这一次提交」要用的图形后端写进本进程环境；空 / default ⇒ 还原成启动时继承到的值。 */
+function applyRenderAngle(angle) {
+  const v = typeof angle === 'string' ? angle.trim() : '';
+  if (v && v !== 'default' && ANGLE_RE.test(v)) {
+    process.env.LEMO_ANGLE = v;
+  } else if (INHERITED_ANGLE === undefined) {
+    delete process.env.LEMO_ANGLE;
+  } else {
+    process.env.LEMO_ANGLE = INHERITED_ANGLE;
+  }
+}
+
+/** 校验并归一化请求体里的 angle：不合法 ⇒ 返回错误文案；合法 ⇒ 返回 null（= 不设）或值。 */
+function normalizeAngle(raw) {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, angle: null };
+  if (typeof raw !== 'string') return { ok: false, error: 'angle 必须是字符串' };
+  const v = raw.trim();
+  if (!v) return { ok: true, angle: null };
+  if (!ANGLE_RE.test(v)) {
+    return { ok: false, error: `angle 非法：${raw} —— 只允许 A-Za-z0-9._- （≤32 字符），如 gl / vulkan / d3d11` };
+  }
+  // ★ default = 库侧「不传 --use-angle」⇒ 与「不设」等价，归一化成 null，免得下游多一个分支。
+  return { ok: true, angle: v === 'default' ? null : v };
+}
+
+/**
+ * 入队一条**渲染**任务，并把这次提交的 LEMO_ANGLE 绑到**它自己那次 spawn** 上。
+ *
+ * ★ 为什么不能只在入队前设一次：队列是**串行**的，任务可能先排队；等它真的开始时，
+ *   本进程环境可能已被**后一次提交**改过（前一次排队的任务就会拿到别人的值）。
+ *   lib/jobs.mjs 的 startJob 在 spawn **之前**会先 push 一行 meta 日志，而 subscribe 的回调是
+ *   **同步**触发的 ⇒ 挂一个一次性订阅，就能在「这一条真的要起子进程」那一刻把环境写对。
+ * ★ 队列空闲时 jobs.enqueue 会**同步** spawn ⇒ 入队前先设一次（这一条根本走不到订阅）。
+ * ★ 订阅在**第一个事件**上就退订：回调里先看状态，只有还在 running（= 就是那行 meta）才写环境；
+ *   任务被取消 / 直接结束（收到 end）⇒ 只退订、不写（不给一条没跑的任务改环境）。
+ */
+function enqueueRender(slug, opts, meta, angle) {
+  applyRenderAngle(angle);
+  const job = jobs.enqueue(slug, opts, meta);
+  if (job.status === 'queued') {
+    let done = false;
+    const off = jobs.subscribe(job.id, () => {
+      if (done) return;
+      done = true;
+      const s = jobs.getSummary(job.id);
+      if (s && s.status === 'running') applyRenderAngle(angle);
+      if (typeof off === 'function') off();
+    });
+  }
+  return job;
+}
+
 // ── API: POST /api/run ──────────────────────────────────────
 /**
  * POST /api/run —— 入队一个出片任务（异步）。
@@ -200,6 +267,9 @@ function serveStatic(req, res, urlPath) {
  * ★ 形状校验只做在这里：slug 必须匹配 [A-Za-z0-9._-]，opts 交给 lib/briefs.mjs:validateOpts
  *   （与 /api/briefs/:id/run 共用同一处判据，免得两处漂移）。
  * ★ 批次字段（batchId/batchIndex/batchTotal）只做形状校验，不改队列语义 —— 队列仍是串行的。
+ * ★ body.angle = 这次渲染要用的 LEMO_ANGLE（Chromium 图形后端）。**不给 / 给 default ⇒ 不设该变量**
+ *   （与旧版逐字节一致）；形状只允许 A-Za-z0-9._- 。它**不进** opts（不是 CLI 参数），
+ *   而是由 enqueueRender 落到这次 spawn 的子进程环境里。
  */
 async function apiRun(req, res) {
   let body;
@@ -234,7 +304,11 @@ async function apiRun(req, res) {
     meta.batchTotal = tot;
   }
 
-  const job = jobs.enqueue(slug, opts, meta);
+  // LEMO_ANGLE（渲染子进程的 Chromium 图形后端）：不传 / 传 default ⇒ **不设**（与旧版逐字节一致）。
+  const ang = normalizeAngle(body.angle);
+  if (!ang.ok) return sendJson(res, 400, { error: ang.error });
+
+  const job = enqueueRender(slug, opts, meta, ang.angle);
   sendJson(res, 200, { ok: true, job: jobs.getSummary(job.id) });
 }
 
@@ -835,50 +909,64 @@ function apiStyle(req, res, slug) {
 
 // ── API: GET /api/style-switches（这个风格 demo 页的页面开关键）──
 //
-// ★★ **本文件新增注释一律不要用反引号**（代码跨度请写成「」）：
-//   闸门 check-llm-call-params 的剥注释器**不认正则字面量**，在本文件约 836 行处**已处于「反引号态」**
-//   ⇒ 注释里再出现反引号会翻转奇偶、把该文件**之后的代码整段吞掉** ⇒ 该闸门报「已失明」。
-//   实测：注释里带反引号时，剥完只剩 19670/127511 字符、抽到 **0** 次模块调用（下限 5）；去掉后恢复正常。
-//   ★ 这是**闸门的已知局限**（同一份剥注释器在 9 个闸门里各有一份），
-//     我方选择「不触发它」而不是去改冻结集里的闸门（改一处会与另 8 份不一致）。
-//   ★ 同源注意事项：正则字面量里也**不要写裸引号** —— 写成 \u0027 / \u0022（见下面三条收键正则）。
+// ★★ 历史注记（2026-10-11）：本块最初为了让闸门 `check-llm-call-params` 不「失明」，注释里**避开了反引号**、
+//   正则字面量里把裸引号写成 `\u0027` / `\u0022`。**该规避已作废** —— 同日把散在 9 个闸门里的剥注释器
+//   统一抽成 `lib/js-scan.mjs` 并**让它认正则字面量**，根因已根治（实测：把本块的裸引号与反引号**全部还原**
+//   之后，该闸门仍 exit 0）。⇒ **此后本文件可以正常使用反引号与 `['"]` 这类正则写法**，无需再规避。
 //
-// ★ 机械提取，**不硬编码任何开关名单**：把 demo 目录下的 「.js/.mjs/.html」 扫一遍，
-//   ① 先按**赋值右侧**认出「params 对象」的标识符（「<ID> = new URLSearchParams(location.search)」；
-//      ★ 不写死变量名 —— 上游实测叫过 「Q」 / 「q」 / 「qs」 / 「QS」）；
-//   ② 再只收**它身上**的 「.get('x')」 / 「.has('x')」 / 「.includes('x')」；另加两种无中间变量的写法
-//      （内联链式 「new URLSearchParams(location.search).has('x')」、「location.search.includes('x')」）。
+// ★ 机械提取，**不硬编码任何开关名单**：把 demo 目录下的 `.js/.mjs/.html` 扫一遍，
+//   ① 先按**赋值右侧**认出`params 对象`的标识符（`<ID> = new URLSearchParams(location.search)`；
+//      ★ 不写死变量名 —— 上游实测叫过 `Q` / `q` / `qs` / `QS`）；
+//   ② 再只收**它身上**的 `.get('x')` / `.has('x')` / `.includes('x')`；另加两种无中间变量的写法
+//      （内联链式 `new URLSearchParams(location.search).has('x')`、`location.search.includes('x')`）。
 //   风格加了新开关、库更新了 demo，这里**自动**跟着变 —— 名单不写在代码里，就不会与库漂移。
-// ★ 为什么不裸匹配 「.has(」：「Map」 / 「Set」 也长着 「.has()」 —— 裸匹配会把
-//   「cache.has('w8')」（「pixel-rpg/demo/portraits.js」 的贴图缓存）这类**非页面开关**收进来。
-//   先锚定「params 对象」再收它的方法，才能**既不漏 「.has()」 形态、又不滥收 Map/Set 的键**。
-//   （★ 实测：旧判据只有 「.get('x')」 / 「location.search.includes('x')」 两条 ⇒ 漏掉一整类开关：
-//    「ascii-crt」 只回 「["frame","t"]」（漏 「Q.has('nosub')」）、「backrooms」 三个开关全是 「.has()」 ⇒ 回**空列表**。）
-// ★ **绝不抛**：库仓不在 / slug 不存在 / 没有 demo 目录 / 一个键都没扫到 ⇒ 一律 200 + 「switches: []」
-//   + 「note」 一句中文说明。这个端点是**锦上添花**的助手，它失败不该让「启动任务」那条主路变红。
-// ★ 越界守卫与 slug 白名单照抄 「apiStyle」（同一个根、同一道守卫），别自己发明。
+// ★ 为什么不裸匹配 `.has(`：`Map` / `Set` 也长着 `.has()` —— 裸匹配会把
+//   `cache.has('w8')`（`pixel-rpg/demo/portraits.js` 的贴图缓存）这类**非页面开关**收进来。
+//   先锚定`params 对象`再收它的方法，才能**既不漏 `.has()` 形态、又不滥收 Map/Set 的键**。
+//   （★ 实测：旧判据只有 `.get('x')` / `location.search.includes('x')` 两条 ⇒ 漏掉一整类开关：
+//    `ascii-crt` 只回 `["frame","t"]`（漏 `Q.has('nosub')`）、`backrooms` 三个开关全是 `.has()` ⇒ 回**空列表**。）
+// ★ **绝不抛**：库仓不在 / slug 不存在 / 没有 demo 目录 / 一个键都没扫到 ⇒ 一律 200 + `switches: []`
+//   + `note` 一句中文说明。这个端点是**锦上添花**的助手，它失败不该让`启动任务`那条主路变红。
+// ★ 越界守卫与 slug 白名单照抄 `apiStyle`（同一个根、同一道守卫），别自己发明。
 /**
  * GET /api/style-switches?slug=<slug> —— 机械提取某个风格 demo 页里的「页面开关键」。
  *
- * 返回：`{ slug, switches: [{ key, sources: ['demo/main.js:602'] }], scanned, note }`
+ * 返回：`{ slug, switches: [{ key, sources: ['demo/main.js:602'] }], scanned, contentFiles, note }`
  *   · `scanned` = 实际扫过的 `.js/.mjs/.html` 文件数；
  *   · `sources`  = 该键出现处的 `相对风格目录的路径:行号`（证据，给 UI 做 title）；
+ *   · contentFiles = demo 目录下**真实存在**的 content*.json 文件名（?content= 的合法取值；
+ *                    没有就回空数组 —— 绝不硬造清单）；
  *   · `note`     = 降级原因（null = 正常扫到开关）。
  */
 function apiStyleSwitches(req, res, slug) {
-  // ★ 降级出口统一走这里：任何「扫不到」的情形都是 200 + 空列表 + 中文说明（绝不 500 / 绝不抛）。
-  const empty = (note) => sendJson(res, 200, { slug: String(slug || ''), switches: [], scanned: 0, note });
+  // ★ 降级出口统一走这里：任何`扫不到`的情形都是 200 + 空列表 + 中文说明（绝不 500 / 绝不抛）。
+  const empty = (note) => sendJson(res, 200, { slug: String(slug || ''), switches: [], scanned: 0, contentFiles: [], note });
 
   if (typeof slug !== 'string' || !slug.trim()) return empty('缺少 slug 参数');
   if (!/^[A-Za-z0-9._-]+$/.test(slug)) return empty(`slug 含非法字符：${slug}`);
 
   const root = path.resolve(resolveStylesRoot(CFG.winLib));   // ★ 风格源码根唯一来源
   const dir = path.resolve(root, slug);
-  // ★ 越界守卫：照抄 「apiStyle」 的既有做法（同一个根、同一道守卫、同一句错）—— 这是**显式**拒绝，不是「绝不抛」那一类。
+  // ★ 越界守卫：照抄 `apiStyle` 的既有做法（同一个根、同一道守卫、同一句错）—— 这是**显式**拒绝，不是`绝不抛`那一类。
   if (dir !== root && !dir.startsWith(root + path.sep)) return sendJson(res, 403, { error: '路径越界' });
 
   const demoDir = path.join(dir, 'demo');
   if (!fs.existsSync(demoDir)) return empty(`${slug} 下没有 demo 目录`);
+
+  // ── `?content=<文件>.json`的可选值：**只列 demo 目录下真实存在的 content*.json** ──
+  //   ★ 数据来源是库仓本身（不硬造清单）：上游 4 个内容驱动风格（engraving / hologram-hud /
+  //     midcentury-toon / silkscreen-poster）把内容文件放在 demo/ 下，demo 页用
+  //     `fetch(q.get('content') || 'content.json')`取 ⇒ 可选值就是这些**真实文件名**。
+  //   ★ 只收 content*.json：events.json / lines.json / timeline.json / package.json 之类**不是**
+  //     content 的合法取值，列出来等于骗用户。
+  //   ★ 一个都没有 ⇒ 空数组（UI 据此如实说`只能手填文件名`），**绝不**补一个假文件名进去。
+  const contentFiles = [];
+  try {
+    for (const e of fs.readdirSync(demoDir, { withFileTypes: true })) {
+      if (e.isFile() && /^content.*\.json$/i.test(e.name)) contentFiles.push(e.name);
+    }
+  } catch { /* 目录读不到 ⇒ 空数组（本端点绝不抛） */ }
+  contentFiles.sort();
 
   // ── 递归收集 demo/**/*.{js,mjs,html}（跳过点目录与 node_modules；顺序固定 ⇒ 结果确定）──
   const files = [];
@@ -906,15 +994,15 @@ function apiStyleSwitches(req, res, slug) {
     srcs.push({ rel: path.relative(dir, full).split(path.sep).join('/'), src });
   }
 
-  // ── 判据①：认出「params 对象」的标识符 —— ★ **按赋值右侧识别**，不写死变量名 ──
-  //   形如 「const <ID> = new URLSearchParams(location.search)」（也认 「document.location.search」）。
-  //   · 「(?<![\w$.])」：左边不能是 「.」 / 词字符 —— 免得命中 「foo.Q」、「myQ」；
-  //   · 「(?!\s*\.)」：构造式**紧跟点**的不算 —— 那是 「const X = new URLSearchParams(location.search).get('x')」，
+  // ── 判据①：认出`params 对象`的标识符 —— ★ **按赋值右侧识别**，不写死变量名 ──
+  //   形如 `const <ID> = new URLSearchParams(location.search)`（也认 `document.location.search`）。
+  //   · `(?<![\w$.])`：左边不能是 `.` / 词字符 —— 免得命中 `foo.Q`、`myQ`；
+  //   · `(?!\s*\.)`：构造式**紧跟点**的不算 —— 那是 `const X = new URLSearchParams(location.search).get('x')`，
   //     左边是个**值**（布尔 / 字符串），不是 params 对象本身。
   //   ★ 作用域取**该风格的 demo 树**（不是单文件）：上游有 9 个风格把 params 对象**当函数参数传给兄弟文件**
-  //     （如 「woodcut/demo/test.js」 的 「test(g, mode, t, qs)」，由同风格 「main.js」 把 「qs」 传进来）——
+  //     （如 `woodcut/demo/test.js` 的 `test(g, mode, t, qs)`，由同风格 `main.js` 把 `qs` 传进来）——
   //     只在单文件里找会**漏 20 个键**（实测：woodcut 从 14 个掉到 1 个）。取风格树 = 覆盖这类传递，
-  //     又不像「全库共享名字」那样让风格之间撞名（实测两者在全库 43 风格上结果逐键相同，取更紧的那个）。
+  //     又不像`全库共享名字`那样让风格之间撞名（实测两者在全库 43 风格上结果逐键相同，取更紧的那个）。
   const RE_PARAMS_ID = /(?<![\w$.])([A-Za-z_$][\w$]*)\s*=\s*new\s+URLSearchParams\s*\(\s*(?:document\.)?location\.search\s*\)(?!\s*\.)/g;
   const paramsIds = new Set();
   for (const { src } of srcs) {
@@ -923,20 +1011,20 @@ function apiStyleSwitches(req, res, slug) {
     while ((m = RE_PARAMS_ID.exec(src)) !== null) paramsIds.add(m[1]);
   }
 
-  // ── 判据②③④：三条收键正则。**只收 params 对象身上的方法** ⇒ 「Map」/「Set」 的 「.has('x')」 收不进来 ──
-  //   ② 「<ID>.get|has|includes('x')」（ID ∈ 判据① 那组；「(?<![\w$.])」 防 「myQ.has」 一类误吃）
-  //   ③ 内联链式（无中间变量）：「new URLSearchParams(location.search).get|has|includes('x')」
-  //   ④ 既有写法：「location.search.includes('x')」（上游实测 3 处这么写，判据②③ 都盖不到）
-  //   ★★ 引号一律写成 「\u0027」 / 「\u0022」（= 「'」 / 「"」），**不要**在正则字面量里写裸引号：
-  //     本项目多个闸门（含冻结集里的 「check-llm-call-params.mjs」）用的是一个**不认正则字面量**的
-  //     剥注释器 —— 裸引号会让它以为「字符串开了没关」，**把该文件之后的代码全吞掉** ⇒ 闸门报「已失明」。
-  //     实测：写 「['"]」 时 「check-llm-call-params」 剥完只剩 19729/127043 字符、抽到 0 次调用（下限 5）；
-  //     写成 「[\u0027\u0022]」 后恢复正常。★ 这是**闸门的已知局限**（同一份剥注释器在 9 个闸门里各有一份），
-  //     我方选择「不触发它」而不是去改冻结集里的闸门（改一处会与另 8 份不一致）。
-  const RE_INLINE = /new\s+URLSearchParams\s*\(\s*(?:document\.)?location\.search\s*\)\s*\.(?:get|has|includes)\([\u0027\u0022]([A-Za-z0-9_]+)[\u0027\u0022]\)/g;
-  const RE_INC = /location\.search\.includes\([\u0027\u0022]([A-Za-z0-9_]+)[\u0027\u0022]/g;
+  // ── 判据②③④：三条收键正则。**只收 params 对象身上的方法** ⇒ `Map`/`Set` 的 `.has('x')` 收不进来 ──
+  //   ② `<ID>.get|has|includes('x')`（ID ∈ 判据① 那组；`(?<![\w$.])` 防 `myQ.has` 一类误吃）
+  //   ③ 内联链式（无中间变量）：`new URLSearchParams(location.search).get|has|includes('x')`
+  //   ④ 既有写法：`location.search.includes('x')`（上游实测 3 处这么写，判据②③ 都盖不到）
+  //   ★★ 引号一律写成 `\u0027` / `\u0022`（= `'` / `"`），**不要**在正则字面量里写裸引号：
+  //     本项目多个闸门（含冻结集里的 `check-llm-call-params.mjs`）用的是一个**不认正则字面量**的
+  //     剥注释器 —— 裸引号会让它以为`字符串开了没关`，**把该文件之后的代码全吞掉** ⇒ 闸门报`已失明`。
+  //     实测：写 `['"]` 时 `check-llm-call-params` 剥完只剩 19729/127043 字符、抽到 0 次调用（下限 5）；
+  //     写成 `['"]` 后恢复正常。★ 这是**闸门的已知局限**（同一份剥注释器在 9 个闸门里各有一份），
+  //     我方选择`不触发它`而不是去改冻结集里的闸门（改一处会与另 8 份不一致）。
+  const RE_INLINE = /new\s+URLSearchParams\s*\(\s*(?:document\.)?location\.search\s*\)\s*\.(?:get|has|includes)\(['"]([A-Za-z0-9_]+)['"]\)/g;
+  const RE_INC = /location\.search\.includes\(['"]([A-Za-z0-9_]+)['"]/g;
   const idRes = [...paramsIds].sort().map((id) =>
-    new RegExp(`(?<![\\w$.])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:get|has|includes)\\([\u0027\u0022]([A-Za-z0-9_]+)[\u0027\u0022]\\)`, 'g'));
+    new RegExp(`(?<![\\w$.])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:get|has|includes)\\(['"]([A-Za-z0-9_]+)['"]\\)`, 'g'));
   const reses = [...idRes, RE_INLINE, RE_INC];
 
   const map = new Map();   // key → Set('demo/main.js:602')
@@ -960,9 +1048,9 @@ function apiStyleSwitches(req, res, slug) {
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 
   if (switches.length === 0) {
-    return sendJson(res, 200, { slug, switches: [], scanned: files.length, note: `${slug} 的 demo 页里没扫到页面开关（扫过 ${files.length} 个文件）` });
+    return sendJson(res, 200, { slug, switches: [], scanned: files.length, contentFiles, note: `${slug} 的 demo 页里没扫到页面开关（扫过 ${files.length} 个文件）` });
   }
-  sendJson(res, 200, { slug, switches, scanned: files.length, note: null });
+  sendJson(res, 200, { slug, switches, scanned: files.length, contentFiles, note: null });
 }
 
 // ── API: POST /api/reveal（在资源管理器里打开成片目录）────────
@@ -1015,6 +1103,10 @@ function apiConsole(req, res) {
     store: store.storeStatus(),     // 任务历史/日志落盘位置与上限（见 lib/store.mjs）
     briefs: briefs.briefsStatus(),  // 主题工单落盘位置与上限（见 lib/briefs.mjs）
     voices: voices.voicesStatus(),  // 音色库状态快照：源脚本/内容目录/试听目录 + 清单缓存（见 lib/voices.mjs）
+    // ★ 本控制台**当前**给渲染子进程注入的环境变量（只读快照；null = 不设）。
+    //   目前只有 LEMO_ANGLE（Chromium 图形后端，由 POST /api/run 的 body.angle 落下来）——
+    //   读它的消费者在库侧 core/render/browser.mjs。
+    renderEnv: { LEMO_ANGLE: process.env.LEMO_ANGLE || null },
     // 语言版本注册表（只读代理，见 lib/langs.mjs）：清单来自库侧 core/lang/lang.mjs 的 LANGS
     langs: { codes: langs.langCodes(), source: langs.langSource, error: langs.langsRegistryError },
     // 输出尺寸注册表（只读代理，见 lib/sizes.mjs）：清单来自库侧 core/render/size.mjs 的 RATIOS
@@ -2162,7 +2254,9 @@ async function apiBriefRun(req, res, id) {
     });
     if (ac.warning) warnings.push(ac.warning);
   }
-  const job = jobs.enqueue(b.slug, opts, { briefId: b.id });
+  // ★ 主题出片这条入口**没有** LEMO_ANGLE 控件 ⇒ 一律按「不传」处理（还原成控制台启动时继承到的值），
+  //   绝不沿用主表单上一次提交留下的值 —— 否则「主题出片」会莫名其妙跟着「开始生成」的设置走。
+  const job = enqueueRender(b.slug, opts, { briefId: b.id }, null);
   // ★ 先让这条任务**立刻**落盘，再把工单写成 running。
   //   enqueue 的落盘是 500ms 去抖的（lib/jobs.mjs:persistSoon），若不在这里 flush，
   //   就会出现「工单文件已 running + jobId 指向一条索引里还不存在的任务」的 ~500ms 窗口 ——

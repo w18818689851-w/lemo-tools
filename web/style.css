@@ -472,6 +472,14 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
 }
 .chip.on::before { content: '● '; color: var(--accent); font-size: var(--fs-sm); }
 
+/* ── 开关助手里的「内容文件」下拉（?content=<文件>.json 的**真实**可选值）──
+   ★ 整行独占（flex:1 1 100%）：它是**取值**控件，不是开/关 chip，与上面那排 chips 视觉上分开。
+   ★ 只在服务端报回该风格确有 content 开关 + 真实存在 content*.json 时才出现（见 app.js renderQContent）。 */
+.q-content { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.q-content-lbl { flex: 0 0 auto; font-family: var(--mono); font-size: var(--fs-base); color: var(--fg-dim); }
+.q-content-sel { flex: 0 1 280px; min-width: 0; }
+.q-content-none { flex: 1 1 auto; font-size: var(--fs-base); color: var(--fg); }
+
 /* ── 按钮 ─────────────────────────────────────────────── */
 .btn {
   border: 1px solid var(--line-2);

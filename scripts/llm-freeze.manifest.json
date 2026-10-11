@@ -1,7 +1,7 @@
 {
   "version": 1,
   "note": "算力模块 + 其闸门的**聚合冻结指纹**。口径见 scripts/check-llm-freeze-hash.mjs 头注释 ①。★ 有意改动被冻结内容后 ⇒ 跑 `--write` 重新冻结，并在 test/README.md 登记（同红线纪律）。",
-  "fingerprint": "597b7f5dce331a294f401e523f00aa663d22713e5a9185f35c7ad9bddac8fefd",
+  "fingerprint": "963b2dbbedfa25e299d84da045a8e7e29985f5d4c81e8dd14e2603744317ede7",
   "count": 7,
   "files": [
     {
@@ -11,13 +11,13 @@
     },
     {
       "rel": "scripts/check-llm-api.mjs",
-      "size": 70018,
-      "sha256": "fff1e058ce7a3fd2aa55dc245ad585727e1b7536ff24481a10562295d1e02de7"
+      "size": 69165,
+      "sha256": "92265a579ba9403dd23f83907e6e60a229949507c0fcc822fcf654cdcf981cde"
     },
     {
       "rel": "scripts/check-llm-call-params.mjs",
-      "size": 20230,
-      "sha256": "60272628a511da80939932353042c99e8cb55448785a4c093f7c72ba7498cc4c"
+      "size": 19729,
+      "sha256": "206f74fb03bcbc18bd1c7b266643d9c2f076bf8c55ec1d9665e43ccdc16a950e"
     },
     {
       "rel": "scripts/check-llm-call-sites.mjs",

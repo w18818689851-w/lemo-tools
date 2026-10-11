@@ -269,7 +269,24 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     `CREDITS` 逐字附上该风格上游自带的 `demo/CREDITS`（实测 43/43 均有）。
 //     ★ 默认路径逐字节不变：不传 `--no-deliverables` 时既有步骤的命令与产物一字不动，仅新增这两个文件与日志行。
 //     ★ partial 模式（`--render-only` / `--audio-only`）也会产出这两件（纯元数据，与渲染/音频产物无依赖）。 ★ 2026-10-11 更新（**有意改编排器**）：接入上游 `tools/web_cuts.sh` 的 720p web cut —— 新增 CLI `--web-cut`（opt-in，默认关）+ 第 9 步 `emitWebCut()`（落**本次输出目录**的 `<slug>-720p.mp4`）；编码器跟随 `--venc`（默认 nvenc/GPU），参数照抄 `core/render/mux.sh` 的 nvenc 组合（★ 上游那条命令硬写 libx264(CPU)，本项目按硬规则改走 GPU）；默认路径逐字节不变（不传 `--web-cut` 时该函数不被调用）；失败只 warn、不留 `.part`。详见 `test/README.md`。 ★ 2026-10-11 第二次更新（**有意改编排器**，同日）：接入上游 `TECHNIQUE.md` §8「Review loop」里**机器可做的两项** —— 新增 CLI `--review`（opt-in，**默认关**）+ `--sheet-step` / `--sheet-cols` / `--sheet-w` / `--blackdetect-d` + 第 10 步 `emitReview()`：① **接触表** `sheet.jpg`（Windows 侧 `still.mjs --range` 出帧 → WSL 侧 `core/render/sheet.py` 拼图，落**本次输出目录**）；② 对**最终 mp4** 跑 ffmpeg `blackdetect`（纯分析、**不编码**）并打印每段黑场的起止/时长（**0 处也明说**，绝不静默）。★ 上游 §8 另两条（0.2s 逐动作帧条 / 全速带声看一遍）**不是机器可做的** ⇒ 本项目不做、如实登记；响度那一路混流步骤已在跑 ⇒ 不重复。★ 默认路径逐字节不变（不传 `--review` 时 `emitReview()` 根本不被调用，同 `--web-cut`）；两步失败都**只 warn、不让出片 fail**。详见 `test/README.md`。
-export const ORCH_MD5 = 'dfb3700378cea8e9ee577f8a2f969b73';
+//   ★ 2026-10-11 第三次更新（**有意改编排器**，同日）：给**库侧 `core/tts/asr_check.py` 的三个参数**开 CLI 出口 ——
+//     新增 CLI `--asr-lang`（默认 auto）/ `--asr-model`（默认空）/ `--asr-threshold`（默认 0.92），分别对应
+//     库侧 `--lang` / `--model` / `--threshold`（★ 库侧 argparse 实测：`add_argument('--lang', default='auto')`
+//     / `add_argument('--model')` / `add_argument('--threshold', type=float, default=0.92)`）。由来：「功能对齐核查」
+//     把「asr_check 的三个参数在 UI 不可调」记为 ⚠️ 缺控件，根因是**编排器把它们写死、根本没有 CLI 出口**。
+//     ★ 默认路径逐字节不变（照 `--color default` / `--review` 的做法）：不传三参数 ⇒ 音频脚本里 `LEMO_ASR_OPTS`
+//     为空 ⇒ 走新增 if/else 的 **else** 分支，那条 `asr_check.py` 命令与改动前**逐字节一致**
+//     （由 `test/asr-cli.test.mjs` 的 B3/C1 钉住；那句原文在源码里原样保留）。
+//     ★ 优先级（设计决策）：**用户显式给了任一 ASR 参数 ⇒ 以用户为准，取消既有的「按行自动跳过 CJK」**
+//     （那段 `ASR_SKIP` 判定的由来是「离线 whisper 对中文实测 9/9 全 DIFF、且数字归一化缺失」；用户显式要跑
+//     就不替他决定，并在日志里说明）。不传时该守卫**不生效**，默认行为逐字节不变。
+//     ★ 参数校验：`--asr-threshold` 必须是 0–1 的有限数（非法 ⇒ 非 0 退出）；`--asr-lang` / `--asr-model` 做
+//     严格字符集校验（不含空白 / 通配符）—— 后缀会被 `$LEMO_ASR_OPTS` **不加引号**展开分词，而 shell **不**把
+//     「参数展开结果里的引号」当引号用（实测 argv 会带上字面单引号）⇒ 只能靠校验、不能靠加引号保证安全。
+//     ★ **零行漂移**：本文件里对 `lemo-make.mjs` 的行号引用（`scripts/check-audio-chain.mjs` 的 2548/2936 等）
+//     **一行都没漂** —— 前段改动一律做成 `-N/+N` 净零（新代码集中在**文件尾**的新函数 `asrArgsSuffix`；
+//     `git diff --numstat` 前段净增删为 0）。这是**有意改编排器**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
+export const ORCH_MD5 = 'c46d76b7b8f2569a67cc09a6eb266ce3';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

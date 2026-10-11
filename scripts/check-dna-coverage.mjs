@@ -26,7 +26,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-
+import { stripComments } from '../lib/js-scan.mjs';   // ★ 共享剥注释器
 const ROOT = 'D:/lemo-tools';
 const DNA_DIR = path.join(ROOT, 'lib', 'style-dna');
 const VERBOSE = process.argv.includes('--verbose');
@@ -236,27 +236,8 @@ function walkConsumers(dir, out = []) {
   return out;
 }
 
-/** 去注释（行注释 + 块注释），**保留字符串内容**。★ 不剥注释 ⇒ 解释缺陷的注释会被当成消费者。 */
-function stripComments(s) {
-  let out = '', i = 0; const n = s.length; let state = 'code';
-  while (i < n) {
-    const c = s[i], d = s[i + 1];
-    if (state === 'code') {
-      if (c === '/' && d === '/') { state = 'line'; i += 2; continue; }
-      if (c === '/' && d === '*') { state = 'block'; i += 2; continue; }
-      if (c === "'") state = 'sq'; else if (c === '"') state = 'dq'; else if (c === '`') state = 'tpl';
-      out += c; i++; continue;
-    }
-    if (state === 'line') { if (c === '\n') { state = 'code'; out += c; } i++; continue; }
-    if (state === 'block') { if (c === '*' && d === '/') { state = 'code'; i += 2; } else { if (c === '\n') out += c; i++; } continue; }
-    const q = state === 'sq' ? "'" : state === 'dq' ? '"' : '`';
-    out += c;
-    if (c === '\\') { out += s[i + 1] ?? ''; i += 2; continue; }
-    if (c === q) state = 'code';
-    i++;
-  }
-  return out;
-}
+// 剥注释（**保留字符串内容**、行号不变）—— 实现见 `lib/js-scan.mjs`（★ 认正则字面量，根治「正则里裸引号把状态机带偏」）。
+//   ★ 不剥注释 ⇒ 解释缺陷的注释会被当成消费者；`{ blank: false }` = 删注释（保换行）、保字符串。
 
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -315,7 +296,7 @@ if (!dubStylesOk || dubPaths.length === 0) {
 const consumerFiles = walkConsumers(ROOT).filter((f) => path.resolve(f) !== path.resolve(DUB_STYLES_FILE));
 const consumerSrc = new Map();
 for (const f of consumerFiles) {
-  try { consumerSrc.set(f, stripComments(fs.readFileSync(f, 'utf8'))); } catch { /* 读不到就当无内容 */ }
+  try { consumerSrc.set(f, stripComments(fs.readFileSync(f, 'utf8'), { blank: false })); } catch { /* 读不到就当无内容 */ }
 }
 
 /** 有消费者？

@@ -75,7 +75,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
+import { stripComments } from '../lib/js-scan.mjs';   // ★ 共享剥注释器
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(path.join(HERE, '..'));
 const JSON_OUT = process.argv.includes('--json');
@@ -118,31 +118,10 @@ const EXCEPTIONS = [
  *     ⇒ 剥字符串**不会**让判据① 失明（这点与 `check-llm-call-notes` 那类「键名写在字符串里」的闸门**相反**，
  *     别照搬它们的口径）。
  *   ★ 换行**一律保留**（含模板字符串里的跨行），否则行号会漂。
+ *   ★ 实现见 `lib/js-scan.mjs`（`{ blank: false, keepStrings: false }` = 删注释、丢字符串内容只留换行；
+ *     ★ 认正则字面量 —— 2026-10-11 根治「正则里裸引号把状态机带偏、把之后的代码整段吞掉」）。
  */
-function stripCommentsAndStrings(src) {
-  let out = '';
-  let i = 0;
-  const n = src.length;
-  let st = null;            // null | "'" | '"' | '`' | '//' | '/*'
-  while (i < n) {
-    const c = src[i];
-    const c2 = src.slice(i, i + 2);
-    if (st === null) {
-      if (c2 === '//') { st = '//'; i += 2; continue; }
-      if (c2 === '/*') { st = '/*'; i += 2; continue; }
-      if (c === "'" || c === '"' || c === '`') { st = c; i += 1; continue; }
-      out += c; i += 1; continue;
-    }
-    if (st === '//') { if (c === '\n') { st = null; out += c; } i += 1; continue; }
-    if (st === '/*') { if (c === '\n') out += c; if (c2 === '*/') { st = null; i += 2; } else i += 1; continue; }
-    // 字符串态：**丢内容、留换行**；转义对跳过
-    if (c === '\\') { if (c2[1] === '\n') out += '\n'; i += 2; continue; }
-    if (c === st) { st = null; i += 1; continue; }
-    if (c === '\n') out += c;
-    i += 1;
-  }
-  return out;
-}
+const stripCommentsAndStrings = (src) => stripComments(src, { blank: false, keepStrings: false });
 
 /** ★ 从 `(` 起按**圆括号配平**切出实参文本（含嵌套对象/数组/函数体）；切不出 ⇒ `null`。 */
 function sliceArgs(code, openIdx) {

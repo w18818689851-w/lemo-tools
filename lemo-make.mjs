@@ -853,7 +853,7 @@ function parseArgs(argv) {
     readcheckStrict: false,  // ② 自检不达标时**阻断**出片（默认只报告）
     noPoster: false,         // ③ 静帧交付图 poster.jpg：跳过
     posterT: null,           // ③ poster 取哪一秒（默认按 demo 的 build.sh）
-    color: 'default', noDeliverables: false, webCut: false, review: false, sheetStep: 2, sheetCols: 4, sheetW: 480, blackdetectD: 0.5,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过 · ⑨ 720p web cut（opt-in，默认关）· ⑩ 审核回路 --review（opt-in，默认关）（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
+    color: 'default', noDeliverables: false, webCut: false, review: false, sheetStep: 2, sheetCols: 4, sheetW: 480, blackdetectD: 0.5, asrLang: null, asrModel: null, asrThreshold: null,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过 · ⑨ 720p web cut（opt-in，默认关）· ⑩ 审核回路 --review（opt-in，默认关）· ⑪ ASR 三参数 --asr-lang/--asr-model/--asr-threshold（null = 不传 ⇒ 一个 flag 都不加、库侧走自己的默认值，逐字节不变）（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -901,7 +901,7 @@ function parseArgs(argv) {
     else if (a === '--no-poster') o.noPoster = true;
     else if (a === '--poster-t') o.posterT = Number(next('--poster-t'));
     else if (a === '--color') o.color = next('--color');
-    else if (a === '--no-deliverables') o.noDeliverables = true; else if (a === '--web-cut') o.webCut = true; else if (a === '--review') o.review = true; else if (a === '--sheet-step') o.sheetStep = Number(next('--sheet-step')); else if (a === '--sheet-cols') o.sheetCols = Number(next('--sheet-cols')); else if (a === '--sheet-w') o.sheetW = Number(next('--sheet-w')); else if (a === '--blackdetect-d') o.blackdetectD = Number(next('--blackdetect-d'));
+    else if (a === '--no-deliverables') o.noDeliverables = true; else if (a === '--web-cut') o.webCut = true; else if (a === '--review') o.review = true; else if (a === '--sheet-step') o.sheetStep = Number(next('--sheet-step')); else if (a === '--sheet-cols') o.sheetCols = Number(next('--sheet-cols')); else if (a === '--sheet-w') o.sheetW = Number(next('--sheet-w')); else if (a === '--blackdetect-d') o.blackdetectD = Number(next('--blackdetect-d')); else if (a === '--asr-lang') o.asrLang = next('--asr-lang'); else if (a === '--asr-model') o.asrModel = next('--asr-model'); else if (a === '--asr-threshold') o.asrThreshold = Number(next('--asr-threshold'));
     else if (!a.startsWith('--')) o.slug = a;
     else fail(`未知参数 ${a}（--help 看用法）`);
   }
@@ -944,7 +944,7 @@ function parseArgs(argv) {
   // --color：只有两档，与 core/render/mux.sh 的 `case "${LEMO_COLOR:-}" in ''|bt709)` 完全一致。
   if (!['default', 'bt709'].includes(o.color)) {
     fail(`--color 只能是 default 或 bt709（core/render/mux.sh 只接受 '' | 'bt709'），收到 '${o.color}'`);
-  } if (!Number.isFinite(o.sheetStep) || o.sheetStep <= 0) fail(`--sheet-step 必须是正数（秒），收到：${o.sheetStep}`); if (!Number.isInteger(o.sheetCols) || o.sheetCols < 1) fail(`--sheet-cols 必须是 ≥1 的整数，收到：${o.sheetCols}`); if (!Number.isInteger(o.sheetW) || o.sheetW < 16) fail(`--sheet-w 必须是 ≥16 的整数（px），收到：${o.sheetW}`); if (!Number.isFinite(o.blackdetectD) || o.blackdetectD <= 0) fail(`--blackdetect-d 必须是正数（秒），收到：${o.blackdetectD}`);
+  } if (!Number.isFinite(o.sheetStep) || o.sheetStep <= 0) fail(`--sheet-step 必须是正数（秒），收到：${o.sheetStep}`); if (!Number.isInteger(o.sheetCols) || o.sheetCols < 1) fail(`--sheet-cols 必须是 ≥1 的整数，收到：${o.sheetCols}`); if (!Number.isInteger(o.sheetW) || o.sheetW < 16) fail(`--sheet-w 必须是 ≥16 的整数（px），收到：${o.sheetW}`); if (!Number.isFinite(o.blackdetectD) || o.blackdetectD <= 0) fail(`--blackdetect-d 必须是正数（秒），收到：${o.blackdetectD}`); if (o.asrThreshold !== null && (!Number.isFinite(o.asrThreshold) || o.asrThreshold < 0 || o.asrThreshold > 1)) fail(`--asr-threshold 必须是 0–1 之间的有限数（对应库侧 core/tts/asr_check.py 的 --threshold，默认 0.92），收到：${o.asrThreshold}`); if (o.asrLang !== null && !/^[A-Za-z][A-Za-z0-9._-]*$/.test(o.asrLang)) fail(`--asr-lang 只接受语言代码（auto / en / zh / ja / ko …；字母开头，不含空白与通配符），收到 '${o.asrLang}'`); if (o.asrModel !== null && !/^[A-Za-z0-9._/-]+$/.test(o.asrModel)) fail(`--asr-model 只接受模型名或 POSIX 路径（字母数字 . _ - /；不含空白与通配符，Windows 路径请写成 /mnt/…），收到 '${o.asrModel}'`);
   return o;
 }
 
@@ -1529,8 +1529,10 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
                          （标准 yuv420p 限幅 + bt709 标签；画面色值差 ±3 以内，会与旧片有细微色差）
   --manifest <path>      起飞前检查读的 demo 链路声明，默认 ${CFG.manifestPath}
                          （也可用环境变量 LEMO_MANIFEST；文件不在就静默跳过检查）
+  --asr-lang <auto|en|zh|ja|ko>  ASR 校对语言 —— 对应库侧 core/tts/asr_check.py 的 --lang（默认 auto：按文本是否含 CJK 自动判定）。★ 显式给出本参数（或另两个 ASR 参数）即**不再按行自动跳过 ASR**（只接受字母开头的语言代码）
+  --asr-model <名|目录>          ASR 用的 whisper 模型 —— 对应库侧 --model（默认**空** = 让库自己选：en → base.en、其它 → base）。可给模型名（base / small / base.en）或**本地模型目录**（只接受字母数字 . _ - /，不含空白；Windows 路径请写成 /mnt/…）
+  --asr-threshold <0..1>        字符比对的相似度阈值 —— 对应库侧 --threshold（默认 0.92；越接近 1 越严格）。必须是 0–1 的有限数
   --help
-
 风格特质档案（style-dna · 约定一）
   「主题+风格」（本编排器）与「文案+风格」「文案+口播+风格」（dub.mjs）**共用同一个知识库**：
   lib/style-dna/<slug>.json（43 份），经**同一个**读取入口 lib/style-dna-reader.mjs 读取 ——
@@ -1541,7 +1543,6 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   ★ 档案里其余数值特质在本通路**没有消费者**（字幕折行由各 demo 自己的 subs.py/srt.py 负责；
     响度由 mux.sh 固定 −14 LUFS，无覆盖口）—— 打印时会如实标注，不冒充已生效。
   ★ 档案缺失 / slug 无档案 → 一切与改动前逐字节一致（DNA 是增强，不是替代）。
-
 ⚠️ --q 为什么默认只给渲染（唯一例外是 content=）：
   各 demo 的 build.sh 里，--q 只出现在 video.mjs 那一行（29 个 events.mjs 行一个都没有）。
   noev 这类是**渲染专用**开关（画面不画事件图层），并不代表事件表该为空 ——
@@ -1552,7 +1553,6 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   事件脚本不吃位置参数时（走 core/render/events.mjs），content= 传不过去 ——
   此时编排器会明确警告「画面已换内容、事件表没换，成片会不一致」，
   补救办法是显式加 --q-events content=x.json（--q-events 就是那个显式逃生口）。
-
 ⚠️ content= 为什么是「整条链换内容」（2026-10-02 修正）：
   同一条内容在 build.sh 里通常被**多个步骤**消费。旧实现只跟了渲染与事件两步，
   实测后果（首部「主题→视频」成片）：画面是咖啡、配音是咖啡，**字幕还是上一版文案** ——
@@ -2462,7 +2462,7 @@ export LEMO_LINES_SRC=${phase === 'rest' ? "''" : shq(linesSrcWsl)}
 # 而 mix.py 跑在 WSL，所以随后还要用 /mnt 那份路径把 wav 拷回来。
 export LEMO_TTS_ENGINE=${shq(ttsEngine)}
 export LEMO_DEMO_WIN=${shq(demoWinWsl.replace(/^\/mnt\/([a-z])/, (m, d) => d.toUpperCase() + ':'))}
-export LEMO_DEMO_WIN_MNT=${shq(demoWinWsl)}
+export LEMO_DEMO_WIN_MNT=${shq(demoWinWsl)}\nexport LEMO_ASR_OPTS=${shq(asrArgsSuffix(o))}
 # ★ 无缓冲：本脚本的输出要边跑边透传（见下面「输出策略」）。python 的 stdout 一旦不是 tty
 #   （这里是管道）就按 4KB 块缓冲，默认攒满 4KB 或进程退出才吐 —— 输出只有几十行时等于
 #   「退出时才吐」，子步骤之间全是静默。这里统一解掉，覆盖本脚本里所有 python 调用。
@@ -2822,6 +2822,8 @@ def cjk(lang):
     return str(lang or "").lower().startswith(("zh", "cmn", "ja", "ko", "yue"))
 print("1" if L and all(cjk(x.get("lang")) for x in L) else "0")
 ' "$D/lines.json")
+  # ★ 显式 ASR 参数（--asr-lang / --asr-model / --asr-threshold）⇒ 以用户为准，取消按行自动跳过；不传时本行不生效（默认行为逐字节不变）
+  if [ -n "$LEMO_ASR_OPTS" ] && [ "$ASR_SKIP" = "1" ]; then echo "[配音 校对] 检测到显式 ASR 参数（$LEMO_ASR_OPTS）—— 以用户为准，不再按行自动跳过 ASR"; ASR_SKIP=0; fi
   if [ "$ASR_SKIP" = "1" ]; then
     echo "[配音 校对] 跳过 ASR —— 所有行的 lang 都是 CJK（离线 ASR 对中文实测 9/9 全 DIFF，且数字归一化缺失）"
     # ★ 跳过 ASR ⇒ asr_check.py（words.json 在配音阶段唯一的写者）没跑 ⇒ 那份 words.json 保持旧内容。
@@ -2844,7 +2846,7 @@ print("1" if L and all(cjk(x.get("lang")) for x in L) else "0")
     echo "ASR_SKIPPED"
   else
     echo "[配音 校对] ASR（失败不致命，只警告）"
-    .venv/bin/python core/tts/asr_check.py "$ASR_LINES" "$D/voices" 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"
+    # ★ 不传 --asr-lang/--asr-model/--asr-threshold 时 $LEMO_ASR_OPTS 为空 ⇒ 走 else 分支，那条命令与改动前**逐字节一致**（照 --color default 的做法）。\n    if [ -n "$LEMO_ASR_OPTS" ]; then .venv/bin/python core/tts/asr_check.py "$ASR_LINES" "$D/voices" $LEMO_ASR_OPTS 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"; else .venv/bin/python core/tts/asr_check.py "$ASR_LINES" "$D/voices" 2>&1 || echo "STEP_WARN asr_check 未通过（继续）"; fi
 
     # ── 词级时间轴派生：words.py ────────────────────────────────────────────────
     # ★ 这是本文件修过的**第三个**「build.sh 有、旧编排器漏跑、且**影响成片内容**」的缺口
@@ -2883,7 +2885,6 @@ else
   fi
 fi
 fi
-
 # ── 配音前置阶段的出口 ──────────────────────────────────────────────────────
 # LEMO_VOICE_ONLY=1：只跑「换内容 → lines.json → 配音 → ASR」就停，让编排器把
 # voices/dur.json / words.json 回传 Windows 后再开始渲染。★ 这一步是**时序必需**，
@@ -2892,7 +2893,6 @@ if [ "$LEMO_VOICE_ONLY" = "1" ]; then
   echo "VOICE_DONE"
   exit 0
 fi
-
 # ── 等配乐（并行分支）收尾 ──────────────────────────────────────────────────
 # 配乐已在上面「配乐」一节里**后台启动**（位置在「配音」一节之前）。混音脚本要读它的产物
 # （score.wav / music.wav 等），所以必须在这里等它落盘 —— 位置与原来的串行版一致
@@ -3568,6 +3568,28 @@ function reviewHelp() {
                           **本项目取 0.5** —— 这一步**只报告、绝不阻断**，宁多报不漏报（2.0 会把 1.9s 的黑场
                           静默放过；实测样板片 d=0.5 报 2 段、d=2.0 只报 1 段）
 `;
+}
+
+/**
+ * ASR 校对（core/tts/asr_check.py）的三个可选参数后缀 —— `--asr-lang` / `--asr-model` / `--asr-threshold`。
+ * ★ 返回**空串** = 一个 flag 都不加 ⇒ 音频脚本里那条 `asr_check.py` 命令与改动前**逐字节一致**
+ *   （照 `--color default` / `--review` 的做法：默认不干预；落点在 audioScriptFor 的 ASR 段）。
+ * ★ 只在用户**显式**给了参数时才加（`null` = 没给 ⇒ 让库侧走它自己的默认值）。三者的库侧对应参数与
+ *   默认值见 `--help` 的 `--asr-lang` / `--asr-model` / `--asr-threshold` 三条（default auto / 空 / 0.92）。
+ * ★ **值一律**裸拼（不逐 token 加引号），安全由 parseArgs 的**严格字符集校验**保证 —— 理由（实测过的坑）：
+ *   这个后缀会被整条 `shq()` 包成 `export LEMO_ASR_OPTS='…'`，随后脚本里以 `$LEMO_ASR_OPTS`（**不加引号**）
+ *   展开做分词。★ shell **不会**把「参数展开结果里出现的引号」当引号用（引号只在**源码**里生效）⇒
+ *   若逐 token 写成 `'zh'`，展开后会把**字面单引号**一起当参数传给 python（实测 argv 里是 `'zh'`）。
+ *   故取值必须**不含空白、不含通配符**（校验见 parseArgs 的 `--asr-lang` / `--asr-model` 两条）。
+ * ★ 它同时是「用户是否显式干预了 ASR」的判据：非空 ⇒ 音频脚本里那段「按行自动跳过 CJK」被取消
+ *   （用户显式要跑就别替他决定）。理由与优先级见 test/README.md 的「本次改了什么」段。
+ */
+function asrArgsSuffix(o) {
+  const parts = [];
+  if (o.asrLang !== null && o.asrLang !== undefined) parts.push(`--lang ${o.asrLang}`);
+  if (o.asrModel !== null && o.asrModel !== undefined) parts.push(`--model ${o.asrModel}`);
+  if (o.asrThreshold !== null && o.asrThreshold !== undefined) parts.push(`--threshold ${o.asrThreshold}`);
+  return parts.join(' ');
 }
 
 async function emitReview({ o, outDir, ffDir, src, demoRel, demoWin, outSize, qRender }) {

@@ -39,7 +39,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-
+import { stripComments } from '../lib/js-scan.mjs';   // ★ 共享剥注释器
 const OPUSCAR = process.env.LEMO_OPUSCAR || 'D:/lemo-opuscar';
 const SKIP = /node_modules|\.git\/|\.bak|\.orig-/;
 
@@ -144,27 +144,9 @@ function matchParen(src, open) {
  *    只在实参里塞一句**无关**注释）会被判「已修」而**放行** ⇒ 判据结论取决于无关文本。
  *    剥掉注释后，该信号只能来自真正的代码表达式 ⇒ 假绿消除。
  *  ★ 只剥注释、**不剥字符串**：`import('file:///x')` 的 `file://` 在**字符串**里，是合法说明符，
- *    必须保留（剥了会把合法写法误判成违规 = 假红）。 */
-function stripCommentsKeepStrings(s) {
-  let out = '', i = 0; const n = s.length; let state = 'code';
-  while (i < n) {
-    const c = s[i], d = s[i + 1];
-    if (state === 'code') {
-      if (c === '/' && d === '/') { state = 'line'; i += 2; continue; }
-      if (c === '/' && d === '*') { state = 'block'; i += 2; continue; }
-      if (c === "'") state = 'sq'; else if (c === '"') state = 'dq'; else if (c === '`') state = 'tpl';
-      out += c; i++; continue;
-    }
-    if (state === 'line') { if (c === '\n') { state = 'code'; out += c; } i++; continue; }
-    if (state === 'block') { if (c === '*' && d === '/') { state = 'code'; i += 2; } else { if (c === '\n') out += c; i++; } continue; }
-    const q = state === 'sq' ? "'" : state === 'dq' ? '"' : '`';
-    out += c;
-    if (c === '\\') { out += s[i + 1] ?? ''; i += 2; continue; }
-    if (c === q) state = 'code';
-    i++;
-  }
-  return out;
-}
+ *    必须保留（剥了会把合法写法误判成违规 = 假红）。
+ *  ★ 实现见 `lib/js-scan.mjs`（`{ blank: false }` = 删注释保换行、保字符串；★ 认正则字面量）。 */
+const stripCommentsKeepStrings = (s) => stripComments(s, { blank: false });
 
 // ── 判据：这个 import 实参是不是「运行时拼的绝对路径」且没走 file:// ────────────
 const SCHEME = /^(data|node|http|https|file|blob):/;

@@ -741,6 +741,42 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    ★ 实测：真出片 `--out D:/lemo-tmp/review-test` **94.5 s / EXIT 0** / `sheet.jpg` **1920×7000** / 30 帧；
    新渲片 blackdetect 报 **5 段**、出厂样板片报 **2 段**（差异源于编码亮度，非内容缺失 —— 同刻 YAVG 21.5 vs 22.9）。
    md5 `9cd33e25182d73c40db1d0fbb7abd75f` → **`dfb3700378cea8e9ee577f8a2f969b73`**。
+   ★ **2026-10-11（同日再一处）** 给库侧 `core/tts/asr_check.py` 的**三个参数**开 CLI 出口：
+   `lemo-make.mjs` 新增 **3 个 CLI 参数**（`--asr-lang` 默认 auto / `--asr-model` 默认空 / `--asr-threshold` 默认 0.92），
+   一一对应库侧 `--lang` / `--model` / `--threshold`（★ 库侧 argparse 实测：`default='auto'` / 无默认 / `type=float, default=0.92`）。
+   由来：「功能对齐核查」把「asr_check 三参数在 UI 不可调」记为 ⚠️ 缺控件，根因是**编排器把它们写死、没有 CLI 出口**。
+   传参方式**照抄既有**：新函数 `asrArgsSuffix()`（**文件尾**）拼后缀 → `export LEMO_ASR_OPTS='…'`（与 `LEMO_DEMO_WIN_MNT` 同一行）
+   → 音频脚本以 `$LEMO_ASR_OPTS`（**不加引号**）展开分词（与 `$GRAIN` / `$CONT` 同法）。
+   ★ **默认路径逐字节不变**（照 `--color default` 的做法）：不传三参数 ⇒ `LEMO_ASR_OPTS` 为空 ⇒ 走新增 if/else 的
+   **else** 分支，那条 `asr_check.py` 命令**原文逐字保留**（`if` 分支只是多挂 `$LEMO_ASR_OPTS`）。
+   ★ **优先级（设计决策）**：显式给了任一 ASR 参数 ⇒ **以用户为准、取消既有「按行自动跳过 CJK」**（该跳过的由来是
+   「离线 whisper 对中文实测 9/9 全 DIFF + 数字归一化缺失」；用户显式要跑就不替他决定，并打日志说明）；
+   **不传时该守卫一行不生效** ⇒ 默认行为逐字节不变。
+   ★ **校验**：`--asr-threshold` 必须 0–1 有限数（非法 ⇒ 非 0 退出）；`--asr-lang` / `--asr-model` 做**严格字符集校验**
+   （不含空白 / 通配符）—— 后缀被 `$LEMO_ASR_OPTS` 不加引号展开分词，而 shell **不把「参数展开结果里的引号」当引号用**
+   （实测：首版用 `shq()` 包成 `--lang 'zh'` ⇒ argv 里真带字面单引号，被新测试抓出）。
+   ★ **零行漂移**：前段三处（默认值 / 解析 / 校验）**追加在既有行尾**、`--help` 增 3 行同时删 3 空行、env 段挂既有行尾、
+   ASR 段加守卫行 + if/else 同时删 2 空行 ⇒ 前段 `-N/+N` **净零**；新增 22 行**全在文件尾** `asrArgsSuffix`。
+   ★ 新测试 `test/asr-cli.test.mjs`（12 条）：默认路径逐字节一致 / 传参进 argv / 非法非 0 退出。
+   md5 `dfb3700378cea8e9ee577f8a2f969b73` → **`c46d76b7b8f2569a67cc09a6eb266ce3`**。
+   ★ **2026-10-11（同日再一处）** 控制台侧补齐 4 项 ⚠️ 缺控件里的 3 项 + **根治剥注释器**：
+   · **`--q` 开关助手**加 **`contentFiles`** 字段（该风格 demo 目录下**真实存在**的 `content*.json`；
+     没有就回**空数组**、**绝不硬造清单**）⇒ UI 用它给 `content=` 做可选值；另给 `LEMO_ANGLE` 加了控件
+     （★ **超出上游**：上游只有环境变量、无用户入口，按「用户入口」规则本可归 🔒；我方额外给 UI，
+     默认 = **不设**该变量 ⇒ 默认路径逐字节不变；`server.mjs` 的 `enqueueRender` 把值**绑到本次 spawn**，
+     因为 `_jobs` 队列**串行**、后一次提交会改到前一条排队任务的环境）。
+   · ★★ **`LEMO_OPUSCAR_HOME` 判 🔒 内部（不暴露）**：它的读者是**上游 skill 的安装脚本**
+     （`plugin/skills/lemo-opuscar/scripts/setup.sh`），是**部署级**设定 —— 给普通用户一个能指错库的入口是脚枪。
+   · ★ **两个「后端-only 端点」（`GET /api/console` / `GET /api/briefs/:id`）判 🔒**：两者都是**本项目自产**
+     （控制台诊断 / 工单详情），**上游无对应功能** ⇒ **不构成对齐缺口**（可选增强，非待补项）。
+   · ★★ **剥注释器根治**：把**散在 9 个闸门里的 4 种变体**（含 `check-gate-self-claims` 那份**纯正则的 5 行版**）
+     统一抽成 **`lib/js-scan.mjs`**（唯一导出 `stripComments(src, {blank, keepStrings})`，三档口径覆盖 4 种旧变体），
+     并让它**认正则字面量**（code 态遇 `/` 时看前一有效 token 判「除法 vs 正则起点」；正则内正确跳 `[...]` 字符类与 `\x` 转义；
+     **本行找不到闭合 `/` ⇒ 保守回退当除法**）⇒ **根治**了「正则里的裸引号把剥注释器带偏、把文件之后代码整段吞掉」这类事故。
+     ★ 9 个闸门迁移后**逐个做「迁移前后输出逐字节比」**：5 个完全相同、4 个差异**100% 是「多扫到新增的 2 个文件」的计数 +1**
+     （无判据/结论变化、全 exit 0）；另做了**全仓 131 文件 × 3 口径**的横证（模式 B/A：相同 87 / 可解释 44 / **无法解释 0**；
+     模式 C：相同 78 / 可解释 53 / **0**）。新测试 `test/js-scan.test.mjs`（7 条，含**变异自证**：去掉正则识别 ⇒ 用例 1/3/5/7 必变红）。
+     ★ 冻结指纹 `597b7f5d…` → **`963b2dbbedfa25e299d84da045a8e7e29985f5d4c81e8dd14e2603744317ede7`**（`--write` 重冻结）。
    ★ **2026-10-11** 控制台侧新增 **`GET /api/style-switches`**（`--q` 开关助手的数据源）：从库仓
    `styles/<slug>/demo/**` **机械派生**该风格的页面开关（**不维护任何会漂的名单**）。判据经一轮修正：
    ★★ **首版只认 `.get('x')` 与 `location.search.includes('x')`，漏掉 `.has()` 形态** ——

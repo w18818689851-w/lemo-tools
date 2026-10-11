@@ -1201,6 +1201,9 @@ async function runBatch(slugs, opts) {
   if (state.batchBusy) return;
   state.batchBusy = true;
   updateBatchBar();
+  // ★ 渲染后端（LEMO_ANGLE）：确认弹层是**全屏遮罩**，打开期间表单改不了 ⇒
+  //   此刻读到的就是弹层打开那一刻的值，与传进来的 opts 同源（不用再穿一层参数）。
+  const { angle } = buildOpts();
   const total = slugs.length;
   const batchId = newBatchId();
   let first = null;
@@ -1211,7 +1214,7 @@ async function runBatch(slugs, opts) {
         const r = await api('/api/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug: slugs[i], opts, batchId, batchIndex: i + 1, batchTotal: total }),
+          body: JSON.stringify({ slug: slugs[i], opts, angle, batchId, batchIndex: i + 1, batchTotal: total }),
         });
         if (!first && r && r.job) first = r.job.id;
       } catch (e) {
@@ -3349,6 +3352,9 @@ function buildOpts() {
   const film = $('fFilm') ? $('fFilm').value.trim() : '';
   const color = $('fColor') ? $('fColor').value : '';
   const lines = $('fLines') ? $('fLines').value.trim() : '';
+  // ★ 渲染后端（环境变量 LEMO_ANGLE）：**不是** CLI 参数 ⇒ 不进 o，只随请求体单独回传
+  //   （服务端把它落到这次 spawn 的子进程环境里，见 server.mjs 的 enqueueRender）。
+  const angle = $('fAngle') ? $('fAngle').value.trim() : '';
 
   if (fps && fps !== '24') o.push('--fps', fps);
   // ★ 这里的 '6' 是**编排器的默认值**（lemo-make.mjs 的 --workers 默认 6）——等于它就交给 CLI 自己用默认。
@@ -3387,7 +3393,7 @@ function buildOpts() {
   // 声音版块：选过音色 / 填过语速才追加（用户已在 --q 里手写就让他赢，见 voiceCliOpts）
   const v = voiceCliOpts(q);
   o.push(...v.opts);
-  return { slug, opts: o, voiceNotes: v.notes };
+  return { slug, opts: o, angle, voiceNotes: v.notes };
 }
 
 function syncPreview() {
@@ -3403,6 +3409,20 @@ function syncPreview() {
   // 参数一变，之前那条并发预检提示就不再对应当前命令了 → 收起来（判据只有服务端一处，不在这里重算）
   const w = $('lockWarn');
   if (w && !w.hidden) { w.hidden = true; w.textContent = ''; }
+}
+
+// ── 渲染后端提示（#fAngle / 环境变量 LEMO_ANGLE）──────────────
+//
+// ★ 它**不是 CLI 参数** ⇒ 命令预览里永远不会出现它（别去 syncPreview 里加）。
+//   它由服务端落到这次 spawn 的渲染子进程环境里（库侧 core/render/browser.mjs 读它）。
+// ★ 提示要把「留空 = 不设」说透 —— 默认路径必须与旧版逐字节一致，不能让用户以为有默认后端。
+function syncAngleHint() {
+  const h = $('fAngleHint');
+  if (!h) return;
+  const v = $('fAngle').value.trim();
+  if (!v) { h.textContent = '留空 = 不设 LEMO_ANGLE（库自己选）'; return; }
+  if (v === 'default') { h.textContent = 'default = 不传 --use-angle（在 Windows 上等价于不设）'; return; }
+  h.textContent = `将设 LEMO_ANGLE=${v}（渲染子进程的 Chromium 后端 --use-angle=${v}）`;
 }
 
 // ── 开关助手（#fQ 旁的 chips）────────────────────────────────
@@ -3452,11 +3472,79 @@ function syncQChips() {
   }
 }
 
+/** 当前 `#fQ` 里 `content=` 的值（没有 = `''`；写成裸 `content` 也当默认，因为库侧 `q.get('content')` 会给空串）。 */
+function qContentToken() {
+  for (const t of qTokens($('fQ').value)) {
+    if (t === 'content') return '';
+    if (t.startsWith('content=')) return t.slice('content='.length);
+  }
+  return '';
+}
+
+/**
+ * 换掉 `#fQ` 里 `content=` 那一段（`v` 为空 ⇒ 只删不加）。其余分段一律不动。
+ * ★ 只走既有链路：派发 `input` ⇒ bind 里挂的 syncPreview（重拼命令预览）+ syncQChips（对齐 chips 选中态）。
+ */
+function qSetContent(v) {
+  const inp = $('fQ');
+  const tokens = qTokens(inp.value);
+  const i = qKeyIndex(tokens, 'content');
+  if (i >= 0) tokens.splice(i, 1);
+  if (v) tokens.push(`content=${v}`);
+  inp.value = tokens.join(' ');
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/**
+ * 「内容文件」下拉（`?content=<文件>.json` 的**真实可选值**）。
+ *
+ * ★ 取值**只来自服务端**（`GET /api/style-switches` 的 `contentFiles` = 该风格 demo 目录下
+ *   **真实存在**的 `content*.json`）—— 前端不硬编码任何文件名，一个都没有就不画这个控件
+ *   （改由 `#qContentHint` 如实说「只能手填」），**绝不**补一个假文件名进去。
+ * ★ 只在服务端报回该风格**确有** `content` 这个页面开关时才画：没有这个开关，选了也没人读。
+ */
+function renderQContent(box, list, files) {
+  const hasKey = list.some((s) => s.key === 'content');
+  if (!hasKey) return;
+
+  const wrap = el('div', 'q-content');
+  const lbl = el('span', 'q-content-lbl', '内容文件');
+  const tip = '对应页面开关 content（?content=<文件>.json）—— 取值只列该风格 demo 目录下真实存在的 content*.json';
+  lbl.title = tip;
+
+  if (!files.length) {
+    // ★ 上游这个风格没有可选变体文件 ⇒ 如实说，不造清单。
+    const none = el('span', 'q-content-none', '这个风格没有可选的内容变体文件（demo 目录下没有 content*.json）—— 只能在输入框里手填文件名');
+    none.id = 'qContentHint';
+    wrap.appendChild(lbl);
+    wrap.appendChild(none);
+    box.appendChild(wrap);
+    return;
+  }
+
+  const sel = el('select', 'input q-content-sel');
+  sel.id = 'qContent';
+  sel.title = tip;
+  const add = (v, text) => { const o = el('option', null, text); o.value = v; sel.appendChild(o); };
+  add('', '（不传 · 用库内默认 content.json）');
+  for (const f of files) add(f, f);
+  const cur = qContentToken();
+  // 手写的值不在真实文件清单里（比如点了 content 那个 chip 写成了 content=1）⇒ 单列一条如实回显
+  if (cur && !files.includes(cur)) add(cur, `（当前手写：${cur}）`);
+  sel.value = cur;
+  sel.addEventListener('change', () => qSetContent(sel.value));
+
+  wrap.appendChild(lbl);
+  wrap.appendChild(sel);
+  box.appendChild(wrap);
+}
+
 /** 把服务端给的 switches 渲染成 chips（key 为文案、sources 进 title 当证据）。 */
 function renderQSwitches(data) {
   const box = $('qSwitches');
   const hint = $('qSwitchesHint');
   const list = (data && Array.isArray(data.switches)) ? data.switches : [];
+  const files = (data && Array.isArray(data.contentFiles)) ? data.contentFiles : [];
   box.textContent = '';
   if (!list.length) {
     box.hidden = true;
@@ -3470,10 +3558,17 @@ function renderQSwitches(data) {
     b.dataset.key = s.key;
     const srcs = Array.isArray(s.sources) ? s.sources : [];
     b.title = srcs.length ? `${s.key} —— 出处：${srcs.join('、')}` : s.key;
+    // ★ content 这个键的取值不是「开/关」而是一个**文件名**：直接点它只会写成 content=1（库侧会去取
+    //   一个叫 1 的文件 ⇒ 404）。所以有真实文件清单时，把 title 换成「去下面的下拉里选」的提示。
+    if (s.key === 'content' && files.length) {
+      b.title = `content —— 换内容文件请用下面的「内容文件」下拉（点这里只会写成 content=1）`
+        + (srcs.length ? `　出处：${srcs.join('、')}` : '');
+    }
     if (qKeyIndex(tokens, s.key) >= 0) b.classList.add('on');
     b.addEventListener('click', () => b.classList.toggle('on', qToggleSwitch(s.key)));
     box.appendChild(b);
   }
+  renderQContent(box, list, files);
   box.hidden = false;
   hint.textContent = `共 ${list.length} 个开关（读自该风格 demo 源码）；点一下填进上面的输入框，再点取消`;
 }
@@ -3623,7 +3718,7 @@ function showLockWarn(pre, slug, opts) {
 }
 
 async function startRun(force) {
-  const { slug, opts, voiceNotes } = buildOpts();
+  const { slug, opts, angle, voiceNotes } = buildOpts();
   if (!slug) { toast('请先选择或输入一个风格', true); $('fSlug').focus(); return; }
   // 声音参数有冲突（用户自己在 --q 里写了）时如实提示，不静默覆盖
   if (voiceNotes && voiceNotes.length) toast(voiceNotes[0], true);
@@ -3647,7 +3742,7 @@ async function startRun(force) {
     const r = await api('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug, opts }),
+      body: JSON.stringify({ slug, opts, angle }),
     });
     toast(`已入队：${slug}（${r.job.status}）`);
     attachLog(r.job.id, r.job.opts);
@@ -6042,6 +6137,10 @@ function bind() {
   // ── 开关助手（#btnQSwitches / #qSwitches）──
   // ★ 手改 #fQ 后把 chips 的选中态对齐（只切 class，不回写输入框 ⇒ 不与用户输入打架）。
   $('fQ').addEventListener('input', syncQChips);
+  // ★ 渲染后端 #fAngle（环境变量 LEMO_ANGLE）：**不是 CLI 参数** ⇒ 不挂 syncPreview（命令预览里没有它），
+  //   只更新它自己那句提示（如实说「留空 = 不设」）。
+  $('fAngle').addEventListener('input', syncAngleHint);
+  $('fAngle').addEventListener('change', syncAngleHint);
   $('btnQSwitches').addEventListener('click', toggleQSwitches);
   // ★ 换了风格 ⇒ 面板开着的话自动重拉（换风格后旧 chips 已不对应当前风格）。
   $('fSlug').addEventListener('change', () => {
