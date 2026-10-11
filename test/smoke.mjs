@@ -106,7 +106,14 @@ const C = {
   dim: (s) => (TTY ? `\x1b[2m${s}\x1b[0m` : s),
   b: (s) => (TTY ? `\x1b[1m${s}\x1b[0m` : s),
 };
-const log = (s = '') => process.stdout.write(`${s}\n`);
+// ★ 全程输出同时留一份在内存里（见 dumpFailureEvidence）—— 失败时把它整份写盘，
+//   拿到的是**完整输出**而不是只有 summary。绿的时候这份内存缓冲只是被丢掉，不落盘。
+const OUTPUT_LOG = [];
+const log = (s = '') => {
+  const line = `${s}\n`;
+  OUTPUT_LOG.push(line);
+  process.stdout.write(line);
+};
 
 // ── HTTP 工具（node:http 直连，绕开代理）────────────────────
 //
@@ -289,6 +296,169 @@ function stopServer(child) {
 const results = [];
 const notes = [];
 
+// ── 失败证据固化（★ 只在**出现红**时落盘，绿的时候一个字节都不写）──────────
+//
+// 背景：主控当日 8 次串行里最早那次红（EXIT=1）、**没抓到红的用例名** —— 红一次就丢一次证据。
+// 这里把「失败瞬间」的证据固定下来：失败用例名 + 完整输出 + 环境快照，落到
+//   `<LEMO_TMP>/smoke-fail-<时间戳>/`（★ 非 C 盘，口径照 scripts/run-all-tests.mjs:74）。
+// ★ **不做自动重试** —— 要的是「看见」抖动，不是把它藏起来。
+
+/** 异步跑一个外部命令并收 stdout/stderr（★ 本环境 spawnSync/execFileSync 一律 EBUSY ⇒ 只能异步 spawn）。 */
+function runCapture(cmd, args, { cwd, timeoutMs = 15000 } = {}) {
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    let done = false;
+    let child;
+    const finish = (r) => { if (done) return; done = true; clearTimeout(timer); resolve(r); };
+    const timer = setTimeout(() => {
+      try { child?.kill(); } catch { /* ignore */ }
+      finish({ code: null, out, err: `${err}\n[超时 ${timeoutMs}ms]` });
+    }, timeoutMs);
+    try {
+      child = spawn(cmd, args, { cwd, windowsHide: true, env: { ...process.env, NO_COLOR: '1' } });
+    } catch (e) {
+      return finish({ code: -1, out: '', err: String((e && e.message) || e) });
+    }
+    child.stdout?.on('data', (d) => { out += d.toString('utf8'); });
+    child.stderr?.on('data', (d) => { err += d.toString('utf8'); });
+    child.on('error', (e) => finish({ code: -1, out, err: String((e && e.message) || e) }));
+    child.on('close', (code) => finish({ code, out, err }));
+  });
+}
+
+/** 一行式 stat：存在性 + mtime + size（不存在则报错码）。 */
+function statLine(p) {
+  try {
+    const st = fs.statSync(p);
+    return `${st.isDirectory() ? 'dir ' : 'file'}  存在  mtime=${new Date(st.mtimeMs).toISOString()}  size=${st.size}`;
+  } catch (e) {
+    return `不存在（${(e && e.code) || (e && e.message) || e}）`;
+  }
+}
+
+const ASCII_CRT_LOCK = 'D:/lemo-films/.ascii-crt.lock';
+
+/** 同步读「易变」快照（锁内容 / 关键 mtime / 时间）—— 在**首次失败的那一瞬间**调，保真。 */
+function snapshotVolatileSync() {
+  const snap = { at: new Date().toISOString(), lock: null, mtimes: {} };
+  try {
+    if (fs.existsSync(ASCII_CRT_LOCK)) {
+      const raw = fs.readFileSync(ASCII_CRT_LOCK, 'utf8');
+      snap.lock = { exists: true, content: raw, mtime: new Date(fs.statSync(ASCII_CRT_LOCK).mtimeMs).toISOString() };
+    } else snap.lock = { exists: false };
+  } catch (e) { snap.lock = { exists: null, error: String((e && e.message) || e) }; }
+  for (const [k, p] of [
+    ['consoleDir', 'D:/lemo-films/.console'],
+    ['consoleIndex', 'D:/lemo-films/.console/index.json'],
+    ['uploadsIndex', 'D:/lemo-films/dub/_uploads/index.json'],
+  ]) snap.mtimes[k] = statLine(p);
+  return snap;
+}
+
+// 首次失败瞬间抓一份快照（同步部分立即读；netstat 起一个异步进程，落盘时 await）。
+let failProbe = null;
+function probeAtFailure() {
+  if (failProbe) return failProbe;
+  failProbe = { sync: snapshotVolatileSync(), netstat: runCapture('netstat', ['-ano']) };
+  return failProbe;
+}
+
+/**
+ * 落盘失败证据。返回证据目录绝对路径（写入失败/落点解析到 C 盘则返回 null）。
+ * @param {Array} failed 失败用例数组（含 name / ms / err）
+ */
+async function dumpFailureEvidence(failed) {
+  const evidRoot = path.resolve(process.env.LEMO_TMP || 'D:/lemo-tmp');
+  if (/^[cC]:[\\/]/.test(evidRoot)) {   // ★ 硬规则：产物/缓存非 C 盘
+    log(C.bad(`  ⚠️ 失败证据落点解析到 C 盘（${evidRoot}）—— 按硬规则拒写，请设 LEMO_TMP 到非 C 盘。`));
+    return null;
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dir = path.join(evidRoot, `smoke-fail-${stamp}`);
+  fs.mkdirSync(dir, { recursive: true });
+
+  // 1) 失败用例名 + 错误（结构化，含 stack）
+  const cases = failed.map((f) => ({
+    name: f.name,
+    ms: f.ms,
+    error: f.err ? String((f.err && f.err.message) || f.err) : null,
+    stack: f.err && f.err.stack ? String(f.err.stack) : null,
+  }));
+  fs.writeFileSync(path.join(dir, 'cases.json'), JSON.stringify({
+    when: new Date().toISOString(),
+    pid: process.pid,
+    total: results.length,
+    passed: results.length - failed.length,
+    failed: failed.length,
+    failedNames: failed.map((f) => f.name),
+    cases,
+  }, null, 2), 'utf8');
+
+  // 2) 完整输出（不是只有 summary）
+  fs.writeFileSync(path.join(dir, 'output.txt'), OUTPUT_LOG.join(''), 'utf8');
+
+  // 3) 环境快照
+  const probe = failProbe || probeAtFailure();
+  const [gs, gl] = await Promise.all([
+    runCapture('git', ['status', '--porcelain'], { cwd: ROOT }),
+    runCapture('git', ['log', '-1'], { cwd: ROOT }),
+  ]);
+  const ns = await probe.netstat;
+  const listen = (ns.out || '').split(/\r?\n/).filter((l) => /LISTEN/i.test(l));
+
+  let lockDirList = '(LEMO_LOCK_DIR 未设置)';
+  try {
+    if (process.env.LEMO_LOCK_DIR) {
+      lockDirList = fs.existsSync(process.env.LEMO_LOCK_DIR)
+        ? (fs.readdirSync(process.env.LEMO_LOCK_DIR).join('\n') || '(空)')
+        : '(不存在)';
+    }
+  } catch (e) { lockDirList = `列目录失败：${(e && e.message) || e}`; }
+
+  const envTxt = [
+    '=== 时间 ===',
+    `首次失败瞬间: ${probe.sync.at}`,
+    `落盘时刻:     ${new Date().toISOString()}`,
+    `pid:          ${process.pid}`,
+    `cwd:          ${process.cwd()}`,
+    `LEMO_TMP:     ${process.env.LEMO_TMP || '(未设 → 默认 D:/lemo-tmp)'}`,
+    `LEMO_LOCK_DIR:${process.env.LEMO_LOCK_DIR || '(未设)'}`,
+    '',
+    '=== 锁文件（首次失败瞬间）===',
+    `路径: ${ASCII_CRT_LOCK}`,
+    probe.sync.lock.exists === true
+      ? `存在  mtime=${probe.sync.lock.mtime}\n内容: ${JSON.stringify(probe.sync.lock.content)}`
+      : (probe.sync.lock.exists === false ? '不存在' : `读不到：${probe.sync.lock.error}`),
+    '',
+    '=== 隔离锁目录 LEMO_LOCK_DIR 内容（落盘时刻）===',
+    lockDirList,
+    '',
+    '=== mtime 快照（首次失败瞬间）===',
+    `D:/lemo-films/.console/               : ${probe.sync.mtimes.consoleDir}`,
+    `D:/lemo-films/.console/index.json     : ${probe.sync.mtimes.consoleIndex}`,
+    `D:/lemo-films/dub/_uploads/index.json : ${probe.sync.mtimes.uploadsIndex}`,
+    '',
+    '=== git status --porcelain ===',
+    `exit=${gs.code}`,
+    gs.out.trim() || '(干净)',
+    gs.err.trim(),
+    '',
+    '=== git log -1 ===',
+    `exit=${gl.code}`,
+    gl.out.trim(),
+    gl.err.trim(),
+    '',
+    '=== netstat -ano（LISTEN 行）===',
+    `exit=${ns.code}  总行数=${(ns.out || '').split(/\r?\n/).length}  LISTEN 行数=${listen.length}`,
+    listen.join('\n') || '(无 LISTEN 行)',
+    ns.err.trim(),
+  ].join('\n');
+  fs.writeFileSync(path.join(dir, 'env.txt'), envTxt, 'utf8');
+
+  return dir;
+}
+
 function makeCtx(extra = {}) {
   return {
     root: ROOT,
@@ -310,6 +480,7 @@ async function runCases(cases, ctx, groupLabel) {
       log(`  ${C.ok('PASS')}  ${c.name} ${C.dim(`(${Date.now() - t0}ms)`)}`);
     } catch (e) {
       const ms = Date.now() - t0;
+      probeAtFailure();               // ★ 首次失败的那一瞬间先抓一份易变快照（锁/端口/mtime）
       results.push({ name: c.name, ok: false, ms, err: e });
       log(`  ${C.bad('FAIL')}  ${c.name} ${C.dim(`(${ms}ms)`)}`);
       const msg = String((e && e.message) || e);
@@ -473,11 +644,27 @@ async function main() {
   log('─'.repeat(64));
   log('');
 
+  // ── ★ 有红 ⇒ 把完整证据落盘（绿的时候这里一行都不执行，绝不产生文件）──
+  if (failed.length || serverFailed) {
+    try {
+      const dir = await dumpFailureEvidence(failed);
+      if (dir) log(C.bad(`  📁 失败证据已留存 → ${dir}`));
+    } catch (e) {
+      log(C.bad(`  ⚠️ 失败证据留存失败：${(e && e.message) || e}`));
+    }
+    log('');
+  }
+
   process.exitCode = failed.length ? 1 : 0;
   if (serverFailed) process.exitCode = 2;
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   log(C.bad(`\n✗ 测试自身异常：${(e && e.stack) || e}\n`));
+  // ★ 自身异常（exit 2）也要留证据
+  try {
+    const dir = await dumpFailureEvidence([{ name: '(测试自身异常)', ms: 0, err: e }]);
+    if (dir) log(C.bad(`  📁 失败证据已留存 → ${dir}`));
+  } catch { /* 证据留存失败不影响退出码 */ }
   process.exitCode = 2;
 });

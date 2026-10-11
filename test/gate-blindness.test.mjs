@@ -606,6 +606,45 @@ const expectClean = (res, needle, hint) => {
     `${hint}：exit 0 却出现了失明文案「${needle}」\n${res.out.slice(0, 900)}`);
 };
 
+/**
+ * ★★ ★自证的前置钉（2026-10-11 补；治「自证可被『闸门崩了』骗过」）——
+ *   `assert.throws(() => expectBlind(res, needle))` 在**两种**情形都会通过：
+ *     (a) `res.code === 0`（守卫被短路 ⇒ **真变绿**，这是**期望**的）；
+ *     (b) `res.code !== 0` 但**输出里没有 needle**（闸门**崩了** / 走了另一条失明分支 —— **不该**通过）。
+ *   ⇒ 只写 `assert.throws(...)` 的自证**证明不了**「那条正向断言在测该守卫」。
+ *   ★ 端到端实证（审计 F3）：把某闸门的守卫行改成一次笔误（引入语法错）⇒ 闸门崩溃
+ *     （exit 1 + `SyntaxError` 栈，输出里没有 needle）⇒ 原写法**照报 PASS**。
+ *   ★ 判据（三条，缺一不可）：
+ *     ① **闸门没崩** —— 输出里不得出现未捕获异常的栈指纹（见 `CRASH_SIG`）；
+ *     ② **needle 消失** —— 被短路的那条守卫的落点文案必须**从输出里消失**（这才证明正向断言测的是它）；
+ *     ③ `expectGreen`（默认 `true`）时**还要求 `res.code === 0`** —— 即项目既有纪律
+ *        「先钉 exit 0（真变绿），否则『失明』（也 exit≠0）会冒充『变绿』骗过 assert.throws」。
+ *   ★ 边界（如实登记，两组都是**实测**出来的 —— 见报告 §F3）：
+ *     · `expectGreen: false` —— **只**用于「短路该守卫后夹具**另有**别的违反 ⇒ exit 仍≠0」的 **8** 处
+ *       （`check-render-venc` A 类 / `check-render-venc` D 类② / `check-line-endings` J4 /
+ *       `check-cli-docs` / `check-plate-pixel` / `check-lra-caliber` 判据② / `check-dual-copy-sync` /
+ *       `check-audio-chain`）—— 那些用例本就断言「**exit 仍≠0 但文案消失**」（见各用例自己的注释），
+ *       对它们钉 `exit 0` 会**假红**；此时由 ①② 保证「exit≠0 **不是**崩的、且 needle 已消失」。
+ *     · `expectNeedleGone: false` —— **只**用于 `check-doc-coverage` 那处：它的变异**只摘掉
+ *       「失明 ⇒ exit 1」这一条退出码聚合**，失明**文案本身照打**（needle 仍在输出里）
+ *       ⇒ 「needle 消失」不成立；此时由 ①③ 负责（闸门若崩 ⇒ exit≠0 ⇒ 当场红）。
+ *   ★ 覆盖：本文件里 `assert.throws(() => expectBlind(...))` 的**每一处**（2026-10-11 实测 **79** 处代码点，
+ *     其中 **25** 处已有 `assert.equal(<var>.code, 0, …)` 前置钉 ⇒ 其余 **54** 处一律走本 helper）。
+ */
+const CRASH_SIG = /(?:^|\n)(?:SyntaxError|ReferenceError|TypeError|RangeError|URIError|EvalError)\b|ERR_MODULE_NOT_FOUND|\[SPAWN ERROR\]|\[TIMEOUT \d+ms\]|(?:^|\n)\s+at\s+file:\/\//;
+const expectSelfProof = (res, needle, hint, { expectGreen = true, expectNeedleGone = true } = {}) => {
+  assert.ok(!CRASH_SIG.test(res.out),
+    `${hint}：闸门**崩了**（未捕获异常 / 模块缺失 / 超时）⇒ 本次自证不成立 —— needle 消失是「崩」造成的，不是「守卫被短路」\n${res.out.slice(0, 900)}`);
+  if (expectNeedleGone) {
+    assert.ok(!res.out.includes(needle),
+      `${hint}：短路守卫后「${needle}」必须**从输出里消失**，实得输出里仍有它 ⇒ 那条正向断言根本没在测这个守卫\n${res.out.slice(0, 900)}`);
+  }
+  if (expectGreen) {
+    assert.equal(res.code, 0,
+      `${hint}：短路守卫后应**真变绿**（exit 0）—— 否则「失明」（也 exit≠0）会冒充「变绿」骗过下面的 assert.throws，实得 ${res.code}\n${res.out.slice(0, 900)}`);
+  }
+};
+
 // ── 0. ★防复发守卫：夹具树必须带齐被测闸门的**相对 import 依赖**（2026-10-11 新增）──────────────
 //   由来（**潜伏 3 批**的真回归）：2026-10-11 把散在 9 个闸门里的剥注释器抽成 `lib/js-scan.mjs`，
 //   `scripts/check-*.mjs` 里那 9 个改成 `import … from '../lib/js-scan.mjs'` —— 但本文件给这些闸门
@@ -969,6 +1008,9 @@ test('★自证 check-skill-film-fields：短路失明守卫后，正向断言�
     mk(empty);
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: empty } });
     // 守卫被短路后：0 风格夹具 ⇒ exit 0、无「本闸门已失明」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已失明', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
       undefined, '短路失明守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -1712,6 +1754,9 @@ test('★自证 check-render-venc：短路 D 类② 判据后，正向断言必�
       env: { LEMO_OPUSCAR: path.join(dir, 'opuscar'), LEMO_STYLES_ROOT: path.join(dir, 'styles') },
     });
     // 判据被短路后：D 类② 不再命中（exit 0、无那句文案）⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '1 处过期声称（脚本实际跟随', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '1 处过期声称（脚本实际跟随', 'mut'),
       undefined, '短路 D 类② 后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -2838,6 +2883,9 @@ test('★自证 check-config-notes：删掉「全无 notes」守卫后，正向�
     rj(cfg, { styles: [{ slug: 'a', notes: '' }, { slug: 'b' }] });
     const res = await run(NODE, [gate], { env: { LEMO_DUB_STYLES: cfg } });
     // 守卫被删后：exit 0、无「没有一条带 notes」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '没有一条带 notes', '★自证');
     assert.throws(() => expectBlind(res, '没有一条带 notes', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -2857,6 +2905,9 @@ test('★自证 check-tp-prose：删掉 CUR 反向守卫后，正向断言必须
       '# gb-tp\n\n已修：真峰值原为 −1.2 dBTP，现状 −0.5 dBTP（本片成片实测）\n', tpDistill());
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: pos } });
     // 守卫被删后：整行被历史语境豁免 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '陈旧读数 1 处', '★自证');
     assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -2874,6 +2925,9 @@ test('★自证 check-tp-prose：删掉 ⑦ 成片归因例外后，正向断言
       tpDistill());
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: pos } });
     // 例外被删后：整句因 `mix.wav` 被排除 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '陈旧读数 1 处', '★自证');
     assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
       undefined, '删掉 ⑦ 归因例外后正向断言竟然还通过 ⇒ 断言没在测该例外');
   } finally { rm(dir); }
@@ -2892,6 +2946,9 @@ test('★自证 check-tp-prose：把 ⑨ 由「同子句」退回「整行」后
     skillTree(root, 'gb-other', '# gb-other\n', tpDistill());
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
     // 退回整行后：整行提到 gb-other ⇒ 交叉引用豁免 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '陈旧读数 1 处', '★自证');
     assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
       undefined, '把 ⑨ 退回整行后正向断言竟然还通过 ⇒ 断言没在测该收窄');
   } finally { rm(dir); }
@@ -2910,6 +2967,9 @@ test('★自证 check-tp-prose：把 `修复后` 塞回 HIST 后，正向断言�
       tpDistill());
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
     // 把 `修复后` 塞回 HIST 后：整行被 ⑤ 豁免 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '陈旧读数 1 处', '★自证');
     assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
       undefined, '把 `修复后` 塞回 HIST 后正向断言竟然还通过 ⇒ 断言没在测该收窄');
   } finally { rm(dir); }
@@ -2931,6 +2991,9 @@ test('★自证 check-tp-prose：摘掉「json 散文进 FAIL 桶」后，json �
     skillTree(root, 'gb-tp', '# gb-tp\n\n本片成片真峰值 −1.25 dBTP（本片成片实测）。\n', dj);
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
     // 判据被摘后：json 散文的 −0.50 不再判 ⇒ exit 0、无「陈旧读数 1 处」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '陈旧读数 1 处', '★自证');
     assert.throws(() => expectBlind(res, '陈旧读数 1 处', 'mut'),
       undefined, '摘掉 json 散文判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -2950,6 +3013,9 @@ test('★自证 check-skill-film-fields：把 ⑨ 由「同子句」退回「整
     skillTree(root, 'gb-other', '# gb-other\n', gv);
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
     // 退回整行后：整行提到 gb-other ⇒ 交叉引用豁免 ⇒ exit 0、无「陈旧帧数 1 处」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '陈旧帧数 1 处', '★自证');
     assert.throws(() => expectBlind(res, '陈旧帧数 1 处', 'mut'),
       undefined, '把 ⑨ 退回整行后正向断言竟然还通过 ⇒ 断言没在测该收窄');
   } finally { rm(dir); }
@@ -2985,6 +3051,9 @@ test('★自证 check-render-venc：删掉 A 类失明守卫后，正向断言�
     });
     // 守卫被删后：exit 仍≠0（文件缺失 ⇒ aFails / D 类失明），但**不再打印**那句 A 类失明文案
     //   ⇒ 只断言「exit≠0」的坏用例会照样绿，本套件的第二条断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已**失明**：解析出的编码器决策点为 0', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '本闸门已**失明**：解析出的编码器决策点为 0', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -2999,6 +3068,9 @@ test('★自证 check-line-endings：删掉 J4 失明守卫后，正向断言必
     mk(repo);
     assert.equal((await git(['init', '-q', repo])).code, 0, '夹具：git init 失败');
     const res = await run(NODE, [gate, '--repo', 'tools'], { env: { LEMO_TOOLS_ROOT: repo } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '枚举到 **0 个**已跟踪文件', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '枚举到 **0 个**已跟踪文件', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3013,6 +3085,9 @@ test('★自证 check-derivation-caliber：删掉失明块后，正向断言必�
     rj(cfg, { styles: [] });
     const res = await run(NODE, [gate], { env: { LEMO_DUB_STYLES: cfg } });
     // 守卫被架空后：`styles: []` 走完空循环 ⇒ 分布为空、fails 为空 ⇒ 打印「✓」+ exit 0 ⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已失明', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3037,6 +3112,9 @@ test('★自证 check-cli-docs：把「失明也计入 fails」短路掉后，�
     assert.notEqual(broken, src, '自证夹具失效：ROOT 重定向没生效');
     wf(g2, broken);
     const res = await run(NODE, [g2]);
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '解析到 0 个**已实现** flag ⇒ 失明（解析风格变了？）', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '解析到 0 个**已实现** flag ⇒ 失明（解析风格变了？）', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3054,6 +3132,9 @@ test('★自证 check-shell-structure：删掉 WIN 侧失明守卫后，正向�
     wf(gate, broken);
     const res = await run(NODE, [gate]);
     // 守卫被删后：空扫描根 ⇒ fails 为空 ⇒ exit 0、无「✘ WIN 扫描为空」⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '✘ WIN 扫描为空', '★自证');
     assert.throws(() => expectBlind(res, '✘ WIN 扫描为空', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3079,6 +3160,9 @@ test('★自证 check-loudness-targets：删掉「档案 0 份」失明守卫后
     wf(g2, broken);
     const res = await run(NODE, [g2]);
     // 守卫被删后：0 份档案 ⇒ miss/offLine/dnaOnly/skillOnly 全空 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, 'style-dna 档案 0 份（目录读空 / 路径变了？）⇒ 本闸门什么都没检查', '★自证');
     assert.throws(() => expectBlind(res, 'style-dna 档案 0 份（目录读空 / 路径变了？）⇒ 本闸门什么都没检查', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3087,8 +3171,10 @@ test('★自证 check-loudness-targets：删掉「档案 0 份」失明守卫后
 test('★自证 check-lra-caliber：删掉「0 部成片被检查」守卫后，正向断言必须变红', async () => {
   const dir = path.join(TMP, 'mut-lra');
   try {
+    // ★ 2026-10-11 同步（F2 修）：守卫那行的判据由 `okEb + looksLn + neither === 0`
+    //   改成等价写法 `checked === 0`（`checked` = 三者之和）—— 手术串随之更新。
     const gate = mutate('check-lra-caliber.mjs', dir,
-      'if (okEb + looksLn + neither === 0) blind = 1;', 'if (false) blind = 1;');
+      'if (checked === 0) blind = 1;', 'if (false) blind = 1;');
     const root = path.join(dir, 'root');
     mk(path.join(root, 'distill'));
     const broken = fs.readFileSync(gate, 'utf8')
@@ -3098,7 +3184,11 @@ test('★自证 check-lra-caliber：删掉「0 部成片被检查」守卫后，
     rj(path.join(root, 'distill', 'gb-lra', '_distill.json'),
       { generatedVideo: { path: path.join(root, '没有这部成片.mp4') } });
     const res = await run(NODE, [gate]);
-    // 守卫被删后：全 continue ⇒ 三个计数器全 0 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    // 守卫被删后：该风格成片不可达 ⇒ 进 `unreachable`、`checked` 仍为 0 ⇒ F2 新加的「部分覆盖守卫」
+    //   （要求 `checked > 0`）**不触发** ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '失明：0 部成片被检查', '★自证');
     assert.throws(() => expectBlind(res, '失明：0 部成片被检查', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3130,6 +3220,9 @@ test('★自证 check-film-delivery：删掉「0 部成片被检查」守卫后�
       LEMO_DISTILL_ROOT: path.join(dir, 'distill'),
     } });
     // 守卫被删后：0 部成片 + E 段合法 ⇒ fails 为空 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '0 部成片被检查（style-skills 下无 _distill.json / 路径变了？）', '★自证');
     assert.throws(() => expectBlind(res, '0 部成片被检查（style-skills 下无 _distill.json / 路径变了？）', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3170,6 +3263,9 @@ test('★自证 check-film-delivery：删掉 F 段「全部让位」守卫后，
     } });
     // 守卫被删后：全部让位 ⇒ `local` 全被丢掉 ⇒ fails 为空 ⇒ 打印「✓ 被判的 0 部成片交付口径
     //   全部一致」+ exit 0（**一部都没判**却报通过）⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '都被判「疑似正在重渲」而让位 ⇒ 本次**一部成片都没判**', '★自证');
     assert.throws(() => expectBlind(res, '都被判「疑似正在重渲」而让位 ⇒ 本次**一部成片都没判**', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3195,6 +3291,9 @@ test('★自证 check-plate-pixel：删掉「全部差分 0」计数式守卫后
     const res = await run(NODE, [g2], { env: { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) } });
     // 守卫被删后：exit 仍≠0（单风格那条差分 0 已判成真缺陷），但**不再打印**那句计数式失明文案
     //   ⇒ 只断言「exit≠0」的坏用例会照样绿，本套件的第二条断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '一个底衬色都没真正判过', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '一个底衬色都没真正判过', 'mut'),
       undefined, '删掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -3223,6 +3322,9 @@ test('★自证 check-lra-caliber：短路「像 loudnorm」分支后，正向�
     rj(path.join(root, 'distill', 'gb-lra', '_distill.json'),
       { generatedVideo: { path: fwd(path.join(dir, 'tone.wav')) }, selfCheck: { loudness: { lra: lraLn } } });
     const res = await run(NODE, [gate]);
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '口径疑似 loudnorm（项目口径应为 ebur128）', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '口径疑似 loudnorm（项目口径应为 ebur128）', 'mut'),
       undefined, '短路那条分支后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -3251,6 +3353,9 @@ test('★自证 check-loudness-targets：短路「偏离交付线」判据后，
       { slug: 'gb-lt', sound_palette: { mix_rules: '整体 -16 LUFS（源：styles/gb-lt/STYLE.md:20）' } });
     const res = await run(NODE, [g2]);
     // 判据被架空后：1 份档案都解析得出目标值 ⇒ miss/blind 都空 ⇒ exit 0 ⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '响度目标**偏离交付线 -14 LUFS** 的值：-16', '★自证');
     assert.throws(() => expectBlind(res, '响度目标**偏离交付线 -14 LUFS** 的值：-16', 'mut'),
       undefined, '短路那条判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -3278,6 +3383,9 @@ test('★自证 check-plate-pixel：把品红标记测试改成恒通过后，�
     const g2 = path.join(root, 'scripts', 'check-plate-pixel.mjs');
     wf(g2, fs.readFileSync(gate, 'utf8'));
     const res = await run(NODE, [g2], { env: { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '不是品红 ⇒ 底衬色未取自 plateColor', '★自证');
     assert.throws(() => expectBlind(res, '不是品红 ⇒ 底衬色未取自 plateColor', 'mut'),
       undefined, '架空标记测试后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -3303,6 +3411,9 @@ test('★自证 check-shell-structure：短路 ② 判据后，正向断言必�
       + 'fi\n');
     const res = await run(NODE, [gate]);
     // 判据被短路后：该脚本 0 处问题、WIN 侧非空（未失明）⇒ exit 0 ⇒ 正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '② 判定块后缺 exit 0', '★自证');
     assert.throws(() => expectBlind(res, '② 判定块后缺 exit 0', 'mut'),
       undefined, '短路那条判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -3326,6 +3437,9 @@ test('★自证 check-cli-docs：短路 notImpl 判据后，正向断言必须�
     wf(path.join(root, 'dub.mjs'), usage(['--alpha', '--gamma']) + "case '--gamma': break;\n");
     wf(path.join(root, 'lemo-make.mjs'), usage(['--delta']) + "if (a === '--delta') { }\n");
     const res = await run(NODE, [g2]);
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '但代码里**没有任何处理分支**（文档先于实现）', '★自证');
     assert.throws(() => expectBlind(res, '但代码里**没有任何处理分支**（文档先于实现）', 'mut'),
       undefined, '短路 notImpl 判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -3542,6 +3656,9 @@ test('check-redline-md5：登记处漂移 ⇒ exit 1 点名；提取不到 ⇒ �
     const mut = patchGate('check-redline-md5.mjs', path.join(gdir, 'scripts'),
       [['f.value != null && actual != null && f.value !== actual', 'false']]);
     const rm1 = await run(NODE, [mut], { env: { LEMO_TOOLS_ROOT: fa } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(rm1, NEEDLE, '★自证');
     assert.throws(() => expectBlind(rm1, NEEDLE, 'mut'),
       undefined, '短路「不一致」判据后正向断言竟然还通过 ⇒ 断言没在测该判据');
   } finally { rm(dir); }
@@ -3635,6 +3752,9 @@ test('★自证 check-env-overrides：短路判据① / 判据② 后，各自�
     mutateFile(path.join(SCRIPTS, 'check-env-overrides.mjs'), ga,
       'const unregistered = hits.filter((h) => !known.has(h.name));', 'const unregistered = [];');
     const ra = await run(NODE, [ga]);
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(ra, N_UNREG, '★自证');
     assert.throws(() => expectBlind(ra, N_UNREG, 'mut'),
       undefined, '短路判据① 后正向断言竟然还通过 ⇒ 断言没在测那条判据');
 
@@ -3646,6 +3766,9 @@ test('★自证 check-env-overrides：短路判据① / 判据② 后，各自�
     mutateFile(path.join(SCRIPTS, 'check-env-overrides.mjs'), gb,
       'if (!extract(codeOnly(txt)).some((h) => h.name === name)) {', 'if (false) {');
     const rb = await run(NODE, [gb]);
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(rb, N_GONE, '★自证');
     assert.throws(() => expectBlind(rb, N_GONE, 'mut'),
       undefined, '短路判据② 后正向断言竟然还通过 ⇒ 断言没在测那条判据');
   } finally { rm(dir); }
@@ -3829,6 +3952,9 @@ test('★自证 check-env-overrides·库仓侧：把判据⑤⑥⑦⑧ 整段摘
     dropLibTableRow(libA, 'LEMO_BBB');
     const m1 = mkMut('a', libA);
     const ra = await run(NODE, [m1.gate], { env: { LEMO_OPUSCAR: m1.lib } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(ra, LIB_MISS, '★自证');
     assert.throws(() => expectBlind(ra, LIB_MISS, 'mut'),
       undefined, '摘掉判据⑤⑥⑦⑧ 后变异A 竟然还报 ⇒ 那条正向断言没在测判据⑤');
 
@@ -3837,6 +3963,9 @@ test('★自证 check-env-overrides·库仓侧：把判据⑤⑥⑦⑧ 整段摘
     fs.appendFileSync(path.join(libB, 'core', 'a.mjs'), '\nconst PROBE = process.env.LEMO_ZZZ_PROBE;\n');
     const m2 = mkMut('b', libB);
     const rb = await run(NODE, [m2.gate], { env: { LEMO_OPUSCAR: m2.lib } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(rb, LIB_MISS, '★自证');
     assert.throws(() => expectBlind(rb, LIB_MISS, 'mut'),
       undefined, '摘掉判据⑤⑥⑦⑧ 后变异B 竟然还报 ⇒ 那条正向断言没在测判据⑤');
 
@@ -3847,6 +3976,9 @@ test('★自证 check-env-overrides·库仓侧：把判据⑤⑥⑦⑧ 整段摘
     wf(path.join(libBl, 'core', 'a.mjs'), 'export const x = 1;\n');
     const m3 = mkMut('blind', libBl);
     const rbl = await run(NODE, [m3.gate], { env: { LEMO_OPUSCAR: m3.lib } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(rbl, LIB_BLIND, '★自证');
     assert.throws(() => expectBlind(rbl, LIB_BLIND, 'mut'),
       undefined, '摘掉判据⑤⑥⑦⑧ 后失明夹具竟然还报 ⇒ 失明断言没在测判据⑧');
   } finally { rm(dir); }
@@ -3963,6 +4095,9 @@ test('★自证 check-distill-fields：短路判据① / 判据② 后，各自�
     const ga = patchGate('check-distill-fields.mjs', path.join(dir, 'ga'),
       [['const unregistered = [...real.keys()].filter((p) => !FIELDS[p]).sort();', 'const unregistered = [];']]);
     const ra = await run(NODE, [ga], { env: { LEMO_DISTILL_ROOT: a, LEMO_TOOLS_ROOT: TOOLS } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(ra, N_UNREG, '★自证');
     assert.throws(() => expectBlind(ra, N_UNREG, 'mut'),
       undefined, '短路判据① 后变异A 竟然还报 ⇒ 那条正向断言没在测判据①');
 
@@ -3972,6 +4107,9 @@ test('★自证 check-distill-fields：短路判据① / 判据② 后，各自�
         ['for (const [p, ent] of Object.entries(FIELDS)) {\n  if (!ent || !ent.coveredBy) continue;',
           'for (const [p, ent] of []) {\n  if (!ent || !ent.coveredBy) continue;']]);
     const rb = await run(NODE, [gb], { env: { LEMO_TOOLS_ROOT: TOOLS } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(rb, N_GONE, '★自证');
     assert.throws(() => expectBlind(rb, N_GONE, 'mut'),
       undefined, '短路判据② 后变异B 竟然还报 ⇒ 那条正向断言没在测判据②');
   } finally { rm(dir); }
@@ -4082,6 +4220,9 @@ test('★自证 check-sources-paths：短路判据① 后，变异 A/B 必须重
     });
     const ga = patchGate('check-sources-paths.mjs', path.join(dir, 'ga'), subs);
     const ra = await run(NODE, [ga], { env: { LEMO_DISTILL_ROOT: a, LEMO_TOOLS_ROOT: TOOLS, LEMO_OPUSCAR: OPUSCAR_REAL } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(ra, N_FAIL, '★自证');
     assert.throws(() => expectBlind(ra, N_FAIL, 'mut'), undefined,
       '短路判据① 后变异A 竟然还报 ⇒ 那条正向断言没在测判据①');
 
@@ -4092,6 +4233,9 @@ test('★自证 check-sources-paths：短路判据① 后，变异 A/B 必须重
     });
     const gb = patchGate('check-sources-paths.mjs', path.join(dir, 'gb'), subs);
     const rb = await run(NODE, [gb], { env: { LEMO_DISTILL_ROOT: b, LEMO_TOOLS_ROOT: TOOLS, LEMO_OPUSCAR: OPUSCAR_REAL } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(rb, N_FAIL, '★自证');
     assert.throws(() => expectBlind(rb, N_FAIL, 'mut'), undefined,
       '短路判据① 后变异B 竟然还报 ⇒ 那条正向断言没在测判据①');
   } finally { rm(dir); }
@@ -4231,6 +4375,9 @@ test('★自证 check-demo-header：短路时长判据后，变异 A/B 必须重
     const a = path.join(dir, 'a'); copyRealDemo(a); setHeader(a, 'hd-2d', '76.5 s', '96.5 s');
     const ga = patchGate('check-demo-header.mjs', path.join(dir, 'ga'), subs);
     const ra = await run(NODE, [ga], { env: { LEMO_OPUSCAR: a, LEMO_DISTILL_ROOT: DISTILL_REAL } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(ra, N_FAIL, '★自证');
     assert.throws(() => expectBlind(ra, N_FAIL, 'mut'), undefined,
       '短路时长判据后变异A 竟然还报 ⇒ 那条正向断言没在测时长判据');
 
@@ -4238,6 +4385,9 @@ test('★自证 check-demo-header：短路时长判据后，变异 A/B 必须重
     const b = path.join(dir, 'b'); copyRealDemo(b); setHeader(b, 'pictogram-motion', '163.6 s', '161.6 s');
     const gb = patchGate('check-demo-header.mjs', path.join(dir, 'gb'), subs);
     const rb = await run(NODE, [gb], { env: { LEMO_OPUSCAR: b, LEMO_DISTILL_ROOT: DISTILL_REAL } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(rb, N_FAIL, '★自证');
     assert.throws(() => expectBlind(rb, N_FAIL, 'mut'), undefined,
       '短路时长判据后变异B 竟然还报 ⇒ 那条正向断言没在测时长判据');
   } finally { rm(dir); }
@@ -4318,6 +4468,9 @@ test('★自证 check-target-as-measured：短路判据 ③（值≠实测）后
       '- At mux: `loudnorm=I=-14:TP=-1.2` → −14.2 LUFS, −1.2 dBTP.', tamDistill(-1.2, -3.34));
     const g = patchGate('check-target-as-measured.mjs', path.join(dir, 'g'), subs);
     const r = await run(NODE, [g], { env: { LEMO_OPUSCAR: pos.opus, LEMO_DISTILL_ROOT: pos.dist } });
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(r, N_FAIL, '★自证');
     assert.throws(() => expectBlind(r, N_FAIL, 'mut'), undefined,
       '短路判据 ③ 后正向竟然还报 ⇒ 那条正向断言没在测判据 ③');
   } finally { rm(dir); }
@@ -5432,6 +5585,9 @@ test('★自证 check-aspect-declaration：摘掉「枚举到 0 个风格」守�
       'if (slugs.length === 0) blindReasons.push(', 'if (false) blindReasons.push(');
     const res = await run(NODE, [gate], { env: { LEMO_STYLES_ROOT: path.join(root, 'styles') } });
     // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已**失明**', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5448,6 +5604,9 @@ test('★自证 check-aspect-prose：摘掉「枚举到 0 个风格」守卫后�
     const res = await run(NODE, [gate],
       { env: { LEMO_SKILL_ROOT: path.join(root, 'skills'), LEMO_STYLES_ROOT: path.join(root, 'styles') } });
     // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已**失明**', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5468,6 +5627,9 @@ test('★自证 check-config-vs-doc：摘掉「0 个风格 / 全部无法比对�
     ]);
     const res = await run(NODE, [gate], { env: { LEMO_DUB_STYLES: cfg } });
     // 两条守卫都摘掉后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已失明', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5487,6 +5649,9 @@ test('★自证 check-dna-coverage：摘掉「0 条字段路径」与「注册�
     ]);
     const res = await run(NODE, [gate], { env: { LEMO_DUB_STYLES: cfg } });
     // 两条守卫都摘掉后：不再打印「**本闸门已失明**」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '**本闸门已失明**', '★自证');
     assert.throws(() => expectBlind(res, '**本闸门已失明**', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5507,6 +5672,9 @@ test('★自证 check-doc-coverage：把 `blind`/`countBlind` 从退出码判据
       '(missing.length || unlisted.length || countBad.length) ? 1 : 0;');
     const res = await run(NODE, [gate], { env: { LEMO_TOOLS_ROOT: root } });
     // 失明不再影响退出码 ⇒ exit 0 ⇒ 原正向断言（要求 exit≠0）必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处变异只摘「失明⇒exit 1」这条退出码聚合，失明文案照打 ⇒ **不**钉「needle 消失」） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已失明', '★自证', { expectNeedleGone: false });
     assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
       undefined, '把失明从退出码摘掉后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5522,6 +5690,9 @@ test('★自证 check-dual-copy-sync：摘掉「任一侧 0 文件 ⇒ 失明」
     // ★ `--no-wsl`：只钉 WIN 侧那条守卫（WSL 侧另有其人，且省一次 wsl 启动）。
     const res = await run(NODE, [gate, '--no-wsl'], { env: { LEMO_OPUSCAR: root } });
     // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已**失明**', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5538,6 +5709,9 @@ test('★自证 check-dub-styles：摘掉「styles-root 未找到 / 全部 SKIP�
       'if (!STYLES_ROOT || skipped === dub.styles.length) {', 'if (false) {');
     const res = await run(NODE, [gate], { env: { LEMO_STYLES_ROOT: path.join(root, 'styles') } });
     // 守卫被摘后：不再打印「失明：styles-root」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '失明：styles-root', '★自证');
     assert.throws(() => expectBlind(res, '失明：styles-root', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5552,6 +5726,9 @@ test('★自证 check-esm-import-paths：摘掉「扫描根收集到 0 个文件
       'if (files.length === 0) {', 'if (false) {');
     const res = await run(NODE, [gate], { env: { LEMO_OPUSCAR: root } });
     // 守卫被摘后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已失明', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5574,6 +5751,9 @@ test('★自证 check-film-aspect：摘掉「实际成片扫到 0 部」C 类失
       },
     });
     // 守卫被摘后：不再打印「实际成片扫到 0 部」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '实际成片扫到 0 部', '★自证');
     assert.throws(() => expectBlind(res, '实际成片扫到 0 部', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5590,6 +5770,9 @@ test('★自证 check-lexicon-coverage：摘掉「没有一个声明了 tag」�
       'if (declaredTags === 0) {', 'if (false) {');
     const res = await run(NODE, [gate]);
     // 守卫被摘后：不再打印「没有一个声明了 tag」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '没有一个声明了 tag', '★自证');
     assert.throws(() => expectBlind(res, '没有一个声明了 tag', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5604,6 +5787,9 @@ test('★自证 check-mix-candidates：摘掉「全部风格无候选」守卫�
       'if (slugs.length > 0 && none.length === slugs.length)', 'if (false)');
     const res = await run(NODE, [gate], { env: { LEMO_STYLES_ROOT: path.join(root, 'styles') } });
     // 守卫被摘后：不再打印「一个候选混音都没检查过」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '一个候选混音都没检查过', '★自证');
     assert.throws(() => expectBlind(res, '一个候选混音都没检查过', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5618,6 +5804,9 @@ test('★自证 check-mux-selection：摘掉「扫到 0 个风格目录」守卫
       'if (!blind.length && slugs.length === 0) blind.push(', 'if (false) blind.push(');
     const res = await run(NODE, [gate], { env: { LEMO_OPUSCAR: root } });
     // 守卫被摘后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已失明', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5633,6 +5822,9 @@ test('★自证 check-skill-artifacts：摘掉「全部 SKIP ⇒ 一个都没比
       'if (slugs.length > 0 && skipped === slugs.length) {', 'if (false) {');
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
     // 守卫被摘后：不再打印「一个都没比对」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '一个都没比对', '★自证');
     assert.throws(() => expectBlind(res, '一个都没比对', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5647,6 +5839,9 @@ test('★自证 check-skill-scores：摘掉「枚举不到带 _distill.json 的�
       'if (!blind.length && slugs.length === 0) blind.push(', 'if (false) blind.push(');
     const res = await run(NODE, [gate], { env: { LEMO_DISTILL_ROOT: root } });
     // 守卫被摘后：不再打印「本闸门已失明」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已失明', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已失明', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5661,6 +5856,9 @@ test('★自证 check-venc-args：摘掉「抽到的编码器参数组合为 0�
       'const blind = list.length === 0;', 'const blind = false;');
     const res = await run(NODE, [gate], { env: { LEMO_OPUSCAR: root } });
     // 守卫被摘后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已**失明**', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5681,6 +5879,9 @@ test('★自证 check-audio-chain：摘掉「候选清单解析为空」守卫�
     // 守卫被摘后：不再打印「候选清单解析为空：混音脚本」⇒ 原正向断言必须**抛**
     //   （该夹具此时仍因 A 类「无混音脚本」判 exit 1 ⇒ 本自证证明的正是「**exit 仍≠0 但文案消失**」，
     //    与 `check-cli-docs` / `check-plate-pixel` 的既有自证同型 —— 只断言退出码的坏用例会照样绿）。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩**（本处短路后**另有**别的违反 ⇒ exit 仍≠0，故**不**钉 exit 0） ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '候选清单解析为空：混音脚本', '★自证', { expectGreen: false });
     assert.throws(() => expectBlind(res, '候选清单解析为空：混音脚本', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }
@@ -5701,6 +5902,9 @@ test('★自证 check-api-docs：摘掉「任一侧解析出 0 条 /api 路由�
     ]);
     const res = await run(NODE, [gate]);
     // 两条守卫都摘掉后：不再打印「本闸门已**失明**」⇒ 原正向断言必须**抛**。
+    // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
+    //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。
+    expectSelfProof(res, '本闸门已**失明**', '★自证');
     assert.throws(() => expectBlind(res, '本闸门已**失明**', 'mut'),
       undefined, '摘掉守卫后正向断言竟然还通过 ⇒ 断言没在测该守卫');
   } finally { rm(dir); }

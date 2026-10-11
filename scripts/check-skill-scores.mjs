@@ -43,6 +43,29 @@
  *   误报率（铁律：先测再定稿）：真实 43 份上被抽取断言 22 条、**有证伪的条目 0 条**
  *   ⇒ 新判据在真实语料上连一次都没被触发，`[1]/[2]/[3]` 三项与改动前**逐字一致**（exit 0）。
  *
+ * ★★ 失明守卫②（2026-10-11 补；治「判据② 静默空转」—— 同型闸门都补了、唯独本闸门漏了的那条）：
+ *   判据② 是**纯正则抽取**型判据（从 `defects` 散文里抽 `texture` / `fontFamily` / `palette` 断言）。
+ *   旧版只在「一个带 `_distill.json` 的风格都枚举不到」时判失明；**抽取命中数 = 0 时它照打
+ *   「共 0 条 … OK」+ exit 0**。⇒ 一个**真的过期**的 defect（配置 `bgRecipe.texture = "paper"`、
+ *   文档写「底纹用的是 grain，与实际配置不符（应为 paper）」）只要**不含可抽取的英文字段名 token**
+ *   就被**静默放过**；而三条抽取正则中任意一条被改动、或语料被重新生成 / 改写成中文措辞 ⇒
+ *   **全部**过期 defect 会**一次性**退出抽取集，闸门仍报 `OK`。
+ *   实测（审计夹具 `D:/lemo-tmp/lemo-fix/h1/only`，1 个风格 / 1 条真过期 defect）：
+ *     改前 `[2] …共 0 条 … OK` + **exit 0**（假绿）；同一条只把写法换成可抽取的
+ *     （`bgRecipe.texture 写成 grain（实际是 paper）`）⇒ `全失效 1 条 ✘` + exit 1。
+ *   ★ 判据（与同型闸门 `check-config-notes.mjs` / `check-lexicon-coverage.mjs` /
+ *     `check-mix-candidates.mjs` 的「0 对象 ⇒ 失明」同口径，只是这里数的对象是**抽取命中数**）：
+ *       `defTotal > 0 && claims === 0` ⇒ **FAIL 并明说「本闸门已失明（判据②）」**。
+ *   ★★ 边界（「什么情况下 0 是失明、什么情况下 0 是合法」——**必须写清，否则会把合法内容判红**）：
+ *     · `defTotal > 0 && claims === 0` ⇒ **失明**：库里有 `defTotal` 条 defect **可判**，抽取器却
+ *       颗粒无收 ⇒ 判据② 的作用域塌了（措辞/正则变了），不是「没有缺陷」。
+ *     · `defTotal === 0` ⇒ **不判失明**：全库**本来就没有 defect 条目**（例如最小合法夹具
+ *       `defects: []`）—— 那是**合法内容**（判据② 确实无对象可判，但那是**数据**如此、
+ *       不是**判据**失效）。★ 这条边界由 `test/gate-blindness.test.mjs` 的阴性对照
+ *       （`check-skill-scores：失明守卫…` 用例里 `defects: []` 必须 exit 0）钉住。
+ *   ★ 实测（2026-10-11 真实语料）：`defTotal = 211`（43/43 风格都有 defects）、`claims = 22`
+ *     ⇒ 新守卫**不触发**，`[1]/[2]/[3]` 三项与改动前**逐字一致**（exit 0）。
+ *
  * 用法：node scripts/check-skill-scores.mjs
  * 退出码：有 FAIL（①②③ 任一）→ 1；否则 0。
  */
@@ -93,6 +116,8 @@ if (blind.length) {
   process.exit(1);
 }
 let badScore = 0, fail = 0, mixed = 0, claims = 0, scoreMismatch = 0, scoreMissing = 0;
+// ★ 判据② 的**分母**：可判的 defect 条目总数（= 抽取器的输入规模）。见头注释「失明守卫②」。
+let defTotal = 0;
 
 for (const slug of slugs) {
   const raw = fs.readFileSync(path.join(DIR, slug, '_distill.json'), 'utf8');
@@ -116,6 +141,7 @@ for (const slug of slugs) {
   const palNow = c.palette || {};
 
   for (const txt of d.defects || []) {
+    defTotal++;
     const falsified = [];
     // ★ 本条 defect 里「引用了**本条所涉字段**的当前值」的断言数（收窄后的混合判据，见文件头注释）。
     let citesCurrent = 0;
@@ -153,7 +179,17 @@ for (const slug of slugs) {
   }
 }
 
+// ★★ 失明守卫②（2026-10-11 补）：**有 defect 可判、却一条断言都抽不到** ⇒ 判据② 静默空转 ⇒ FAIL。
+//   ★ 边界：`defTotal === 0`（全库本来就没有 defect）**不判失明** —— 那是合法内容（见头注释）。
+if (defTotal > 0 && claims === 0) {
+  console.log(`\n✘ 本闸门已失明（判据②）：`);
+  console.log(`  ✘ defects 条目共 ${defTotal} 条**可判**，却**一条配置值断言都抽不到**（texture / fontFamily / palette 三条抽取正则全部零命中）`);
+  console.log(`  ✘ ⇒ 判据②「过期 defect」这条防线本次**什么都没检查**（语料措辞变了？抽取正则被改了？）—— 不是「库里没有缺陷」`);
+  console.log(`\n[闸门] 评分自洽性 **已失明** ✘`);
+  process.exit(1);
+}
+
 console.log(`\n[1] matchScore == scoreBreakdown 五项之和：${slugs.length - badScore}/${slugs.length} ${badScore ? '✘' : 'OK'}`);
-console.log(`[2] defects 中被抽取的配置值断言共 ${claims} 条；「全失效」残留 ${fail} 条 ${fail ? '✘' : 'OK'}；「混合条目」${mixed} 条（人工复核，见报告）`);
+console.log(`[2] defects 条目共 ${defTotal} 条，其中被抽取的配置值断言 ${claims} 条；「全失效」残留 ${fail} 条 ${fail ? '✘' : 'OK'}；「混合条目」${mixed} 条（人工复核，见报告）`);
 console.log(`[3] SKILL.md 自评匹配度 == _distill.json matchScore：${slugs.length - scoreMismatch - scoreMissing}/${slugs.length} ${scoreMismatch || scoreMissing ? '✘' : 'OK'}${scoreMissing ? `（其中 ${scoreMissing} 份缺自评行）` : ''}`);
 process.exitCode = badScore || fail || scoreMismatch || scoreMissing ? 1 : 0;

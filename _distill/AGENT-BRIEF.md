@@ -942,6 +942,47 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
      于是**必然漏掉一处**；而「**同一判据只写一处**」正是本仓自己写在文件头里的铁律。
    ★ 审计还列了 **15 个「查了没找到」的块**（路径穿越/畸形编码/上传限额/命令注入/密钥回显与日志/前端 XSS/超时与取消/部分成功…）
      —— ★ 「**查了没找到**」同样是**有价值的结论**，要写进报告。
+   ★★ **2026-10-11（同日再一批）· smoke 抖动**最终定性**（根因找到）+ 证据固化**：
+   上一批修掉了**锁类**，但残留一处偶发。本批 A **连跑 15 次 ⇒ 红 4 次**（全 `42 passed, 2 failed`；红组 ⑥+⑧ 或 ⑧+⑨），
+   并**定位到根因**：真实 `D:/lemo-films/.console`（`index.json` + `logs/`）被**多实例并发读写**、且**有脏残留**。
+   三条决定性证据：① RUN11 的 ⑨ 失败信息里出现**外来 pid** 的 id（`__fp-cap-21004-…`）⇒ 当时有另一个 smoke 实例在并发跑；
+   ② `index.json` 里残留 **111 条 `__fp-cap-25372-*`**（**实例被中途杀掉**所致），而 `logs/` 里 **0 个**同名文件 ⇒ 之后每次 ⑧/⑨ 都撞这份脏 base；
+   ③ **3 路并发 smoke ⇒ 3/3 红**（红组正是共享真实 `.console` 的 ⑧⑨）。
+   ★ 机制（读码未改码）：`lib/store.mjs` 的 `saveIndex` ④ 段扫**整个** `LOG_DIR` 算总量 ⇒ 别的实例的测试数据算进本次的裁剪账。
+   ★ **处置**：⑧⑨ **有意**共享真实 `.console`（⑨ 的 Range 用例依赖真实成片库）⇒ **不硬隔离**；
+     残留用**官方工具**清（`node scripts/prune-jobs.mjs [--apply]`；实测摘除 **101 条**、剩 10）。
+   ★★ **证据固化（已落码）**：`test/smoke.mjs` 失败时自动落 `<LEMO_TMP>/smoke-fail-<ISO>/`（`cases.json` + `output.txt` 完整输出 +
+     `env.txt` 含锁文件/`.console` mtime/`git status`/`netstat` LISTEN）⇒ **绿时不产生任何文件**；★ **不做自动重试**（会自动重试就**掩盖**抖动）。
+     ★ 教训：**「红一次就丢一次证据」是不可接受的** —— 抖动调查的前提是**失败现场必须留存**。
+   ★ **2026-10-11（同日再一批）· 第四批收口（lib/setup.mjs / lib/env.mjs / lib/resources.mjs）**：
+   · **`runStep` 不判中断**（原 JSDoc 的 `@param hooks.aborted` 是**说谎**，已删）；中断**只由 `runSteps` 在步骤边界判**，
+     并删掉 `runSteps → runStep` 的**死透传** `aborted: hooks.aborted`（`runStep` 从不读它）。
+     依据：`lib/jobs.mjs` 明写取消路径是「置 `_canceled` + kill 当前 child，`runSteps` 在**下一个步骤边界**退出」。
+   · 两条**含插值**的 fail 文案（`lib.wsl` / `wsl.venv`）**已收口**：`lib/env.mjs` 新增**函数模板** `LIB_WSL_FAIL_FIX(lib)` /
+     `WSL_VENV_FAIL_FIX(lib)`；env + resources 传 `CFG.wslLib`，**setup 演练夹具传硬编码的 `/home/lemo/lemo-opuscar`（取值方式不变）**
+     ⇒ 模板从**三处降到一处**、且**无条件**零行为变更（实测：`/api/env?simulate=clean|bare|partial|all|ready` + `/api/resources/scan` **逐字节相同**）。
+   · `win.platform`/`win.gpu`/`wsl.alive`/`win.ffmpeg`/`wsl.ffmpeg`/`tool.sync` 这 6 条 env↔resources **近重复**：
+     复核结论 = **设计如此**（env 侧 = 检测项**修复建议**、resources 侧 = 台账**说明**，用途不同、本就该不同；统一必改输出文本）
+     ⇒ 从「待收口」**降级**，两侧写「有意不同」注释，`test/resources.test.mjs` 的反向断言**钉住**它。
+   · 计数收口：`test/README.md` 注明「ui **静态 115** = 闸门判的数、**运行时 116** 因为有一条参数化用例」；
+     并修了顶层 `README.md` 的 5 处陈旧计数（smoke 41→44、`--full` 50→53、ui 59→115、服务端用例 27→28 等）。
+     ★ 如实登记：`check-doc-coverage` 的入口条数判据**只扫 `test/README.md`**，顶层 `README.md` 的计数**无闸门守**。
+   ★★ **2026-10-11（同日再一批）· 第三批对抗性审计（维度：质量基础设施的「假绿」）找到 3 条，已修**：
+   · **F1（中高）`check-skill-scores.mjs` 的判据② 缺失明守卫**：判据② 是**纯正则抽取**型 ⇒ 旧版「抽取命中数 = 0」时
+     照打「共 0 条 … **OK**」+ exit 0 ⇒ 一个**真过期**的 defect 只要**不含可抽取的英文字段名 token** 就被静默放过。
+     现判据 `defTotal > 0 && claims === 0` ⇒ FAIL +「本闸门已失明（判据②）」；★ 边界：`defTotal === 0`（库里本来没有 defect）**不判失明**。
+   · **F2（中）`check-lra-caliber.mjs` 的分母会缩水 + 跳过是静默的**：旧版把「成片读不到」与「`lra` 缺失」混在**一个 `continue`** 里吞掉，
+     分母是**已检查数** ⇒ 枚举 N 份只查 1 份也 `1/1 OK`。现：分母 = **应有数**、跳过**逐条点名**、**成片可读却无可核 `lra` ⇒ FAIL**、
+     另加**部分覆盖守卫**（`checked > 0 && skipped > 0` ⇒ FAIL）。
+   · **F3（中）`test/gate-blindness.test.mjs` 的 ★自证 54/79 处未钉 `exit 0`**：`assert.throws(() => expectBlind(...))` 在
+     「**闸门崩了**（exit≠0 但没命中 needle）」时**同样通过** ⇒ 用一次笔误（语法错）就能让它**假绿**。
+     现全部补 `expectSelfProof()` 前置钉（三条判据：**输出无崩溃特征** + needle **已消失** + **真变绿 exit 0**）；覆盖 **79/79、0 遗漏**；
+     ★ 两组例外如实登记（8 处短路后夹具**另有**违反 ⇒ 钉 `exit 0` 会假红；1 处变异只摘退出码聚合、失明文案照打）。
+   · ★ **§3 声称不符（只登记）**：`check-gate-self-claims.mjs` 的 FAIL 文案说「失明守卫可能已被删/改名」，
+     实际判据只是「代码里出现过 `失明`/`blind` 字样」—— 把守卫条件短路成 `if (false)` 仍绿。
+   ★★ **本批最重要的一句结论**（审计员的原话，值得记住）：**最大风险不在单条判据写错，而在「判据作用域收缩时无人报警」** ——
+     「判据都在数**活着的对象**，没人要求**活着的 == 应有的**，也没人要求**通过的原因必须是它声称的那个**」。
+   ★ 另：审计还**逐个列出「造了真违反、它抓住了」的 8 个闸门** —— ★ **「查了没找到」同样是结论**，要写进报告。
    ★ **2026-10-11** 控制台侧新增 **`GET /api/style-switches`**（`--q` 开关助手的数据源）：从库仓
    `styles/<slug>/demo/**` **机械派生**该风格的页面开关（**不维护任何会漂的名单**）。判据经一轮修正：
    ★★ **首版只认 `.get('x')` 与 `location.search.includes('x')`，漏掉 `.has()` 形态** ——

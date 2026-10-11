@@ -230,12 +230,14 @@ test('RESOURCES：注册表非空、id 唯一、schema 合法（契约 §五）'
 //         且**反过来断言**这句文案**不得**出现在 `lib/resources.mjs`（那正是「不能跨过去」的理由）。
 //         共 6 句（第三批收口）：`WIN_FFMPEG_FIX` / `WIN_GPU_FIX` / `WSL_ALIVE_FIX` /
 //         `WSL_FFMPEG_FIX` / `TOOL_SYNC_FIX` / `LIB_WSL_WARN_FIX`。
-//   ★★ **仍然只登记、未收口的**（不在下表，故本用例**不覆盖**它们 —— 如实登记）：
-//     · `lib.wsl` 的 **fail** 文案（`git clone … ${CFG.wslLib}`）与 `wsl.venv` 的 fail 文案
-//       （`cd ${CFG.wslLib} && …`）：**含插值**，且 setup 夹具把该值**硬编码**成
-//       `/home/lemo/lemo-opuscar` ⇒ 收口要把夹具的取值方式从硬编码改成引用常量，
-//       那会在 `LEMO_LIB_WSL` 被设时改变演练输出（**条件**行为变更）。
-//     · `win.platform` 等**近重复**（env ↔ resources 值本就不同）：在那一维收口必然改输出文本。
+//   ★★ **曾经只登记、现已收口的**（2026-10-11 第四批；原句照留作历史）：
+//     · `lib.wsl` 的 **fail** 文案与 `wsl.venv` 的 fail 文案：**含插值**（库根路径）⇒ 不能做成
+//       **字符串**常量，改成**函数模板**（插值点当参数）：env / resources 传 `CFG.wslLib`，
+//       setup 演练夹具传**硬编码**默认路径 ⇒ 模板只写一处、**且**演练输出逐字节不变
+//       （无条件零行为变更，**不是**条件行为变更）。见下表 `fn:true` 那两条。
+//     · `win.platform` 等**近重复**（env ↔ resources 值本就不同）：**第四批复核结论 = 设计如此**
+//       —— 两侧**用途不同**（env 侧 = 检测项给用户的修复建议；resources 侧 = 资源台账的说明），
+//       本就该不同 ⇒ 不再当「待收口」。下表 `places:2` 的反向断言正是钉住这个结论的。
 const FIX_SINGLE_SOURCE = [
   // —— places: 3（env + resources + setup 三处逐字节相同）——
   { constName: 'ASSETS_INST_FIX', itemId: 'assets.inst', places: 3 },
@@ -251,21 +253,32 @@ const FIX_SINGLE_SOURCE = [
   // ★ `lib.wsl` 在本批收口的**只有 warn 文案**（fail 文案含插值 ⇒ 只登记）⇒ 必须按 status 挑，
   //   否则会把 bare 场景里那条 fail 项的 `git clone …` 也拿去比（那是**另一句**、本来就该不同）。
   { constName: 'LIB_WSL_WARN_FIX', itemId: 'lib.wsl', places: 2, fixtureStatus: 'warn' },
+  // —— places: 3 + `fn:true`（**函数**常量：含插值，模板合一；2026-10-11 第四批收口）——
+  //   ★ 为什么仍是 places:3：resources 台账**也**用同一模板（只是传 `CFG.wslLib`）⇒ 三处同值。
+  //   ★ `fixtureStatus:'fail'` —— 这两个 id 在演练夹具里各有 fail / warn 两条，本表只钉 fail 那条
+  //     （warn 那条是另一句：`LIB_WSL_WARN_FIX` 或 `.venv/bin/pip install <缺包>`）。
+  { constName: 'LIB_WSL_FAIL_FIX', itemId: 'lib.wsl', places: 3, fn: true, fixtureStatus: 'fail' },
+  { constName: 'WSL_VENV_FAIL_FIX', itemId: 'wsl.venv', places: 3, fn: true, fixtureStatus: 'fail' },
 ];
 
-test('★ 防再分叉：这 10 句 fix 文案各自只有一处来源（lib/env.mjs 的常量）', async () => {
+test('★ 防再分叉：这 12 句 fix 文案各自只有一处来源（lib/env.mjs 的常量）', async () => {
   const env = await import('../lib/env.mjs');
+  const { CFG } = env;                     // ★ `fn:true` 的常量要拿 CFG.wslLib 求值（见下）
   const { FIXTURES } = await import('../lib/setup.mjs');
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
   const files = ['lib/env.mjs', 'lib/resources.mjs', 'lib/setup.mjs'];
   const srcCache = Object.fromEntries(files.map((f) => [f, fs.readFileSync(path.join(repoRoot, f), 'utf8')]));
   const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
-  // 演练夹具（全部场景合起来，覆盖下表这 10 个 id）
+  // 演练夹具（全部场景合起来，覆盖下表这 12 个 id）
   const fixtureItems = Object.values(FIXTURES).flatMap((f) => f.make().groups).flatMap((g) => g.items);
 
-  for (const { constName, itemId, places, fixtureStatus } of FIX_SINGLE_SOURCE) {
-    const val = env[constName];
-    assert.ok(typeof val === 'string' && val.length > 0, `lib/env.mjs 应导出非空的 ${constName}`);
+  for (const { constName, itemId, places, fixtureStatus, fn } of FIX_SINGLE_SOURCE) {
+    const exported = env[constName];
+    // ★ `fn:true` 的两条是**函数**常量（含插值，2026-10-11 第四批）：把插值点当参数传进来求值。
+    //   生产侧（env / resources）一律传 `CFG.wslLib` ⇒ 用 `CFG.wslLib` 求值即为**生产值**。
+    const val = fn ? exported(CFG.wslLib) : exported;
+    assert.ok(typeof val === 'string' && val.length > 0,
+      `lib/env.mjs 应导出非空的 ${constName}${fn ? '(CFG.wslLib)' : ''}`);
 
     // ① 值比（只对 places===3）：env.mjs 的常量 == resources.mjs 台账条目的 fix
     const entry = list.find((e) => e.id === itemId);
@@ -277,6 +290,9 @@ test('★ 防再分叉：这 10 句 fix 文案各自只有一处来源（lib/env
     }
 
     // ② 值比：setup.mjs 演练夹具里**带 fix 的**同一 id 项也同源（否则 --simulate 会演一份假事实）
+    //   ★ `fn:true` 那两条的夹具传**硬编码**默认路径（= `CFG.wslLib` 的默认值）⇒ 本机默认环境下
+    //     逐字节相等；若有人设了 `LEMO_LIB_WSL` 再跑本测试，② 会如实变红（那是**环境**问题，
+    //     不是生产 bug —— 夹具**故意**演「默认机器」，见 lib/setup.mjs 文件头说明）。
     const fx = fixtureItems.filter((i) => i.id === itemId && i.fix && (!fixtureStatus || i.status === fixtureStatus));
     assert.ok(fx.length >= 1,
       `演练夹具里找不到${fixtureStatus ? ` status=${fixtureStatus} 且` : ''}带 fix 的 ${itemId}（--simulate 演不到这条提示）`);
@@ -288,7 +304,12 @@ test('★ 防再分叉：这 10 句 fix 文案各自只有一处来源（lib/env
     // ③ 文本扫描：这句文案只许在 lib/env.mjs 里作为**字面量**出现（另两处必须是 import 引用）
     //   ★ 比对的是**源码里的字面量形态**（含 `\\` 转义），而不是运行期值 —— 值里带反斜杠的
     //     （如 `D:\\WSL\\…`）在源码里是转义过的，直接 `includes(值)` 会匹配不到（实测踩过）。
-    const literal = JSON.stringify(val).slice(1, -1);
+    //   ★ `fn:true`：扫的是**模板源码** —— `(lib) => \`…${lib}…\`` 里反引号之间那段（含 `${lib}`）。
+    //     它在 env.mjs 里是**字面量**；另两处是**函数调用**（不含这段模板源码）⇒ 扫描照样有牙。
+    const src = exported.toString();
+    const literal = fn
+      ? src.slice(src.indexOf('`') + 1, src.lastIndexOf('`'))
+      : JSON.stringify(val).slice(1, -1);
     const hits = files.filter((f) => srcCache[f].includes(literal));
     assert.deepEqual(hits, ['lib/env.mjs'],
       `${constName} 的文案只许写在 lib/env.mjs 一处（本项目铁律：同一句文案不要有两处）；`
