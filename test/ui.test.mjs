@@ -4909,6 +4909,194 @@ async function main() {
       need(/0\.92/.test(info.thr.hint), `#fAsrThreshold 的 hint 没写默认值 0.92：「${info.thr.hint}」`);
       notes.push(`O4 title/hint 齐备：lang「${info.lang.title}」/ model「${info.model.title}」/ thr「${info.thr.title}」；三条 hint 都写了「默认（不传）」`);
     });
+
+    // ══ P. 断点式分镜（--stills-only）与「确认出片」的进仓回归钉 ═══════════════════
+    //   ① `#fStillsOnly`（对应 CLI 的 --stills-only）② `#btnStillsOnly`（一键「先看分镜（不出片）」）
+    //   ③ `#stillsConfirm` 横幅 + `#btnConfirmRender` / `#btnDismissStills`。
+    // ★ 铁律（沿用本套件）：**绝不真出片** —— 提交路径用页面内 `window.fetch` 桩拦下（照 E 组
+    //   `__dubRunBodies` 的手法：只记录请求体、回一份假响应），并带**反空转**断言（点前 0 条、点后 1 条）。
+    log('');
+    log(C.b('  P. 断点式分镜（--stills-only）+「确认出片」的进仓回归钉'));
+
+    const P_NAMES = ['P1 先看分镜控件就位', 'P2 默认不传 --stills-only', 'P3 勾上就传',
+      'P4 按钮 = 勾上 + 提交带该开关', 'P5 确认出片横幅的显隐判据', 'P6 确认出片 = 重提交且不传该开关'];
+    const pWillRun = !OPT.filter || P_NAMES.some((n) => n.includes(OPT.filter));
+    if (pWillRun) {
+      await cdp.goto(base + '/', 4000);
+      const pReady = `!!document.getElementById('fStillsOnly') && !!document.getElementById('btnStillsOnly')
+        && !!document.getElementById('stillsConfirm') && !!document.getElementById('btnConfirmRender')
+        && !!document.getElementById('btnDismissStills') && typeof buildOpts === 'function'
+        && typeof maybeShowStillsConfirm === 'function' && typeof hideStillsConfirm === 'function'`;
+      await waitFor(cdp.evalJs, pReady, { timeoutMs: 30000 });
+
+      /** ★ 提交路径的捕获装置：拦下 POST /api/run（记录 body 后回假响应）+ /api/precheck + /api/jobs。
+       *  **绝不让它真的创建出片任务** —— 真出片会开浏览器渲染 + 烧 GPU（本套件铁律）。 */
+      await cdp.evalJs(`(() => {
+        window.__pRunBodies = [];
+        if (!window.__pFetchPatched) {
+          window.__pFetchPatched = true;
+          const of = window.fetch;
+          const fake = (obj) => ({ ok: true, status: 200, text: async () => JSON.stringify(obj) });
+          window.fetch = function (u, o) {
+            try {
+              const s = String(u);
+              const m = (o && o.method) || 'GET';
+              if (s.indexOf('/api/run') >= 0 && m === 'POST') {
+                window.__pRunBodies.push({ url: s, body: o && o.body });
+                let opts = [];
+                try { opts = (JSON.parse(o && o.body) || {}).opts || []; } catch (e) { /* 忽略 */ }
+                return Promise.resolve(fake({ job: { id: 'FAKE-STILLS-JOB', status: 'queued', kind: 'render', opts } }));
+              }
+              if (s.indexOf('/api/precheck') >= 0) return Promise.resolve(fake({ locked: false }));
+              if (s.indexOf('/api/jobs') >= 0 && s.indexOf('/api/jobs/') < 0) return Promise.resolve(fake({ jobs: [] }));
+            } catch (e) { /* 拦不住就走真网络 */ }
+            return of.apply(this, arguments);
+          };
+        }
+        return true;
+      })()`);
+
+      const pForm = () => cdp.evalJs(`(() => { const b = buildOpts();
+        return { slug: b.slug, opts: b.opts, cmd: document.getElementById('cmdPreview').textContent }; })()`);
+      const pSetSlug = (slug) => cdp.evalJs(`(() => { const f = document.getElementById('fSlug');
+        f.value = ${JSON.stringify(slug)}; f.dispatchEvent(new Event('input', { bubbles: true }));
+        f.dispatchEvent(new Event('change', { bubbles: true })); return f.value; })()`);
+      const pSetCheck = (id, on) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.checked = ${on ? 'true' : 'false'}; n.dispatchEvent(new Event('change', { bubbles: true })); return n.checked; })()`);
+      const pIsChecked = (id) => cdp.evalJs(`document.getElementById(${JSON.stringify(id)}).checked`);
+      const pClick = async (id, ms = 350) => {
+        await cdp.evalJs(`document.getElementById(${JSON.stringify(id)}).click()`);
+        await sleep(ms);
+      };
+      /** 清空捕获 → 点某个按钮 → 取回本次 POST /api/run 的请求体（并掐掉假任务日志流）。 */
+      const pCaptured = async (id) => {
+        await cdp.evalJs(`window.__pRunBodies = []; true;`);
+        await pClick(id);
+        const bodies = await cdp.evalJs(`window.__pRunBodies || []`);
+        // ★ 假 job id 在真服务上不存在 ⇒ 不掐掉 EventSource 会一直重连刷噪声
+        await cdp.evalJs(`try { closeStream(); } catch (e) {} true;`);
+        return bodies;
+      };
+
+      // ① 三件套就位 + title 说清语义
+      await runCase('P1 先看分镜控件就位：#fStillsOnly / #btnStillsOnly / #stillsConfirm 三件套 + title 说清语义', async () => {
+        await pSetSlug(state.slugA);
+        const info = await cdp.evalJs(`(() => {
+          const g = (id) => document.getElementById(id);
+          const cb = g('fStillsOnly'), btn = g('btnStillsOnly');
+          // ★ title 挂在外层 <label class="chk"> 上（与本表单其余勾选项同一种写法）⇒ 读不到就回落到 label 的 title
+          const cbTitle = (cb && cb.title) || (cb && cb.closest('label') && cb.closest('label').title) || '';
+          return {
+            cbTag: cb && cb.tagName, cbType: cb && cb.type, cbChecked: cb && cb.checked, cbTitle,
+            btnTag: btn && btn.tagName, btnDisabled: btn && btn.disabled, btnTitle: btn && btn.title,
+            btnText: btn && btn.textContent.trim(),
+            bannerHidden: g('stillsConfirm').hidden,
+            hasConfirm: !!g('btnConfirmRender'), hasDismiss: !!g('btnDismissStills'),
+            bannerText: g('stillsConfirm').textContent,
+          };
+        })()`);
+        need(info.cbTag === 'INPUT' && info.cbType === 'checkbox', `#fStillsOnly 应是复选框：${JSON.stringify(info)}`);
+        need(info.cbChecked === false, '#fStillsOnly 默认必须**不勾**（默认路径逐字节不变）');
+        need(/--stills-only/.test(info.cbTitle), `#fStillsOnly 的 title 应写明对应 --stills-only：「${info.cbTitle}」`);
+        need(/渲染/.test(info.cbTitle) && /不产成片/.test(info.cbTitle),
+          `#fStillsOnly 的 title 应说清「渲染之前停下、不产成片」：「${info.cbTitle}」`);
+        need(info.btnTag === 'BUTTON' && info.btnDisabled === false, `#btnStillsOnly 应是个可用按钮：${JSON.stringify(info)}`);
+        need(/分镜/.test(info.btnText) && /不出片/.test(info.btnText), `#btnStillsOnly 文案应含「分镜」「不出片」：「${info.btnText}」`);
+        need(/--stills-only/.test(info.btnTitle), `#btnStillsOnly 的 title 应写明等价于 --stills-only：「${info.btnTitle}」`);
+        need(info.bannerHidden === true, '横幅默认必须是 hidden（没跑分镜任务时不该出现）');
+        need(info.hasConfirm && info.hasDismiss, '横幅应同时有 #btnConfirmRender 与 #btnDismissStills');
+        need(!/续跑/.test(info.bannerText), `横幅文案不许出现「续跑」（本项目没有帧级缓存）：「${info.bannerText}」`);
+        need(/完整出片/.test(info.bannerText) && /耗时/.test(info.bannerText),
+          `横幅应如实说清「确认后将开始完整出片（渲染耗时较长）」：「${info.bannerText}」`);
+        notes.push(`P1 控件就位：checkbox 默认 unchecked；按钮「${info.btnText}」；横幅默认 hidden、文案写了「完整出片（渲染耗时较长）」且无「续跑」`);
+      });
+
+      // ② 默认不传（UI 层的「默认路径逐字节不变」）
+      await runCase('P2 默认不传 --stills-only：提交参数与命令预览都不含它', async () => {
+        await pSetSlug(state.slugA);
+        await pSetCheck('fStillsOnly', false);
+        const f = await pForm();
+        need(!f.opts.includes('--stills-only'), `默认不该含 --stills-only：${JSON.stringify(f.opts)}`);
+        need(!/--stills-only/.test(f.cmd), `命令预览不该含 --stills-only：「${f.cmd}」`);
+        notes.push(`P2 默认提交参数 ${f.opts.length} 项、无 --stills-only；命令预览「${f.cmd}」`);
+      });
+
+      // ③ 勾上就传（勾选框本身就是那条通路；#btnStillsOnly 只是替用户勾一下）
+      await runCase('P3 勾上 #fStillsOnly ⇒ 提交参数与命令预览都含 --stills-only；取消 ⇒ 都不含', async () => {
+        await pSetSlug(state.slugA);
+        await pSetCheck('fStillsOnly', true);
+        const on = await pForm();
+        need(on.opts.includes('--stills-only'), `勾上后应含 --stills-only：${JSON.stringify(on.opts)}`);
+        need(/--stills-only/.test(on.cmd), `勾上后命令预览应含 --stills-only：「${on.cmd}」`);
+        await pSetCheck('fStillsOnly', false);
+        const off = await pForm();
+        need(!off.opts.includes('--stills-only'), `取消后不该含 --stills-only：${JSON.stringify(off.opts)}`);
+        need(!/--stills-only/.test(off.cmd), `取消后命令预览不该含 --stills-only：「${off.cmd}」`);
+        notes.push(`P3 勾上 ⇒ opts 含 --stills-only 且预览可见；取消 ⇒ 两者都不含`);
+      });
+
+      // ④ 点「先看分镜（不出片）」⇒ 勾上 + 提交带该开关的任务（反空转：点前 0 条、点后 1 条）
+      await runCase('P4 点 #btnStillsOnly ⇒ 自动勾上并提交一条带 --stills-only 的任务（点前 0 条 / 点后 1 条）', async () => {
+        await pSetSlug(state.slugA);
+        await pSetCheck('fStillsOnly', false);
+        const before = await cdp.evalJs(`window.__pRunBodies = []; window.__pRunBodies.length`);
+        need(before === 0, `点之前不该有提交记录，实际 ${before}`);
+        const bodies = await pCaptured('btnStillsOnly');
+        need(bodies.length === 1, `点一次应恰好提交 1 条，实际 ${bodies.length}`);
+        const body = JSON.parse(bodies[0].body || '{}');
+        need(Array.isArray(body.opts) && body.opts.includes('--stills-only'),
+          `提交的 opts 应含 --stills-only：${JSON.stringify(body.opts)}`);
+        need(body.slug === state.slugA, `提交的 slug 应是当前风格，实际 ${body.slug}`);
+        const checked = await pIsChecked('fStillsOnly');
+        need(checked === true, '点完后 #fStillsOnly 应处于勾上状态（按钮就是替用户勾一下）');
+        notes.push(`P4 点「先看分镜（不出片）」：提交 1 条 slug=${body.slug}、opts=${JSON.stringify(body.opts)}；#fStillsOnly 已勾上`);
+      });
+
+      // ⑤ 横幅显隐判据：只有「带 --stills-only 且 done」才亮
+      await runCase('P5 横幅显隐判据：仅「opts 含 --stills-only 且 status=done」显示；点「先不出片」收起', async () => {
+        const vis = async (expr) => {
+          await cdp.evalJs(`(() => { ${expr} return true; })()`);
+          return await cdp.evalJs(`document.getElementById('stillsConfirm').hidden`);
+        };
+        need(await vis(`hideStillsConfirm();`) === true, 'hideStillsConfirm() 应把它收起');
+        need(await vis(`maybeShowStillsConfirm(['--skip-sync','--stills-only'], 'done');`) === false,
+          '「含 --stills-only + done」应显示横幅');
+        need(await vis(`maybeShowStillsConfirm(['--stills-only'], 'failed');`) === true,
+          '失败时不该显示横幅');
+        need(await vis(`maybeShowStillsConfirm(['--skip-sync'], 'done');`) === true,
+          '不带 --stills-only 的普通任务完成后不该显示横幅');
+        need(await vis(`maybeShowStillsConfirm(['--stills-only'], 'canceled');`) === true,
+          '取消时不该显示横幅');
+        await cdp.evalJs(`maybeShowStillsConfirm(['--stills-only'], 'done'); true;`);
+        await pClick('btnDismissStills', 150);
+        need(await cdp.evalJs(`document.getElementById('stillsConfirm').hidden`) === true,
+          '点「先不出片」应收起横幅');
+        notes.push('P5 显隐判据：done+含开关 ⇒ 显示；failed / canceled / 不含开关 ⇒ 隐藏；「先不出片」可收起');
+      });
+
+      // ⑥ 点「确认出片」⇒ **把同一个表单再提交一次**且**不传** --stills-only（不假装续跑）
+      await runCase('P6 点 #btnConfirmRender ⇒ 重提交同表单且**不传** --stills-only（横幅不是「续跑」）', async () => {
+        await pSetSlug(state.slugA);
+        await pSetCheck('fStillsOnly', true);            // 先造出「刚看完分镜」的状态
+        await cdp.evalJs(`maybeShowStillsConfirm(['--stills-only'], 'done'); true;`);
+        need(await cdp.evalJs(`document.getElementById('stillsConfirm').hidden`) === false,
+          '前置条件：横幅应已显示');
+        const bodies = await pCaptured('btnConfirmRender');
+        need(bodies.length === 1, `点一次应恰好提交 1 条，实际 ${bodies.length}`);
+        const body = JSON.parse(bodies[0].body || '{}');
+        need(Array.isArray(body.opts) && !body.opts.includes('--stills-only'),
+          `确认出片提交的 opts **不该**含 --stills-only（那是完整出片）：${JSON.stringify(body.opts)}`);
+        need(body.slug === state.slugA, `确认出片应重提交同一个风格，实际 ${body.slug}`);
+        need(await pIsChecked('fStillsOnly') === false, '点「确认出片」后 #fStillsOnly 应被取消勾选');
+        need(await cdp.evalJs(`document.getElementById('stillsConfirm').hidden`) === true,
+          '新任务一启动 ⇒ 横幅应收起');
+        notes.push(`P6 点「确认出片」：重提交 slug=${body.slug}、opts=${JSON.stringify(body.opts)}（不含 --stills-only）⇒ 完整出片，不是「续跑」`);
+      });
+
+      // 收尾：还原 fetch（别把桩留给后面的用例）
+      await cdp.evalJs(`(() => { window.__pFetchPatched = false; window.__pRunBodies = []; return true; })()`);
+      await cdp.goto(base + '/', 4000);   // 重新加载 ⇒ 拿回真 fetch
+    }
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）

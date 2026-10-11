@@ -805,6 +805,41 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
      ⇒ 选项必须**条件传参**（`MISSING ? { skip: MISSING } : {}`），不能写死。
      ★ 如实登记：**编排器第 6 步本身仍未被端到端跑到**（那需要「某个风格实现了 `window.TEXTS`」或一次完整出片）
      —— 本批关掉的是「`exit 0/1` 从未实跑」，**没**关掉「编排器真跑到 readcheck」。
+   ★ **2026-10-11（同日再一处）** 补齐「对齐核查」里**最后一条用户可见 ❌** —— 断点式「**先看分镜**」：
+   上游依据是 `AGENTS.md`（`whether they want to review a storyboard first (default: no);` +
+   `**Storyboard, only if the user asked for it** … **Stop and wait for approval.** Otherwise don't stop.`）
+   与 `DIRECTOR.md` §5 —— ★ **上游默认不停**，本开关就是那个 opt-in。
+   · 新增 **`--stills-only`**：出片流程在**渲染之前**停下，只产分镜帧 + 总览图 `storyboard.jpg` 到本次 `--out` 目录，
+     **不渲染 / 不混流 / 不产成片**；★ **产不出图 ⇒ 退出码 1**（本开关唯一目的就是那张图，不许「只 warn 然后当成功」）。
+   · ★ **落点在第 1.6 步之后、第 2 步之前** —— 更早则页面依赖的字体/素材/junction/贴图未备好（404/空白帧），
+     更晚就不是「渲染之前」了。
+   · ★★ **复用而非另造**：把 `--review`（⑩）的「出帧 + 拼接触表」抽成文件尾 `emitContactSheet()`，**两处共用**
+     （实测 `core/render/sheet.py` 调用全库 **1 处**、`still.mjs --range` 构造 **1 处**）；`--review` 的命令 / 路径 /
+     日志**逐字未变**（`test/review.test.mjs` exit 0）。
+   · ★ **时长来源（必须说清）**：分镜阶段**没有成片** ⇒ 拿不到 ffprobe ⇒ 取 `style.json` 的 `dur`
+     （实测 ascii-crt = 59.8s）；读不到退化成「前 30 秒」（`stillsFallbackDur()`）并**如实标注**来源。
+   · ★ **dry-run 的诚实性**：`--dry-run --stills-only` **不印**正常出片那张 1–8 步清单，改走专用分支
+     `dryRunStillsOnly()`，明确列「只跑 1 库同步 + 2 分镜」与「以下步骤**不会执行**」。
+   · ★★ **控制台文案不许说「续跑」**：本项目渲染**没有帧级缓存** —— 「确认出片」= **把同一表单再提交一次**
+     （不传该开关）；横幅与日志都写明「这不是续跑，是重跑」。
+   · ★ **零行漂移**：前段 5 个 hunk 全 `-N/+N` 单行原地改写（默认值 / parseArgs / HELP / dry-run 分支 / 主流程调用点），
+     新代码集中在文件尾 ⇒ 全仓 `lemo-make.mjs:<行号>` 引用**零漂移**。
+   · ★ 实测（主控独立复跑）：`--stills-only --out D:/lemo-tmp/stills-test` **EXIT 0 / 15.8s**，
+     `storyboard.jpg` **746836 B / JPEG 真实尺寸 1920×7000**（从 SOF 直读）、目录内 **mp4 = 0**。
+     新测试 `test/stills-only.test.mjs`（11 条）、`test/ui.test.mjs` +6 → **109**。
+     md5 `c46d76b7b8f2569a67cc09a6eb266ce3` → **`d8d75f806b5524d7495f9ae0ed87c25e`**。
+   ★ **2026-10-11（同日再一处）** 采样库「**按库**」已装状态可见（修上一批自己登记的局限）：
+   · **方案 = 只补文案、不新增检测项**（检测项仍是 12 项 ⇒ 不级联）。`assets.inst` 的文案从
+     「只有 N 个文件（预期 ~3869）」→「**N 个文件（预期 ~3869）· X/5 个采样库已装（缺：…）**」；
+     ★ **状态判据仍是 `total>=3000`**（未放宽、未收紧 —— 改了会让「文件数够但库不全」的机器凭空多出 6 张卡，属行为变更）。
+   · ★ **清单归属下移到 `lib/env.mjs`**（全仓唯一一份），`lib/setup.mjs` **同名再导出** —— 检测层要按库算、
+     动作层要派生，只能放更底层那侧；反过来会成环（**实测** TDZ 报错 `Cannot access 'A' before initialization`）。
+     ★ 再导出必须写 `export const X = Y;` 而**不是** `export { … }` —— 后者会被 `check-lib-exports` 当成
+     「可调用导出」⇒ 判「零调用点」FAIL（该闸门只认 `name(` 形态）。
+   · ★ 实测（主控复核）：`?simulate=partial` ⇒ `0/5 个采样库已装（缺：freepats, karoryfer, salamander, vcsl, vsco2ce）`；
+     真实机 `/api/env` ⇒ `3869 个文件 · 5/5 个采样库已装`。`test/setup.test.mjs` 16 → **19**、`setup-api` 12 → **13**。
+   · ★ 如实登记（B）：**卡片仍不消失**（装过的库点它幂等跳过）；「目录在但 0 个文件」时 env 报「缺」而单库守卫
+     （`[ -d ]`）会跳过 —— 差别只在这一档，**有意不动**（收紧会动到 ⑭/⑮ 逐字节钉住的脚本正文）。
    ★ **2026-10-11** 控制台侧新增 **`GET /api/style-switches`**（`--q` 开关助手的数据源）：从库仓
    `styles/<slug>/demo/**` **机械派生**该风格的页面开关（**不维护任何会漂的名单**）。判据经一轮修正：
    ★★ **首版只认 `.get('x')` 与 `location.search.includes('x')`，漏掉 `.has()` 形态** ——

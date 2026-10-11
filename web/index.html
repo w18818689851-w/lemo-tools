@@ -539,11 +539,16 @@
         <div class="checks">
           <label class="chk" title="对应命令行参数 --no-preflight"><input type="checkbox" id="fNoPreflight"> 跳过起飞前检查（勾选 = 不跑预检直接启动）</label>
           <label class="chk" title="对应命令行参数 --web-cut"><input type="checkbox" id="fWebCut"> 网页预览小样（720p，快）</label>
+          <!-- ★ 先看分镜（对应 CLI 的 --stills-only）：**渲染之前停下**，只产分镜帧 + 分镜总览图（storyboard.jpg），
+               不渲染、不混流、不产成片。对齐上游 AGENTS.md / DIRECTOR.md §5 —— 用户**要**先看分镜时才停，默认不停。
+               ★ 默认**不勾** ⇒ 不传 --stills-only ⇒ 提交参数与改动前逐字节一致。 -->
+          <label class="chk" title="对应命令行参数 --stills-only：渲染之前停下，只产分镜帧 + 分镜总览图（storyboard.jpg），不渲染、不混流、不产成片。确认分镜后再点「开始生成」出片（本项目没有帧级缓存，不是「续跑」）"><input type="checkbox" id="fStillsOnly"> 先看分镜（不出片）</label>
         </div>
       </details>
 
       <div class="form-foot">
         <button class="btn primary cta" id="btnRun">开始生成</button>
+        <button class="btn ghost" id="btnStillsOnly" title="先出分镜（对应命令行参数 --stills-only）：只产分镜帧 + 分镜总览图（storyboard.jpg），不渲染、不混流、不产成片（等价于勾上「先看分镜（不出片）」再点「开始生成」）">先看分镜（不出片）</button>
         <button class="btn ghost small" id="btnCopyCmd" hidden title="复制这条命令到剪贴板">复制</button>
         <span class="hint" id="cmdPreview"></span>
       </div>
@@ -906,6 +911,14 @@
           <span class="progress-state" id="progState"></span>
         </div>
         <div class="progress-track"><div class="progress-fill" id="progFill"></div></div>
+      </div>
+      <!-- ★ 分镜已就绪 → 「确认出片」横幅（--stills-only 任务成功后出现）。
+           ★★ 如实说清：本项目**没有帧级缓存**，点「确认出片」= 按**同样参数重跑一次完整出片**（不传 --stills-only），
+              **不是「续跑」**（分镜那次渲染出来的帧不会被复用）。措辞不许含糊。 -->
+      <div class="stills-confirm" id="stillsConfirm" hidden>
+        <span class="stills-confirm-text">分镜已生成（<code>storyboard.jpg</code> 在本次输出目录）。确认后将开始<b>完整出片</b>（渲染耗时较长）。</span>
+        <button class="btn primary small" id="btnConfirmRender" title="按同样参数重跑一次完整出片（去掉 --stills-only）。本项目没有帧级缓存 ⇒ 这不是「续跑」">确认出片</button>
+        <button class="btn ghost small" id="btnDismissStills">先不出片</button>
       </div>
       <div class="log-wrap" id="logWrap">
         <pre class="log" id="log" aria-live="polite"></pre>

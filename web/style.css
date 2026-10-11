@@ -697,6 +697,26 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
 .lock-warn .lw-sub { color: var(--fg-dim); font-size: var(--fs-base); }
 .lock-warn .lw-acts { margin-top: 8px; display: flex; gap: 8px; }
 
+/* ★ 「分镜已就绪 → 确认出片」横幅（--stills-only 任务成功后出现；见 web/app.js 的 showStillsConfirm）。
+   与 .lock-warn 同一种「提示条」形态（左强调边 + 淡底），但用 --ok 色 —— 它是**成功**后的下一步动作，
+   不是警告。措辞刻意写明「不是续跑」（本项目没有帧级缓存）。 */
+.stills-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(53,196,107,.5);
+  border-radius: 8px;
+  background: rgba(53,196,107,.08);
+  color: var(--fg);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+.stills-confirm .stills-confirm-text { flex: 1 1 320px; }
+.stills-confirm code { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+
 /* ── 成片 ─────────────────────────────────────────────── */
 .films { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
 .film {

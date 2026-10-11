@@ -14,6 +14,14 @@
  *     ⑯ 硬编码的库名 / 体积逐字等于**上游** `tools/fetch.sh` 的 `$LIBS` 与 `tools/assets.json`。
  *     ★ 因此本套件现在**依赖上游 Windows 库可读**（`CFG.winLib`，默认 `D:\lemo-opuscar`）——
  *     读不到时 ⑯ 判「无法判定」并 FAIL（刻意：宁可红，也不要静默放行一条会发错命令的硬编码）。
+ *   ★★ 2026-10-11（同日第二批）：本文件 **16 → 19** 条 —— 新增 ⑰⑱⑲ 三条，钉「**按库**的已装状态
+ *     在向导里可见且不误导」这个改动（修掉上一批自己登记的局限：装完**单个**采样库后
+ *     `assets.inst` 仍只说「只有 N 个文件（预期 ~3869）」，看不出装了哪个库）：
+ *     ⑰ 文案三档（0/1/5 个库）如实 + **状态判据仍是 `total>=3000`**（未放宽、未收紧）；
+ *     ⑱ 探针**真跑**（本地 bash + 临时假库树）⇒ 逐库计数正确、空目录/缺失目录都算 0、
+ *        且探针枚举的库名 == `INSTRUMENT_LIBS`；
+ *     ⑲ 向导侧：0 个库 ⇒ 卡数仍是 1+N（**呈现不变坏**）；1 个库 ⇒ 6 张卡的 why 如实；
+ *        5 个库 ⇒ 该组 0 张卡。
  *
  * ★ 为什么这些用例**必须**存在：
  *   这台机器环境已 12/12 就绪，「检测到缺失 → 生成安装动作」这条路径**本地永远走不到**。
@@ -36,7 +44,10 @@ import {
   knownActionIds, simulateEnv, TIMEOUTS, INSTRUMENT_LIBS,
 } from '../lib/setup.mjs';
 // ★ driftCheck / CFG：本套件既有的「漂移哨兵」（⑤）本就以 lib/env.mjs 为对象，故一并向它取用。
-import { CFG, driftCheck } from '../lib/env.mjs';
+// ★ instrumentLibState / assetsProbe / instrumentLibsProbe：⑰⑱ 钉的就是 env.mjs 的「按库」判据与探针。
+import {
+  CFG, driftCheck, instrumentLibState, assetsProbe, instrumentLibsProbe,
+} from '../lib/env.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -75,6 +86,46 @@ function forceAll(data, status) {
     ...data,
     groups: data.groups.map((g) => ({ ...g, items: g.items.map((it) => ({ ...it, status })) })),
   };
+}
+
+/**
+ * 本机 bash 可执行文件（⑱ 要用它**真跑** env.mjs 的按库探针）。
+ * ★ 先按 PATH 找 `bash`；找不到就试 Git for Windows 的两个常见落点 —— 测试可能不是从 Git Bash 起的。
+ * ★ 全都不在 ⇒ 返回 `bash`，让 spawn 报 ENOENT ⇒ ⑱ **FAIL**（绝不静默放行，见本文件纪律）。
+ */
+function bashExe() {
+  const fixed = [
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  ];
+  for (const c of fixed) { try { if (fs.existsSync(c)) return c; } catch { /* ignore */ } }
+  return 'bash';
+}
+
+/** 跑一段 bash（⑱ 用；本环境 spawnSync/execFileSync 一律 EBUSY ⇒ 一律异步 spawn）。 */
+function runBash(script, { timeoutMs = 60000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bashExe(), ['-c', script], {
+      windowsHide: true, env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    });
+    let stdout = '', stderr = '', done = false;
+    const timer = setTimeout(() => {
+      if (done) return; done = true;
+      try { child.kill(); } catch { /* ignore */ }
+      reject(new Error(`bash 超时（${timeoutMs}ms）`));
+    }, timeoutMs);
+    child.stdout?.on('data', (d) => { stdout += d.toString('utf8'); });
+    child.stderr?.on('data', (d) => { stderr += d.toString('utf8'); });
+    child.on('error', (e) => { if (done) return; done = true; clearTimeout(timer); reject(e); });
+    child.on('close', (code) => { if (done) return; done = true; clearTimeout(timer); resolve({ code, stdout, stderr }); });
+  });
+}
+
+/** 从探针输出里按 `k=v` 解析成对象（与 lib/env.mjs 里 `kv` 的口径同形）。 */
+function parseKv(stdout) {
+  return Object.fromEntries(String(stdout || '').trim().split('\n')
+    .filter((l) => l.includes('=')).map((l) => l.split('=').map((s) => s.trim())));
 }
 
 /** 从 lib/env.mjs 源码里抽出它可能产出的所有 item id（漂移哨兵）。 */
@@ -519,6 +570,143 @@ const CASES = [
         assert.ok(doc.includes(`instruments/${l.name}/`),
           `上游 INSTRUMENTS.md 里找不到 \`instruments/${l.name}/\` ⇒ 单库动作的幂等守卫盯错了目录（上游改了目录结构？）`);
       }
+    },
+  },
+  {
+    name: '⑰ 采样库「按库」文案：0 个 / 1 个 / 5 个库如实；状态判据仍是 total>=3000（未放宽、未收紧）',
+    run: () => {
+      // ★ 由来（上一批登记的局限）：`lib/env.mjs` 的 `assets.inst` 只数总文件数 ⇒ 装完**单个**库之后
+      //   文案仍是「只有 N 个文件（预期 ~3869）」⇒ **看不出装了哪个库**，向导里那 6 张卡照旧全在。
+      //   现在文案**追加**按库事实（原文案前缀保留）；判据本身**一字未动**（见下 ④）。
+      const names = INSTRUMENT_LIBS.map((l) => l.name);
+
+      // ① 一个都没装 ⇒ warn，且「缺」列全 5 个（文案前缀仍是原文案）
+      const zero = instrumentLibState(0, {});
+      assert.strictEqual(zero.status, 'warn');
+      assert.deepStrictEqual(zero.installed, []);
+      assert.deepStrictEqual(zero.missing, names);
+      assert.ok(zero.detail.startsWith('0 个文件（预期 ~3869）· '), `原文案前缀没保留：${zero.detail}`);
+      assert.ok(zero.detail.includes('0/5 个采样库已装'), `0 库没写 0/5：${zero.detail}`);
+      for (const n of names) assert.ok(zero.detail.includes(n), `0 库的「缺」列表里没有 ${n}：${zero.detail}`);
+
+      // ② 只装了 salamander ⇒ 如实：1/5、salamander 在「已装」侧、**不在**「缺」侧
+      const one = instrumentLibState(386, { salamander: 386 });
+      assert.strictEqual(one.status, 'warn');
+      assert.deepStrictEqual(one.installed, ['salamander']);
+      assert.deepStrictEqual(one.missing, names.filter((n) => n !== 'salamander'));
+      assert.ok(one.detail.includes('1/5 个采样库已装'), `1 库没写 1/5：${one.detail}`);
+      assert.ok(one.detail.includes('缺：freepats, karoryfer, vcsl, vsco2ce'), `1 库的「缺」列表不对：${one.detail}`);
+      // ★ 「已装」的判据 = 目录下有 >=1 个文件 ⇒ 空目录（半成品）**不算已装**
+      assert.deepStrictEqual(instrumentLibState(0, { salamander: 0 }).installed, [],
+        '空目录（0 个文件）不该算「已装」');
+
+      // ③ 5 个都装 ⇒ ok；文案不再写「预期」，也不再有「缺」
+      const all = instrumentLibState(3869, Object.fromEntries(names.map((n) => [n, 1])));
+      assert.strictEqual(all.status, 'ok');
+      assert.deepStrictEqual(all.installed, names);
+      assert.deepStrictEqual(all.missing, []);
+      assert.strictEqual(all.detail, '3869 个文件 · 5/5 个采样库已装');
+
+      // ④ 状态判据**未动**：仍是 `total >= 3000`（阈值两侧各钉一次 —— 不许放宽，也不许收紧）
+      assert.strictEqual(instrumentLibState(3000, {}).status, 'ok', '阈值 3000 应判 ok');
+      assert.strictEqual(instrumentLibState(2999, {}).status, 'warn', '2999 应判 warn');
+      // ★ 已知边界（**有意**）：文件数够、库不全 ⇒ 状态仍 ok（向导不出卡），但**事实写在文案里**
+      const coarse = instrumentLibState(3869, { salamander: 3869 });
+      assert.strictEqual(coarse.status, 'ok');
+      assert.ok(coarse.detail.includes('1/5 个采样库已装'), `「文件数够但库不全」必须看得见：${coarse.detail}`);
+
+      // ⑤ 演练夹具的 assets.inst 文案是**手写**的 ⇒ 钉它与真实函数同源（否则 --simulate 会演一份假事实）
+      const fixOf = (data) => data.groups.flatMap((g) => g.items).find((i) => i.id === 'assets.inst').detail;
+      assert.strictEqual(fixOf(fixturePartialAssets()), instrumentLibState(0, {}).detail,
+        'fixturePartialAssets 的 assets.inst 文案与 instrumentLibState(0, {}) 不一致');
+      assert.strictEqual(fixOf(fixtureReady()), all.detail,
+        'fixtureReady 的 assets.inst 文案与「5 个库全装」的文案不一致');
+    },
+  },
+  {
+    name: '⑱ 按库探针真跑（本地 bash + 临时假库树）：逐库计数正确、空目录/缺失目录都算 0、库名清单 = INSTRUMENT_LIBS',
+    run: async () => {
+      // ★ 为什么要**真跑**：探针是 shell —— 只断言「字符串里有库名」证明不了它真按库数出来。
+      //   在**本地 bash**（Git Bash）里对着**临时假库树**跑：不起 WSL、不碰真实库、不碰真实产物。
+      //   ★ 临时根必须在 D 盘（本项目硬规则：临时文件不许落 C 盘），跑完逐字删掉。
+      const root = path.join('D:/lemo-tmp', `instprobe-${process.pid}-${Date.now().toString(36)}`);
+      const names = INSTRUMENT_LIBS.map((l) => l.name);
+      const instDir = path.join(root, 'core', 'audio', 'instruments');
+      try {
+        // 假树：salamander 2 个文件（含子目录 1 个）、vcsl 1 个、freepats **空目录**、karoryfer/vsco2ce 目录不存在
+        for (const [lib, rel] of [['salamander', 'a.wav'], ['salamander', 'sub/b.wav'], ['vcsl', 'x.wav']]) {
+          const p = path.join(instDir, lib, rel);
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.writeFileSync(p, 'x');
+        }
+        fs.mkdirSync(path.join(instDir, 'freepats'), { recursive: true });
+
+        // ★ 探针里的 `L=` 由参数注入（`assetsProbe(libRoot)`；生产调用不传 ⇒ 用 CFG.wslLib）
+        const r = await runBash(assetsProbe(root.replace(/\\/g, '/')));
+        assert.strictEqual(r.code, 0, `探针在本地 bash 里退出码 ${r.code}\n${r.stderr}`);
+        const kv = parseKv(r.stdout);
+
+        // ① 整棵树总数（既有判据那一行）与**按库**计数并存
+        assert.strictEqual(Number(kv.inst), 3, `总数应为 3，实得 ${kv.inst}`);
+        // ② 逐库：与假树一致（含「空目录算 0」「目录不存在算 0」两种边界）
+        assert.strictEqual(Number(kv['inst.salamander']), 2, `salamander 应为 2，实得 ${kv['inst.salamander']}`);
+        assert.strictEqual(Number(kv['inst.vcsl']), 1, `vcsl 应为 1，实得 ${kv['inst.vcsl']}`);
+        assert.strictEqual(Number(kv['inst.freepats'] || 0), 0, '空目录应数出 0');
+        for (const n of ['karoryfer', 'vsco2ce']) {
+          assert.strictEqual(Number(kv[`inst.${n}`] || 0), 0, `${n} 目录不存在应数出 0`);
+        }
+        // ③ 探针枚举的库名清单 == INSTRUMENT_LIBS（两处清单会漂 ⇒ 钉住）
+        const probe = instrumentLibsProbe();
+        const m = /^for b in (.+); do$/m.exec(probe);
+        assert.ok(m, `探针里找不到「库名清单」那一行：\n${probe}`);
+        assert.deepStrictEqual(m[1].trim().split(/\s+/).sort(), [...names].sort(),
+          '探针枚举的库名与 INSTRUMENT_LIBS 不一致（两张清单会漂）');
+        // ④ 端到端：探针输出 ⇒ instrumentLibState 的文案（这是 /api/env 里那一项的真实来路）
+        const st = instrumentLibState(Number(kv.inst),
+          Object.fromEntries(names.map((n) => [n, Number(kv[`inst.${n}`] || 0)])));
+        assert.deepStrictEqual(st.installed, ['salamander', 'vcsl']);
+        assert.ok(st.detail.includes('2/5 个采样库已装'), `端到端文案不对：${st.detail}`);
+        assert.ok(st.detail.includes('缺：freepats, karoryfer, vsco2ce'), `端到端「缺」列表不对：${st.detail}`);
+      } finally {
+        try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
+      }
+    },
+  },
+  {
+    name: '⑲ 向导侧不误导：0 个库 ⇒ 卡数仍是 1+N（呈现不变坏）；1 个库 ⇒ 6 张卡 why 如实；5 个库 ⇒ 该组 0 张卡',
+    run: () => {
+      const names = INSTRUMENT_LIBS.map((l) => l.name);
+      const withInst = (status, detail) => {
+        const d = fixturePartialAssets();
+        return {
+          ...d,
+          groups: d.groups.map((g) => ({
+            ...g,
+            items: g.items.map((it) => (it.id === 'assets.inst' ? { ...it, status, detail } : it)),
+          })),
+        };
+      };
+      const instOf = (actions) => actions
+        .filter((a) => a.id === 'assets.inst' || a.id.startsWith('assets.inst.')).map((a) => a.id);
+
+      // ① 0 个库（= 改动前的呈现）：卡数仍是 1 + N —— **不多不少**（不许变成「5 张必装卡把用户淹掉」）
+      const zero = planActions(withInst('warn', instrumentLibState(0, {}).detail));
+      assert.deepStrictEqual(instOf(zero), ['assets.inst', ...names.map((n) => `assets.inst.${n}`)],
+        '0 个库时采样库那一组的卡片构成变了（呈现变坏）');
+
+      // ② 1 个库：6 张卡都在（卡片不消失 —— 有意），但**每张卡的 why 都如实**（6 张同源于那一项检测结果）
+      const oneDetail = instrumentLibState(386, { salamander: 386 }).detail;
+      const one = planActions(withInst('warn', oneDetail));
+      const cards = one.filter((a) => (a.envIds || []).includes('assets.inst'));
+      assert.strictEqual(cards.length, 1 + names.length, `1 个库时卡数不对：${cards.map((a) => a.id).join(', ')}`);
+      for (const a of cards) assert.strictEqual(a.why, oneDetail, `${a.id} 的 why 不是那一项检测结果的原文`);
+      assert.ok(cards[0].why.includes('1/5 个采样库已装'), `卡片上看不出「已装 1 个」：${cards[0].why}`);
+      assert.ok(!/缺：[^）]*salamander/.test(cards[0].why), `已装的 salamander 不该出现在「缺」里：${cards[0].why}`);
+
+      // ③ 5 个库全装 ⇒ 该项 ok ⇒ 该组**一张卡都不出**（向导干净，与「全部装好」一致）
+      const all = planActions(withInst('ok',
+        instrumentLibState(3869, Object.fromEntries(names.map((n) => [n, 1]))).detail));
+      assert.deepStrictEqual(instOf(all), [], '5 个库全装时采样库那一组不该出卡');
     },
   },
 ];

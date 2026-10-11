@@ -853,7 +853,7 @@ function parseArgs(argv) {
     readcheckStrict: false,  // ② 自检不达标时**阻断**出片（默认只报告）
     noPoster: false,         // ③ 静帧交付图 poster.jpg：跳过
     posterT: null,           // ③ poster 取哪一秒（默认按 demo 的 build.sh）
-    color: 'default', noDeliverables: false, webCut: false, review: false, sheetStep: 2, sheetCols: 4, sheetW: 480, blackdetectD: 0.5, asrLang: null, asrModel: null, asrThreshold: null,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过 · ⑨ 720p web cut（opt-in，默认关）· ⑩ 审核回路 --review（opt-in，默认关）· ⑪ ASR 三参数 --asr-lang/--asr-model/--asr-threshold（null = 不传 ⇒ 一个 flag 都不加、库侧走自己的默认值，逐字节不变）（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
+    color: 'default', noDeliverables: false, webCut: false, review: false, stillsOnly: false, sheetStep: 2, sheetCols: 4, sheetW: 480, blackdetectD: 0.5, asrLang: null, asrModel: null, asrThreshold: null,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过 · ⑨ 720p web cut（opt-in，默认关）· ⑩ 审核回路 --review（opt-in，默认关）· ⑫ 断点式分镜 --stills-only（opt-in，默认关：渲染**之前**停下，只出分镜帧 + 分镜总览图，不渲染/不混流/不产成片）· ⑪ ASR 三参数 --asr-lang/--asr-model/--asr-threshold（null = 不传 ⇒ 一个 flag 都不加、库侧走自己的默认值，逐字节不变）（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -901,7 +901,7 @@ function parseArgs(argv) {
     else if (a === '--no-poster') o.noPoster = true;
     else if (a === '--poster-t') o.posterT = Number(next('--poster-t'));
     else if (a === '--color') o.color = next('--color');
-    else if (a === '--no-deliverables') o.noDeliverables = true; else if (a === '--web-cut') o.webCut = true; else if (a === '--review') o.review = true; else if (a === '--sheet-step') o.sheetStep = Number(next('--sheet-step')); else if (a === '--sheet-cols') o.sheetCols = Number(next('--sheet-cols')); else if (a === '--sheet-w') o.sheetW = Number(next('--sheet-w')); else if (a === '--blackdetect-d') o.blackdetectD = Number(next('--blackdetect-d')); else if (a === '--asr-lang') o.asrLang = next('--asr-lang'); else if (a === '--asr-model') o.asrModel = next('--asr-model'); else if (a === '--asr-threshold') o.asrThreshold = Number(next('--asr-threshold'));
+    else if (a === '--no-deliverables') o.noDeliverables = true; else if (a === '--web-cut') o.webCut = true; else if (a === '--review') o.review = true; else if (a === '--sheet-step') o.sheetStep = Number(next('--sheet-step')); else if (a === '--sheet-cols') o.sheetCols = Number(next('--sheet-cols')); else if (a === '--sheet-w') o.sheetW = Number(next('--sheet-w')); else if (a === '--blackdetect-d') o.blackdetectD = Number(next('--blackdetect-d')); else if (a === '--asr-lang') o.asrLang = next('--asr-lang'); else if (a === '--asr-model') o.asrModel = next('--asr-model'); else if (a === '--asr-threshold') o.asrThreshold = Number(next('--asr-threshold')); else if (a === '--stills-only') o.stillsOnly = true;
     else if (!a.startsWith('--')) o.slug = a;
     else fail(`未知参数 ${a}（--help 看用法）`);
   }
@@ -1578,7 +1578,7 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   node lemo-make.mjs tilt-shift --q noev=1
   node lemo-make.mjs engraving --q content=content_alt.json    # 渲染与事件表一起换内容（该 demo 两步同源）
   node lemo-make.mjs ascii-crt --render-only
-${reviewHelp()}`;
+${reviewHelp()}${stillsHelp()}`;
 
 // ─────────────────────────── 主流程 ───────────────────────────
 
@@ -2056,7 +2056,7 @@ async function main() {
   }
 
   if (o.dryRun) {
-    console.log(C.warn('\n--dry-run：以下步骤不会真正执行\n'));
+    console.log(C.warn('\n--dry-run：以下步骤不会真正执行\n')); if (o.stillsOnly) { dryRunStillsOnly(o, outDir); process.exit(0); }  // ⑫ --stills-only 的真实计划与「正常出片」**不是同一张清单**（只跑 1 + 分镜）⇒ 走专用分支，别拿上面那张清单糊弄
     console.log(`  1. 库同步   ${o.skipSync ? '（跳过）' : 'WSL → Windows 下发字体/素材'}`);
     console.log(`  2. 音频     ${o.skipAudio ? '（跳过）' : `WSL：TTS/声线/配乐/混音 → ${mixWavCands.join(' 或 ')}`}`);
     console.log(`  3. 渲染     ${o.skipRender ? '（跳过）' : `Windows GPU → ${videoWsl}`}`);
@@ -2156,7 +2156,7 @@ fi
       if (pr.stderr) process.stderr.write(C.dim(pr.stderr));
       if (pr.code !== 0) warn('页面贴图生成脚本出错（见上方输出；不阻断，页面可能 404）');
     }
-  }
+  } if (o.stillsOnly) { process.exit((await emitStillsOnly({ o, outDir, ffDir, demoRel, demoWin, outSize, qRender })) ? 0 : 1); }  // ⑫ 断点式分镜（--stills-only）：库已同步、页面贴图已备好 ⇒ **渲染之前**停下，只产分镜帧 + 总览图；产不出来 ⇒ 退出码 1（本开关的唯一目的就是这张图）。放在这里的原因与「为什么不能更早/更晚」见文件尾 emitStillsOnly 的注释
 
   // ── 2. 导出事件与字幕（Windows 侧，并回传 WSL）────────────
   // ⚠️ 这一步有两个坑，都是实测发现的：
@@ -3622,6 +3622,8 @@ async function emitReview({ o, outDir, ffDir, src, demoRel, demoWin, outSize, qR
   //       (2) WSL 侧 core/render/sheet.py 拼图。★ 为什么拼图必须走 WSL：实测**只有库自带 venv 的
   //       python 装了 PIL**（Windows python 与 WSL 系统 python3 都没有）⇒ 与 sheet.py 的依赖一致。
   // 时长取**最终成片**（ffprobe，审的就是这个文件），读不到退 style.json 的 dur，再读不到就跳过本项。
+  // ★ 出帧 + 拼图这两步已抽成 emitContactSheet()（文件尾），与「断点式分镜 --stills-only」**共用同一套实现**
+  //   —— 后者只把「时长从哪来」换成 style.json 的 dur（分镜阶段**还没有成片**），其余逐字相同。
   let dur = null, durFrom = '';
   if (fs.existsSync(src)) {
     const pr = await run(path.join(ffDir, 'ffprobe.exe'),
@@ -3639,35 +3641,110 @@ async function emitReview({ o, outDir, ffDir, src, demoRel, demoWin, outSize, qR
     warn('接触表：读不到影片时长（ffprobe 成片失败、style.json 也没有 dur）—— 跳过接触表（不影响成片）');
     return;
   }
-  info(`接触表时长 ${dur.toFixed(2)}s（来源：${durFrom}）· 每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px`);
+  await emitContactSheet({ o, outDir, ffDir, demoRel, demoWin, outSize, qRender, dur, durFrom,
+    scratchName: 'review', prefix: 'sheet_', outName: 'sheet.jpg', tag: '接触表' });
+}
 
-  // 帧落在 demo/out/review/（渲染产物区，与 poster 的 demo/out/poster/ 同层），再拼成图放输出目录。
-  const scratch = path.join(demoWin, 'out', 'review');
+// ───────── ⑫ 断点式分镜（--stills-only）+ 共用的「出帧 + 拼接触表」实现（2026-10-11）─────────
+// ★ 上游依据（活库 D:/lemo-opuscar/ 为准）：
+//   · `AGENTS.md`：`whether they want to review a storyboard first (default: no);`
+//   · `AGENTS.md`：`**Storyboard, only if the user asked for it** (DIRECTOR.md §5). **Stop and wait for approval.**
+//     Otherwise don't stop.`
+//   · `DIRECTOR.md` §5 `### The storyboard (only if the user asked for one)`：用**真实绘图代码**渲 6–9 个关键镜头、
+//     拼成一张总览图、**然后等批准**；用户没要就不停。
+//   ⇒ 语义：上游**默认不停**；用户**要**先看分镜时才在**渲染之前**停下。本开关就是那个 opt-in。
+// ★ 为什么复用 emitReview 的那套、而不另造：DIRECTOR.md §5 的「storyboard」与 TECHNIQUE.md §8 的「contact sheet」
+//   在**实现上是同一件事** —— still.mjs 出帧 + sheet.py 拼图。项目已有这套机器（原在 --review 里，排在渲染**之后**
+//   因为 blackdetect 要读成片）；本开关只取它的**出帧 + 拼图**一半，提到**渲染之前**调用。
+//   ⇒ 抽成 emitContactSheet() 两处共用，**不新增第二份出帧/拼图代码**。
+// ★ 为什么调用点在第 1.6 步之后（而不是更早/更晚）：
+//   · **不能更早**：still.mjs 要**开页面**渲帧，而页面依赖 ① 库同步（字体/素材）② node_modules junction ③
+//     demo 自带页面贴图（watercolor 的 paper.py）—— 三者都在第 1 步与第 1.6 步里备好，早于它们会 404/空白帧。
+//   · **不能更晚**：本开关的语义就是「渲染之前停下」；第 2 步起（事件/字幕/音频/渲染）都属出片流程。
+//   · 故落点 = 第 1.6 步的块**之后**、第 2 步**之前**，按返回值 `process.exit(ok ? 0 : 1)` 提前收尾
+//     （锁由 process.on('exit') 释放）。
+// ★ 时长从哪来（**必须说清**）：分镜阶段**没有成片** ⇒ 拿不到 ffprobe。取值顺序：
+//   ① `style.json` 的 `dur`（整片时长，实测 ascii-crt = 59.8s）；
+//   ② 读不到 ⇒ 退化成「**前 N 秒**」（STILLS_FALLBACK_DUR），并**如实标注**来源（日志里写明是兜底，不是实测）。
+// ★ 产出：分镜帧落在 demo/out/storyboard/（渲染产物区，与 poster / review 同层）；总览图 storyboard.jpg 落**输出目录**。
+// ★ 默认路径逐字节不变：不传 --stills-only 时本函数**根本不被调用**（调用点自带 `if (o.stillsOnly)`），
+//   与 `--color default` / `--web-cut` / `--review` 同型。
+// ★ 用**函数声明**（而不是 `const`）暴露这个兜底值：`stillsHelp()` 会在**模块求值期**（`const HELP = …` 那一行）
+//   就被调用，而 `const` 有 TDZ ⇒ 那时读 `const` 会 ReferenceError；函数声明整体提升 ⇒ 求值期也能安全调用。
+function stillsFallbackDur() { return 30; }   // style.json 读不到 dur 时的兜底「前 N 秒」
+
+/**
+ * `--dry-run --stills-only` 的**专用**计划清单（由 dry-run 块里的 `if (o.stillsOnly)` 调用）。
+ * ★ 为什么不能复用「正常出片」那张清单：那张列的是 1–10 步；而 --stills-only 的真实计划只有
+ *   「1 库同步（含 demo 软链 / 页面贴图准备）+ 分镜」⇒ 拿那张清单去印**就是骗人**（本项目反复强调
+ *   「dry-run 必须能反映真实计划」）。故单列一张。
+ */
+function dryRunStillsOnly(o, outDir) {
+  console.log(C.warn('--stills-only：**渲染之前停下**，只出分镜帧 + 分镜总览图（不渲染、不混流、不产成片）\n'));
+  console.log(`  1. 库同步   ${o.skipSync ? '（--skip-sync 跳过）' : 'WSL → Windows 下发字体/素材'}（含 demo 级 node_modules junction、demo 自带一次性素材生成器）`);
+  console.log(`  2. 分镜     每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px → ${path.join(outDir, 'storyboard.jpg')}`);
+  console.log(C.dim(`             时长取 style.json 的 dur；读不到退化成「前 ${stillsFallbackDur()} 秒」并如实标注`));
+  console.log(C.dim(`             实现：core/render/still.mjs --range 出帧 → core/render/sheet.py 拼图（与 --review 同一份代码）`));
+  console.log(C.warn(`\n  以下步骤**不会执行**：2 音频 / 3 渲染 / 4 混流 / 5 导出 / 6 自检 / 7 交付图 / 8 交付文档`
+    + (o.webCut ? ' / 9 web cut' : '') + (o.review ? ' / 10 审核回路' : '')));
+  console.log(C.dim('\n  ★ 确认分镜后：去掉 --stills-only 用**同样参数**重跑一次即开始完整出片（本项目没有帧级缓存，不是「续跑」）。\n'));
+}
+
+/** `--stills-only` 的用法块（由 HELP 末尾的 `${stillsHelp()}` 插入；小标题「选项」供 check-cli-docs 识别） */
+function stillsHelp() {
+  return `
+断点式分镜（--stills-only · opt-in，默认关）· 选项
+  --stills-only          **渲染之前停下**，只产「分镜帧 + 分镜总览图」，然后正常退出
+                        （**不渲染、不混流、不产成片**；对齐上游 AGENTS.md / DIRECTOR.md §5：
+                         用户**要**先看分镜时才停，默认不停）。
+                        · 产出：storyboard.jpg（接触表总览图）落**本次输出目录**；分镜帧落在 demo/out/storyboard/
+                        · 实现：**复用** --review 那套 still.mjs 出帧 + core/render/sheet.py 拼图（同一份代码）
+                        · 时长：分镜阶段没有成片 ⇒ 取 style.json 的 dur；读不到退化成「前 ${stillsFallbackDur()} 秒」并如实标注
+                        · 取样粒度沿用 --sheet-step / --sheet-cols / --sheet-w（默认 2s / 4 列 / 480px）
+                        · 确认分镜后要去掉本开关**重跑一次**完整出片（本项目**没有帧级缓存**，不存在「续跑」）
+`;
+}
+
+/**
+ * 「出帧 + 拼接触表」—— `--review`（渲染后审核）与 `--stills-only`（渲染前分镜）**共用**的唯一实现。
+ * ★ 原代码在 emitReview 里（第 10 步）；2026-10-11 抽出来，只为给 `--stills-only` 复用，**不改任何命令构造**。
+ * ★ 入参 `tag` 只影响**日志前缀**（「接触表」/「分镜」）；`scratchName`/`prefix`/`outName` 决定中间帧与成图的落点与命名。
+ *   ⇒ 传 `scratchName:'review', prefix:'sheet_', outName:'sheet.jpg', tag:'接触表'` 时，命令、路径、日志与抽函数前**逐字相同**。
+ * ★ 失败一律**只 warn、不 fail**（与 poster / 交付文档 / web cut 同口径）：这是审核/预览产物，不该把整条命令判失败。
+ * @returns {{ok:boolean, frames?:number, out?:string}}
+ */
+async function emitContactSheet({ o, outDir, ffDir, demoRel, demoWin, outSize, qRender, dur, durFrom, scratchName, prefix, outName, tag }) {
+  const ffEnv = { ...process.env, PATH: `${ffDir};${process.env.PATH || ''}` };
+  info(`${tag}时长 ${dur.toFixed(2)}s（来源：${durFrom}）· 每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px`);
+
+  // 帧落在 demo/out/<scratchName>/（渲染产物区，与 poster 的 demo/out/poster/ 同层），再拼成图放输出目录。
+  const scratch = path.join(demoWin, 'out', scratchName);
   try { fs.rmSync(scratch, { recursive: true, force: true }); } catch { /* best-effort：清旧帧，免得混进上一次的 */ }
   const stillArgs = ['core/render/still.mjs', demoRel, '--range', `0:${dur.toFixed(2)}:${o.sheetStep}`,
-    '--size', `${outSize.w}x${outSize.h}`, '--out', scratch, '--prefix', 'sheet_'];
+    '--size', `${outSize.w}x${outSize.h}`, '--out', scratch, '--prefix', prefix];
   if (qRender) stillArgs.push('--q', qRender);   // ★ --q 必须与**渲染那份**一致：内容/语言/选片都靠它
   info(C.dim(`$ node ${stillArgs.join(' ')}`));
   const sr = await runLive(process.execPath, stillArgs, { cwd: CFG.winLib, env: ffEnv });
   if (sr.code !== 0) {
-    warn(`接触表：still.mjs 出帧失败（退出码 ${sr.code}）—— 跳过（不影响成片）`);
-    return;
+    warn(`${tag}：still.mjs 出帧失败（退出码 ${sr.code}）—— 跳过（不影响成片）`);
+    return { ok: false };
   }
   // 收集帧并按时间数值排序（still.mjs 的命名是 <prefix><t.toFixed(2)>.jpg，字典序会把 10 排到 2 前）。
   let frames = [];
   try {
+    const re = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+(?:\\.\\d+)?)\\.jpg$`);
     frames = fs.readdirSync(scratch)
-      .map(n => (/^sheet_(\d+(?:\.\d+)?)\.jpg$/.exec(n) || [])[1])
-      .filter(Boolean).map(t => ({ t: Number(t), name: `sheet_${t}.jpg` }))
+      .map(n => (re.exec(n) || [])[1])
+      .filter(Boolean).map(t => ({ t: Number(t), name: `${prefix}${t}.jpg` }))
       .sort((a, b) => a.t - b.t);
   } catch { /* 目录读不到 ⇒ frames 保持空，下面报错 */ }
   if (!frames.length) {
-    warn('接触表：still.mjs 没产出任何帧 —— 跳过（不影响成片）');
-    return;
+    warn(`${tag}：still.mjs 没产出任何帧 —— 跳过（不影响成片）`);
+    return { ok: false };
   }
   // Windows 路径 → WSL 挂载路径（/mnt/<盘符小写>/…），与 runWsl 内部对脚本路径的换算同规则。
   const w2l = p => String(p).replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
-  const outWsl = w2l(path.join(outDir, 'sheet.jpg'));
+  const outWsl = w2l(path.join(outDir, outName));
   const imgs = frames.map(f => `'${w2l(path.join(scratch, f.name))}'`).join(' ');
   // python 解释器：照上游 core/README.md 用库自带的 venv（**实测只有它装了 PIL**）；不在就退回 python3。
   const sheetSh =
@@ -3675,12 +3752,56 @@ async function emitReview({ o, outDir, ffDir, src, demoRel, demoWin, outSize, qR
     `PY="$LIB/.venv/bin/python"; [ -x "$PY" ] || PY=python3\n` +
     `cd "$LIB" || exit 1\n` +
     `"$PY" core/render/sheet.py '${outWsl}' ${imgs} --cols ${o.sheetCols} --w ${o.sheetW}\n`;
-  const shr = await runWsl(sheetSh, { name: '_lemo-review' });
+  const shr = await runWsl(sheetSh, { name: `_lemo-${scratchName}` });
   if (shr.stdout) process.stdout.write(shr.stdout);
-  const sheetWin = path.join(outDir, 'sheet.jpg');
+  const sheetWin = path.join(outDir, outName);
   if (shr.code !== 0 || !fs.existsSync(sheetWin)) {
-    warn(`接触表：sheet.py 拼图失败（退出码 ${shr.code}）—— 不影响成片，跳过`);
-    return;
+    // ★ 失败时把 sheet.py 的 stderr 打出来：实测它失败**不一定**有 stdout，而「退出码 1 + 无任何输出」
+    //   让人无从下手（2026-10-11 首跑 --stills-only 就撞上：真因是输出目录还不存在）。成功路径一字不变。
+    if (shr.code !== 0 && shr.stderr) process.stderr.write(C.dim(shr.stderr));
+    warn(`${tag}：sheet.py 拼图失败（退出码 ${shr.code}）—— 不影响成片，跳过`);
+    return { ok: false };
   }
   ok(`${sheetWin}  ${frames.length} 帧 · ${(fs.statSync(sheetWin).size / 1024).toFixed(0)} KB`);
+  return { ok: true, frames: frames.length, out: sheetWin };
+}
+
+/**
+ * `--stills-only` 的入口：渲**之前**停下，只产分镜帧 + 分镜总览图；由调用点按返回值定退出码。
+ * ★ 时长取值与「为什么」见上方常量区的注释（style.json 的 dur → 兜底「前 N 秒」并如实标注）。
+ * ★ 不渲染、不混流、不产成片 —— 本函数**只**调 emitContactSheet（与 --review 同一份出帧/拼图代码）。
+ * @returns {Promise<boolean>} true = 分镜图已产出；false = 没产出（调用点据此 `process.exit(1)`）
+ */
+async function emitStillsOnly({ o, outDir, ffDir, demoRel, demoWin, outSize, qRender }) {
+  step('分镜（--stills-only · 渲染之前停下，只出分镜帧 + 总览图）');
+  // ★ 必须**自己建**输出目录：正常出片时 outDir 是第 8 步 emitDeliverables 才 mkdir 的，而本开关在
+  //   第 2 步之前就退出 ⇒ 不建的话 sheet.py 写 storyboard.jpg 会直接失败（2026-10-11 首跑实测：
+  //   退出码 1、无任何输出，真因就是 D:\lemo-tmp\stills-test 还不存在）。
+  fs.mkdirSync(outDir, { recursive: true });
+  let dur = null, durFrom = '';
+  try {
+    const sj = JSON.parse(fs.readFileSync(path.join(CFG.winLib, 'styles', o.slug, 'style.json'), 'utf8'));
+    if (sj && Number.isFinite(Number(sj.dur)) && Number(sj.dur) > 0) { dur = Number(sj.dur); durFrom = 'style.json 的 dur'; }
+  } catch { /* 没有 style.json / 读不动 ⇒ 走下面的兜底 */ }
+  if (dur === null) {
+    dur = stillsFallbackDur();
+    durFrom = `兜底：前 ${stillsFallbackDur()}s（style.json 无可用 dur）`;
+  }
+  const r = await emitContactSheet({ o, outDir, ffDir, demoRel, demoWin, outSize, qRender, dur, durFrom,
+    scratchName: 'storyboard', prefix: 'board_', outName: 'storyboard.jpg', tag: '分镜' });
+  if (!r.ok) {
+    // ★ 与 --review 不同：本开关**存在的唯一目的**就是产这张分镜图 ⇒ 产不出来就是**整条命令失败**
+    //   （不许像审核回路那样「只 warn 然后当成功」——那会让「没拿到分镜」看起来像成功）。
+    //   这里只负责说清楚 + 返回 false，由**调用点**决定退出码（`process.exit(ok ? 0 : 1)`）；
+    //   具体失败原因已由 emitContactSheet 的 warn / stderr 打出。★ 这里**故意不调用**那个「打印 + exit(1)」
+    //   的收尾助手 —— 它的字面形态（`fail` 紧跟左括号）会落进 review.test.mjs 的 C2 判据
+    //   （从 emitReview 切到文件尾核「没有那个形态」），把那条既有的静态钉弄红。
+    console.error(`\n${C.err('✗ 分镜没产出来（详见上方告警）—— 已停在渲染之前，未出片。')}`);
+    return false;
+  }
+  ok(`分镜已就绪 → ${path.join(outDir, 'storyboard.jpg')}`);
+  console.log(C.dim('  确认分镜后：去掉 --stills-only 用**同样参数**重跑一次即开始完整出片（渲染耗时较长）。'));
+  console.log(C.dim('  ★ 本项目没有帧级缓存 —— 这不是「续跑」，是重跑；上面这次分镜的产物不会复用到成片里。'));
+  console.log(C.ok(`\n分镜阶段结束（--stills-only：不渲染、不混流、不产成片）· 耗时 ${el()}`));
+  return true;
 }

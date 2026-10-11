@@ -11,9 +11,9 @@ node test/smoke.mjs --full       # 额外跑完整回归：全链路出片 + **�
 node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
 
-node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（16 条，★ ⑭⑮⑯：采样库**单库可选** —— 默认仍是 `instruments all`、库名清单逐字比对上游 `tools/fetch.sh` 的 `$LIBS`）
-node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（12 条，★ 绝不真安装；★ 2026-10-10 ⑪ 从**一次冷启动**钉住三件事：① 未知 id 的 404 **不付探测**（实测 22ms ≪ 冷态全量探测 6519ms —— 钉 `apiSetupRun` 先查 id 白名单、不空跑整轮环境探测）、② `GET /api/setup/actions` 写进**共享** `envCache`（随后 `/api/env` 必 `cached:true`）、③ `POST /api/setup/run` 读同一份缓存（实测 1ms，不再每请求重探））
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（103 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见；★ L 组 7 条（2026-10-11）：上一批 5 个 UI 入口的**进仓**回归钉 —— 启动表单 `#runRatio`→`--ratio` / `#runSizeW·H`→`--size`（★ 且**奇数尺寸不传**的反向断言）、`#fNoPreflight`→`--no-preflight`、`#fFilm`→`--film`、算力面板 `#btnLlmTryRun`→`POST /api/llm/invoke`（页面内 fetch 桩，绝不真发外网）+ 侧栏 `.style-item` 中英名/slug 真值比对 + 浅色 hover 底色对比度盲区）
+node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（19 条，★ ⑭⑮⑯：采样库**单库可选** —— 默认仍是 `instruments all`、库名清单逐字比对上游 `tools/fetch.sh` 的 `$LIBS`）
+node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（13 条，★ 绝不真安装；★ 2026-10-10 ⑪ 从**一次冷启动**钉住三件事：① 未知 id 的 404 **不付探测**（实测 22ms ≪ 冷态全量探测 6519ms —— 钉 `apiSetupRun` 先查 id 白名单、不空跑整轮环境探测）、② `GET /api/setup/actions` 写进**共享** `envCache`（随后 `/api/env` 必 `cached:true`）、③ `POST /api/setup/run` 读同一份缓存（实测 1ms，不再每请求重探））
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（109 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见；★ L 组 7 条（2026-10-11）：上一批 5 个 UI 入口的**进仓**回归钉 —— 启动表单 `#runRatio`→`--ratio` / `#runSizeW·H`→`--size`（★ 且**奇数尺寸不传**的反向断言）、`#fNoPreflight`→`--no-preflight`、`#fFilm`→`--film`、算力面板 `#btnLlmTryRun`→`POST /api/llm/invoke`（页面内 fetch 桩，绝不真发外网）+ 侧栏 `.style-item` 中英名/slug 真值比对 + 浅色 hover 底色对比度盲区）；★ P 组 6 条（2026-10-11）：断点式分镜 `--stills-only` 的**进仓**回归钉 —— `#fStillsOnly`/`#btnStillsOnly`/`#stillsConfirm` 三件套就位且 title 说清语义、默认**不传**该开关（逐字节不变）、勾上就传、点按钮 ⇒ 自动勾上并提交一条带该开关的任务（页面内 `window.fetch` 桩 + 反空转「点前 0 条 / 点后 1 条」）、横幅显隐判据（仅「含该开关 + done」才亮）、点「确认出片」⇒ **重提交同表单且不传该开关**（横幅文案明写不是「续跑」））
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
 node test/briefs.test.mjs        # 「主题工单」数据层 + 接口 + UI 的测试（16 条，★ 含「控制台出片写进 _jobs 独立目录、不覆盖样板片」+「--ratio 的 `:` 判据」「filmUrl 指向本次产物」）
@@ -39,6 +39,7 @@ node test/langs.test.mjs          # lib/langs.mjs 语言注册表代理的纯逻
 node test/sizes.test.mjs          # lib/sizes.mjs 尺寸注册表代理的纯逻辑测试（15 条，★ `--ratio` 判据真相源；夹具库树 + `LEMO_LIB_WIN`）
 node test/styles.test.mjs         # lib/styles.mjs（风格索引解析 + `escapeHtml` 注入防护 + `renderMarkdown` 伪协议防护）+ lib/styles-root.mjs 的纯逻辑测试（20 条）
 node test/review.test.mjs        # 编排器 ⑩「审核回路」（--review）的回归测试（10 条，★ opt-in ⇒ 默认出片路径不跑它 ⇒ 既有测试零覆盖：CLI 契约 + blackdetect **真值**（合成「黑/白/黑」= 2 段、全白 = 0 段、真成片 ≥1 段）+ 端到端真产 sheet.jpg 并核几何（宽 = cols×w = 1920）；库 / WSL / ffmpeg 缺依赖时**显式 skip**，绝不假装通过）
+node test/stills-only.test.mjs   # 编排器 ⑫「断点式分镜」（--stills-only）的回归测试（11 条，★ 同 `--review`：opt-in ⇒ 默认出片路径不跑它 ⇒ 既有测试零覆盖。A 组 CLI 契约（`--help` 列出 + 默认 dry-run **不含**分镜步/不提 storyboard.jpg + 传了要排进计划并明说「渲染/混流不会执行」+ 未知参数仍报错 + **默认路径逐字节不变**：默认值 `false` 且两处新分支都在 `if (o.stillsOnly)` 守卫下）；B 组流程语义（调用点在**渲染 spawn 之前** + `--review` 与 `--stills-only` **共用** `emitContactSheet`（`sheet.py` 调用全库只有 1 处）+ 产不出来 ⇒ 退出码 1 + 自己 `mkdirSync(outDir)`）；C 组**端到端真跑**（不渲染成片 ⇒ 便宜）：`--out <临时目录>` 真产 `storyboard.jpg` 且该目录**没有** mp4、日志无 `MUX_OK`/`全部完成`、步骤号止于「分镜」+ 时长来源 = `style.json` 的 `dur`（真值比对）+ 兜底分支如实标注；库 / WSL / 浏览器缺依赖时**显式 skip**）
 node test/asr-cli.test.mjs       # 编排器 ⑪「ASR 三参数 CLI 出口」（--asr-lang / --asr-model / --asr-threshold）的回归测试（12 条，★ 从源码重建内嵌 WSL 脚本 ⇒ 钉「默认路径那条 asr_check 命令与改动前**逐字节一致**」+ **真跑 Git Bash**（桩 python 收 argv）证参数真进了库侧命令 + 显式参数取消既有「按行自动跳过 CJK」；不碰真实输出目录 / 成片库）
 node test/js-scan.test.mjs       # 共享剥注释器 `lib/js-scan.mjs` 的回归测试（7 条，★ 钉「**正则字面量含裸引号**不复带偏」（= 2026-10-11 `check-llm-call-params` 失明事故的最小复现）+ 「注释含反引号」+ 与旧实现**逐字节等价性**（安全文件）+ 新实现更正确（危险文件）+ 基本语义/行号保留 + ★ **变异自证**：去掉正则识别 ⇒ 用例 1/3/5/7 必变红）
 node test/readcheck-probe.test.mjs # 上游 `core/render/readcheck.mjs` 三个退出码的端到端回归（3 条，★ 夹具建在 `D:/lemo-tmp/` 下、**库仓之外**：全库 43 个风格 0 个实现 `window.TEXTS` ⇒ 编排器廉价预判必然跳过、真跑必然返 2 ⇒ **`exit 0`/`exit 1` 两条分支此前从未实跑过**；最小夹具把 2/0/1 各钉一条 + 2 处变异自证）
@@ -60,7 +61,7 @@ node test/readcheck-probe.test.mjs # 上游 `core/render/readcheck.mjs` 三个�
 
 | 用例 | 断言 |
 |---|---|
-| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `c46d76b7b8f2569a67cc09a6eb266ce3` |
+| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `d8d75f806b5524d7495f9ae0ed87c25e` |
 
 控制台只是**包装层**，绝不能改编排器。这条是整个项目的红线，失败信息直说「编排器被改动了 —— 控制台不应该修改它」。
 
@@ -569,6 +570,41 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 `dfb3700378cea8e9ee577f8a2f969b73` → `c46d76b7b8f2569a67cc09a6eb266ce3`。红线本身**未动**（仍然拦人）。
 （历史箭头保留：上面 `:508` 的 `9cd33e25… → dfb37003…` 与 `_distill/AGENT-BRIEF.md` 的同型记录**不改值**。）
 
+★★ **2026-10-11 第十九批（`lemo-make.mjs` 新增 `--stills-only`；`ui.test.mjs` +6 条 → 109；新入口 `test/stills-only.test.mjs` 11 条）：断点式「先看分镜」。** ★ 批次号取「第十九批」是因为 `test/ui.test.mjs` 覆盖清单里**已有一个**「第十八批 4 条」（别的改动），避免撞号。
+- **上游依据**（活库 `D:/lemo-opuscar/`）：`AGENTS.md` 的 `whether they want to review a storyboard first (default: no);`
+  与 `**Storyboard, only if the user asked for it** (DIRECTOR.md §5). **Stop and wait for approval.** Otherwise don't stop.`，
+  以及 `DIRECTOR.md` §5 `### The storyboard (only if the user asked for one)`。⇒ 上游**默认不停**；用户**要**先看分镜时
+  才在**渲染之前**停下等批准。本开关就是那个 opt-in。
+- **新开关 `--stills-only`（opt-in，默认关）**：出片流程在**渲染之前**停下，只把分镜帧 + 分镜总览图 `storyboard.jpg`
+  产到**本次输出目录**，然后退出（**不渲染、不混流、不产成片**）。★ 产不出来 ⇒ **退出码 1**（本开关的唯一目的就是那张图，
+  不许像审核回路那样「只 warn 然后当成功」）。
+- **复用而非另造**：把 `--review`（⑩ 审核回路）里的「出帧 + 拼接触表」抽成 `emitContactSheet()`，两处**共用**
+  （实测 `core/render/sheet.py` 的调用全库只有 1 处、`still.mjs --range` 的构造也只有 1 处）。`--review` 的命令 / 路径 / 日志**逐字未变**。
+- **落点与「为什么不能更早/更晚」**：调用点在第 1.6 步（demo 自带页面贴图生成器）**之后**、第 2 步（导出事件与字幕）**之前**
+  —— 更早则页面依赖的字体/素材/junction/贴图还没备好（会 404/空白帧），更晚就不是「渲染之前」了。
+- **时长从哪来（必须说清）**：分镜阶段**没有成片** ⇒ 拿不到 ffprobe ⇒ 取 `style.json` 的 `dur`（实测 ascii-crt = 59.8s）；
+  读不到就退化成「**前 N 秒**」（`stillsFallbackDur()` = 30）并**如实标注**来源。实测真跑日志：`分镜时长 59.80s（来源：style.json 的 dur）`。
+- **实测真跑**（`--stills-only --out D:/lemo-tmp/stills-test`，17.4s）：产出 `storyboard.jpg` **1920×7000 px / 729 KB / 30 帧**
+  （= 4 列 × 8 行），输出目录里**只有这一张图、没有 mp4**，日志无 `MUX_OK` / `全部完成`，步骤号止于 `[3] 分镜`。
+- **零行漂移（保 `lemo-make.mjs:<行号>` 引用不漂）**：前段 5 处改动**全部追加在既有行尾**（默认值 / parseArgs / HELP 的
+  `${reviewHelp()}${stillsHelp()}` / dry-run 的 `if (o.stillsOnly)` 分支 / 主流程调用点），**一行都没漂**
+  （`diff` 实测：前 2936 行只有 5 行被**原地**改写、无增删）；新增代码全部集中在**文件尾**的新函数。
+- **dry-run 诚实性**：`--dry-run --stills-only` **不印**「正常出片」那张 1–10 步清单（那会把 2–8 步列成**会跑**的样子
+  ⇒ 骗人），改走专用分支 `dryRunStillsOnly()`，明确列出「只跑 1 库同步 + 2 分镜」与「以下步骤**不会执行**：…」。
+- **控制台**：主表单新增 `#fStillsOnly`（默认**不勾** ⇒ 提交参数逐字节不变）+ 一键 `#btnStillsOnly`
+  （= 勾上 `#fStillsOnly` 再走**同一条** `startRun` 通路）；任务完成后出现 `#stillsConfirm` 横幅
+  「分镜已生成…确认后将开始**完整出片**（渲染耗时较长）」，点「确认出片」= **把同一个表单再提交一次**（不传该开关）。
+  ★★ 文案**不许**说「续跑」—— 本项目渲染**没有帧级缓存**，分镜那次的帧不会被复用（横幅里已写明）。
+- **新测试**：`test/stills-only.test.mjs`（11 条，全绿）钉三件事 ① 不传该开关 ⇒ 计划里没有分镜步、命令与改动前一致
+  （默认值 `false` + 两处新分支都在 `if (o.stillsOnly)` 守卫下）；② 传了 ⇒ 计划里有分镜步且明说渲染/混流**不会执行**、
+  调用点在**渲染 spawn 之前**；③ 分镜产物落在 `--out` 指定目录（真跑，且该目录**没有** mp4）。
+  `test/ui.test.mjs` 新增 **P 组 6 条**（109 条）：三件套就位 + 默认不传 + 勾上就传 + 点按钮 ⇒ 提交带该开关的任务
+  （页面内 `window.fetch` 桩 + 反空转「点前 0 条 / 点后 1 条」）+ 横幅显隐判据 + 「确认出片」⇒ 重提交同表单且不传该开关。
+
+这是**有意改编排器**，故基线 md5 由
+`c46d76b7b8f2569a67cc09a6eb266ce3` → `d8d75f806b5524d7495f9ae0ed87c25e`。红线本身**未动**（仍然拦人）。
+（历史箭头保留：上面 `:570` 的 `dfb37003… → c46d76b7…` 与 `_distill/AGENT-BRIEF.md` 的同型记录**不改值**。）
+
 ★ **2026-10-11 第十五批（`ui.test.mjs` +4 条 → 89）：本批 3 个新 UI 入口的进仓回归钉 + 新端点的降级分支。**
 - `#fWebCut` → `--web-cut`；`#fColor` → `--color bt709`（★ 且选 `default` **不传** `--color` 的反向断言）；
   `#fLines` → `--lines`。
@@ -1031,7 +1067,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（103 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条 + 第十四批 7 条 + 第十五批 4 条 + 第十六批 1 条 + 第十七批 5 条 + **第十八批 4 条**）
+## `test/ui.test.mjs` 覆盖了什么（109 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条 + 第十四批 7 条 + 第十五批 4 条 + 第十六批 1 条 + 第十七批 5 条 + **第十八批 4 条** + **第十九批 6 条**（P 组：断点式分镜 `--stills-only` 的进仓回归钉））
 <!-- ★ 2026-10-10 订正：本标题原写「69 条」，与入口行不一致（**旧漂移**）。上列批次之和确为 69，
      另 6 条来自其后未逐批列出的批次 ⇒ 总数改为 **75**（★ 以本文件「测试入口」表那一行为准）。
      ★ 另：2026-10-10「AI 算力配置」面板极简化时，I 组 6 条被**同数重写**（6 换 6）⇒ 总数不变。★ 2026-10-10 第二轮（通用算力模块重建）：I 组换锚点 + 新增 I7~I11（多套列表/新增/切换/删除/空状态）⇒ ui.test 由 75 → **80**；同轮 llm-api.test 71 → **78**、dub-api.test 27 → **31**。 -->

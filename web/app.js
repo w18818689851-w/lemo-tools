@@ -228,6 +228,8 @@ const prog = { curN: 0, maxN: 0, total: KNOWN_STEPS };
 function expectedSteps(opts) {
   const o = opts || [];
   if (o.includes('--dry-run')) return 1;                                      // [1] 之后 exit(0)
+  // --stills-only：实测只跑 [1] 环境自检 + [2] 同步两份库 + [3] 分镜，然后 exit(0)（真跑日志见 test/stills-only.test.mjs）。
+  if (o.includes('--stills-only')) return 3;
   if (o.includes('--audio-only') || o.includes('--render-only')) return 5;    // 并行段之后 return
   return KNOWN_STEPS;
 }
@@ -3459,6 +3461,11 @@ function buildOpts() {
   if (asrThreshold !== '' && Number(asrThreshold) !== 0.92) o.push('--asr-threshold', asrThreshold);
   // --web-cut（CLI 已有、UI 此前没有）：opt-in，默认关 ⇒ 只有勾上才传。
   if ($('fWebCut') && $('fWebCut').checked) o.push('--web-cut');
+  // --stills-only（CLI 已有、UI 此前没有）：opt-in，默认关 ⇒ 只有勾上才传（照 --web-cut 的做法）。
+  //   ★ 语义 = **渲染之前停下**，只产分镜帧 + 分镜总览图（storyboard.jpg），不渲染/不混流/不产成片。
+  //   ★ 默认**不勾** ⇒ 不传 ⇒ 提交参数与加本开关之前**逐字节一致**。
+  //   ★ 「先看分镜（不出片）」按钮（#btnStillsOnly）就是把本勾选框**勾上**再走 startRun —— 不另开一条提交通路。
+  if ($('fStillsOnly') && $('fStillsOnly').checked) o.push('--stills-only');
   if ($('fSkipSync').checked) o.push('--skip-sync');
   if ($('fSkipRender').checked) o.push('--skip-render');
   if ($('fAudioOnly').checked) o.push('--audio-only');
@@ -3793,6 +3800,24 @@ function showLockWarn(pre, slug, opts) {
   toast(`⚠️ ${slug} 已有 lemo-make 在跑（pid ${pre.pid ?? '?'}）—— 见下方提示`, true);
 }
 
+// ── 分镜「确认出片」横幅（--stills-only）─────────────────────
+//
+// ★ 出现条件：**刚跑完的这条任务**的 opts 里带 `--stills-only` 且状态是 done（其余一律收起）。
+// ★★ 点「确认出片」做的事 = **把同一个表单再提交一次**（勾选框取消、不传 --stills-only）⇒ 完整出片。
+//    **不是**「续跑」：本项目渲染**没有帧级缓存**，分镜那次渲出来的帧**不会被复用** ⇒ 说「续跑」就是骗人。
+//    横幅文案已把这点写死（见 web/index.html 的 #stillsConfirm）。
+function hideStillsConfirm() {
+  const b = $('stillsConfirm');
+  if (b && !b.hidden) b.hidden = true;
+}
+
+function maybeShowStillsConfirm(opts, status) {
+  const b = $('stillsConfirm');
+  if (!b) return;
+  const list = Array.isArray(opts) ? opts : [];
+  b.hidden = !(list.includes('--stills-only') && status === 'done');
+}
+
 async function startRun(force) {
   const { slug, opts, angle, voiceNotes } = buildOpts();
   if (!slug) { toast('请先选择或输入一个风格', true); $('fSlug').focus(); return; }
@@ -3801,6 +3826,7 @@ async function startRun(force) {
 
   const btn = $('btnRun'); if (btn.disabled) return;   // ★ 重入守卫：键盘路径(Enter/Ctrl+Enter)绕过按钮 ⇒ 在此拦
   btn.disabled = true;                       // ★ await 前就禁用：否则 precheck 往返窗口内可双击重复入队
+  hideStillsConfirm();                       // ★ 新任务一启动 ⇒ 上一条分镜的「确认出片」横幅立刻收起（它已不对应当前状态）
   if (!force) {
     hideLockWarn();
     try {
@@ -3948,6 +3974,9 @@ function attachLog(jobId, opts) {
       loadFilms();
       loadStylesBadges();
       loadBriefs();     // 出片任务结束 → 对应工单的 done/failed 立刻反映出来（不用等下一次轮询）
+      // ★ 这条刚跑完的任务带 --stills-only 且成功 ⇒ 亮出「确认出片」横幅（其余情况一律收起）。
+      //   用 attachLog 的 opts 形参（闭包可见）—— 不依赖 state.jobs 是否已刷新。
+      maybeShowStillsConfirm(opts || (j && j.opts), rec.status);
       // 安装任务结束 → 环境可能变了，重新检测并重算安装计划（幂等：装好的项会自动消失）
       if (state.logJobKind === 'setup') { state.logJobKind = null; refreshAfterSetup(); }
     }
@@ -5850,6 +5879,18 @@ function gotoLlmCard() {
 function bind() {
   // ⚠️ 必须包一层：直接传 startRun 会把 MouseEvent 当成 force 参数（真值）→ 预检被跳过
   $('btnRun').addEventListener('click', () => startRun(false));
+  // ★ 先看分镜（--stills-only）：勾上 #fStillsOnly 再走**同一条** startRun 通路（不另开提交通路）。
+  if ($('btnStillsOnly')) $('btnStillsOnly').addEventListener('click', () => {
+    const cb = $('fStillsOnly'); if (cb) { cb.checked = true; syncPreview(); }
+    startRun(false);
+  });
+  // ★ 确认出片：**把同一个表单再提交一次**（取消 #fStillsOnly ⇒ 不传 --stills-only）⇒ 完整出片。
+  //   ★★ 不是「续跑」——本项目渲染没有帧级缓存，分镜那次的帧不会被复用（横幅文案已写明）。
+  if ($('btnConfirmRender')) $('btnConfirmRender').addEventListener('click', () => {
+    const cb = $('fStillsOnly'); if (cb) { cb.checked = false; syncPreview(); }
+    startRun(false);
+  });
+  if ($('btnDismissStills')) $('btnDismissStills').addEventListener('click', hideStillsConfirm);
   $('btnRefreshJobs').addEventListener('click', loadJobs);
   // 主题出片（工单）
   $('btnRefreshBriefs').addEventListener('click', loadBriefs);
@@ -6254,7 +6295,7 @@ function bind() {
   //   ★ 本批新增的 `fWebCut`（复选）/ `fColor`（下拉）/ `fLines`（文本）同理并入。
   for (const id of ['fSlug', 'fFps', 'fWorkers', 'fVenc', 'fQ', 'fGrain', 'fOut', 'fFilm',
                     'fSkipSync', 'fSkipRender', 'fAudioOnly', 'fRenderOnly', 'fDryRun', 'fNoPreflight',
-                    'fWebCut', 'fColor', 'fLines', 'fAsrLang', 'fAsrModel', 'fAsrThreshold']) {
+                    'fWebCut', 'fStillsOnly', 'fColor', 'fLines', 'fAsrLang', 'fAsrModel', 'fAsrThreshold']) {
     $(id).addEventListener('change', syncPreview);
     $(id).addEventListener('input', syncPreview);
   }

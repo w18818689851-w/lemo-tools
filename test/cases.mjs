@@ -286,7 +286,7 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     ★ **零行漂移**：本文件里对 `lemo-make.mjs` 的行号引用（`scripts/check-audio-chain.mjs` 的 2548/2936 等）
 //     **一行都没漂** —— 前段改动一律做成 `-N/+N` 净零（新代码集中在**文件尾**的新函数 `asrArgsSuffix`；
 //     `git diff --numstat` 前段净增删为 0）。这是**有意改编排器**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = 'c46d76b7b8f2569a67cc09a6eb266ce3';
+export const ORCH_MD5 = 'd8d75f806b5524d7495f9ae0ed87c25e';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

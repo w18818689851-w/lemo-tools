@@ -39,7 +39,9 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 import { CFG, run, makeTtlCache } from '../lib/env.mjs';   // 只借常量与 run()/缓存；env.mjs 顶层无副作用
-import { knownActionIds } from '../lib/setup.mjs';  // 只借「静态登记的动作 id」；顶层无副作用
+// ★ `INSTRUMENT_LIBS` 从 **lib/setup.mjs** 取（它现在是从 lib/env.mjs **同名再导出**）——
+//   顺手把「再导出这条契约没坏」也钉住：它一旦断掉，这里 import 到 undefined 会当场炸。
+import { knownActionIds, INSTRUMENT_LIBS } from '../lib/setup.mjs';  // 只借「静态登记的动作 id」；顶层无副作用
 
 // ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
 //   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
@@ -502,8 +504,39 @@ async function main() {
       notes.push(`③ 真实计划：count=${realPlan.count}（auto=${realPlan.autoCount}/manual=${realPlan.manualCount}），summary=${JSON.stringify(realPlan.summary)}，runnable=${realPlan.runnable}`);
     });
 
+    // ── ③b 采样库「按库」可见（2026-10-11）──
+    await runCase('③b 采样库「按库」可见：6 张卡的 why 逐字等于 assets.inst 的检测文案（partial 演练）', async () => {
+      // ★ 钉的是**跨层一致性**：`/api/setup/actions?simulate=partial` 里那 6 张采样库卡片的 `why`
+      //   必须**逐字等于** `/api/env?simulate=partial` 里 `assets.inst` 那一项的 `detail`
+      //   —— 卡片文案不是另写一套（`planActions` 里 `why: it.detail`），而那一项现在带**按库**事实
+      //   （「N/5 个采样库已装（缺：…）」）。★ 只用演练场景：不碰真实环境、**绝不安装**。
+      const env = await getJson(P, '/api/env?simulate=partial');
+      need(env.status === 200, `/api/env?simulate=partial 异常：${env.status}`);
+      let item = null;
+      for (const g of env.json.groups || []) for (const it of g.items || []) if (it.id === 'assets.inst') item = it;
+      need(item, '演练结果里找不到 assets.inst 项');
+      need(typeof item.detail === 'string' && item.detail, `assets.inst 的 detail 不是非空字符串：${JSON.stringify(item.detail)}`);
+      // partial 场景 = 一个采样库都没装 ⇒ 文案必须**如实**写 0/5、并把 5 个库名都列在「缺」里
+      need(/0\/5 个采样库已装/.test(item.detail), `partial 的 detail 没写「0/5 个采样库已装」：${item.detail}`);
+      for (const lib of INSTRUMENT_LIBS.map((l) => l.name)) {
+        need(item.detail.includes(lib), `partial 的 detail 里没有库名 ${lib}：${item.detail}`);
+      }
+
+      const a = await getJson(P, '/api/setup/actions?simulate=partial');
+      need(a.status === 200, `/api/setup/actions?simulate=partial 异常：${a.status}`);
+      const cards = (a.json.actions || []).filter((x) => x.id === 'assets.inst' || x.id.startsWith('assets.inst.'));
+      need(cards.length === 1 + INSTRUMENT_LIBS.length,
+        `采样库那一组应有 ${1 + INSTRUMENT_LIBS.length} 张卡，实得 ${cards.length}：${cards.map((x) => x.id).join(', ')}`);
+      for (const c of cards) {
+        need(c.why === item.detail, `${c.id} 的 why 与 assets.inst 的 detail 不一致：\n  why=${c.why}\n  detail=${item.detail}`);
+      }
+      notes.push(`③b partial 演练：assets.inst 文案=${JSON.stringify(item.detail)}；`
+        + `${cards.length} 张采样库卡片的 why 与它逐字相同（含库名清单来自 lib/setup.mjs 的再导出）`);
+    });
+
     // ── ④ POST /api/setup/run：请求体校验（早退，不触发检测）──
     await runCase('④ POST /api/setup/run 请求体校验：非法 JSON / actionId 缺·非串·空·非法字符 → 400 且不起任务', async () => {
+
       const j = await postRunRawExpect(P, '{ bad json', 400, '非法 JSON');
       need(/合法 JSON/.test(j.json.error || ''), `非法 JSON 的 400 文案不对：${j.text.slice(0, 160)}`);
 
