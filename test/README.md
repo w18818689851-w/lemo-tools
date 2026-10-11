@@ -13,7 +13,7 @@ node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自�
 
 node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（13 条）
 node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（12 条，★ 绝不真安装；★ 2026-10-10 ⑪ 从**一次冷启动**钉住三件事：① 未知 id 的 404 **不付探测**（实测 22ms ≪ 冷态全量探测 6519ms —— 钉 `apiSetupRun` 先查 id 白名单、不空跑整轮环境探测）、② `GET /api/setup/actions` 写进**共享** `envCache`（随后 `/api/env` 必 `cached:true`）、③ `POST /api/setup/run` 读同一份缓存（实测 1ms，不再每请求重探））
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（82 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见）
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（89 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见；★ L 组 7 条（2026-10-11）：上一批 5 个 UI 入口的**进仓**回归钉 —— 启动表单 `#runRatio`→`--ratio` / `#runSizeW·H`→`--size`（★ 且**奇数尺寸不传**的反向断言）、`#fNoPreflight`→`--no-preflight`、`#fFilm`→`--film`、算力面板 `#btnLlmTryRun`→`POST /api/llm/invoke`（页面内 fetch 桩，绝不真发外网）+ 侧栏 `.style-item` 中英名/slug 真值比对 + 浅色 hover 底色对比度盲区）
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
 node test/briefs.test.mjs        # 「主题工单」数据层 + 接口 + UI 的测试（16 条，★ 含「控制台出片写进 _jobs 独立目录、不覆盖样板片」+「--ratio 的 `:` 判据」「filmUrl 指向本次产物」）
@@ -56,7 +56,7 @@ node test/styles.test.mjs         # lib/styles.mjs（风格索引解析 + `escap
 
 | 用例 | 断言 |
 |---|---|
-| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `65942a2c36b0572031a1992724f7acc9` |
+| 编排器 md5 未被改动 | `lemo-make.mjs` 的 md5 == `9cd33e25182d73c40db1d0fbb7abd75f` |
 
 控制台只是**包装层**，绝不能改编排器。这条是整个项目的红线，失败信息直说「编排器被改动了 —— 控制台不应该修改它」。
 
@@ -445,6 +445,37 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 这是**有意改编排器**，故基线 md5 由
 `a09262544f3e415d467dcf412a04994d` → `65942a2c36b0572031a1992724f7acc9`。红线本身**未动**（仍然拦人）。
+
+★ **2026-10-11 更新（**有意改编排器**）：接入上游 `tools/web_cuts.sh` 的正式能力 —— 720p web cut。**
+「功能对齐核查」把「上游的 720p web cut 我们完全没有」列为一条 ❌ 底层缺口，本次补齐：
+
+- **上游的正式能力（规格来源，逐字读 `tools/web_cuts.sh`）**：为「新片或变了的片」出 720p 小样，
+  核心命令 = `ffmpeg -v error -y -i "$src" -vf "scale=-2:720:flags=lanczos" -c:v libx264 -preset slow
+  -crf 24 -maxrate 2M -bufsize 4M -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -f mp4
+  "$out.part"`（成功 `mv .part → out`，失败 `rm .part` 并 `exit 1`）。落点 `.release/web/<slug>.mp4`
+  （`MAINTAINING.md` 记载），由 `tools/release.py` 上传成 `web` release，**给 gallery 页以 `video/mp4`
+  播放**（Safari 需要）。
+- **新增 CLI `--web-cut`（opt-in，默认关）+ 第 9 步 `emitWebCut()`**（紧随第 8 步「交付文档」之后）：
+  产 `<本次输出目录>/<slug>-720p.mp4`。**命名理由**：本项目「一个成片一个输出目录」是交付模型
+  （mp4 / .srt / poster.jpg / 交付文档同处），再开 `web/` 子目录会让小样与其它交付物分家；
+  `-720p` 后缀把这个小样唯一的关键差异（分辨率）写进文件名，平铺列目录时不歧义。
+- ★★ **与上游的唯一差异（本项目最高优先级硬规则：渲染一律 GPU）**：上游那条命令硬写 `libx264`（CPU）
+  —— 本项目**不许照抄这一点**。编码器**跟随既有 `--venc`**（默认 `nvenc`），参数**逐字照抄**
+  `core/render/mux.sh` 的 `case "${LEMO_VENC:-}" in` 两块 `VARG` 里的 nvenc 组合
+  （`-c:v h264_nvenc -preset p5 -profile high -rc vbr -cq 23 -b:v 0`；显式 libx264 才走 CPU）。
+  ★ 其余参数**逐字照上游**（`scale=-2:720:flags=lanczos` / `-maxrate 2M -bufsize 4M` / `-pix_fmt yuv420p`
+  / `-c:a aac -b:a 128k` / `-movflags +faststart` / `-f mp4`）。ffmpeg 走**项目既有的 Windows ffmpeg 定位**
+  （`findFfmpegDir()` → `ffDir`，与渲染/静帧两步同源）。
+- **默认路径逐字节不变（照 `--color default` 的做法）**：不传 `--web-cut` 时 `emitWebCut()` **根本不被调用**
+  （调用点自带 `if (o.webCut)`）⇒ 既不产文件、也不多打一个字。
+- **失败处理（与 poster / 交付文档同口径）**：ffmpeg 失败 ⇒ **只 warn、不让出片 fail**；
+  且照上游「先写 `<out>.part`、成功才 rename」⇒ 任何失败路径都**不留 `.part` 残file**。
+- **上游未定义、本项目取**：上游把 web cut 放在 `.release/web/`（发布流水线的落点）；本编排器没有
+  `.release/` 这一层 ⇒ **本项目取**「本次输出目录」内的 `<slug>-720p.mp4`（与其它交付物同处）。
+
+这是**有意改编排器**，故基线 md5 由
+`65942a2c36b0572031a1992724f7acc9` → `9cd33e25182d73c40db1d0fbb7abd75f`。红线本身**未动**（仍然拦人）。
+（历史箭头保留：上面 `:447` 的 `a0926254… → 65942a2c…` 与 `_distill/AGENT-BRIEF.md` 的同型记录**不改值**。）
 
 ### ② 行尾规则未被破坏
 
@@ -870,7 +901,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（82 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条）
+## `test/ui.test.mjs` 覆盖了什么（89 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条 + **第十四批 7 条**）
 <!-- ★ 2026-10-10 订正：本标题原写「69 条」，与入口行不一致（**旧漂移**）。上列批次之和确为 69，
      另 6 条来自其后未逐批列出的批次 ⇒ 总数改为 **75**（★ 以本文件「测试入口」表那一行为准）。
      ★ 另：2026-10-10「AI 算力配置」面板极简化时，I 组 6 条被**同数重写**（6 换 6）⇒ 总数不变。★ 2026-10-10 第二轮（通用算力模块重建）：I 组换锚点 + 新增 I7~I11（多套列表/新增/切换/删除/空状态）⇒ ui.test 由 75 → **80**；同轮 llm-api.test 71 → **78**、dub-api.test 27 → **31**。 -->

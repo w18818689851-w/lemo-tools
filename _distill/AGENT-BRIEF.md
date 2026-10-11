@@ -716,6 +716,17 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    创作字段如实标注来源。默认产（`--no-deliverables` 才跳过）；**默认路径逐字节不变**（照 `--color default` 的做法）。
    partial 模式（`--render-only`/`--audio-only`）也产出；写失败只 warn、不 fail（与 poster 同口径）。
    md5 `a09262544f3e415d467dcf412a04994d` → **`65942a2c36b0572031a1992724f7acc9`**。
+   ★ **2026-10-11** 又一处：接入上游 `tools/web_cuts.sh` 的正式能力 **720p web cut**（「功能对齐核查」的
+   ❌ 缺口之一）—— 新增 CLI `--web-cut`（**opt-in，默认关**）+ 第 9 步 `emitWebCut()`，产
+   `<本次输出目录>/<slug>-720p.mp4`。★★ **与上游的唯一差异 = 编码器**：上游硬写 `libx264`(CPU)，
+   本项目**跟随既有 `--venc`**（默认 nvenc/GPU）、nvenc 参数**逐字照抄** `core/render/mux.sh` 的
+   `case "${LEMO_VENC:-}" in` 两块 `VARG`（`-c:v h264_nvenc -preset p5 -profile high -rc vbr -cq 23 -b:v 0`）；
+   其余参数逐字照上游（`scale=-2:720:flags=lanczos` / `-maxrate 2M -bufsize 4M` / `-pix_fmt yuv420p` /
+   `aac 128k` / `+faststart`）。**默认路径逐字节不变**（不传 `--web-cut` 时函数根本不被调用）；
+   失败只 warn、不留 `.part`。★ 实测：argv 抓到 nvenc、产物 **1280×720 / h264 / 59.79 s**。
+   ★ **本批 `lemo-make.mjs` 只 +4 行（3375 处调用点）+67 行（文件尾函数）** ⇒ 前段四个 hunk 全为
+   `-7/+7` **净零**，故**全仓 `lemo-make.mjs:<行号>` 引用零漂移**（机器双向核实：9 处目标行原文逐字未变
+   ＋ 无任何引用指向 ≥3000 的行）。md5 `65942a2c36b0572031a1992724f7acc9` → **`9cd33e25182d73c40db1d0fbb7abd75f`**。
    再上一次：**2026-10-06** 补上 art-deco 漏跑的变调步 `tools/pitch.py`（`dfa990…` → `caab495…`），
    并把「build.sh 有、编排器不跑」的步骤做成起飞前检查可报的 `ORCH_SKIP_STEPS` 登记表。
    ★ **若你确实动了 `D:/lemo-opuscar` 下任何文件 ⇒ 改完立刻同步两侧**（改一侧 = 分叉 = 阻塞出片，

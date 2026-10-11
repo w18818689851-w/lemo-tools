@@ -268,8 +268,8 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     ★ `TREATMENT.md` 由编排器**基于已有信息**生成（上游无样本、由导演 agent 撰写 ⇒ 本项目如实标注来源、不编造剧情）；
 //     `CREDITS` 逐字附上该风格上游自带的 `demo/CREDITS`（实测 43/43 均有）。
 //     ★ 默认路径逐字节不变：不传 `--no-deliverables` 时既有步骤的命令与产物一字不动，仅新增这两个文件与日志行。
-//     ★ partial 模式（`--render-only` / `--audio-only`）也会产出这两件（纯元数据，与渲染/音频产物无依赖）。
-export const ORCH_MD5 = '65942a2c36b0572031a1992724f7acc9';
+//     ★ partial 模式（`--render-only` / `--audio-only`）也会产出这两件（纯元数据，与渲染/音频产物无依赖）。 ★ 2026-10-11 更新（**有意改编排器**）：接入上游 `tools/web_cuts.sh` 的 720p web cut —— 新增 CLI `--web-cut`（opt-in，默认关）+ 第 9 步 `emitWebCut()`（落**本次输出目录**的 `<slug>-720p.mp4`）；编码器跟随 `--venc`（默认 nvenc/GPU），参数照抄 `core/render/mux.sh` 的 nvenc 组合（★ 上游那条命令硬写 libx264(CPU)，本项目按硬规则改走 GPU）；默认路径逐字节不变（不传 `--web-cut` 时该函数不被调用）；失败只 warn、不留 `.part`。详见 `test/README.md`。
+export const ORCH_MD5 = '9cd33e25182d73c40db1d0fbb7abd75f';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

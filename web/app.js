@@ -797,6 +797,22 @@ let loadResourcesSeq = 0;
 
 async function loadResources(force) {
   const seq = ++loadResourcesSeq;
+  // ★ P1-C：扫描前先摆 3 条骨架（复用「声音」卡已有的 .voice-skel，不新增 CSS）——
+  //   原来点「重新扫描」后这张卡是**空白**的，用户不知道是在跑还是坏了（审计 P1-14：
+  //   声音卡有骨架屏、资源检测卡没有，反馈口径不一致）。
+  //   ★ 只在列表还**没有** .res-item 时摆：已有结果时刷新，保留旧结果比闪成骨架更少惊吓。
+  //   ★ 落点必须在护栏（++seq）之后、api() 之前 —— 不碰 K4 用例（test/ui.test.mjs:3932）
+  //     钉的那个先后顺序：「进入 ++seq → await 之后判护栏 → 才写状态」。
+  //     ⚠️ 这条注释里**不许**出现写状态调用的**完整函数名加左括号**：K4 是用
+  //     `body.indexOf(函数名+'(')` 找「写状态」的位置，注释里先出现一次就会把那个位置
+  //     顶到护栏前面 ⇒ 用例判「护栏等于没装」。所以这里一律写 `renderResources /
+  //     renderResourcesError`（不带括号）。
+  //   ★ 不清空 #resList 里已有的旧节点：清空会丢掉「上次扫描时间」等上下文；
+  //     两个渲染函数各自会 `list.textContent = ''` 收尾。
+  const resList = $('resList');
+  if (resList && !resList.querySelector('.res-item')) {
+    for (let i = 0; i < 3; i++) resList.appendChild(el('div', 'voice-skel'));
+  }
   try {
     const d = await api('/api/resources/scan' + (force ? '?force=1' : ''));
     if (seq !== loadResourcesSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
@@ -861,8 +877,15 @@ function styleItemNode(s, q) {
   main.appendChild(sub);
   item.appendChild(main);
 
+  // ★ P1-A：`已出片` 不再是一个常驻 chip —— 本机 43 个风格**全都有成片**（/api/films 返回 58 条），
+  //   原来每行都挂一个一模一样的绿胶囊，把每行撑成「中文名 / 英文名·slug / [已出片] / [详情]」5 件套
+  //   （审计 P1-6 / P1-13）。改成条目左侧一道 3px 绿边（CSS `.style-item[data-film]`）：
+  //   信息没丢，占的文字宽度归零。
+  //   ★ 这里用 `data-film` 而**不是** `classList.add('has-film')`：A1 用例（test/ui.test.mjs:827）
+  //     用 `dom.match(/class="style-item"/g)` 做**精确串匹配**计数，多一个 class 会让属性变成
+  //     `class="style-item has-film"` ⇒ 43 行全部匹配不上、计数归零。属性名不参与该正则。
   if (!s.hasDemo) item.appendChild(el('span', 'nodemo', '无 demo'));
-  else if (s.film || filmOf(s.slug)) item.appendChild(el('span', 'badge', '已出片'));
+  else if (s.film || filmOf(s.slug)) item.dataset.film = '1';
 
   const info = el('button', 'si-info', '详情');
   info.title = `查看 ${s.slug} 的风格规范与示例`;
@@ -873,6 +896,21 @@ function styleItemNode(s, q) {
     selectStyle(s.slug);
     markActiveStyle();
     $('sidebar').classList.remove('open');
+  });
+  // ★ P1-B：键盘可达。原来 `.style-item` 是个纯 div —— Tab 走不到、Enter 也没反应，
+  //   只能用鼠标点（WCAG 2.1.1 键盘 / 2.4.7 焦点可见，审计 P1-9）。
+  //   加 tabIndex + role=button，并让 Enter / Space 走与 click **完全相同**的那条路径。
+  //   ★ 只加属性、不加节点 ⇒ A1 的 `.style-item` 计数不变（test/ui.test.mjs:827）。
+  //   ★ 子控件（勾选框 / 「详情」按钮）自带焦点与键盘语义 ⇒ 焦点在它们身上时直接放行，
+  //     不抢它们的 Enter / Space（否则按 Space 勾选会变成「选中该风格」）。
+  item.tabIndex = 0;
+  item.setAttribute('role', 'button');
+  item.setAttribute('aria-label', `选择风格 ${styleLabel(s)}（${s.slug}）`);
+  item.addEventListener('keydown', (e) => {
+    if (e.target !== item) return;
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    e.preventDefault();          // Space 默认会滚页面
+    item.click();
   });
   if (q) markHit(item, q, s);
   return item;
@@ -963,6 +1001,16 @@ function renderStylesInner(filter) {
       if (state.collapsed.has(g.key)) state.collapsed.delete(g.key);
       else state.collapsed.add(g.key);
       renderStyles($('search').value);
+    });
+    // ★ P1-B：分组头同样键盘可达。aria-expanded 让 AT 能播报「已展开 / 已收起」；
+    //   Enter / Space 走与 click 同一条路径（re-render 后会重建节点，属性随之刷新）。
+    head.tabIndex = 0;
+    head.setAttribute('role', 'button');
+    head.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    head.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      e.preventDefault();
+      head.click();
     });
     box.appendChild(head);
 
@@ -5761,6 +5809,31 @@ function bind() {
   if ($('btnDubRun')) $('btnDubRun').addEventListener('click', startDubRun);
   $('btnRefreshEnv').addEventListener('click', () => loadEnv(true));
   $('btnResRefresh').addEventListener('click', () => loadResources(true));
+  // ★ P1-E：顶栏「刷新全部」—— 一次把所有「刷新」按钮的活干完（审计 P1-12：
+  //   9 个刷新按钮谁也不知道该点哪个 ⇒ 给一个总入口）。
+  //   ★ 只调既有 loader：不发新接口、不改任何 id、不改各卡按钮的行为。
+  //   ★ 这里用 loadEnv(true) / loadResources(true)（强制重探）—— 用户点「刷新全部」
+  //     就是要绕过缓存拿真值；「任务列表 / 工单」本来每 3 秒轮询，也一并重读一次图个立即。
+  //   ★ 兜底：$('btnRefreshAll') 在 index.html 里一定存在，仍加一层 if ——
+  //     项目里 btnGotoLlm / btnLlmRefresh 那批就是这么写的（找不到就跳过），
+  //     免得将来有人改 HTML 时这里抛异常、把整个 bind() 带崩（后面的监听器全绑不上）。
+  if ($('btnRefreshAll')) {
+    $('btnRefreshAll').addEventListener('click', async () => {
+      const btn = $('btnRefreshAll');
+      btn.disabled = true;
+      try {
+        await Promise.all([
+          loadEnv(true), loadResources(true), loadSetup(), loadVoices(false),
+          loadLlm(), loadBriefs(), loadJobs(), loadFilms(), loadDubSources(),
+        ]);
+        toast('已刷新全部');
+      } catch (e) {
+        toast('刷新全部时有一步失败：' + ((e && e.message) || e), true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
   // 首次运行向导
   $('btnSetupRefresh').addEventListener('click', () => refreshAfterSetup());
   $('btnSetupAuto').addEventListener('click', installAllAuto);

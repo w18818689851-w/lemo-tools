@@ -218,7 +218,9 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
   margin-left: auto;
   font-size: var(--fs-sm);
   color: var(--fg-faint);
-  max-width: 96px;
+  /* ★ P1-A：原 96px ⇒ 分组英文名（如 "Hand-drawn & Painting" / "East Asian Traditional"）
+     必然被省略号吃掉（审计 P1-6 证据：`Hand-drawn & P...`）。提到 130px 让它基本能看全。 */
+  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -247,9 +249,16 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
   font-family: var(--mono);
   font-size: var(--fs-sm);
   color: var(--fg-faint);
-  white-space: nowrap;
+  /* ★ P1-A ③：原来是 nowrap + ellipsis —— 侧栏窄，slug 常被截到只剩 1 个字符
+     （审计 P1-6 证据：`Crayon Picture Book · _`）。改成最多 2 行：英文名与 slug 都能看全，
+     超过 2 行才用省略号收尾（-webkit-line-clamp 自带省略号）。
+     ★ 只改渲染，不改文本：L6 用例（test/ui.test.mjs:4152）读的是 textContent，不受裁剪影响。 */
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
 }
 .style-item .si-info {
   flex: 0 0 auto;
@@ -260,20 +269,25 @@ button, input, select { font-family: inherit; font-size: inherit; color: inherit
   background: transparent;
   color: var(--fg-faint);
   cursor: pointer;
-  opacity: .55;                       /* 常驻但低调：只在悬停时变亮（不能藏起来 —— 藏了用户找不到） */
+  /* ★ P1-A ②：常驻 0 ⇒ hover / 选中 / 键盘焦点落在条目内时才显形（.55）。
+     原来常驻 .55 时，43 行每行都挂一个「详情」胶囊，与「已出片」一起把侧栏挤满。
+     ★ 只是透明，**没有** display:none / visibility:hidden —— 元素仍在文档流里、仍可点击、仍可 Tab 到
+     （:focus-visible 的焦点环会照常画出来）。 */
+  opacity: 0;
   transition: opacity .12s, color .12s, border-color .12s;
 }
-.style-item:hover .si-info { opacity: 1; }
-.style-item .si-info:hover { color: var(--accent); border-color: var(--accent); }
-.style-item .badge {
-  font-size: var(--fs-sm);
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(53,196,107,.15);
-  color: var(--ok);
-  border: 1px solid rgba(53,196,107,.35);
-  white-space: nowrap;
-}
+.style-item:hover .si-info,
+.style-item.active .si-info,
+.style-item:focus-within .si-info { opacity: .55; }
+.style-item .si-info:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
+/* ★ P1-A ①：`已出片` 的落点 —— 条目左侧一道 3px 绿边（见 app.js styleItemNode 的 `item.dataset.film`）。
+   把左边框从 1px 加宽到 3px 会让正文右移 2px ⇒ 同一条规则里把 padding-left 从 8px 收到 6px，
+   文字的左边缘与其它行**逐像素对齐**。
+   ★ 放在 `.style-item.active` 之后：选中态那条只改 border-color（四边同色），
+     这里要保证「选中 + 已出片」时左侧绿边仍在。 */
+.style-item[data-film] { border-left: 3px solid var(--ok); padding-left: 6px; }
+/* ★ P1-A：原 `.style-item .badge`（`已出片` 绿胶囊）随 chip 一起下线 —— app.js 里已无任何
+   地方再生成 `.badge`（全仓仅剩 setup-badge / res-badge / vbadge 三种各自独立的徽标）。 */
 .style-item .nodemo { color: var(--err); font-size: var(--fs-sm); }
 .style-empty { color: var(--fg-faint); padding: 12px; font-size: var(--fs-body); }
 mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; padding: 0 1px; }
@@ -287,6 +301,13 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
   display: flex;
   flex-direction: column;
   gap: 26px;   /* ★ P0-C：卡/分区之间拉开呼吸感（原 14px，与卡内 padding 同值显得拥挤） */
+  /* ★ P2-D：给内容一个宽度上限并居中 —— 超宽屏（≥1600px）时 .main 会把每张卡拉到
+     1900px 以上，.form-grid 的 auto-fit 就跟着多排出一列（审计 P2-17：列数无限增长）。
+     1240px ≈ 「5 列 × 约 236px + 4×10px 间距」的舒适宽度。
+     ★ 1440px 及以下完全无影响：侧栏 290px ⇒ .main 只有约 1150px < 1240px，max-width 不生效。
+     ★ 用 auto 左右外边距居中（.layout 是 flex 行容器，auto 外边距吃掉 flex-grow 之后的余量）。 */
+  max-width: 1240px;
+  margin: 0 auto;
 }
 
 /* ── 分区（P0-A）：把长页面的 10 张卡分成 3 段：环境与资源 / 出片 / 结果 ──────
@@ -349,6 +370,16 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 10px;
+}
+/* ★ P2-D：超宽屏（≥1600px）给卡里的表单网格钉一个**列数上限**（5 列）。
+   原来只有 minmax(190px,1fr) 这个「每列至少 190px」的下限 ⇒ 容器越宽列越多
+   （.main 1240px 上限下 auto-fit 会排出 6 列；没有上限时能排到 8 列以上），
+   「一行到底几个字段」随窗口漂移，扫读反而变累。
+   ★ 只钉列数，每列仍是 1fr（随容器伸缩）⇒ 窄屏 / 1440px 完全不受影响。
+   ★ .dub-params（同为本卡内的 .form-grid）在 1240px 上限下本来就恰好排出 5 列，
+     所以这条对它没有实际改变 —— 不必单独排除。 */
+@media (min-width: 1600px) {
+  .main .card > .form-grid { grid-template-columns: repeat(5, 1fr); }
 }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field.wide { grid-column: 1 / -1; }
@@ -434,6 +465,19 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
 /* ★ P0-D：主行动按钮（各卡的「开始生成 / 生成工单 / 出片」）统一放大一档，与普通按钮拉开层级。
    原来它们和「刷新」这种次要按钮同尺寸，主次不分。 */
 .btn.cta { padding: 8px 22px; font-size: var(--fs-body); font-weight: 600; }
+/* ★ P1-E：各卡的「刷新」降为**纯图标**按钮（内联 SVG + title / aria-label），
+   顶栏另给一个「刷新全部」当总入口（审计 P1-12：9 个刷新按钮谁也不知道该点哪个）。
+   ★ 用 inline-flex 居中而不是 inline-block：SVG 是 inline 元素，默认会坐在文字基线上、
+     在按钮底部留出一段「基线缝」，按钮高度会比同排的文字按钮高 3~4px。
+   ★ 与 .btn.small 同特异度（0,2,0）⇒ 靠源码顺序取胜：本规则写在 .btn.small 之后，
+     所以 `class="btn ghost small icon-only"` 的按钮也吃 6px 8px（三种刷新按钮尺寸统一）。 */
+.btn.icon-only {
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn.icon-only .ico { display: block; }
 
 /* ★ P0-D：全局键盘焦点环。原文件只在 .search/.input 上做了点反馈（且鼠标/键盘通吃），
    按钮 / 复选框 / 链接 Tab 过去完全看不出焦点落在哪。
@@ -1117,10 +1161,56 @@ kbd {
 .kbd-note { margin-top: 10px; font-size: var(--fs-sm); color: var(--fg-faint); }
 
 /* ══════════════════════════════════════════════════════════════
+   ★ P2-C：**跟随系统**的浅色（审计 P2-18）。
+   在 JS 跑起来之前、或者 JS 根本没跑（脚本 404 / 被拦 / 报错）时，`<html>` 上**没有**
+   `data-theme` ⇒ 下面那条 `html[data-theme="light"]` 选不中，页面会硬用深色调色板 ——
+   在「系统是浅色」的机器上第一眼就是一片黑。
+   这条 `@media (prefers-color-scheme: light)` 补上那个窗口期。
+   ★ **手动切换优先**：选择器是 `:root:not([data-theme])` —— 只要 `data-theme` 存在
+     （app.js 的 initTheme() 一定会写，值是 light 或 dark），本块**整块失效**，
+     用户的显式选择永远赢过系统偏好。
+   ★★ 取值必须与下面 `html[data-theme="light"]` 那块**逐字一致**（两处都是「浅色」，
+      漂了就会出现「同一台机器、手动切与跟随系统长得不一样」）。
+      ★ 改浅色时**两处一起改**。CSS 没有「复制一段声明块」的语法，
+        这里只能各写一份 —— 这是本次改动里唯一一处**有意重复**。
+   ══════════════════════════════════════════════════════════════ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg:         #f4f6fa;
+    --bg-2:       #eaeef5;
+    --bg-3:       #dfe6f0;
+    --panel:      #ffffff;
+    --line:       #9fadc2;
+    --line-2:     #b9c3d4;
+    --fg:         #1b2330;
+    --fg-dim:     #48546a;
+    --fg-faint:   #5a677c;
+    --accent:     #1a5fd0;
+    --accent-2:   #1858c4;
+    --ok:         #12693a;
+    --warn:       #7a5200;
+    --err:        #bb2436;
+    --overlay:    rgba(24,30,42,.42);
+    --fg-strong:  #0d1520;
+    --btn-hover:  #d3dbe8;
+    --log-bg:     #f8fafd;
+    --log-stderr: #8d2233;
+    --hl-frame:   #6f34b8;
+    --hit-bg:     rgba(143,97,0,.20);
+    --hit-fg:     #5f4000;
+    --preset-fg:  #0f3a7d;
+    --player-bg:  #10151d;
+    --toast-err:  #78101f;
+    --tint-soft:  rgba(0,0,0,.045);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
    浅色主题（④）—— **默认仍是深色**（上面 :root 那套）。
    只有 <html data-theme="light"> 时才覆盖变量。
    ★ 只覆盖颜色，不动任何布局/尺寸 —— 免得两套主题的间距漂移。
    ★ 浅色下正文必须可读：fg 接近纯黑、fg-dim/fg-faint 逐级加深，不用「灰到看不见」的取值。
+   ★★ P2-C：取值与上面 `@media (prefers-color-scheme: light)` 那块**逐字一致**，改一起改。
    ══════════════════════════════════════════════════════════════ */
 html[data-theme="light"] {
   --bg:         #f4f6fa;
@@ -1135,10 +1225,19 @@ html[data-theme="light"] {
   --fg-dim:     #48546a;
   --fg-faint:   #5a677c;      /* 浅色下「弱化」文字也必须过 WCAG AA（深色主题那个灰在这个底色上只有 3.5:1）。
                                  第二轮：#5c697e 在 --bg-3（hover 底色）上只有 4.43，同深色一并提到 4.56。 */
-  --accent:     #1f6feb;
+  --accent:     #1a5fd0;
   --accent-2:   #1858c4;
-  --ok:         #167c43;
-  --warn:       #8f6100;
+  /* ★ P2-A：浅色下 --accent / --ok / --warn 在 **--bg-3（hover 底色 #dfe6f0）** 上不足 4.5:1
+     —— 而 --bg-3 正是 .style-item / .style-group-head / .film / .envbar 的 hover 底色，
+     这些强调色（计数、状态徽标、告警文字）就落在它上面。
+     实测（WCAG 2.x 相对亮度公式，与 test/ui.test.mjs 的 contrast() 同一套）：
+       --accent #1f6feb on --bg-3 = 3.688  ⇒ #1a5fd0 = 4.654 ✓（顺带 on --bg 5.404 / on --panel 5.847）
+       --ok     #167c43 on --bg-3 = 4.180  ⇒ #12693a = 5.379 ✓（on --panel 6.758）
+       --warn   #8f6100 on --bg-3 = 4.310  ⇒ #7a5200 = 5.508 ✓（on --panel 6.921）
+     ★ 只调明度、不动色相 ⇒ 「蓝 / 绿 / 黄」的语义不变，深色主题一个字节没动。
+     ★ 副作用（有益）：白字 on --accent 从 4.634 提到 5.847；白字 on --accent-2（#1858c4）仍是 6.498。 */
+  --ok:         #12693a;
+  --warn:       #7a5200;
   --err:        #bb2436;
   --overlay:    rgba(24,30,42,.42);
   --fg-strong:  #0d1520;
@@ -1162,21 +1261,27 @@ html[data-theme="light"] {
    ══════════════════════════════════════════════════════════════ */
 .brief-intro { font-size: var(--fs-base); color: var(--fg-dim); margin-bottom: 10px; line-height: 1.6; }
 
-/* ★ 「自定义像素（宽 × 高）」与「文案出片」卡的 #dubSizeField 是同一个毛病：
-   它只占一格（实测 200–237px），放不下「→ 1080 × 1920（出片命令：--size 1080x1920）」
-   这句 hint，而 .hint 的 word-break:break-all 会把 1080x1920 从中间折断成两行
-   （截图上就是「…--size 1080x1」/「920）」）。这里跨两格，hint 就放得下了。
-   ★ 这张卡是 .form-grid，不是 .dub-params —— 所以选择器**只认 #briefSizeField**，
-     没有把 .dub-params 的规则改成全局的（那会波及没看过的其它卡片）。
-   ★ order: 1 在本卡是**空操作**：#briefSizeField 本来就是网格里最后一个子元素，
-     放到最后与自然顺序一致。写出来只为与 #dubSizeField 那条保持同一种写法。
-   ★ 默认态（未选「自定义尺寸…」）时该元素带 hidden，两条规则都碰不到它，
-     所以默认态的渲染与改前逐字节一致。 */
-#briefSizeField { grid-column: span 2; order: 1; }
-/* 同 #dubSizeField：hint 里的数字不许被折断。★ 只挂 #briefSizeField，
-   不碰同一网格里的 #briefRatioHint —— 它在默认态是可见的，放宽断行规则
-   会改变默认态的换行位置（那正是「回归」）。 */
-#briefSizeField .hint { word-break: normal; overflow-wrap: anywhere; }
+/* ★ P1-D ②：三处「自定义尺寸（宽 × 高）」原来是**三份各写各的**规则 ——
+   `#briefSizeField` / `#dubSizeField` 各自写了 span 2 + order 1，而 `#runSizeField`
+   **一条都没有** ⇒「启动任务」卡里这个框只占一格（200–237px），放不下
+   「→ 1080 × 1920（出片命令：--size 1080x1920）」这句 hint，而 .hint 的
+   word-break:break-all 会把 1080x1920 从中间折断成两行（审计 P1-11：三处不同步）。
+   合并成一条，三处行为逐字一致。
+   ★ order: 1 在三张卡里都是**空操作**：该元素本来就是各自网格的最后一个子元素。
+     写出来只为与另外两处保持同一种写法。
+   ★ 默认态（未选「自定义尺寸…」）时这三个元素都带 hidden ⇒ 本规则碰不到它们，
+     默认态渲染与改前逐字节一致。 */
+#runSizeField, #briefSizeField, #dubSizeField { grid-column: span 2; order: 1; }
+/* 同一条纪律：hint 里的数字（1080x1920）不许被折断 —— 三处统一。
+   ★ 仍然**保留**下面 `.dub-params .hint` 那条更宽的规则（它覆盖的不止 #dubSizeHint，
+     还有 #dubRatioHint / #dubVoiceHint）—— 把它收窄成只认 #dubSizeField，
+     那两个 hint 会退回 word-break:break-all，正是当初要修的毛病。
+   ★ 同理，这里**不碰**同一网格里默认态就可见的 #briefRatioHint / #runRatioHint：
+     放宽断行规则会改变默认态的换行位置（那正是「回归」）。 */
+#runSizeField .hint, #briefSizeField .hint, #dubSizeField .hint {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
 
 .brief-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 
@@ -1540,7 +1645,7 @@ html[data-theme="light"] {
 /* ★ P0-D：音色下拉独占两格 —— 音色名（含参考音来源）较长，一格放不下。 */
 .dub-params .dub-voice-field { grid-column: span 2; }
 
-/* ★ 自定义尺寸（宽 × 高）是「输出比例」的从属项，但它一出现就多占一个格位，
+/* ★ 自定义尺寸（宽 × 高）是「输出尺寸」的从属项，但它一出现就多占一个格位，
    会把「素材适配」「片头标题」挤到下一行；而且 202px 的格位放不下
    「→ 1080 × 1920（出片命令：--size 1080x1920）」这句 hint，
    .hint 的 word-break:break-all 会把 1080x1920 从中间折断成两行。
@@ -1549,12 +1654,16 @@ html[data-theme="light"] {
      宽度仍与同行其它输入框一致，不会被拉长；
    - order: 1 → 排到网格末尾，**不占主行的那一格**，
      所以默认态、以及「素材适配 / 片头标题」的位置与改前**完全一致**。
-   ★ 只动样式：fillDubRatios() / syncDubSizeUI() 的填充与取值逻辑一行未碰。 */
-#dubSizeField { grid-column: span 2; order: 1; }
+   ★ 只动样式：fillDubRatios() / syncDubSizeUI() 的填充与取值逻辑一行未碰。
+   ★ P1-D ②：这两条规则已**合并到上面那条三合一的**
+     `#runSizeField, #briefSizeField, #dubSizeField { grid-column: span 2; order: 1 }`
+     与 `… .hint { word-break: normal; overflow-wrap: anywhere }` —— 三处共用一份口径。
+     （这里只留说明，避免同一件事有两处定义、改一处忘一处。） */
 
 /* hint 里的数字（1080x1920）不许被折断。
    原来是 word-break:break-all（任意字符都能断），换成 overflow-wrap:anywhere：
-   只在整词真的放不下时才断，同时仍然保证不溢出（anywhere 参与 min-content 计算）。 */
+   只在整词真的放不下时才断，同时仍然保证不溢出（anywhere 参与 min-content 计算）。
+   ★ 本卡**所有** hint 共用（含 #dubRatioHint / #dubVoiceHint）—— 有意比 #dubSizeField 更宽。 */
 .dub-params .hint { word-break: normal; overflow-wrap: anywhere; }
 
 /* 出片任务状态：提交行 / 输出路径 / 完成后的播放按钮 */
@@ -1859,4 +1968,23 @@ html[data-theme="light"] {
 /* 窄屏（面板列数 < 2）时 span 2 会撑出隐式列 ⇒ 退化为整行。 */
 @media (max-width: 560px) {
   .llm-grid .llm-profile-field { grid-column: 1 / -1; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ P2-B：尊重系统的「减少动态效果」偏好（审计 P2-16 之外的一条无障碍基线）。
+   `prefers-reduced-motion: reduce` 是前庭功能障碍用户在前台开的一个开关 ——
+   页面里那些循环动画（`.voice-skel` 的骨架微光、`.env-dot.fail` 的 pulse、
+   `.llm-step` 的旋转）会真的让人头晕。这里统一压到「几乎不动」：
+   ★ 用 .01ms 而不是 0s：0s 会让某些浏览器**跳过** transitionend / animationend 事件，
+     依赖事件收尾的代码会卡住；.01ms 仍然「瞬间完成」但事件照常派发。
+   ★ animation-iteration-count: 1 是给「无限循环」动画的：只跑一次就停，不会一直闪。
+   ★ 放在文件末尾：!important 已能压过前面所有规则，位置只为「一眼能找到」。
+   ══════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

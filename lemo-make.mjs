@@ -853,7 +853,7 @@ function parseArgs(argv) {
     readcheckStrict: false,  // ② 自检不达标时**阻断**出片（默认只报告）
     noPoster: false,         // ③ 静帧交付图 poster.jpg：跳过
     posterT: null,           // ③ poster 取哪一秒（默认按 demo 的 build.sh）
-    color: 'default', noDeliverables: false,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
+    color: 'default', noDeliverables: false, webCut: false,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过 · ⑨ 720p web cut（opt-in，默认关）（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -901,7 +901,7 @@ function parseArgs(argv) {
     else if (a === '--no-poster') o.noPoster = true;
     else if (a === '--poster-t') o.posterT = Number(next('--poster-t'));
     else if (a === '--color') o.color = next('--color');
-    else if (a === '--no-deliverables') o.noDeliverables = true;
+    else if (a === '--no-deliverables') o.noDeliverables = true; else if (a === '--web-cut') o.webCut = true;
     else if (!a.startsWith('--')) o.slug = a;
     else fail(`未知参数 ${a}（--help 看用法）`);
   }
@@ -1522,12 +1522,12 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   --no-deliverables      跳过第 8 步交付文档（默认出片后在输出目录产 TREATMENT.md 与 CREDITS）。
                          TREATMENT.md 由本编排器**基于已有信息**生成（诚实标注来源，不编造剧情）；
                          CREDITS 逐字附上该风格上游自带的 demo/CREDITS
+  --web-cut              额外产一份 **720p web 小样**（opt-in，**默认关**；不传时产物与日志逐字节不变）。
+                         对齐上游 tools/web_cuts.sh；落本次输出目录 <slug>-720p.mp4；编码器跟随 --venc（默认 nvenc/GPU）—— ★ 上游那条命令硬写 libx264(CPU)，本项目按硬规则改走 GPU
   --color <default|bt709>
-                         混流色彩空间。default（默认）= **不设** LEMO_COLOR，与改动前逐字节一致；
-                         bt709 = 在 WSL 侧 sh mux.sh 的进程里导出 LEMO_COLOR=bt709
+                         混流色彩空间。default（默认）= **不设** LEMO_COLOR，与改动前逐字节一致；bt709 = 在 WSL 侧 sh mux.sh 的进程里导出 LEMO_COLOR=bt709
                          （标准 yuv420p 限幅 + bt709 标签；画面色值差 ±3 以内，会与旧片有细微色差）
-  --manifest <path>      起飞前检查读的 demo 链路声明，默认
-                         ${CFG.manifestPath}
+  --manifest <path>      起飞前检查读的 demo 链路声明，默认 ${CFG.manifestPath}
                          （也可用环境变量 LEMO_MANIFEST；文件不在就静默跳过检查）
   --help
 
@@ -2081,7 +2081,7 @@ async function main() {
     }
     // 8 是 2026-10-10 接入的第三步（⑧ 交付文档）—— 同样要能在干跑里看见。
     console.log(`  8. 交付文档 ${o.noDeliverables ? '（--no-deliverables 跳过）'
-      : `TREATMENT.md + CREDITS → ${outDir}`}`);
+      : `TREATMENT.md + CREDITS → ${outDir}`}`); if (o.webCut) console.log(`  9. web cut  720p 小样（${o.venc}）→ ${path.join(outDir, `${o.slug}-720p.mp4`)}`);
     console.log(C.dim((contentOf(qRender) || contentOf(qEvents) || o.lines)
       ? '\n  换内容/换配音行时：2 的「配音」阶段会先单独跑完并回传 voices/*.json，\n'
         + '  之后 2 的「配乐+混音」与 3 才并行（页面要靠 dur.json 排口播时间窗）。\n'
@@ -3375,6 +3375,10 @@ echo "MUX_OK $(stat -c%s "$OUT/${o.slug}.mp4") src_frames=$SRC_FRAMES out_frames
   // ★ 默认路径逐字节不变（照 --color default 的做法）：不传 --no-deliverables 时，既有步骤的命令与产物
   //   **一字不动**，仅新增这两个文件与它们自己的日志行（与第 6/7 步同型）。
   emitDeliverables({ o, outDir, outSize, qRender, grain, ttsEngine, partial: false });
+  // ⑨ 720p web cut（2026-10-11 接入上游 tools/web_cuts.sh 的正式能力）—— **opt-in，默认关**：
+  //   不传 --web-cut 时这一行**什么也不做**（函数不被调用）⇒ 默认路径的产物与日志逐字节不变。
+  //   函数体在文件末尾（与 main 之后的 helper 同区），调用点在 main 内，函数声明提升 ⇒ 可正常调用。
+  if (o.webCut) await emitWebCut({ o, outDir, ffDir, src: dst });
 
   console.log(C.ok(`\n全部完成 · ${(st.size / 1048576).toFixed(1)} MB · 总耗时 ${el()}`));
 }
@@ -3464,6 +3468,73 @@ function runKillChildrenSelfTest() {
       setTimeout(fire, 30000);
     }, 3000);
   });
+}
+
+// ───────── ⑨ 720p web cut（上游 tools/web_cuts.sh 的正式能力，2026-10-11 接入）─────────
+/**
+ * 产一份 **720p web 小样**。上游的正式能力：`tools/web_cuts.sh` 为「新片或变了的片」出 720p 小样，
+ * 由 `tools/release.py` 上传成 `web` release，**给 gallery 页以 `video/mp4` 播放**（Safari 需要），
+ * 落点 `.release/web/<slug>.mp4`（记载在 `MAINTAINING.md`）。
+ *
+ * ★ 上游的核心命令（逐字读 `tools/web_cuts.sh`）：
+ *     ffmpeg -v error -y -i "$src" -vf "scale=-2:720:flags=lanczos" -c:v libx264 -preset slow -crf 24 \
+ *       -maxrate 2M -bufsize 4M -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -f mp4 "$out.part"
+ *     # 成功 mv "$out.part" "$out"；失败 rm 掉 .part 并 exit 1
+ *
+ * ★★ 与上游的**唯一**差异（本项目**最高优先级**硬规则，不许照抄上游这一点）：**编码器必须走 GPU**。
+ *   上游那条命令硬写 `libx264`（CPU）；本项目**编码器跟随既有的 `--venc`**（默认 `nvenc`），
+ *   参数**照抄本项目已验证可用的组合** —— 即 `core/render/mux.sh` 的 `case "${LEMO_VENC:-}" in` 里
+ *   两块 `VARG`（下面 `varg` 逐字抄它，**不自己发明 nvenc 参数**）。
+ *
+ * ★ 落点与命名（**上游未定义本项目这一层，本项目取**）：**本次输出目录**内的 `<slug>-720p.mp4`。
+ *   理由：本项目「一个成片一个输出目录」是交付模型（mp4 / .srt / poster.jpg / 交付文档同处），
+ *   再开 `web/` 子目录会让小样与其它交付物分家；`-720p` 后缀把这个小样唯一的关键差异（分辨率）
+ *   写进文件名，平铺列目录时不歧义。
+ *
+ * ★ 失败处理（与 poster / 交付文档同口径）：ffmpeg 失败 ⇒ **只 warn、不让出片 fail**；
+ *   且照上游的做法**先写 `<out>.part`、成功才 rename**，任何失败路径都**不留 .part 残file**。
+ * ★ 默认路径逐字节不变（照 `--color default` 的做法）：不传 `--web-cut` 时本函数**根本不被调用**
+ *   （调用点自带 `if (o.webCut)`）⇒ 既不产文件、也不多打一个字。
+ */
+async function emitWebCut({ o, outDir, ffDir, src }) {
+  step(`720p web cut（web 小样 · ${o.venc}）`);
+  const out = path.join(outDir, `${o.slug}-720p.mp4`);
+  const part = `${out}.part`;
+  if (!fs.existsSync(src)) {
+    warn(`找不到成片 ${src} —— 跳过 web cut（不影响成片）`);
+    return;
+  }
+  // 编码器参数：**逐字照抄 `core/render/mux.sh` 的 `case "${LEMO_VENC:-}" in` 两块 `VARG`**
+  //   （`nvenc` 组合 `-preset p5 -profile high -rc vbr -cq 23 -b:v 0`；显式 libx264 才走 CPU）。
+  //   ★ 绝不把 libx264 当默认 —— 那正是本项目栽过 9 次的那个坑（自带 mux.sh 副本硬写 libx264）。
+  const varg = o.venc === 'nvenc'
+    ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-profile', 'high', '-rc', 'vbr', '-cq', '23', '-b:v', '0']
+    : ['-c:v', 'libx264', '-preset', 'slow', '-crf', '19'];
+  // 其余参数**逐字照上游 tools/web_cuts.sh**：scale=-2:720:flags=lanczos / -maxrate 2M -bufsize 4M /
+  //   -pix_fmt yuv420p / -c:a aac -b:a 128k / -movflags +faststart / -f mp4。
+  const args = ['-v', 'error', '-y', '-i', src,
+    '-vf', 'scale=-2:720:flags=lanczos', ...varg,
+    '-maxrate', '2M', '-bufsize', '4M', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-f', 'mp4', part];
+  // 用哪个 ffmpeg：走项目既有的 Windows ffmpeg 定位（`findFfmpegDir()` → `ffDir`，同渲染/静帧那两步）。
+  const exe = path.join(ffDir, 'ffmpeg.exe');
+  info(C.dim(`$ ${exe} ${args.join(' ')}`));
+  const r = await run(exe, args, { env: { ...process.env, PATH: `${ffDir};${process.env.PATH || ''}` } });
+  if (r.code !== 0 || !fs.existsSync(part)) {
+    try { fs.rmSync(part, { force: true }); } catch { /* best-effort：清残file，绝不卡住 */ }
+    const why = String(r.stderr || r.error?.message || '').trim().split('\n').filter(Boolean).slice(-1)[0] || `退出码 ${r.code}`;
+    warn(`web cut 没产出（${why}）—— 不影响成片，跳过`);
+    return;
+  }
+  try {
+    fs.rmSync(out, { force: true });   // 覆盖旧小样（照上游 -y 语义；rename 前先删，Windows 上更稳）
+    fs.renameSync(part, out);
+  } catch (e) {
+    try { fs.rmSync(part, { force: true }); } catch { /* best-effort */ }
+    warn(`web cut 落盘失败（${String(e.message || e).split('\n')[0]}）—— 不影响成片，跳过`);
+    return;
+  }
+  ok(`${out}  ${(fs.statSync(out).size / 1048576).toFixed(1)} MB`);
 }
 
 main().catch(e => fail(e?.stack || String(e)));

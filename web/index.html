@@ -31,9 +31,14 @@
     <button class="btn ghost" id="btnGotoLlm" title="跳到「AI 算力配置」面板（默认走 WorkBuddy；端点与口令运行时自动注入，无需手工填写，这里只查看连接状态）">AI 算力配置</button>
     <!-- ★ 分区跳转 chip（纯前端定位，与 #btnGotoLlm 同一套 scrollIntoView + flash 机制）：
          长页面 10 张卡 ⇒ 顶栏给「出片」「结果」两个分区入口，点了滚到分区标题并高亮该分区首卡。 -->
-    <button class="btn ghost" id="btnGotoMake" title="跳到「出片」分区（启动任务 / 主题出片 / 声音 / AI 算力接入 / 文案出片）">出片</button>
+    <button class="btn ghost" id="btnGotoMake" title="跳到「出片」分区（声音 / AI 算力接入 / 启动任务 / 主题出片 / 文案出片）">出片</button>
     <button class="btn ghost" id="btnGotoOut" title="跳到「结果」分区（实时日志 / 任务列表 / 成片库）">结果</button>
     <button class="btn ghost" id="btnRefreshEnv" title="重新全量探测环境">重新检测</button>
+    <!-- ★ P1-E：全页 9 张卡各有一个「刷新」按钮（审计 P1-12：用户永远不知道该点哪个）。
+         这里给一个**总入口**：一次把「环境 / 资源 / 音色 / 算力 / 工单 / 任务 / 成片 / 素材 / 安装计划」
+         全部重读。各卡的按钮仍在（就近刷新仍然好用），只是降为图标（见各 .card-tools）。
+         ★ 纯前端：只调既有 loader，不发新接口、不改任何 id。 -->
+    <button class="btn ghost" id="btnRefreshAll" title="刷新全部：重新探测环境 + 重新扫描资源 + 重读音色 / 算力 / 工单 / 任务 / 成片 / 口播素材 / 安装计划">刷新全部</button>
     <button class="btn ghost" id="btnSimulate" title="演练模式：假装这是一台全新机器，预览首次运行引导（不会真的安装）">演练</button>
     <button class="btn ghost" id="btnTheme" title="切换浅色 / 深色主题（默认深色；选择记在本机）">浅色</button>
     <button class="btn ghost" id="btnHelp" title="键盘快捷键与使用提示">?</button>
@@ -81,7 +86,8 @@
         </h2>
         <div class="card-tools">
           <button class="btn primary" id="btnSetupAuto" title="按顺序安装所有「可自动」项（串行，不并发）">一键安装可自动项</button>
-          <button class="btn ghost" id="btnSetupRefresh" title="重新检测环境并重算安装计划">刷新计划</button>
+          <!-- ★ P1-E：降为图标 + title（文案与 title 原文保留在 title / aria-label 里，一字未改）。 -->
+          <button class="btn ghost icon-only" id="btnSetupRefresh" title="重新检测环境并重算安装计划" aria-label="重新检测环境并重算安装计划"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
         </div>
       </div>
       <div class="setup-intro" id="setupIntro"></div>
@@ -98,7 +104,7 @@
           <span class="res-sum" id="resSum"></span>
         </h2>
         <div class="card-tools">
-          <button class="btn ghost" id="btnResRefresh" title="重新扫描全部资源（会起 WSL，稍慢）">重新扫描</button>
+          <button class="btn ghost icon-only" id="btnResRefresh" title="重新扫描全部资源（会起 WSL，稍慢）" aria-label="重新扫描全部资源（会起 WSL，稍慢）"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
         </div>
       </div>
       <div class="res-intro" id="resIntro"></div>
@@ -107,196 +113,13 @@
 
   </div><!-- /.sect#sectEnv -->
 
-  <!-- ══ 分区 ②：出片（启动任务 / 主题出片 / 声音 / 算力接入 / 文案出片）══ -->
+  <!-- ══ 分区 ②：出片（声音 / 算力接入 / 启动任务 / 主题出片 / 文案出片）══
+       ★ P1-F：卡片顺序改成「先配置、后出片」——「声音」与「AI 算力接入」是**一次性配置**，
+         原来夹在「主题出片」和「文案出片」中间，把「出片」这条主线切成了三段（审计 P1-15）。
+         现在：配置卡（声音 / 算力）→ 主 CTA（启动任务）→ 两条替代路径（主题出片 / 文案出片）。
+       ★ 纯 DOM 移动：id / 类名 / 内部结构一字未改，卡片内容也没有增删。 -->
   <div class="sect" id="sectMake">
     <h3 class="sect-title">出片</h3>
-
-    <section class="card">
-      <h2 class="card-title">启动任务</h2>
-      <div class="form-grid">
-        <label class="field">
-          <span class="lbl">风格 <b class="req">*</b></span>
-          <input list="styleOptions" id="fSlug" class="input" placeholder="如 ascii-crt" autocomplete="off">
-          <datalist id="styleOptions"></datalist>
-        </label>
-        <label class="field">
-          <span class="lbl" title="对应命令行参数 --fps">帧率</span>
-          <input type="number" id="fFps" class="input" value="24" min="1" step="1">
-        </label>
-        <label class="field">
-          <span class="lbl" title="对应命令行参数 --workers">并行数</span>
-          <input type="number" id="fWorkers" class="input" value="6" min="1" step="1">
-        </label>
-        <label class="field">
-          <span class="lbl" title="对应命令行参数 --venc">编码器</span>
-          <select id="fVenc" class="input">
-            <option value="">默认(nvenc)</option>
-            <option value="nvenc">nvenc（硬件）</option>
-            <option value="libx264">libx264（软件）</option>
-          </select>
-        </label>
-        <!-- 输出尺寸（★ 与「主题出片」/「文案出片」**同一条纪律、同一套 id 命名**，别另发明一套）：
-             选项由服务端 GET /api/sizes 给（清单的权威来源是库侧 core/render/size.mjs 的 RATIOS），
-             前端不硬编码比例表。默认选中服务端给的 defaultRatio（9:16）；选「自定义尺寸…」时出现
-             宽高输入框（偶数、MIN_SIZE–MAX_SIZE）。★ 下面 min/max 只是 HTML 层的初始值，
-             app.js 会用 /api/sizes 的 custom.min/max 覆盖它们 —— 改下限只需改库，别只改这里。
-             出片时控制台会**显式**传 --ratio <比例>（或 --size <WxH>，优先级更高）。 -->
-        <label class="field">
-          <span class="lbl">输出尺寸</span>
-          <select id="runRatio" class="input" title="出片尺寸：默认 9:16 竖屏"></select>
-          <span class="hint" id="runRatioHint"></span>
-        </label>
-        <label class="field" id="runSizeField" hidden>
-          <span class="lbl">自定义像素（宽 × 高）</span>
-          <span class="size-row">
-            <input id="runSizeW" class="input num" type="number" inputmode="numeric" step="2"
-                   min="96" max="8192" placeholder="1080" autocomplete="off">
-            <span class="size-x">×</span>
-            <input id="runSizeH" class="input num" type="number" inputmode="numeric" step="2"
-                   min="96" max="8192" placeholder="1920" autocomplete="off">
-          </span>
-          <span class="hint" id="runSizeHint"></span>
-        </label>
-      </div>
-
-      <div class="presets" id="presets">
-        <span class="presets-lbl">常用组合</span>
-        <button type="button" class="preset" data-preset="quick">快速出片</button>
-        <button type="button" class="preset" data-preset="audio">只调音</button>
-        <button type="button" class="preset" data-preset="render">只重渲</button>
-        <button type="button" class="preset" data-preset="dry">试跑</button>
-        <span class="presets-hint">（只改勾选，不会直接启动）</span>
-      </div>
-
-      <!-- ★ P0-D：标签只留用户语言，命令行参数名移到 title 悬浮（原来 `--skip-sync` 这类 CLI 名
-           直接印在界面上，对用户是噪声）。 -->
-      <div class="checks">
-        <label class="chk" title="对应命令行参数 --skip-sync"><input type="checkbox" id="fSkipSync"> 跳过库同步</label>
-        <label class="chk" title="对应命令行参数 --skip-render"><input type="checkbox" id="fSkipRender"> 跳过渲染</label>
-        <label class="chk" title="对应命令行参数 --audio-only"><input type="checkbox" id="fAudioOnly"> 只跑音频</label>
-        <label class="chk" title="对应命令行参数 --render-only"><input type="checkbox" id="fRenderOnly"> 只跑渲染</label>
-        <label class="chk" title="对应命令行参数 --dry-run"><input type="checkbox" id="fDryRun"> 只打印计划</label>
-      </div>
-
-      <details class="adv">
-        <summary>高级选项</summary>
-        <div class="form-grid">
-          <label class="field">
-            <span class="lbl" title="对应命令行参数 --q（原样透传给渲染阶段）">透传参数（只透传渲染）</span>
-            <input id="fQ" class="input" placeholder="如 noev=1 或 content=content_alt.json" autocomplete="off">
-          </label>
-          <label class="field">
-            <span class="lbl" title="对应命令行参数 --grain">颗粒强度</span>
-            <input id="fGrain" class="input" placeholder="如 0 / 0.08" autocomplete="off">
-          </label>
-          <label class="field wide">
-            <span class="lbl" title="对应命令行参数 --out">输出目录</span>
-            <input id="fOut" class="input" placeholder="留空 = D:\lemo-films\<slug>" autocomplete="off">
-          </label>
-          <label class="field wide">
-            <span class="lbl" title="对应命令行参数 --film">影片模块</span>
-            <input id="fFilm" class="input" placeholder="留空 = 用该风格自带的影片模块（如 film_coffee.js）" autocomplete="off">
-          </label>
-        </div>
-        <!-- ★ 起飞前检查开关（CLI 的 --no-preflight）：与上面那排勾选项**同一种写法**（.chk）。
-             勾上 = 不跑起飞前检查直接启动（编排器默认是开启该检查，但**只提示、绝不阻断**）。
-             ★ P0-D：CLI 名移进 title。 -->
-        <div class="checks">
-          <label class="chk" title="对应命令行参数 --no-preflight"><input type="checkbox" id="fNoPreflight"> 跳过起飞前检查（勾选 = 不跑预检直接启动）</label>
-        </div>
-      </details>
-
-      <div class="form-foot">
-        <button class="btn primary cta" id="btnRun">开始生成</button>
-        <button class="btn ghost small" id="btnCopyCmd" hidden title="复制这条命令到剪贴板">复制</button>
-        <span class="hint" id="cmdPreview"></span>
-      </div>
-      <!-- 快捷键的**可发现入口**：不藏起来。点「?」看完整列表。 -->
-      <div class="kbd-hint">
-        快捷键：<kbd>Ctrl</kbd>+<kbd>Enter</kbd> 启动 ·
-        <kbd>Ctrl</kbd>+<kbd>K</kbd> 搜风格 ·
-        <kbd>Esc</kbd> 关弹层
-        <button class="btn ghost small" id="btnHelp2">全部快捷键</button>
-      </div>
-
-      <!-- 启动前并发预检提示（只是提示，不是硬拦截；见 server.mjs:apiPrecheck） -->
-      <div class="lock-warn" id="lockWarn" hidden></div>
-    </section>
-
-      <!-- 主题出片：主题 + 风格 → 落一张工单。内容由外部 LLM（WorkBuddy）按该风格的
-           STYLE.md 生成，就绪后回到这里点「出片」。
-           ★ 只列 4 个「内容驱动」风格（画面主体写死、内容可数据化）；其余 39 个 demo 改不动主题。
-           ★ 工单里的主题是用户输入，前端一律走 textContent，绝不 innerHTML。 -->
-    <section class="card" id="briefCard">
-      <div class="card-head">
-        <h2 class="card-title">主题出片 <span class="count" id="briefCount"></span></h2>
-        <span class="card-sub">输入主题，生成一张工单</span>
-        <div class="card-tools">
-          <button class="btn ghost" id="btnRefreshBriefs" title="重新读工单目录（D:\lemo-films\.briefs）">刷新</button>
-        </div>
-      </div>
-      <!-- ★ P0-B：原常驻说明（128 字）搬进可折叠 details（默认收起），卡头只留一句话副标题。
-           文本一字未改；details 默认收起 ⇒ 首屏不再被说明吃掉。 -->
-      <details class="card-about">
-        <summary>这是什么？</summary>
-        <div class="brief-intro">
-          输入主题 → 选风格 → 生成工单。内容是外部 LLM（WorkBuddy）按该风格的 STYLE.md 生成的：
-          在对话里说「处理工单」，它会把工单改成就绪；回到这里点「出片」即可。
-          画面主体沿用库内已有的那个（能改「讲什么」，不能改「画什么」），所以只有这 4 个风格可选。
-        </div>
-      </details>
-      <div class="form-grid">
-        <label class="field wide">
-          <span class="lbl">主题 <b class="req">*</b></span>
-          <input id="briefTopic" class="input" maxlength="500" autocomplete="off"
-                 placeholder="如：咖啡的历史 / 城市夜骑的乐趣 / 春天该去哪条步道">
-        </label>
-        <label class="field">
-          <span class="lbl">风格（4 个内容驱动风格）</span>
-          <select id="briefSlug" class="input"></select>
-        </label>
-        <!-- 语言版本：选项由服务端 /api/langs?slug= 给（清单来自库侧 core/lang/lang.mjs，
-             「有没有这个语言版本」按编排器 --lang 的换名规则探测）。前端不硬编码 en/zh。
-             ★ 默认选中文版；该风格没有中文内容文件时只列英文版并给出提示。 -->
-        <label class="field">
-          <span class="lbl">语言版本</span>
-          <select id="briefLang" class="input" title="出片语言：中文版 / 英文版"></select>
-          <span class="hint" id="briefLangHint"></span>
-        </label>
-        <!-- 输出尺寸：选项由服务端 /api/sizes 给（清单来自库侧 core/render/size.mjs 的 RATIOS）。
-             前端不硬编码比例表。默认选中 9:16；选「自定义」时出现宽高输入框（偶数、MIN_SIZE–MAX_SIZE）。
-             ★ 下面 min/max 只是 HTML 层的初始值，app.js 会用 /api/sizes 的 custom.min/max 覆盖它们
-             （那一路来自库侧 size.mjs）—— 改下限只需改库，别只改这里。
-             出片时控制台会**显式**传 --ratio <比例>（或 --size <WxH>）。 -->
-        <label class="field">
-          <span class="lbl">输出尺寸</span>
-          <select id="briefRatio" class="input" title="出片尺寸：默认 9:16 竖屏"></select>
-          <span class="hint" id="briefRatioHint"></span>
-        </label>
-        <label class="field" id="briefSizeField" hidden>
-          <span class="lbl">自定义像素（宽 × 高）</span>
-          <span class="size-row">
-            <input id="briefSizeW" class="input num" type="number" inputmode="numeric" step="2"
-                   min="96" max="8192" placeholder="1080" autocomplete="off">
-            <span class="size-x">×</span>
-            <input id="briefSizeH" class="input num" type="number" inputmode="numeric" step="2"
-                   min="96" max="8192" placeholder="1920" autocomplete="off">
-          </span>
-          <span class="hint" id="briefSizeHint"></span>
-        </label>
-      </div>
-      <!-- 影片构图能力警告（防呆）：选的尺寸不落在这个风格影片**真的能正确构图**的比例上时出现。
-           判据是影片源码里的 FILM_META.aspects 声明（服务端读源码文本探测，见 lib/aspects.mjs）；
-           没声明 = 只支持 16:9。★ 只警告、**不禁用**出片 —— 用户有权坚持出，只是要知情。
-           容器内容由 app.js 的 syncBriefAspectWarn() 动态渲染：一句说明 + 一个「改用 X」按钮
-           （点了只把 #briefRatio 设成建议比例并派发 change，不触发任何出片）。 -->
-      <div class="brief-aspect-warn" id="briefAspectWarn" hidden></div>
-      <div class="form-foot">
-        <button class="btn primary cta" id="btnBriefCreate">生成工单</button>
-        <span class="hint" id="briefHint"></span>
-      </div>
-      <div class="brief-list" id="briefs"></div>
-    </section>
 
     <!-- 声音（配音音色）：本机 Index-TTS 零样本克隆。
          ★ 音色 = 一条**参考音频**，所以「换音色」＝换一条参考音，不需要训练。
@@ -308,7 +131,7 @@
         <h2 class="card-title">声音 <span class="count" id="voiceCount"></span></h2>
         <span class="card-sub">选配音音色</span>
         <div class="card-tools">
-          <button class="btn ghost" id="btnRefreshVoices" title="重新读参考音目录与音色库">刷新</button>
+          <button class="btn ghost icon-only" id="btnRefreshVoices" title="重新读参考音目录与音色库" aria-label="刷新音色列表"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
         </div>
       </div>
       <!-- ★ P0-B：原常驻说明（93 字）折叠（默认收起）。文本一字未改。 -->
@@ -356,7 +179,7 @@
         <div class="vi-body">
           <div id="viIntro"></div>
           <div class="vi-tools">
-            <button class="btn ghost small" id="btnVoiceSrcRefresh" title="重新读源目录（GET /api/voices/sources）">刷新</button>
+            <button class="btn ghost small icon-only" id="btnVoiceSrcRefresh" title="重新读源目录（GET /api/voices/sources）" aria-label="重新读源目录"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
             <span class="vi-hint" id="viHint"></span>
           </div>
           <div class="vi-list" id="viList"></div>
@@ -383,7 +206,7 @@
         <!-- ★ 一眼看出当前生效哪一套（保留 llmCurrentPill 的角色）。 -->
         <span class="llm-current-pill" id="llmCurrentPill">当前未选择算力服务</span>
         <div class="card-tools">
-          <button class="btn ghost" id="btnLlmRefresh" title="重新读服务清单与当前生效项（GET /api/llm/services）">刷新</button>
+          <button class="btn ghost icon-only" id="btnLlmRefresh" title="重新读服务清单与当前生效项（GET /api/llm/services）" aria-label="刷新算力服务清单"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
         </div>
       </div>
       <!-- ★ P0-B：原常驻说明（118 字）折叠（默认收起）。★ id 保留在**内层 div** 上，
@@ -549,6 +372,199 @@
 
     </section>
 
+    <section class="card">
+      <!-- ★ P1-D ①：「启动任务」原来是全页**唯一没有 .card-head** 的卡（审计 P1-10）——
+           标题直接裸挂在卡里，与下方表单的间距是 0（其它卡靠 .card-head 的 margin-bottom:12px
+           留白），视觉上像「标题粘在第一个输入框上」。包一层 .card-head 与其它 9 张卡对齐。
+           ★ 只加一层 div：id / 文案 / 卡片结构一律不动。 -->
+      <div class="card-head">
+        <h2 class="card-title">启动任务</h2>
+      </div>
+      <div class="form-grid">
+        <label class="field">
+          <span class="lbl">风格 <b class="req">*</b></span>
+          <input list="styleOptions" id="fSlug" class="input" placeholder="如 ascii-crt" autocomplete="off">
+          <datalist id="styleOptions"></datalist>
+        </label>
+        <label class="field">
+          <span class="lbl" title="对应命令行参数 --fps">帧率</span>
+          <input type="number" id="fFps" class="input" value="24" min="1" step="1">
+        </label>
+        <label class="field">
+          <span class="lbl" title="对应命令行参数 --workers">并行数</span>
+          <input type="number" id="fWorkers" class="input" value="6" min="1" step="1">
+        </label>
+        <label class="field">
+          <span class="lbl" title="对应命令行参数 --venc">编码器</span>
+          <select id="fVenc" class="input">
+            <option value="">默认(nvenc)</option>
+            <option value="nvenc">nvenc（硬件）</option>
+            <option value="libx264">libx264（软件）</option>
+          </select>
+        </label>
+        <!-- 输出尺寸（★ 与「主题出片」/「文案出片」**同一条纪律、同一套 id 命名**，别另发明一套）：
+             选项由服务端 GET /api/sizes 给（清单的权威来源是库侧 core/render/size.mjs 的 RATIOS），
+             前端不硬编码比例表。默认选中服务端给的 defaultRatio（9:16）；选「自定义尺寸…」时出现
+             宽高输入框（偶数、MIN_SIZE–MAX_SIZE）。★ 下面 min/max 只是 HTML 层的初始值，
+             app.js 会用 /api/sizes 的 custom.min/max 覆盖它们 —— 改下限只需改库，别只改这里。
+             出片时控制台会**显式**传 --ratio <比例>（或 --size <WxH>，优先级更高）。 -->
+        <label class="field">
+          <span class="lbl">输出尺寸</span>
+          <select id="runRatio" class="input" title="出片尺寸：默认 9:16 竖屏"></select>
+          <span class="hint" id="runRatioHint"></span>
+        </label>
+        <label class="field" id="runSizeField" hidden>
+          <span class="lbl">自定义尺寸（宽 × 高）</span>
+          <span class="size-row">
+            <input id="runSizeW" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1080" autocomplete="off">
+            <span class="size-x">×</span>
+            <input id="runSizeH" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1920" autocomplete="off">
+          </span>
+          <span class="hint" id="runSizeHint"></span>
+        </label>
+      </div>
+
+      <div class="presets" id="presets">
+        <span class="presets-lbl">常用组合</span>
+        <button type="button" class="preset" data-preset="quick">快速出片</button>
+        <button type="button" class="preset" data-preset="audio">只调音</button>
+        <button type="button" class="preset" data-preset="render">只重渲</button>
+        <button type="button" class="preset" data-preset="dry">试跑</button>
+        <span class="presets-hint">（只改勾选，不会直接启动）</span>
+      </div>
+
+      <!-- ★ P0-D：标签只留用户语言，命令行参数名移到 title 悬浮（原来 `--skip-sync` 这类 CLI 名
+           直接印在界面上，对用户是噪声）。 -->
+      <div class="checks">
+        <label class="chk" title="对应命令行参数 --skip-sync"><input type="checkbox" id="fSkipSync"> 跳过库同步</label>
+        <label class="chk" title="对应命令行参数 --skip-render"><input type="checkbox" id="fSkipRender"> 跳过渲染</label>
+        <label class="chk" title="对应命令行参数 --audio-only"><input type="checkbox" id="fAudioOnly"> 只跑音频</label>
+        <label class="chk" title="对应命令行参数 --render-only"><input type="checkbox" id="fRenderOnly"> 只跑渲染</label>
+        <label class="chk" title="对应命令行参数 --dry-run"><input type="checkbox" id="fDryRun"> 只打印计划</label>
+      </div>
+
+      <details class="adv">
+        <summary>高级选项</summary>
+        <div class="form-grid">
+          <label class="field">
+            <span class="lbl" title="对应命令行参数 --q（原样透传给渲染阶段）">透传参数（只透传渲染）</span>
+            <input id="fQ" class="input" placeholder="如 noev=1 或 content=content_alt.json" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl" title="对应命令行参数 --grain">颗粒强度</span>
+            <input id="fGrain" class="input" placeholder="如 0 / 0.08" autocomplete="off">
+          </label>
+          <label class="field wide">
+            <span class="lbl" title="对应命令行参数 --out">输出目录</span>
+            <input id="fOut" class="input" placeholder="留空 = D:\lemo-films\<slug>" autocomplete="off">
+          </label>
+          <label class="field wide">
+            <span class="lbl" title="对应命令行参数 --film">影片模块</span>
+            <input id="fFilm" class="input" placeholder="留空 = 用该风格自带的影片模块（如 film_coffee.js）" autocomplete="off">
+          </label>
+        </div>
+        <!-- ★ 起飞前检查开关（CLI 的 --no-preflight）：与上面那排勾选项**同一种写法**（.chk）。
+             勾上 = 不跑起飞前检查直接启动（编排器默认是开启该检查，但**只提示、绝不阻断**）。
+             ★ P0-D：CLI 名移进 title。 -->
+        <div class="checks">
+          <label class="chk" title="对应命令行参数 --no-preflight"><input type="checkbox" id="fNoPreflight"> 跳过起飞前检查（勾选 = 不跑预检直接启动）</label>
+        </div>
+      </details>
+
+      <div class="form-foot">
+        <button class="btn primary cta" id="btnRun">开始生成</button>
+        <button class="btn ghost small" id="btnCopyCmd" hidden title="复制这条命令到剪贴板">复制</button>
+        <span class="hint" id="cmdPreview"></span>
+      </div>
+      <!-- 快捷键的**可发现入口**：不藏起来。点「?」看完整列表。 -->
+      <div class="kbd-hint">
+        快捷键：<kbd>Ctrl</kbd>+<kbd>Enter</kbd> 启动 ·
+        <kbd>Ctrl</kbd>+<kbd>K</kbd> 搜风格 ·
+        <kbd>Esc</kbd> 关弹层
+        <button class="btn ghost small" id="btnHelp2">全部快捷键</button>
+      </div>
+
+      <!-- 启动前并发预检提示（只是提示，不是硬拦截；见 server.mjs:apiPrecheck） -->
+      <div class="lock-warn" id="lockWarn" hidden></div>
+    </section>
+
+      <!-- 主题出片：主题 + 风格 → 落一张工单。内容由外部 LLM（WorkBuddy）按该风格的
+           STYLE.md 生成，就绪后回到这里点「出片」。
+           ★ 只列 4 个「内容驱动」风格（画面主体写死、内容可数据化）；其余 39 个 demo 改不动主题。
+           ★ 工单里的主题是用户输入，前端一律走 textContent，绝不 innerHTML。 -->
+    <section class="card" id="briefCard">
+      <div class="card-head">
+        <h2 class="card-title">主题出片 <span class="count" id="briefCount"></span></h2>
+        <span class="card-sub">输入主题，生成一张工单</span>
+        <div class="card-tools">
+          <button class="btn ghost icon-only" id="btnRefreshBriefs" title="重新读工单目录（D:\lemo-films\.briefs）" aria-label="刷新工单目录"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
+        </div>
+      </div>
+      <!-- ★ P0-B：原常驻说明（128 字）搬进可折叠 details（默认收起），卡头只留一句话副标题。
+           文本一字未改；details 默认收起 ⇒ 首屏不再被说明吃掉。 -->
+      <details class="card-about">
+        <summary>这是什么？</summary>
+        <div class="brief-intro">
+          输入主题 → 选风格 → 生成工单。内容是外部 LLM（WorkBuddy）按该风格的 STYLE.md 生成的：
+          在对话里说「处理工单」，它会把工单改成就绪；回到这里点「出片」即可。
+          画面主体沿用库内已有的那个（能改「讲什么」，不能改「画什么」），所以只有这 4 个风格可选。
+        </div>
+      </details>
+      <div class="form-grid">
+        <label class="field wide">
+          <span class="lbl">主题 <b class="req">*</b></span>
+          <input id="briefTopic" class="input" maxlength="500" autocomplete="off"
+                 placeholder="如：咖啡的历史 / 城市夜骑的乐趣 / 春天该去哪条步道">
+        </label>
+        <label class="field">
+          <span class="lbl">风格（4 个内容驱动风格）</span>
+          <select id="briefSlug" class="input"></select>
+        </label>
+        <!-- 语言版本：选项由服务端 /api/langs?slug= 给（清单来自库侧 core/lang/lang.mjs，
+             「有没有这个语言版本」按编排器 --lang 的换名规则探测）。前端不硬编码 en/zh。
+             ★ 默认选中文版；该风格没有中文内容文件时只列英文版并给出提示。 -->
+        <label class="field">
+          <span class="lbl">语言版本</span>
+          <select id="briefLang" class="input" title="出片语言：中文版 / 英文版"></select>
+          <span class="hint" id="briefLangHint"></span>
+        </label>
+        <!-- 输出尺寸：选项由服务端 /api/sizes 给（清单来自库侧 core/render/size.mjs 的 RATIOS）。
+             前端不硬编码比例表。默认选中 9:16；选「自定义」时出现宽高输入框（偶数、MIN_SIZE–MAX_SIZE）。
+             ★ 下面 min/max 只是 HTML 层的初始值，app.js 会用 /api/sizes 的 custom.min/max 覆盖它们
+             （那一路来自库侧 size.mjs）—— 改下限只需改库，别只改这里。
+             出片时控制台会**显式**传 --ratio <比例>（或 --size <WxH>）。 -->
+        <label class="field">
+          <span class="lbl">输出尺寸</span>
+          <select id="briefRatio" class="input" title="出片尺寸：默认 9:16 竖屏"></select>
+          <span class="hint" id="briefRatioHint"></span>
+        </label>
+        <label class="field" id="briefSizeField" hidden>
+          <span class="lbl">自定义尺寸（宽 × 高）</span>
+          <span class="size-row">
+            <input id="briefSizeW" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1080" autocomplete="off">
+            <span class="size-x">×</span>
+            <input id="briefSizeH" class="input num" type="number" inputmode="numeric" step="2"
+                   min="96" max="8192" placeholder="1920" autocomplete="off">
+          </span>
+          <span class="hint" id="briefSizeHint"></span>
+        </label>
+      </div>
+      <!-- 影片构图能力警告（防呆）：选的尺寸不落在这个风格影片**真的能正确构图**的比例上时出现。
+           判据是影片源码里的 FILM_META.aspects 声明（服务端读源码文本探测，见 lib/aspects.mjs）；
+           没声明 = 只支持 16:9。★ 只警告、**不禁用**出片 —— 用户有权坚持出，只是要知情。
+           容器内容由 app.js 的 syncBriefAspectWarn() 动态渲染：一句说明 + 一个「改用 X」按钮
+           （点了只把 #briefRatio 设成建议比例并派发 change，不触发任何出片）。 -->
+      <div class="brief-aspect-warn" id="briefAspectWarn" hidden></div>
+      <div class="form-foot">
+        <button class="btn primary cta" id="btnBriefCreate">生成工单</button>
+        <span class="hint" id="briefHint"></span>
+      </div>
+      <div class="brief-list" id="briefs"></div>
+    </section>
+
     <!-- 文案出片：**你给什么文案，就念什么**（与「主题出片」正相反 —— 那边内容由外部 LLM 按风格生成）。
          ★ 两种形态（卡片顶部的二选一，切换会改表单）：
            ① 仅自定义文案 —— 画面用工具生成的背景，配音走本机 Index-TTS；
@@ -567,7 +583,7 @@
         <h2 class="card-title">文案出片 <span class="count" id="dubCount"></span></h2>
         <span class="card-sub">你给什么文案，就念什么</span>
         <div class="card-tools">
-          <button class="btn ghost" id="btnDubRefresh" title="重新读已上传的素材（GET /api/dub/sources）">刷新素材</button>
+          <button class="btn ghost icon-only" id="btnDubRefresh" title="重新读已上传的素材（GET /api/dub/sources）" aria-label="刷新口播素材"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
         </div>
       </div>
 
@@ -719,7 +735,7 @@
              ★ 下面 min/max 只是 HTML 层初始值，app.js 会用 /api/sizes 的 custom.min/max 覆盖它们
              （那一路来自库侧 size.mjs）—— 改下限只需改库，别只改这里。 -->
         <label class="field dub-script-only">
-          <span class="lbl" title="对应命令行参数 --ratio">输出比例</span>
+          <span class="lbl" title="对应命令行参数 --ratio">输出尺寸</span>
           <select id="dubRatio" class="input" title="出片比例：默认 9:16 竖屏"></select>
           <span class="hint" id="dubRatioHint"></span>
         </label>
@@ -807,7 +823,7 @@
     <section class="card">
       <div class="card-head">
         <h2 class="card-title">任务列表</h2>
-        <div class="card-tools"><button class="btn ghost" id="btnRefreshJobs">刷新</button></div>
+        <div class="card-tools"><button class="btn ghost icon-only" id="btnRefreshJobs" title="刷新任务列表（GET /api/jobs）" aria-label="刷新任务列表"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button></div>
       </div>
       <div class="jobs" id="jobs"></div>
     </section>
@@ -822,7 +838,7 @@
             <option value="size">大小（大 → 小）</option>
             <option value="slug">风格名（A → Z）</option>
           </select>
-          <button class="btn ghost" id="btnRefreshFilms">刷新</button>
+          <button class="btn ghost icon-only" id="btnRefreshFilms" title="刷新成片库（GET /api/films）" aria-label="刷新成片库"><svg class="ico" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.4 8.8a5.2 5.2 0 1 1-3.68-3.68"/><path d="M9.72 1.7v3.42H6.3"/></svg></button>
         </div>
       </div>
       <div class="films" id="films"></div>

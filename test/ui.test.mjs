@@ -3964,6 +3964,240 @@ async function main() {
         notes.push('K4 4 个 loader（loadEnv/loadResources/loadVoices/loadLlm）均带「进入 ++seq / await 后 !== seq 才写状态」护栏');
       });
     }
+
+    // ══ L. 上一批 5 个 UI 入口的**进仓**回归钉（此前只有仓外的一次性脚本验过）══════════
+    //
+    // 为什么补这一节：上一批给控制台加了 5 个入口 —— 启动任务表单的 `--ratio` / `--size`、
+    //   高级参数的 `--no-preflight` / `--film`、算力面板的「试调用」—— 当时**只有仓外的一次性脚本
+    //   验证过**，没有进仓的回归用例（被点名两次的缺口）⇒ 这里逐条钉住。顺带补一个「测试盲区」：
+    //   浅色主题下强调色在 **hover 底色**（`--bg-3`）上的对比度（既有对比度用例只覆盖了 `--panel`）。
+    //
+    // ★ 拿「提交参数」的手法（**照本项目既有做法，不另立一套**）：
+    //   · `startRun()` 提交前调 `buildOpts()`（web/app.js，**读 DOM**、不是纯函数）⇒ 用例先用 CDP
+    //     派发真实 `change` / `input` 事件把控件置成「用户操作后」的状态（同 G13 的做法），再在页面里
+    //     **直接调 `buildOpts()`** 读回**提交时那个数组**（同 K1「直接调页面里的真函数」范式）；
+    //   · 同时断言 `#cmdPreview` —— 它是 `syncPreview()` 用**同一个** `buildOpts()` 拼出的**可见命令预览**
+    //     （G13 已把它当断言目标）⇒ 可见面与提交面**同源**，两边都钉。
+    // ★ 铁律（沿用本套件）：绝不真安装、绝不真出片、绝不真发外网 —— ⑤ 用页面内 fetch 桩拦下
+    //   `POST /api/llm/invoke`（同 I6 的手法，其余请求照走真后端）；其余四条只读 DOM / 只调纯读的 `buildOpts()`。
+    log('');
+    log(C.b('  L. 上一批 5 个 UI 入口的进仓回归钉（启动表单尺寸 / 高级参数 / 算力试调用 / 风格中英名 / 浅色 hover 对比度）'));
+
+    const L_NAMES = ['L1 启动表单·比例下拉', 'L2 启动表单·自定义尺寸', 'L3 高级参数·跳过起飞前检查',
+      'L4 高级参数·片名', 'L5 算力面板·试调用', 'L6 侧栏风格列表', 'L7 浅色主题·hover 底色对比度'];
+    const lWillRun = !OPT.filter || L_NAMES.some((n) => n.includes(OPT.filter));
+    if (lWillRun) {
+      // ★ 先导航到一份**干净文档**（B~K 组在页面里装过若干 fetch 桩，别把它们的残留带进来）。
+      await cdp.goto(base + '/', 4000);
+      const lReady = `document.querySelectorAll('.style-item').length > 0
+        && !!document.getElementById('runRatio') && document.querySelectorAll('#runRatio option').length > 0
+        && !!document.getElementById('fFilm') && !!document.getElementById('fNoPreflight')
+        && !!document.getElementById('btnLlmTryRun') && !!document.getElementById('llmProbeOut')`;
+      await waitFor(cdp.evalJs, lReady, { timeoutMs: 30000 });
+
+      // ── 服务端权威：比例清单（不硬编码 9:16，也不硬编码「自定义尺寸…」的哨兵值）──
+      const lSizes = await get('/api/sizes');
+      need(lSizes.status === 200 && lSizes.json && Array.isArray(lSizes.json.ratios) && lSizes.json.ratios.length > 0,
+        `GET /api/sizes → ${lSizes.status}（拿不到 ratios，L1/L2 测不了）`);
+      const lRatios = lSizes.json.ratios.map((r) => r.id).filter(Boolean);
+      const lDefault = lSizes.json.defaultRatio;
+      // 挑一个**非默认**比例当样本：这样「实现忽略了下拉、照默认比例拼参数」会被抓住（有牙）。
+      const lPick = lRatios.find((r) => r !== lDefault) || lDefault;
+
+      /** ★ 提交参数：`startRun()` 提交前调的就是 `buildOpts()` ⇒ 直接调页面里的真函数。 */
+      const lForm = () => cdp.evalJs(`(() => { const b = buildOpts();
+        return { slug: b.slug, opts: b.opts, cmd: document.getElementById('cmdPreview').textContent }; })()`);
+      const lSetSlug = (slug) => cdp.evalJs(`(() => { const f = document.getElementById('fSlug');
+        f.value = ${JSON.stringify(slug)}; f.dispatchEvent(new Event('input', { bubbles: true })); return f.value; })()`);
+      const lResetSize = () => cdp.evalJs(`(() => {
+        const s = document.getElementById('runRatio');
+        const def = ${JSON.stringify(lDefault)};
+        if ([...s.options].some((o) => o.value === def)) { s.value = def; s.dispatchEvent(new Event('change', { bubbles: true })); }
+        for (const id of ['runSizeW', 'runSizeH']) { const n = document.getElementById(id); n.value = ''; n.dispatchEvent(new Event('input', { bubbles: true })); }
+        return s.value; })()`);
+      const lSetRatio = (v) => cdp.evalJs(`(() => { const s = document.getElementById('runRatio');
+        if (![...s.options].some((o) => o.value === ${JSON.stringify(v)})) return { ok: false, opts: [...s.options].map((o) => o.value) };
+        s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('change', { bubbles: true }));
+        return { ok: true, value: s.value }; })()`);
+      const lSetNum = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true })); return n.value; })()`);
+      const lSetCheck = (id, on) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.checked = ${on ? 'true' : 'false'}; n.dispatchEvent(new Event('change', { bubbles: true })); return n.checked; })()`);
+      const lSetText = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true }));
+        n.dispatchEvent(new Event('change', { bubbles: true })); return n.value; })()`);
+
+      // ① 启动任务表单 · 比例下拉 #runRatio
+      await runCase('L1 启动表单·比例下拉 #runRatio：选中某比例 ⇒ 提交参数（buildOpts().opts）含 --ratio <该值>', async () => {
+        await lSetSlug(state.slugA);
+        await lResetSize();
+        const r = await lSetRatio(lPick);
+        need(r.ok, `#runRatio 里没有比例 ${JSON.stringify(lPick)}（实际选项=${JSON.stringify(r.opts)}）`);
+        const f = await lForm();
+        need(f.slug === state.slugA, `buildOpts().slug=「${f.slug}」，期望「${state.slugA}」（前置：风格没选上）`);
+        const i = f.opts.indexOf('--ratio');
+        need(i >= 0, `选中比例 ${lPick} 后 opts 里没有 --ratio：${JSON.stringify(f.opts)}`);
+        need(f.opts[i + 1] === lPick,
+          `--ratio 的值是 ${JSON.stringify(f.opts[i + 1])}，期望 ${JSON.stringify(lPick)}（下拉的选择没进参数）`);
+        need(!f.opts.includes('--size'), `选了预设比例却带了 --size：${JSON.stringify(f.opts)}`);
+        need(f.cmd.includes(`--ratio ${lPick}`), `#cmdPreview（可见命令）里没有「--ratio ${lPick}」：「${f.cmd}」`);
+        notes.push(`L1 选比例 ${lPick} ⇒ opts=${JSON.stringify(f.opts)}；#cmdPreview「${f.cmd}」`);
+      });
+
+      // ② 启动任务表单 · 自定义尺寸 #runSizeW / #runSizeH
+      await runCase('L2 启动表单·自定义尺寸 #runSizeW/#runSizeH：填 1280/720 ⇒ 含 --size 1280x720（且 --size 优先于 --ratio）', async () => {
+        await lSetSlug(state.slugA);
+        await lResetSize();
+        // ★ 「自定义尺寸…」那个 option 的 value 从 DOM 现取（= 不在服务端比例清单里的那一个）—— 不硬编码哨兵值
+        const customVal = await cdp.evalJs(`(() => { const s = document.getElementById('runRatio');
+          const known = ${JSON.stringify(lRatios)};
+          const o = [...s.options].find((x) => !known.includes(x.value));
+          return o ? o.value : null; })()`);
+        need(customVal, `#runRatio 里找不到「自定义尺寸…」选项（实际选项=${JSON.stringify(lRatios)}）`);
+        const c = await lSetRatio(customVal);
+        need(c.ok, `切到自定义尺寸失败：${JSON.stringify(c)}`);
+        await lSetNum('runSizeW', '1280');
+        await lSetNum('runSizeH', '720');
+        const f = await lForm();
+        const i = f.opts.indexOf('--size');
+        need(i >= 0, `填了 1280×720 后 opts 里没有 --size：${JSON.stringify(f.opts)}`);
+        need(f.opts[i + 1] === '1280x720', `--size 的值是 ${JSON.stringify(f.opts[i + 1])}，期望 "1280x720"`);
+        need(!f.opts.includes('--ratio'), `★ 自定义尺寸合法时不该再带 --ratio（--size 优先）：${JSON.stringify(f.opts)}`);
+        need(f.cmd.includes('--size 1280x720'), `#cmdPreview 里没有「--size 1280x720」：「${f.cmd}」`);
+        // 有牙（同一处纪律的另一半）：非法（奇数）尺寸 ⇒ **不传任何尺寸**（回退服务端默认），错因写进 #runSizeHint
+        await lSetNum('runSizeW', '1281');
+        const bad = await lForm();
+        need(!bad.opts.includes('--size'), `奇数宽 1281 不该被传成 --size：${JSON.stringify(bad.opts)}`);
+        const hint = await cdp.evalJs(`document.getElementById('runSizeHint').textContent`);
+        need(hint.trim().length > 0, '非法尺寸时 #runSizeHint 是空的（错因没说清）');
+        await lResetSize();     // 复位，不留给后面的用例
+        notes.push(`L2 自定义 1280×720 ⇒ opts=${JSON.stringify(f.opts)}、#cmdPreview「${f.cmd}」；奇数 1281 ⇒ 不传 --size、hint「${hint.slice(0, 40)}」`);
+      });
+
+      // ③ 高级参数 · 跳过起飞前检查 #fNoPreflight
+      await runCase('L3 高级参数·跳过起飞前检查 #fNoPreflight：勾上 ⇒ 含 --no-preflight；不勾 ⇒ 不含', async () => {
+        await lSetSlug(state.slugA);
+        await lResetSize();
+        await lSetCheck('fNoPreflight', false);
+        const off = await lForm();
+        need(!off.opts.includes('--no-preflight'), `没勾选却带了 --no-preflight：${JSON.stringify(off.opts)}`);
+        await lSetCheck('fNoPreflight', true);
+        const on = await lForm();
+        need(on.opts.includes('--no-preflight'), `勾上后 opts 里没有 --no-preflight：${JSON.stringify(on.opts)}`);
+        need(on.cmd.includes('--no-preflight'), `#cmdPreview 里没有 --no-preflight：「${on.cmd}」`);
+        await lSetCheck('fNoPreflight', false);   // 复位
+        notes.push(`L3 不勾 ⇒ opts=${JSON.stringify(off.opts)}（无 --no-preflight）；勾上 ⇒ 含 --no-preflight、#cmdPreview「${on.cmd}」`);
+      });
+
+      // ④ 高级参数 · 片名 #fFilm
+      await runCase('L4 高级参数·片名 #fFilm：填 my-film ⇒ 含 --film my-film；留空 ⇒ 不含', async () => {
+        await lSetSlug(state.slugA);
+        await lResetSize();
+        await lSetText('fFilm', '');
+        const empty = await lForm();
+        need(!empty.opts.includes('--film'), `片名留空却带了 --film：${JSON.stringify(empty.opts)}`);
+        await lSetText('fFilm', 'my-film');
+        const f = await lForm();
+        const i = f.opts.indexOf('--film');
+        need(i >= 0, `填了片名后 opts 里没有 --film：${JSON.stringify(f.opts)}`);
+        need(f.opts[i + 1] === 'my-film', `--film 的值是 ${JSON.stringify(f.opts[i + 1])}，期望 "my-film"`);
+        need(f.cmd.includes('--film my-film'), `#cmdPreview 里没有「--film my-film」：「${f.cmd}」`);
+        await lSetText('fFilm', '');   // 复位
+        notes.push(`L4 留空 ⇒ 无 --film；填 my-film ⇒ opts 含 --film my-film、#cmdPreview「${f.cmd}」`);
+      });
+
+      // ⑤ 算力面板 · 试调用 #btnLlmTryRun（★ 页面内 fetch 桩，绝不真发外网）
+      await runCase('L5 算力面板·试调用 #btnLlmTryRun：点击 ⇒ POST /api/llm/invoke（task=chat），返回文本渲染进 #llmProbeOut', async () => {
+        const TRY_TEXT = 'L5-桩回话：pong';
+        // ★ 只拦 /api/llm/invoke（其余照走真后端）—— 同 I6 的手法；`window.__origFetch` 以 window 为 this 调，不会 Illegal invocation。
+        await cdp.evalJs(`(() => {
+          if (!window.__origFetch) window.__origFetch = window.fetch;
+          window.__tryReqs = [];
+          window.fetch = async (input, opts) => {
+            const url = String(input && input.url ? input.url : input);
+            const method = String((opts && opts.method) || (input && input.method) || 'GET').toUpperCase();
+            if (!url.includes('/api/llm/invoke')) return window.__origFetch(input, opts);
+            window.__tryReqs.push({ url, method, body: opts && typeof opts.body === 'string' ? opts.body : null });
+            const payload = { ok: true, data: { ok: true, result: { text: ${JSON.stringify(TRY_TEXT)} } } };
+            return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          };
+          return true;
+        })()`, { awaitPromise: true });
+        // 反空转（前置）：点之前一条都没有；且面板里还没有这句桩文案
+        const pre = await cdp.evalJs(`(window.__tryReqs || []).length`);
+        need(pre === 0, `点「试调用」之前就已经发过 ${pre} 条请求（反空转失败）`);
+        const preTxt = await cdp.evalJs(`document.getElementById('llmProbeOut').textContent`);
+        need(!preTxt.includes(TRY_TEXT), '前置失败：#llmProbeOut 里已有桩文案（证明不了是这次点击渲染的）');
+        await cdp.evalJs(`document.getElementById('btnLlmTryRun').click(); true`);
+        await waitFor(cdp.evalJs, `(window.__tryReqs || []).length >= 1`, { timeoutMs: 10000 });
+        const reqs = await cdp.evalJs(`window.__tryReqs`);
+        need(reqs.length === 1, `点一次「试调用」应恰好发 1 条 /api/llm/invoke，实际 ${reqs.length} 条（反空转）`);
+        const req = reqs[0];
+        need(req.method === 'POST', `试调用 method 应是 POST，实测 ${req.method}`);
+        need(String(req.url).split('?')[0].endsWith('/api/llm/invoke'),
+          `试调用 URL 应是 /api/llm/invoke，实测 ${JSON.stringify(req.url)}`);
+        const body = JSON.parse(req.body || '{}');
+        need(body.task === 'chat', `试调用请求体 task 应是 'chat'，实测 ${JSON.stringify(body.task)}`);
+        // 返回文本必须真的被渲染进面板（renderLlmTryRunOut ⇒ #llmProbeOut.hidden=false + 文本）
+        const shown = await waitFor(cdp.evalJs, `(() => { const b = document.getElementById('llmProbeOut');
+          if (!b || b.hidden || !b.textContent.includes(${JSON.stringify(TRY_TEXT)})) return null;
+          return { hidden: b.hidden, text: b.textContent }; })()`, { timeoutMs: 10000 });
+        need(shown.hidden === false, '#llmProbeOut 点了「试调用」后仍是 hidden');
+        need(shown.text.includes(TRY_TEXT), `#llmProbeOut 文本里没有桩回话：${JSON.stringify(shown.text)}`);
+        await cdp.evalJs(`if (window.__origFetch) { window.fetch = window.__origFetch; } true`);   // 收尾：还原 fetch
+        notes.push(`L5 试调用（桩 invoke）：${req.method} ${req.url}，body.task=${JSON.stringify(body.task)}；#llmProbeOut 渲染「${shown.text.slice(0, 60)}」`);
+      });
+
+      // ⑥ 侧栏风格列表：中文名 · 英文名 · slug 三者都要看得见
+      await runCase('L6 侧栏风格列表：.style-item 文本同时含 nameCn / nameEn / slug（真值取自 /api/demos）', async () => {
+        const d = await get('/api/demos');
+        need(d.status === 200 && d.json && Array.isArray(d.json.styles), `GET /api/demos → ${d.status}（拿不到 styles）`);
+        // ★ 真值取自服务端响应，**不硬编码任何风格名**；挑一个三项俱全的风格当样本
+        const s = d.json.styles.find((x) => x.nameCn && x.nameEn && x.slug);
+        need(s, `/api/demos 里没有一个同时带 nameCn+nameEn+slug 的风格：${JSON.stringify(d.json.styles.slice(0, 3))}`);
+        const got = await cdp.evalJs(`(() => {
+          const it = document.querySelector('.style-item[data-slug=${JSON.stringify(s.slug)}]');
+          if (!it) return null;
+          const name = it.querySelector('.si-name'), sub = it.querySelector('.si-sub');
+          return { text: it.textContent, name: name ? name.textContent : '', sub: sub ? sub.textContent : '' };
+        })()`);
+        need(got, `DOM 里找不到 .style-item[data-slug=${JSON.stringify(s.slug)}]`);
+        need(got.text.includes(s.nameCn), `★ .style-item 文本里没有中文名「${s.nameCn}」：${JSON.stringify(got.text)}`);
+        need(got.text.includes(s.nameEn), `★ .style-item 文本里没有英文名「${s.nameEn}」：${JSON.stringify(got.text)}`);
+        need(got.text.includes(s.slug), `★ .style-item 文本里没有 slug「${s.slug}」：${JSON.stringify(got.text)}`);
+        // 落点也有牙：中文名在 .si-name、英文名与 slug 在 .si-sub（改回「只显示 slug」会在这里红）
+        need(got.name.includes(s.nameCn), `.si-name 里没有中文名「${s.nameCn}」：${JSON.stringify(got.name)}`);
+        need(got.sub.includes(s.nameEn) && got.sub.includes(s.slug),
+          `.si-sub 里应同时有英文名与 slug：${JSON.stringify(got.sub)}`);
+        notes.push(`L6 ${s.slug}：.si-name「${got.name}」/ .si-sub「${got.sub}」（中文名·英文名·slug 三者都在）`);
+      });
+
+      // ⑦ 测试盲区补丁：浅色主题下强调色在 hover 底色（--bg-3）上的对比度
+      await runCase('L7 浅色主题·hover 底色：--accent / --ok / --warn on --bg-3 都要 ≥ 4.5:1（P2-A 对比度盲区）', async () => {
+        // ★ 盲区：既有对比度用例（A5）只覆盖 --accent / --ok / --warn **on --panel**，**没覆盖 --bg-3** ——
+        //   而 --bg-3 正是 .style-item / .film / .envbar / .style-group-head 的 **hover 底色**，
+        //   这些强调色在 hover 行里就落在这个底上。这里用**同一套** WCAG 2.x 算法实算（复用 contrast()）。
+        const css = fs.readFileSync(path.join(ROOT, 'web', 'style.css'), 'utf8');
+        const light = parseVars(css, 'html[data-theme="light"] {');
+        need(light, 'style.css 里找不到 html[data-theme="light"] 调色板');
+        const pairs = [
+          ['--accent', light.accent, light['bg-3']],
+          ['--ok', light.ok, light['bg-3']],
+          ['--warn', light.warn, light['bg-3']],
+        ];
+        const rows = [];
+        const bad = [];
+        for (const [name, fg, bg] of pairs) {
+          need(fg && bg, `浅色主题里缺 ${name} 或 --bg-3（现值 fg=${JSON.stringify(fg)} / bg-3=${JSON.stringify(bg)}）`);
+          const r = contrast(fg, bg);
+          rows.push(`${name} on --bg-3 = ${r.toFixed(2)}`);
+          if (r < 4.5) bad.push(`${name}（${fg}）on --bg-3（${bg}）：${r.toFixed(2)} < 4.5`);
+        }
+        need(bad.length === 0,
+          `浅色主题下这些强调色在 hover 底色（--bg-3）上对比度不达标（WCAG AA 4.5:1）：\n  ${bad.join('\n  ')}`);
+        notes.push(`L7 浅色 --accent/--ok/--warn on --bg-3：${rows.join('；')}（全部 ≥ 4.5）`);
+      });
+    }
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）
