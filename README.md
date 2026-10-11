@@ -92,6 +92,7 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/console` | 端口固定入口的当前状态（host / port / url + 落盘与各注册表状态） | 同步 |
 | POST | `/api/reveal` | 在资源管理器里打开某个成片目录 | 同步 |
 | GET | `/api/style/:slug` | 这个风格的 STYLE.md / DEMO.md，渲染成已转义的 HTML | 同步 |
+| GET | `/api/style-switches` | 机械提取这个风格 demo 页里的页面开关键（`?slug=` 指定风格） | 同步 |
 | GET | `/api/films/:slug/:file` | 发成片字节，支持 Range 请求（能拖进度条）；HEAD 走同一处理函数 | 静态 |
 | HEAD | `/api/films/:slug/:file` | 发成片字节，支持 Range 请求（能拖进度条）；HEAD 走同一处理函数 | 静态 |
 | GET | `/api/films/dub/:dir/:file` | 文案出片的成片字节（比一级目录深一层），支持 Range；HEAD 同 | 静态 |
@@ -136,8 +137,8 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
 | POST | `/api/resources/download` | 一键下载（后台任务，日志走既有任务/SSE 通道） | 同步 |
 
-★ 上表共 **57** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
-其余 **55** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
+★ 上表共 **58** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
+其余 **56** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
 `DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
 ★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
 
@@ -545,7 +546,7 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `9cd33e25182d73c40db1d0fbb7abd75f`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `dfb3700378cea8e9ee577f8a2f969b73`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
 - **27 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`

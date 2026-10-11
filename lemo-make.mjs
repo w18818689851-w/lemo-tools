@@ -853,7 +853,7 @@ function parseArgs(argv) {
     readcheckStrict: false,  // ② 自检不达标时**阻断**出片（默认只报告）
     noPoster: false,         // ③ 静帧交付图 poster.jpg：跳过
     posterT: null,           // ③ poster 取哪一秒（默认按 demo 的 build.sh）
-    color: 'default', noDeliverables: false, webCut: false,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过 · ⑨ 720p web cut（opt-in，默认关）（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
+    color: 'default', noDeliverables: false, webCut: false, review: false, sheetStep: 2, sheetCols: 4, sheetW: 480, blackdetectD: 0.5,  // ④ 色彩（default ⇒ 不设 LEMO_COLOR）· ⑧ 交付文档跳过 · ⑨ 720p web cut（opt-in，默认关）· ⑩ 审核回路 --review（opt-in，默认关）（与 ④ 同行=刻意：保本区块行号，见 test/README.md）
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -901,7 +901,7 @@ function parseArgs(argv) {
     else if (a === '--no-poster') o.noPoster = true;
     else if (a === '--poster-t') o.posterT = Number(next('--poster-t'));
     else if (a === '--color') o.color = next('--color');
-    else if (a === '--no-deliverables') o.noDeliverables = true; else if (a === '--web-cut') o.webCut = true;
+    else if (a === '--no-deliverables') o.noDeliverables = true; else if (a === '--web-cut') o.webCut = true; else if (a === '--review') o.review = true; else if (a === '--sheet-step') o.sheetStep = Number(next('--sheet-step')); else if (a === '--sheet-cols') o.sheetCols = Number(next('--sheet-cols')); else if (a === '--sheet-w') o.sheetW = Number(next('--sheet-w')); else if (a === '--blackdetect-d') o.blackdetectD = Number(next('--blackdetect-d'));
     else if (!a.startsWith('--')) o.slug = a;
     else fail(`未知参数 ${a}（--help 看用法）`);
   }
@@ -944,7 +944,7 @@ function parseArgs(argv) {
   // --color：只有两档，与 core/render/mux.sh 的 `case "${LEMO_COLOR:-}" in ''|bt709)` 完全一致。
   if (!['default', 'bt709'].includes(o.color)) {
     fail(`--color 只能是 default 或 bt709（core/render/mux.sh 只接受 '' | 'bt709'），收到 '${o.color}'`);
-  }
+  } if (!Number.isFinite(o.sheetStep) || o.sheetStep <= 0) fail(`--sheet-step 必须是正数（秒），收到：${o.sheetStep}`); if (!Number.isInteger(o.sheetCols) || o.sheetCols < 1) fail(`--sheet-cols 必须是 ≥1 的整数，收到：${o.sheetCols}`); if (!Number.isInteger(o.sheetW) || o.sheetW < 16) fail(`--sheet-w 必须是 ≥16 的整数（px），收到：${o.sheetW}`); if (!Number.isFinite(o.blackdetectD) || o.blackdetectD <= 0) fail(`--blackdetect-d 必须是正数（秒），收到：${o.blackdetectD}`);
   return o;
 }
 
@@ -1578,7 +1578,7 @@ lemo-make — lemo-opuscar 跨 Windows/WSL 统一编排器
   node lemo-make.mjs tilt-shift --q noev=1
   node lemo-make.mjs engraving --q content=content_alt.json    # 渲染与事件表一起换内容（该 demo 两步同源）
   node lemo-make.mjs ascii-crt --render-only
-`;
+${reviewHelp()}`;
 
 // ─────────────────────────── 主流程 ───────────────────────────
 
@@ -2081,7 +2081,7 @@ async function main() {
     }
     // 8 是 2026-10-10 接入的第三步（⑧ 交付文档）—— 同样要能在干跑里看见。
     console.log(`  8. 交付文档 ${o.noDeliverables ? '（--no-deliverables 跳过）'
-      : `TREATMENT.md + CREDITS → ${outDir}`}`); if (o.webCut) console.log(`  9. web cut  720p 小样（${o.venc}）→ ${path.join(outDir, `${o.slug}-720p.mp4`)}`);
+      : `TREATMENT.md + CREDITS → ${outDir}`}`); if (o.webCut) console.log(`  9. web cut  720p 小样（${o.venc}）→ ${path.join(outDir, `${o.slug}-720p.mp4`)}`); if (o.review) console.log(`  10. 审核回路  sheet.jpg（每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px）+ blackdetect（d=${o.blackdetectD}s）→ ${path.join(outDir, 'sheet.jpg')}`);
     console.log(C.dim((contentOf(qRender) || contentOf(qEvents) || o.lines)
       ? '\n  换内容/换配音行时：2 的「配音」阶段会先单独跑完并回传 voices/*.json，\n'
         + '  之后 2 的「配乐+混音」与 3 才并行（页面要靠 dur.json 排口播时间窗）。\n'
@@ -3378,7 +3378,7 @@ echo "MUX_OK $(stat -c%s "$OUT/${o.slug}.mp4") src_frames=$SRC_FRAMES out_frames
   // ⑨ 720p web cut（2026-10-11 接入上游 tools/web_cuts.sh 的正式能力）—— **opt-in，默认关**：
   //   不传 --web-cut 时这一行**什么也不做**（函数不被调用）⇒ 默认路径的产物与日志逐字节不变。
   //   函数体在文件末尾（与 main 之后的 helper 同区），调用点在 main 内，函数声明提升 ⇒ 可正常调用。
-  if (o.webCut) await emitWebCut({ o, outDir, ffDir, src: dst });
+  if (o.webCut) await emitWebCut({ o, outDir, ffDir, src: dst }); if (o.review) await emitReview({ o, outDir, ffDir, src: dst, demoRel, demoWin, outSize, qRender });
 
   console.log(C.ok(`\n全部完成 · ${(st.size / 1048576).toFixed(1)} MB · 总耗时 ${el()}`));
 }
@@ -3538,3 +3538,127 @@ async function emitWebCut({ o, outDir, ffDir, src }) {
 }
 
 main().catch(e => fail(e?.stack || String(e)));
+
+// ───────── ⑩ 审核回路（--review）—— 接触表 + 空帧检测（2026-10-11 接入上游 TECHNIQUE.md §8）─────────
+// ★ 上游 §8「Review loop」4 条里，**只有 2 条是机器可做的**（其余按「上游未定义 / 不可机器化」如实登记）：
+//   ① 接触表：`still.mjs --range` 每 1–2s 一帧 + `core/render/sheet.py` 拼成一张总览图（本轮做）；
+//   ③ 对**最终文件**跑 ffmpeg 的 `ebur128`（响度）/ `blackdetect`（空帧）—— 本轮**只补 blackdetect**：
+//      响度那一路**混流步骤已经在做**（WSL `mux.sh` 核 −14 LUFS / −1.2 dBTP 并会告警）⇒ 不重复造第二份。
+//   ②（0.2s 逐动作帧条：交接/摔倒/命中）与 ④（全速带声看一遍）**不是机器可做的** ⇒ 本编排器**不做**。
+// ★ 为什么 opt-in（`--review`，默认关）：接触表要跑**一整趟 still 出帧**（≈ 一次浏览器启动 + N 帧，
+//   实测 ascii-crt 单帧 40–55ms），比既有步骤贵；而「默认路径的产物与日志逐字节不变」是硬要求
+//   ⇒ 与 `--web-cut` 同型：不传 `--review` 时本函数**根本不被调用**（调用点自带 `if (o.review)`）。
+// ★ 失败处理（与 poster / 交付文档 / web cut 同口径）：任一步失败 ⇒ **只 warn、不让出片 fail**。
+// ★ 与 `--render-only` / `--audio-only` 的关系：partial 模式在步骤流中段提前 return ⇒ 本函数**不跑**
+//   （那两种模式没有「最终 mp4」可审 —— 它们产的是 `out/video_gpu.mp4` / 音频中间产物）。
+function reviewHelp() {
+  return `
+审核回路（--review · opt-in，默认关）· 选项
+  --review              出片后跑**审核回路**（对齐上游 TECHNIQUE.md §8 里机器可做的两项）：
+                        ① 接触表 sheet.jpg（still.mjs --range 出帧 → core/render/sheet.py 拼成一张总览图）；
+                        ② 对**最终 mp4** 跑 ffmpeg blackdetect 空帧检测（纯分析滤镜、**不编码**）。
+                        ★ opt-in、**默认关**：不传时既不产文件也不多打一个字（默认路径逐字节不变，同 --web-cut）
+                        ★ 上游 §8 另两条（0.2s 逐动作帧条 / 全速带声看一遍）**不是机器可做的** ⇒ 本项目不做
+  --sheet-step <秒>     接触表取样间隔，默认 2（上游 §8 说「每 1–2 s 一帧」⇒ 取**上界**：60s 片 = 31 帧 / 8 行；
+                        取 1s 会到 16 行且出帧成本翻倍，而总览图只需粗看）
+  --sheet-cols <n>      接触表列数，默认 4（**逐字照上游 core/render/sheet.py 的默认值**）
+  --sheet-w <n>         接触表每格宽度（px），默认 480（同上，照上游 sheet.py）
+  --blackdetect-d <秒>  blackdetect 的**最短黑场时长**（ffmpeg 的 d 参数），默认 0.5。
+                        ★ 上游 §8 只写「blackdetect (blank frames)」、**没给参数**，ffmpeg 自带默认是 2.0；
+                          **本项目取 0.5** —— 这一步**只报告、绝不阻断**，宁多报不漏报（2.0 会把 1.9s 的黑场
+                          静默放过；实测样板片 d=0.5 报 2 段、d=2.0 只报 1 段）
+`;
+}
+
+async function emitReview({ o, outDir, ffDir, src, demoRel, demoWin, outSize, qRender }) {
+  step(`审核回路（--review · 接触表 + 空帧检测）`);
+  const ffEnv = { ...process.env, PATH: `${ffDir};${process.env.PATH || ''}` };
+
+  // ── ② 空帧检测（先跑：纯分析、快、且不依赖出帧是否成功）────────────────────────────
+  // 对**最终成片**（src = 本次输出目录里的 mp4）跑 blackdetect。`-f null -` 把解码结果丢进 null muxer
+  // ⇒ 纯分析、**不编码**（不占显存编码器、不产任何新视频）。日志写在 stderr（与 `frame=` 进度行交错）。
+  if (!fs.existsSync(src)) {
+    warn(`找不到成片 ${src} —— 跳过空帧检测（不影响成片）`);
+  } else {
+    const bArgs = ['-hide_banner', '-nostdin', '-i', src, '-vf', `blackdetect=d=${o.blackdetectD}:pix_th=0.10`, '-an', '-f', 'null', '-'];
+    info(C.dim(`$ ${path.join(ffDir, 'ffmpeg.exe')} ${bArgs.join(' ')}`));
+    const br = await run(path.join(ffDir, 'ffmpeg.exe'), bArgs, { env: ffEnv });
+    const hits = [...String(br.stderr || '').matchAll(/black_start:([\d.]+)\s+black_end:([\d.]+)\s+black_duration:([\d.]+)/g)]
+      .map(m => ({ start: Number(m[1]), end: Number(m[2]), dur: Number(m[3]) }));
+    if (!hits.length && br.code !== 0) {
+      warn(`blackdetect 没能跑完（ffmpeg 退出码 ${br.code}）—— 不影响成片，跳过`);
+    } else if (!hits.length) {
+      ok(`空帧检测：0 处黑场（d ≥ ${o.blackdetectD}s）`);   // ★ 0 处也要**明说**，绝不静默
+    } else {
+      warn(`空帧检测：${hits.length} 处黑场（d ≥ ${o.blackdetectD}s）—— 多为片头/片尾的正常黑场，请人工确认`);
+      for (const h of hits) info(`  ${h.start.toFixed(2)}s – ${h.end.toFixed(2)}s（${h.dur.toFixed(2)}s）`);
+    }
+  }
+
+  // ── ① 接触表（contact sheet）───────────────────────────────────────────────
+  // 两步：(1) Windows 侧 still.mjs --range 出帧（与第 7 步 poster 同一条命令构造，只多一个 --range）；
+  //       (2) WSL 侧 core/render/sheet.py 拼图。★ 为什么拼图必须走 WSL：实测**只有库自带 venv 的
+  //       python 装了 PIL**（Windows python 与 WSL 系统 python3 都没有）⇒ 与 sheet.py 的依赖一致。
+  // 时长取**最终成片**（ffprobe，审的就是这个文件），读不到退 style.json 的 dur，再读不到就跳过本项。
+  let dur = null, durFrom = '';
+  if (fs.existsSync(src)) {
+    const pr = await run(path.join(ffDir, 'ffprobe.exe'),
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', src], { env: ffEnv });
+    const v = Number(String(pr.stdout || '').trim());
+    if (pr.code === 0 && Number.isFinite(v) && v > 0) { dur = v; durFrom = 'ffprobe 读成片'; }
+  }
+  if (dur === null) {
+    try {
+      const sj = JSON.parse(fs.readFileSync(path.join(CFG.winLib, 'styles', o.slug, 'style.json'), 'utf8'));
+      if (sj && Number.isFinite(Number(sj.dur)) && Number(sj.dur) > 0) { dur = Number(sj.dur); durFrom = 'style.json 的 dur'; }
+    } catch { /* 读不到 ⇒ 走下面的跳过分支 */ }
+  }
+  if (dur === null) {
+    warn('接触表：读不到影片时长（ffprobe 成片失败、style.json 也没有 dur）—— 跳过接触表（不影响成片）');
+    return;
+  }
+  info(`接触表时长 ${dur.toFixed(2)}s（来源：${durFrom}）· 每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px`);
+
+  // 帧落在 demo/out/review/（渲染产物区，与 poster 的 demo/out/poster/ 同层），再拼成图放输出目录。
+  const scratch = path.join(demoWin, 'out', 'review');
+  try { fs.rmSync(scratch, { recursive: true, force: true }); } catch { /* best-effort：清旧帧，免得混进上一次的 */ }
+  const stillArgs = ['core/render/still.mjs', demoRel, '--range', `0:${dur.toFixed(2)}:${o.sheetStep}`,
+    '--size', `${outSize.w}x${outSize.h}`, '--out', scratch, '--prefix', 'sheet_'];
+  if (qRender) stillArgs.push('--q', qRender);   // ★ --q 必须与**渲染那份**一致：内容/语言/选片都靠它
+  info(C.dim(`$ node ${stillArgs.join(' ')}`));
+  const sr = await runLive(process.execPath, stillArgs, { cwd: CFG.winLib, env: ffEnv });
+  if (sr.code !== 0) {
+    warn(`接触表：still.mjs 出帧失败（退出码 ${sr.code}）—— 跳过（不影响成片）`);
+    return;
+  }
+  // 收集帧并按时间数值排序（still.mjs 的命名是 <prefix><t.toFixed(2)>.jpg，字典序会把 10 排到 2 前）。
+  let frames = [];
+  try {
+    frames = fs.readdirSync(scratch)
+      .map(n => (/^sheet_(\d+(?:\.\d+)?)\.jpg$/.exec(n) || [])[1])
+      .filter(Boolean).map(t => ({ t: Number(t), name: `sheet_${t}.jpg` }))
+      .sort((a, b) => a.t - b.t);
+  } catch { /* 目录读不到 ⇒ frames 保持空，下面报错 */ }
+  if (!frames.length) {
+    warn('接触表：still.mjs 没产出任何帧 —— 跳过（不影响成片）');
+    return;
+  }
+  // Windows 路径 → WSL 挂载路径（/mnt/<盘符小写>/…），与 runWsl 内部对脚本路径的换算同规则。
+  const w2l = p => String(p).replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+  const outWsl = w2l(path.join(outDir, 'sheet.jpg'));
+  const imgs = frames.map(f => `'${w2l(path.join(scratch, f.name))}'`).join(' ');
+  // python 解释器：照上游 core/README.md 用库自带的 venv（**实测只有它装了 PIL**）；不在就退回 python3。
+  const sheetSh =
+    `LIB='${CFG.wslLib}'\n` +
+    `PY="$LIB/.venv/bin/python"; [ -x "$PY" ] || PY=python3\n` +
+    `cd "$LIB" || exit 1\n` +
+    `"$PY" core/render/sheet.py '${outWsl}' ${imgs} --cols ${o.sheetCols} --w ${o.sheetW}\n`;
+  const shr = await runWsl(sheetSh, { name: '_lemo-review' });
+  if (shr.stdout) process.stdout.write(shr.stdout);
+  const sheetWin = path.join(outDir, 'sheet.jpg');
+  if (shr.code !== 0 || !fs.existsSync(sheetWin)) {
+    warn(`接触表：sheet.py 拼图失败（退出码 ${shr.code}）—— 不影响成片，跳过`);
+    return;
+  }
+  ok(`${sheetWin}  ${frames.length} 帧 · ${(fs.statSync(sheetWin).size / 1024).toFixed(0)} KB`);
+}

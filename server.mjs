@@ -833,6 +833,138 @@ function apiStyle(req, res, slug) {
   });
 }
 
+// ── API: GET /api/style-switches（这个风格 demo 页的页面开关键）──
+//
+// ★★ **本文件新增注释一律不要用反引号**（代码跨度请写成「」）：
+//   闸门 check-llm-call-params 的剥注释器**不认正则字面量**，在本文件约 836 行处**已处于「反引号态」**
+//   ⇒ 注释里再出现反引号会翻转奇偶、把该文件**之后的代码整段吞掉** ⇒ 该闸门报「已失明」。
+//   实测：注释里带反引号时，剥完只剩 19670/127511 字符、抽到 **0** 次模块调用（下限 5）；去掉后恢复正常。
+//   ★ 这是**闸门的已知局限**（同一份剥注释器在 9 个闸门里各有一份），
+//     我方选择「不触发它」而不是去改冻结集里的闸门（改一处会与另 8 份不一致）。
+//   ★ 同源注意事项：正则字面量里也**不要写裸引号** —— 写成 \u0027 / \u0022（见下面三条收键正则）。
+//
+// ★ 机械提取，**不硬编码任何开关名单**：把 demo 目录下的 「.js/.mjs/.html」 扫一遍，
+//   ① 先按**赋值右侧**认出「params 对象」的标识符（「<ID> = new URLSearchParams(location.search)」；
+//      ★ 不写死变量名 —— 上游实测叫过 「Q」 / 「q」 / 「qs」 / 「QS」）；
+//   ② 再只收**它身上**的 「.get('x')」 / 「.has('x')」 / 「.includes('x')」；另加两种无中间变量的写法
+//      （内联链式 「new URLSearchParams(location.search).has('x')」、「location.search.includes('x')」）。
+//   风格加了新开关、库更新了 demo，这里**自动**跟着变 —— 名单不写在代码里，就不会与库漂移。
+// ★ 为什么不裸匹配 「.has(」：「Map」 / 「Set」 也长着 「.has()」 —— 裸匹配会把
+//   「cache.has('w8')」（「pixel-rpg/demo/portraits.js」 的贴图缓存）这类**非页面开关**收进来。
+//   先锚定「params 对象」再收它的方法，才能**既不漏 「.has()」 形态、又不滥收 Map/Set 的键**。
+//   （★ 实测：旧判据只有 「.get('x')」 / 「location.search.includes('x')」 两条 ⇒ 漏掉一整类开关：
+//    「ascii-crt」 只回 「["frame","t"]」（漏 「Q.has('nosub')」）、「backrooms」 三个开关全是 「.has()」 ⇒ 回**空列表**。）
+// ★ **绝不抛**：库仓不在 / slug 不存在 / 没有 demo 目录 / 一个键都没扫到 ⇒ 一律 200 + 「switches: []」
+//   + 「note」 一句中文说明。这个端点是**锦上添花**的助手，它失败不该让「启动任务」那条主路变红。
+// ★ 越界守卫与 slug 白名单照抄 「apiStyle」（同一个根、同一道守卫），别自己发明。
+/**
+ * GET /api/style-switches?slug=<slug> —— 机械提取某个风格 demo 页里的「页面开关键」。
+ *
+ * 返回：`{ slug, switches: [{ key, sources: ['demo/main.js:602'] }], scanned, note }`
+ *   · `scanned` = 实际扫过的 `.js/.mjs/.html` 文件数；
+ *   · `sources`  = 该键出现处的 `相对风格目录的路径:行号`（证据，给 UI 做 title）；
+ *   · `note`     = 降级原因（null = 正常扫到开关）。
+ */
+function apiStyleSwitches(req, res, slug) {
+  // ★ 降级出口统一走这里：任何「扫不到」的情形都是 200 + 空列表 + 中文说明（绝不 500 / 绝不抛）。
+  const empty = (note) => sendJson(res, 200, { slug: String(slug || ''), switches: [], scanned: 0, note });
+
+  if (typeof slug !== 'string' || !slug.trim()) return empty('缺少 slug 参数');
+  if (!/^[A-Za-z0-9._-]+$/.test(slug)) return empty(`slug 含非法字符：${slug}`);
+
+  const root = path.resolve(resolveStylesRoot(CFG.winLib));   // ★ 风格源码根唯一来源
+  const dir = path.resolve(root, slug);
+  // ★ 越界守卫：照抄 「apiStyle」 的既有做法（同一个根、同一道守卫、同一句错）—— 这是**显式**拒绝，不是「绝不抛」那一类。
+  if (dir !== root && !dir.startsWith(root + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+
+  const demoDir = path.join(dir, 'demo');
+  if (!fs.existsSync(demoDir)) return empty(`${slug} 下没有 demo 目录`);
+
+  // ── 递归收集 demo/**/*.{js,mjs,html}（跳过点目录与 node_modules；顺序固定 ⇒ 结果确定）──
+  const files = [];
+  const walk = (d) => {
+    let ents;
+    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.isDirectory()) {
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        walk(path.join(d, e.name));
+      } else if (/\.(js|mjs|html)$/i.test(e.name)) {
+        files.push(path.join(d, e.name));
+      }
+    }
+  };
+  walk(demoDir);
+  files.sort();
+
+  // ── 先把 demo 树读进内存（fs **同步**读；★ 本机 spawnSync/execFileSync 一律 EBUSY ⇒ 不起子进程）──
+  //    两遍扫描（先认 params 标识符、再收键）都在内存里做，文件只读一次。
+  const srcs = [];
+  for (const full of files) {
+    let src;
+    try { src = fs.readFileSync(full, 'utf8'); } catch { continue; }
+    srcs.push({ rel: path.relative(dir, full).split(path.sep).join('/'), src });
+  }
+
+  // ── 判据①：认出「params 对象」的标识符 —— ★ **按赋值右侧识别**，不写死变量名 ──
+  //   形如 「const <ID> = new URLSearchParams(location.search)」（也认 「document.location.search」）。
+  //   · 「(?<![\w$.])」：左边不能是 「.」 / 词字符 —— 免得命中 「foo.Q」、「myQ」；
+  //   · 「(?!\s*\.)」：构造式**紧跟点**的不算 —— 那是 「const X = new URLSearchParams(location.search).get('x')」，
+  //     左边是个**值**（布尔 / 字符串），不是 params 对象本身。
+  //   ★ 作用域取**该风格的 demo 树**（不是单文件）：上游有 9 个风格把 params 对象**当函数参数传给兄弟文件**
+  //     （如 「woodcut/demo/test.js」 的 「test(g, mode, t, qs)」，由同风格 「main.js」 把 「qs」 传进来）——
+  //     只在单文件里找会**漏 20 个键**（实测：woodcut 从 14 个掉到 1 个）。取风格树 = 覆盖这类传递，
+  //     又不像「全库共享名字」那样让风格之间撞名（实测两者在全库 43 风格上结果逐键相同，取更紧的那个）。
+  const RE_PARAMS_ID = /(?<![\w$.])([A-Za-z_$][\w$]*)\s*=\s*new\s+URLSearchParams\s*\(\s*(?:document\.)?location\.search\s*\)(?!\s*\.)/g;
+  const paramsIds = new Set();
+  for (const { src } of srcs) {
+    RE_PARAMS_ID.lastIndex = 0;
+    let m;
+    while ((m = RE_PARAMS_ID.exec(src)) !== null) paramsIds.add(m[1]);
+  }
+
+  // ── 判据②③④：三条收键正则。**只收 params 对象身上的方法** ⇒ 「Map」/「Set」 的 「.has('x')」 收不进来 ──
+  //   ② 「<ID>.get|has|includes('x')」（ID ∈ 判据① 那组；「(?<![\w$.])」 防 「myQ.has」 一类误吃）
+  //   ③ 内联链式（无中间变量）：「new URLSearchParams(location.search).get|has|includes('x')」
+  //   ④ 既有写法：「location.search.includes('x')」（上游实测 3 处这么写，判据②③ 都盖不到）
+  //   ★★ 引号一律写成 「\u0027」 / 「\u0022」（= 「'」 / 「"」），**不要**在正则字面量里写裸引号：
+  //     本项目多个闸门（含冻结集里的 「check-llm-call-params.mjs」）用的是一个**不认正则字面量**的
+  //     剥注释器 —— 裸引号会让它以为「字符串开了没关」，**把该文件之后的代码全吞掉** ⇒ 闸门报「已失明」。
+  //     实测：写 「['"]」 时 「check-llm-call-params」 剥完只剩 19729/127043 字符、抽到 0 次调用（下限 5）；
+  //     写成 「[\u0027\u0022]」 后恢复正常。★ 这是**闸门的已知局限**（同一份剥注释器在 9 个闸门里各有一份），
+  //     我方选择「不触发它」而不是去改冻结集里的闸门（改一处会与另 8 份不一致）。
+  const RE_INLINE = /new\s+URLSearchParams\s*\(\s*(?:document\.)?location\.search\s*\)\s*\.(?:get|has|includes)\([\u0027\u0022]([A-Za-z0-9_]+)[\u0027\u0022]\)/g;
+  const RE_INC = /location\.search\.includes\([\u0027\u0022]([A-Za-z0-9_]+)[\u0027\u0022]/g;
+  const idRes = [...paramsIds].sort().map((id) =>
+    new RegExp(`(?<![\\w$.])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.(?:get|has|includes)\\([\u0027\u0022]([A-Za-z0-9_]+)[\u0027\u0022]\\)`, 'g'));
+  const reses = [...idRes, RE_INLINE, RE_INC];
+
+  const map = new Map();   // key → Set('demo/main.js:602')
+  for (const { rel, src } of srcs) {
+    const lines = src.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      for (const re of reses) {
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(lines[i])) !== null) {
+          const key = m[1];
+          if (!map.has(key)) map.set(key, new Set());
+          map.get(key).add(`${rel}:${i + 1}`);
+        }
+      }
+    }
+  }
+
+  const switches = [...map.entries()]
+    .map(([key, set]) => ({ key, sources: [...set].sort() }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+
+  if (switches.length === 0) {
+    return sendJson(res, 200, { slug, switches: [], scanned: files.length, note: `${slug} 的 demo 页里没扫到页面开关（扫过 ${files.length} 个文件）` });
+  }
+  sendJson(res, 200, { slug, switches, scanned: files.length, note: null });
+}
+
 // ── API: POST /api/reveal（在资源管理器里打开成片目录）────────
 /**
  * POST /api/reveal —— 在资源管理器里打开某个成片目录。
@@ -2582,6 +2714,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/resources/import' && m === 'POST') return await apiResourcesImport(req, res);
     if (p === '/api/resources/download' && m === 'POST') return await apiResourcesDownload(req, res);
     if (p === '/api/demos' && m === 'GET') return apiDemos(req, res);
+    if (p === '/api/style-switches' && m === 'GET') return apiStyleSwitches(req, res, url.searchParams.get('slug') || '');
     if (p === '/api/films' && m === 'GET') return apiFilms(req, res);
     if (p === '/api/console' && m === 'GET') return apiConsole(req, res);
     if (p === '/api/reveal' && m === 'POST') return await apiReveal(req, res);

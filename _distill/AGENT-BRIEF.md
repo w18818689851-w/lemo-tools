@@ -727,6 +727,31 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    ★ **本批 `lemo-make.mjs` 只 +4 行（3375 处调用点）+67 行（文件尾函数）** ⇒ 前段四个 hunk 全为
    `-7/+7` **净零**，故**全仓 `lemo-make.mjs:<行号>` 引用零漂移**（机器双向核实：9 处目标行原文逐字未变
    ＋ 无任何引用指向 ≥3000 的行）。md5 `65942a2c36b0572031a1992724f7acc9` → **`9cd33e25182d73c40db1d0fbb7abd75f`**。
+   ★ **2026-10-11** 接入上游 `TECHNIQUE.md` §8「Review loop」里**机器可做**的两项 —— 新增 opt-in `--review`
+   （① 接触表 `sheet.jpg`：Windows `still.mjs --range` 出帧 → WSL `core/render/sheet.py` 拼图；
+   ② 对**最终 mp4** 跑 `blackdetect`：`-vf blackdetect=d=0.5:pix_th=0.10 -an -f null -`，**纯分析、不编码**）。
+   §8 的另两条（0.2 s 逐动作帧条 / 全速带声看一遍）**要人眼判定「关键动作」⇒ 不做**（如实登记）；
+   `ebur128` 与「有语音再跑 whisper」**已有覆盖**（混流步核 −14 LUFS / −1.2 dBTP；`asr_check` 在混流前）。
+   5 个新 CLI 全 **opt-in**、**默认路径逐字节不变**（不传 `--review` 时 `emitReview()` 根本不被调用）。
+   `--sheet-step` 默认 **2**（上游说「每 1–2 s」⇒ 取**上界**）；`--sheet-cols 4` / `--sheet-w 480`
+   **逐字照上游 `sheet.py` 的默认值**；`--blackdetect-d` 默认 **0.5**（★ 上游只写「blackdetect」**没给参数**，
+   ffmpeg 自带默认 2.0；**本项目取 0.5**，只报告不阻断 ⇒ 宁多报不漏报）。
+   ★ `lemo-make.mjs` 前段 6 个 hunk **全 `-N/+N` 单行替换 ⇒ 净零**，新代码集中在文件尾
+   （`reviewHelp()` + `emitReview()`，+124 行）⇒ 全仓 `lemo-make.mjs:<行号>` 引用**零漂移**。
+   ★ 实测：真出片 `--out D:/lemo-tmp/review-test` **94.5 s / EXIT 0** / `sheet.jpg` **1920×7000** / 30 帧；
+   新渲片 blackdetect 报 **5 段**、出厂样板片报 **2 段**（差异源于编码亮度，非内容缺失 —— 同刻 YAVG 21.5 vs 22.9）。
+   md5 `9cd33e25182d73c40db1d0fbb7abd75f` → **`dfb3700378cea8e9ee577f8a2f969b73`**。
+   ★ **2026-10-11** 控制台侧新增 **`GET /api/style-switches`**（`--q` 开关助手的数据源）：从库仓
+   `styles/<slug>/demo/**` **机械派生**该风格的页面开关（**不维护任何会漂的名单**）。判据经一轮修正：
+   ★★ **首版只认 `.get('x')` 与 `location.search.includes('x')`，漏掉 `.has()` 形态** ——
+   上游大量写成 `const Q = new URLSearchParams(location.search); … Q.has('nosub')` ⇒ 首版对 `ascii-crt`
+   只回 `["frame","t"]`（漏 `nosub`，即「去字幕」）、对 `backrooms` 回**空列表**。
+   ⇒ 现判据 = **先按赋值右侧认出 params 标识符**（不写死变量名，实测上游有 `Q` / `qs` 两种命名），
+   **再只收该标识符身上的 `.get/.has/.includes('字面量')`** + 内联链式 + `location.search.includes`；
+   ★ **作用域 = 该风格的整棵 demo 树**（上游 9 个风格把 params **当形参传给兄弟文件**，
+   只在单文件里找会漏 20 个键）；★ 顺带修掉首版**裸 `.get`** 造成的误收（把 `pixel-rpg` 的
+   `cache.get('w8')`（Map）收成键名 `w8`）。实测 **43 风格 / 91 去重键 / Map-Set 味键名 0 个**；
+   `M5` 用例带**变异自证**（退回旧判据 ⇒ 必红且红在该句上）。
    再上一次：**2026-10-06** 补上 art-deco 漏跑的变调步 `tools/pitch.py`（`dfa990…` → `caab495…`），
    并把「build.sh 有、编排器不跑」的步骤做成起飞前检查可报的 `ORCH_SKIP_STEPS` 登记表。
    ★ **若你确实动了 `D:/lemo-opuscar` 下任何文件 ⇒ 改完立刻同步两侧**（改一侧 = 分叉 = 阻塞出片，

@@ -448,13 +448,34 @@
       <details class="adv">
         <summary>高级选项</summary>
         <div class="form-grid">
-          <label class="field">
-            <span class="lbl" title="对应命令行参数 --q（原样透传给渲染阶段）">透传参数（只透传渲染）</span>
-            <input id="fQ" class="input" placeholder="如 noev=1 或 content=content_alt.json" autocomplete="off">
-          </label>
+          <!-- ★ 透传参数（--q）+ 开关助手：`#fQ` 是自由文本框，用户得自己记住 demo 页认哪些开关。
+               助手从当前风格的 demo 源码里**机械**抽出开关（GET /api/style-switches），点一下就填进去。
+               ★ 只增删「这一个键那一段」，用户在框里手写的其它内容一律不动。 -->
+          <div class="field wide q-field">
+            <label class="lbl" for="fQ" title="对应命令行参数 --q（原样透传给渲染阶段）">透传参数（只透传渲染）</label>
+            <div class="q-row">
+              <input id="fQ" class="input" placeholder="如 noev=1 或 content=content_alt.json" autocomplete="off">
+              <button type="button" class="btn ghost small" id="btnQSwitches" aria-expanded="false"
+                      aria-controls="qSwitches" title="从当前风格的 demo 页里读出可用开关，点一下就填进上面的输入框">开关助手</button>
+            </div>
+            <div class="q-switches" id="qSwitches" hidden></div>
+            <span class="hint" id="qSwitchesHint"></span>
+          </div>
           <label class="field">
             <span class="lbl" title="对应命令行参数 --grain">颗粒强度</span>
             <input id="fGrain" class="input" placeholder="如 0 / 0.08" autocomplete="off">
+          </label>
+          <label class="field">
+            <span class="lbl" title="对应命令行参数 --color（等价于环境变量 LEMO_COLOR）">色彩空间</span>
+            <select id="fColor" class="input">
+              <option value="default">默认（全范围）</option>
+              <option value="bt709">BT.709（限幅，广播标准）</option>
+            </select>
+            <span class="hint" id="fColorHint">选「默认」不传 --color</span>
+          </label>
+          <label class="field">
+            <span class="lbl" title="对应命令行参数 --lines（demo 目录下的 .json 文件名；★ 本控制台自产参数，上游没有）">清单文件</span>
+            <input id="fLines" class="input" placeholder="如 lines.json" autocomplete="off">
           </label>
           <label class="field wide">
             <span class="lbl" title="对应命令行参数 --out">输出目录</span>
@@ -470,6 +491,7 @@
              ★ P0-D：CLI 名移进 title。 -->
         <div class="checks">
           <label class="chk" title="对应命令行参数 --no-preflight"><input type="checkbox" id="fNoPreflight"> 跳过起飞前检查（勾选 = 不跑预检直接启动）</label>
+          <label class="chk" title="对应命令行参数 --web-cut"><input type="checkbox" id="fWebCut"> 网页预览小样（720p，快）</label>
         </div>
       </details>
 

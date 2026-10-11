@@ -3347,6 +3347,8 @@ function buildOpts() {
   const grain = $('fGrain').value.trim();
   const out = $('fOut').value.trim();
   const film = $('fFilm') ? $('fFilm').value.trim() : '';
+  const color = $('fColor') ? $('fColor').value : '';
+  const lines = $('fLines') ? $('fLines').value.trim() : '';
 
   if (fps && fps !== '24') o.push('--fps', fps);
   // ★ 这里的 '6' 是**编排器的默认值**（lemo-make.mjs 的 --workers 默认 6）——等于它就交给 CLI 自己用默认。
@@ -3368,6 +3370,13 @@ function buildOpts() {
   else if (size.ratio) o.push('--ratio', size.ratio);
   // --film（CLI 已有、UI 此前没有）：留空 = 用该风格自带的影片模块。
   if (film) o.push('--film', film);
+  // --lines（★ 本控制台自产参数，上游 lemo-make.mjs **没有**）：demo 目录下的 .json 文件名。
+  //   留空 = 不传（CLI 走它自己的默认）。合法性由 CLI 校验（/^[\w.-]+\.json$/），这里不另写一份判据 —— 免得漂移。
+  if (lines) o.push('--lines', lines);
+  // --color（CLI 已有、UI 此前没有）：★ 默认 `default` ⇒ **一个字都不传**（命令行逐字节与旧版一致）。
+  if (color && color !== 'default') o.push('--color', color);
+  // --web-cut（CLI 已有、UI 此前没有）：opt-in，默认关 ⇒ 只有勾上才传。
+  if ($('fWebCut') && $('fWebCut').checked) o.push('--web-cut');
   if ($('fSkipSync').checked) o.push('--skip-sync');
   if ($('fSkipRender').checked) o.push('--skip-render');
   if ($('fAudioOnly').checked) o.push('--audio-only');
@@ -3394,6 +3403,123 @@ function syncPreview() {
   // 参数一变，之前那条并发预检提示就不再对应当前命令了 → 收起来（判据只有服务端一处，不在这里重算）
   const w = $('lockWarn');
   if (w && !w.hidden) { w.hidden = true; w.textContent = ''; }
+}
+
+// ── 开关助手（#fQ 旁的 chips）────────────────────────────────
+//
+// ★ 键名**不写在前端**：从 `GET /api/style-switches?slug=<当前风格>` 机械取回
+//   （服务端扫该风格 demo 源码里 params 对象身上的 `URLSearchParams.get('x')` / `.has('x')`，
+//     外加内联链式 `new URLSearchParams(location.search).has('x')` 与 `location.search.includes('x')`）。
+//   风格加了新开关，这里**自动**跟着变 —— 名单只存在于库侧源码，前端不留第二份。
+// ★ 只增删「这一个键那一段」：用户在 #fQ 里手写的其它内容一律不动（见 qToggleSwitch）。
+// ★ 拿不到开关时显示服务端给的 note，**不留空面板**（这个助手失败不该挡住「开始生成」那条主路）。
+
+/** `--q` 的值按空白切成分段（与 CLI 把它原样透传的口径一致）。 */
+function qTokens(v) {
+  return String(v || '').trim().split(/\s+/).filter(Boolean);
+}
+
+/** 某个 key 在分段里落在第几段（`key` 或 `key=<任意值>` 都算；找不到 = -1）。 */
+function qKeyIndex(tokens, key) {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t === key || t.startsWith(key + '=')) return i;
+  }
+  return -1;
+}
+
+/** 点 chip：没写 ⇒ 追加 `key=1`；已写 ⇒ 移除那一段。返回操作后「是否已开启」。 */
+function qToggleSwitch(key) {
+  const inp = $('fQ');
+  const tokens = qTokens(inp.value);
+  const i = qKeyIndex(tokens, key);
+  let on;
+  if (i >= 0) { tokens.splice(i, 1); on = false; }
+  else { tokens.push(`${key}=1`); on = true; }
+  inp.value = tokens.join(' ');
+  // 走既有链路：syncPreview（重拼命令预览）会由 bind() 里挂的 'input' 监听触发。
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  return on;
+}
+
+/** 手改 #fQ 后把 chips 的选中态对齐回来（只读 → 只切 class，不写回输入框）。 */
+function syncQChips() {
+  const box = $('qSwitches');
+  if (!box || box.hidden) return;
+  const tokens = qTokens($('fQ').value);
+  for (const b of box.querySelectorAll('.chip')) {
+    b.classList.toggle('on', qKeyIndex(tokens, b.dataset.key) >= 0);
+  }
+}
+
+/** 把服务端给的 switches 渲染成 chips（key 为文案、sources 进 title 当证据）。 */
+function renderQSwitches(data) {
+  const box = $('qSwitches');
+  const hint = $('qSwitchesHint');
+  const list = (data && Array.isArray(data.switches)) ? data.switches : [];
+  box.textContent = '';
+  if (!list.length) {
+    box.hidden = true;
+    hint.textContent = (data && data.note) ? data.note : '这个风格没有可用的页面开关';
+    return;
+  }
+  const tokens = qTokens($('fQ').value);
+  for (const s of list) {
+    const b = el('button', 'chip', s.key);
+    b.type = 'button';
+    b.dataset.key = s.key;
+    const srcs = Array.isArray(s.sources) ? s.sources : [];
+    b.title = srcs.length ? `${s.key} —— 出处：${srcs.join('、')}` : s.key;
+    if (qKeyIndex(tokens, s.key) >= 0) b.classList.add('on');
+    b.addEventListener('click', () => b.classList.toggle('on', qToggleSwitch(s.key)));
+    box.appendChild(b);
+  }
+  box.hidden = false;
+  hint.textContent = `共 ${list.length} 个开关（读自该风格 demo 源码）；点一下填进上面的输入框，再点取消`;
+}
+
+// ★ 竞态守卫：连点 / 换风格时，旧请求的回包不许覆盖新结果。
+let qSwitchSeq = 0;
+
+/** 拉当前风格的开关清单并渲染。任何失败都降级成一句提示，**不抛**。 */
+async function loadQSwitches() {
+  const box = $('qSwitches');
+  const hint = $('qSwitchesHint');
+  const btn = $('btnQSwitches');
+  const slug = $('fSlug').value.trim();
+  if (!slug) {
+    box.textContent = ''; box.hidden = true;
+    hint.textContent = '先在上面选一个风格，再点「开关助手」';
+    return;
+  }
+  const seq = ++qSwitchSeq;
+  if (btn) btn.disabled = true;
+  hint.textContent = `正在读 ${slug} 的 demo 页…`;
+  try {
+    const data = await api(`/api/style-switches?slug=${encodeURIComponent(slug)}`);
+    if (seq !== qSwitchSeq) return;
+    renderQSwitches(data);
+  } catch (e) {
+    if (seq !== qSwitchSeq) return;
+    box.textContent = ''; box.hidden = true;
+    hint.textContent = `读不到开关：${(e && e.message) || e}`;
+  } finally {
+    if (seq === qSwitchSeq && btn) btn.disabled = false;
+  }
+}
+
+/** 顶栏按钮：开着就收起，关着就（重新）拉一次。 */
+function toggleQSwitches() {
+  const box = $('qSwitches');
+  const btn = $('btnQSwitches');
+  if (!box.hidden) {
+    box.hidden = true;
+    $('qSwitchesHint').textContent = '';
+    btn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  btn.setAttribute('aria-expanded', 'true');
+  loadQSwitches();
 }
 
 // ── 常用组合预设 ────────────────────────────────────────────
@@ -5905,11 +6031,22 @@ function bind() {
 
   // ★ 参数一变就重拼命令预览。`fFilm`（⑤ --film）是文本输入 ⇒ 靠 'input'；`fNoPreflight`
   //   （⑤ --no-preflight）是复选 ⇒ 靠 'change'。两个都挂上（幂等，多挂一个监听不会出错）。
+  //   ★ 本批新增的 `fWebCut`（复选）/ `fColor`（下拉）/ `fLines`（文本）同理并入。
   for (const id of ['fSlug', 'fFps', 'fWorkers', 'fVenc', 'fQ', 'fGrain', 'fOut', 'fFilm',
-                    'fSkipSync', 'fSkipRender', 'fAudioOnly', 'fRenderOnly', 'fDryRun', 'fNoPreflight']) {
+                    'fSkipSync', 'fSkipRender', 'fAudioOnly', 'fRenderOnly', 'fDryRun', 'fNoPreflight',
+                    'fWebCut', 'fColor', 'fLines']) {
     $(id).addEventListener('change', syncPreview);
     $(id).addEventListener('input', syncPreview);
   }
+
+  // ── 开关助手（#btnQSwitches / #qSwitches）──
+  // ★ 手改 #fQ 后把 chips 的选中态对齐（只切 class，不回写输入框 ⇒ 不与用户输入打架）。
+  $('fQ').addEventListener('input', syncQChips);
+  $('btnQSwitches').addEventListener('click', toggleQSwitches);
+  // ★ 换了风格 ⇒ 面板开着的话自动重拉（换风格后旧 chips 已不对应当前风格）。
+  $('fSlug').addEventListener('change', () => {
+    if (!$('qSwitches').hidden) loadQSwitches();
+  });
 
   $('fSlug').addEventListener('keydown', (e) => {
     // ★ Ctrl+Enter 交给全局处理器（否则这里先跑一次、全局再跑一次 = 入队两条）

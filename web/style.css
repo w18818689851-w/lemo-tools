@@ -444,6 +444,34 @@ mark.hit { background: var(--hit-bg); color: var(--hit-fg); border-radius: 2px; 
 .form-foot { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
 .hint { color: var(--fg-faint); font-family: var(--mono); font-size: var(--fs-sm); word-break: break-all; }
 
+/* ── 透传参数 · 开关助手（#fQ 旁的 chips）──────────────────────
+   ★ 零依赖：不放图标字体，chip 只借既有调色板变量 ⇒ 浅色 / 深色两套主题自动跟着走
+     （.chip.on 的底色与 .preset.active 同源，对比度已由 A5 / L7 那两条用例钉住）。
+   ★ .q-row 让「输入框 + 开关助手按钮」同行：输入框吃满剩余宽度（min-width:0 防溢出）。 */
+.q-row { display: flex; align-items: center; gap: 8px; }
+.q-row .input { flex: 1 1 auto; min-width: 0; }
+.q-switches { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.q-switches[hidden] { display: none; }
+.chip {
+  border: 1px solid var(--line-2);
+  background: var(--bg-3);
+  border-radius: 999px;
+  padding: 2px 11px;
+  font-family: var(--mono);
+  font-size: var(--fs-base);
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.chip:hover { border-color: var(--accent-2); color: var(--fg); }
+.chip.on {
+  background: rgba(76,154,255,.16);
+  border-color: var(--accent);
+  color: var(--preset-fg);
+  font-weight: 600;
+}
+.chip.on::before { content: '● '; color: var(--accent); font-size: var(--fs-sm); }
+
 /* ── 按钮 ─────────────────────────────────────────────── */
 .btn {
   border: 1px solid var(--line-2);

@@ -268,8 +268,8 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     ★ `TREATMENT.md` 由编排器**基于已有信息**生成（上游无样本、由导演 agent 撰写 ⇒ 本项目如实标注来源、不编造剧情）；
 //     `CREDITS` 逐字附上该风格上游自带的 `demo/CREDITS`（实测 43/43 均有）。
 //     ★ 默认路径逐字节不变：不传 `--no-deliverables` 时既有步骤的命令与产物一字不动，仅新增这两个文件与日志行。
-//     ★ partial 模式（`--render-only` / `--audio-only`）也会产出这两件（纯元数据，与渲染/音频产物无依赖）。 ★ 2026-10-11 更新（**有意改编排器**）：接入上游 `tools/web_cuts.sh` 的 720p web cut —— 新增 CLI `--web-cut`（opt-in，默认关）+ 第 9 步 `emitWebCut()`（落**本次输出目录**的 `<slug>-720p.mp4`）；编码器跟随 `--venc`（默认 nvenc/GPU），参数照抄 `core/render/mux.sh` 的 nvenc 组合（★ 上游那条命令硬写 libx264(CPU)，本项目按硬规则改走 GPU）；默认路径逐字节不变（不传 `--web-cut` 时该函数不被调用）；失败只 warn、不留 `.part`。详见 `test/README.md`。
-export const ORCH_MD5 = '9cd33e25182d73c40db1d0fbb7abd75f';
+//     ★ partial 模式（`--render-only` / `--audio-only`）也会产出这两件（纯元数据，与渲染/音频产物无依赖）。 ★ 2026-10-11 更新（**有意改编排器**）：接入上游 `tools/web_cuts.sh` 的 720p web cut —— 新增 CLI `--web-cut`（opt-in，默认关）+ 第 9 步 `emitWebCut()`（落**本次输出目录**的 `<slug>-720p.mp4`）；编码器跟随 `--venc`（默认 nvenc/GPU），参数照抄 `core/render/mux.sh` 的 nvenc 组合（★ 上游那条命令硬写 libx264(CPU)，本项目按硬规则改走 GPU）；默认路径逐字节不变（不传 `--web-cut` 时该函数不被调用）；失败只 warn、不留 `.part`。详见 `test/README.md`。 ★ 2026-10-11 第二次更新（**有意改编排器**，同日）：接入上游 `TECHNIQUE.md` §8「Review loop」里**机器可做的两项** —— 新增 CLI `--review`（opt-in，**默认关**）+ `--sheet-step` / `--sheet-cols` / `--sheet-w` / `--blackdetect-d` + 第 10 步 `emitReview()`：① **接触表** `sheet.jpg`（Windows 侧 `still.mjs --range` 出帧 → WSL 侧 `core/render/sheet.py` 拼图，落**本次输出目录**）；② 对**最终 mp4** 跑 ffmpeg `blackdetect`（纯分析、**不编码**）并打印每段黑场的起止/时长（**0 处也明说**，绝不静默）。★ 上游 §8 另两条（0.2s 逐动作帧条 / 全速带声看一遍）**不是机器可做的** ⇒ 本项目不做、如实登记；响度那一路混流步骤已在跑 ⇒ 不重复。★ 默认路径逐字节不变（不传 `--review` 时 `emitReview()` 根本不被调用，同 `--web-cut`）；两步失败都**只 warn、不让出片 fail**。详见 `test/README.md`。
+export const ORCH_MD5 = 'dfb3700378cea8e9ee577f8a2f969b73';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

@@ -5,7 +5,7 @@
  * 为什么单独一个入口：`test/README.md` 里如实写着「Web UI 交互：一条都没测」——
  * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  *   ★ 2026-10-08 复核：服务端侧现为 smoke **41** + setup **12** = **53** 条（「42 = 30 + 12」是写本文件时的快照）；
- *     本文件（UI 层）现为 **82** 条（★ 2026-10-10：J 组 +6 / K 组 +4 后 75；★ P4 把 I 组 I2/I3/I4 换锚点 + 新增 I7~I11 ⇒ 80；★ 再补 I12 ⇒ 82）。
+ *     本文件（UI 层）现为 **94** 条（★ 2026-10-10：J 组 +6 / K 组 +4 后 75；★ P4 把 I 组 I2/I3/I4 换锚点 + 新增 I7~I11 ⇒ 80；★ 再补 I12 ⇒ 82；★ 2026-10-11：L 组 +7 ⇒ 89、M 组 +4 ⇒ 93、M5 ⇒ **94**）。
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
  * 批次：A/B/C/D（前四批）+ E（第五批：文案出片面板）+ F（第六批：补三处 UI 盲区）
@@ -4196,6 +4196,224 @@ async function main() {
         need(bad.length === 0,
           `浅色主题下这些强调色在 hover 底色（--bg-3）上对比度不达标（WCAG AA 4.5:1）：\n  ${bad.join('\n  ')}`);
         notes.push(`L7 浅色 --accent/--ok/--warn on --bg-3：${rows.join('；')}（全部 ≥ 4.5）`);
+      });
+    }
+
+    // ══ M. 本批 3 个新 UI 入口的进仓回归钉 ═══════════════════════
+    //   ① `#fWebCut`（--web-cut）② `#fColor`（--color / LEMO_COLOR）③ `#btnQSwitches`+`#qSwitches`
+    //   （--q 开关助手，配新端点 GET /api/style-switches）。
+    // ★ 铁律（沿用本套件）：绝不真发外网、绝不真出片 —— 这几条只读 DOM / 只调纯读的 `buildOpts()` /
+    //   只打本机测试服务的新端点（页面内 fetch 走真后端，不带任何外部地址）。
+    log('');
+    log(C.b('  M. 本批 3 个新 UI 入口的进仓回归钉（--web-cut / --color / --q 开关助手 + 新端点降级）'));
+
+    const M_NAMES = ['M1 高级参数·网页预览小样', 'M2 高级参数·色彩空间', 'M3 高级参数·开关助手',
+      'M4 GET /api/style-switches 降级', 'M5 `.has()` 形态的开关'];
+    const mWillRun = !OPT.filter || M_NAMES.some((n) => n.includes(OPT.filter));
+    if (mWillRun) {
+      // ★ 先导航到一份**干净文档**（L 组在页面里装过 fetch 桩，别把残留带进来）。
+      await cdp.goto(base + '/', 4000);
+      const mReady = `!!document.getElementById('fQ') && !!document.getElementById('btnQSwitches')
+        && !!document.getElementById('qSwitches') && !!document.getElementById('fWebCut')
+        && !!document.getElementById('fColor') && !!document.getElementById('fLines')`;
+      await waitFor(cdp.evalJs, mReady, { timeoutMs: 30000 });
+
+      /** ★ 提交参数：`startRun()` 提交前调的就是 `buildOpts()` ⇒ 直接调页面里的真函数。 */
+      const mForm = () => cdp.evalJs(`(() => { const b = buildOpts();
+        return { slug: b.slug, opts: b.opts, cmd: document.getElementById('cmdPreview').textContent }; })()`);
+      const mSetSlug = (slug) => cdp.evalJs(`(() => { const f = document.getElementById('fSlug');
+        f.value = ${JSON.stringify(slug)}; f.dispatchEvent(new Event('input', { bubbles: true }));
+        f.dispatchEvent(new Event('change', { bubbles: true })); return f.value; })()`);
+      const mSetCheck = (id, on) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.checked = ${on ? 'true' : 'false'}; n.dispatchEvent(new Event('change', { bubbles: true })); return n.checked; })()`);
+      const mSetVal = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true }));
+        n.dispatchEvent(new Event('change', { bubbles: true })); return n.value; })()`);
+      /** `--q` 的值按空白切段（与 CLI 原样透传的口径一致）。 */
+      const mQToks = (s) => String(s || '').trim().split(/\s+/).filter(Boolean);
+
+      // ★ 不硬编码风格名：从 /api/demos 逐个试 /api/style-switches，取**第一个扫到开关**的风格。
+      //   （「风格目录变了 / 库更新了」不该让本用例误红；找不到任何一个才判失败 = 判据真的空转。）
+      let mScanCache;
+      const mScan = async () => {
+        if (mScanCache !== undefined) return mScanCache;
+        const dm = await get('/api/demos');
+        need(dm.status === 200 && dm.json && Array.isArray(dm.json.styles), `GET /api/demos → ${dm.status}（拿不到 styles）`);
+        mScanCache = null;
+        for (const s of dm.json.styles) {
+          const r = await get(`/api/style-switches?slug=${encodeURIComponent(s.slug)}`);
+          if (r.status === 200 && r.json && Array.isArray(r.json.switches) && r.json.switches.length > 0) {
+            mScanCache = { slug: s.slug, switches: r.json.switches, scanned: r.json.scanned };
+            break;
+          }
+        }
+        return mScanCache;
+      };
+
+      // ① 高级参数 · 网页预览小样 #fWebCut（CLI 的 --web-cut）
+      await runCase('M1 高级参数·网页预览小样 #fWebCut：勾上 ⇒ 含 --web-cut；不勾 ⇒ 不含', async () => {
+        await mSetSlug(state.slugA);
+        await mSetCheck('fWebCut', false);
+        const off = await mForm();
+        need(!off.opts.includes('--web-cut'), `没勾选却带了 --web-cut：${JSON.stringify(off.opts)}`);
+        await mSetCheck('fWebCut', true);
+        const on = await mForm();
+        need(on.opts.includes('--web-cut'), `勾上后 opts 里没有 --web-cut：${JSON.stringify(on.opts)}`);
+        need(on.cmd.includes('--web-cut'), `#cmdPreview 里没有 --web-cut：「${on.cmd}」`);
+        await mSetCheck('fWebCut', false);   // 复位
+        notes.push(`M1 不勾 ⇒ opts=${JSON.stringify(off.opts)}（无 --web-cut）；勾上 ⇒ 含 --web-cut、#cmdPreview「${on.cmd}」`);
+      });
+
+      // ② 高级参数 · 色彩空间 #fColor（CLI 的 --color / 环境变量 LEMO_COLOR）
+      await runCase('M2 高级参数·色彩空间 #fColor：选 bt709 ⇒ 含 --color bt709；选 default ⇒ 不含 --color', async () => {
+        await mSetSlug(state.slugA);
+        await mSetVal('fColor', 'default');
+        const d = await mForm();
+        need(!d.opts.includes('--color'), `★ 选 default 却带了 --color（默认必须逐字节与旧版一致）：${JSON.stringify(d.opts)}`);
+        need(!d.cmd.includes('--color'), `★ 选 default 时 #cmdPreview 里也不该出现 --color：「${d.cmd}」`);
+        await mSetVal('fColor', 'bt709');
+        const b = await mForm();
+        const i = b.opts.indexOf('--color');
+        need(i >= 0, `选 bt709 后 opts 里没有 --color：${JSON.stringify(b.opts)}`);
+        need(b.opts[i + 1] === 'bt709', `--color 的值是 ${JSON.stringify(b.opts[i + 1])}，期望 "bt709"`);
+        need(b.cmd.includes('--color bt709'), `#cmdPreview 里没有「--color bt709」：「${b.cmd}」`);
+        await mSetVal('fColor', 'default');   // 复位
+        notes.push(`M2 default ⇒ opts=${JSON.stringify(d.opts)}（无 --color）；bt709 ⇒ 含 --color bt709、#cmdPreview「${b.cmd}」`);
+      });
+
+      // ③ 高级参数 · 开关助手 #btnQSwitches / #qSwitches（新端点 GET /api/style-switches）
+      await runCase('M3 高级参数·开关助手 #btnQSwitches：真点 ⇒ chips 出现；点 chip ⇒ #fQ 出现 key=1、再点消失，且不弄丢手写内容', async () => {
+        const pick = await mScan();
+        need(pick, '所有风格经 /api/style-switches 都扫不到开关 —— M3 测不了（判据可能已空转）');
+        const key = pick.switches[0].key;
+        need(typeof key === 'string' && key.length > 0, `服务端给的第一个开关没有 key：${JSON.stringify(pick.switches[0])}`);
+
+        await mSetSlug(pick.slug);
+        await mSetVal('fQ', 'KEEPME=1');           // ★ 手写内容，全程不许被弄丢
+
+        // 真点「开关助手」按钮（不是直接调函数 —— 钉住按钮真的接上了线）
+        await cdp.evalJs(`document.getElementById('btnQSwitches').click(); true`);
+        const chips = await waitFor(cdp.evalJs, `(() => { const b = document.getElementById('qSwitches');
+          if (!b || b.hidden) return null;
+          const c = [...b.querySelectorAll('.chip')];
+          return c.length ? c.map((x) => x.dataset.key) : null; })()`, { timeoutMs: 15000 });
+        need(chips.includes(key), `#qSwitches 里没有 chip「${key}」（实际 ${JSON.stringify(chips)}）`);
+        need(chips.length === pick.switches.length,
+          `chips 数 ${chips.length} 与 /api/style-switches 的 switches 数 ${pick.switches.length} 不一致`);
+        // chip 的 title 必须带出处证据（sources）
+        const title = await cdp.evalJs(`(() => { const b = [...document.querySelectorAll('#qSwitches .chip')]
+          .find((x) => x.dataset.key === ${JSON.stringify(key)}); return b ? b.title : null; })()`);
+        need(title && title.includes(pick.switches[0].sources[0]),
+          `chip「${key}」的 title 里没有出处证据「${pick.switches[0].sources[0]}」：${JSON.stringify(title)}`);
+
+        const before = await cdp.evalJs(`document.getElementById('fQ').value`);
+        need(before === 'KEEPME=1', `前置：#fQ 应是手写的「KEEPME=1」，实测 ${JSON.stringify(before)}`);
+
+        const clickChip = (k) => cdp.evalJs(`(() => { const b = [...document.querySelectorAll('#qSwitches .chip')]
+          .find((x) => x.dataset.key === ${JSON.stringify(k)}); if (!b) return false; b.click(); return true; })()`);
+
+        // 第一次点 ⇒ 追加 `key=1`
+        need(await clickChip(key), `点不到 chip「${key}」`);
+        const onVal = await cdp.evalJs(`document.getElementById('fQ').value`);
+        need(mQToks(onVal).includes(`${key}=1`), `点 chip 后 #fQ 里没有「${key}=1」：${JSON.stringify(onVal)}`);
+        need(onVal.includes('KEEPME=1'), `★ 点 chip 把手写内容弄丢了：${JSON.stringify(onVal)}`);
+        const onForm = await mForm();
+        need(onForm.cmd.includes(`${key}=1`), `#cmdPreview（可见命令）里没有「${key}=1」：「${onForm.cmd}」`);
+        const onCls = await cdp.evalJs(`(() => { const b = [...document.querySelectorAll('#qSwitches .chip')]
+          .find((x) => x.dataset.key === ${JSON.stringify(key)}); return b ? b.classList.contains('on') : null; })()`);
+        need(onCls === true, `chip「${key}」点过之后没有选中态（.on）`);
+
+        // 第二次点 ⇒ 移除那一段
+        need(await clickChip(key), `第二次点不到 chip「${key}」`);
+        const offVal = await cdp.evalJs(`document.getElementById('fQ').value`);
+        need(!mQToks(offVal).includes(`${key}=1`), `再点 chip 后「${key}=1」还在：${JSON.stringify(offVal)}`);
+        need(offVal.includes('KEEPME=1'), `★ 再点 chip 把手写内容弄丢了：${JSON.stringify(offVal)}`);
+        const offCls = await cdp.evalJs(`(() => { const b = [...document.querySelectorAll('#qSwitches .chip')]
+          .find((x) => x.dataset.key === ${JSON.stringify(key)}); return b ? b.classList.contains('on') : null; })()`);
+        need(offCls === false, `chip「${key}」取消后仍带选中态（.on）`);
+
+        await mSetVal('fQ', '');   // 复位
+        notes.push(`M3 风格 ${pick.slug}：/api/style-switches 给 ${pick.switches.length} 个开关（scanned=${pick.scanned}）；chip「${key}」点击 ⇒ #fQ「${onVal}」→ 再点 ⇒「${offVal}」（手写的 KEEPME=1 始终在）`);
+      });
+
+      // ④ 新端点 GET /api/style-switches 的**降级**分支（绝不 500）
+      await runCase('M4 GET /api/style-switches：不存在的 slug ⇒ 200 + switches:[] + note（不是 500）；且正例真能扫到开关', async () => {
+        const bad = await get(`/api/style-switches?slug=__no_such_style_${Date.now()}__`);
+        need(bad.status === 200, `不存在的 slug 应**降级**成 200，实测 ${bad.status}（绝不 500）`);
+        need(bad.json && Array.isArray(bad.json.switches) && bad.json.switches.length === 0,
+          `降级时 switches 应是空数组：${JSON.stringify(bad.json)}`);
+        need(typeof bad.json.note === 'string' && bad.json.note.trim().length > 0,
+          `降级时必须给一句中文说明（note），实测 ${JSON.stringify(bad.json && bad.json.note)}`);
+
+        const noSlug = await get('/api/style-switches');
+        need(noSlug.status === 200 && noSlug.json && Array.isArray(noSlug.json.switches) && noSlug.json.switches.length === 0,
+          `缺 slug 也应 200 + 空列表：${noSlug.status} ${JSON.stringify(noSlug.json)}`);
+
+        // ★ 有牙：正例那半边必须**真扫得到**开关 —— 否则「永远回空列表」也能骗过上面两条。
+        const pick = await mScan();
+        need(pick, '所有风格都扫不到开关 ⇒ M4 的正例半边失效（判据已空转）');
+        const good = await get(`/api/style-switches?slug=${encodeURIComponent(pick.slug)}`);
+        need(good.status === 200 && good.json.switches.length > 0,
+          `正例 ${pick.slug} 应扫到开关：${good.status} ${JSON.stringify(good.json)}`);
+        need(good.json.switches.every((s) => typeof s.key === 'string' && Array.isArray(s.sources) && s.sources.length > 0),
+          `每个开关都要有 key + sources：${JSON.stringify(good.json.switches.slice(0, 3))}`);
+        notes.push(`M4 不存在 slug ⇒ ${bad.status} + switches=[] + note「${bad.json.note}」；缺 slug ⇒ ${noSlug.status} + note「${noSlug.json.note}」；正例 ${pick.slug} ⇒ ${good.json.switches.length} 个开关`);
+      });
+
+      // ⑤ ★ 上一版判据的盲区：`.has()` 形态的页面开关。
+      //   旧判据只认 `.get('x')` / `location.search.includes('x')` ⇒ `ascii-crt` 只回 `[frame,t]`
+      //   （漏掉 `Q.has('nosub')`）；`backrooms` 的 `nosub`/`raw`/`sheet` **全是** `.has()` ⇒ 回**空列表**。
+      //   本用例钉住「`.has()` 形态也派生得出来」，**同时**钉住「判据没有放宽到误收 Map/Set 的键」——
+      //   裸匹配 `.has(` 会把 `pixel-rpg/demo/portraits.js` 的 `cache.has('w8')`（贴图缓存）收成键名 `w8`。
+      //   ★ 锚点是**稳定的上游事实**（ascii-crt 的 demo 里有 `URLSearchParams.has('nosub')` = 去字幕），
+      //     不是本仓的实现细节；后半段再拿全库 43 个风格做一次**跨风格**的误报扫描（防空转见 ④）。
+      await runCase('M5 GET /api/style-switches：`.has()` 形态的开关也派生得出来（ascii-crt 的 nosub）+ 全库不误收 Map/Set 的键', async () => {
+        // ★ 疑似来自 `Map`/`Set` 的键名（判据一旦裸匹配 `.has(` / `.get(` 就会冒出来）。
+        //   `w8` 是上游 `pixel-rpg/demo/portraits.js` 的 `cache.has('w8')` —— 已知的具体假阳。
+        const SUSPECT = ['has', 'get', 'set', 'map', 'key', 'value', 'w8'];
+
+        // ① 锚点：ascii-crt 的 nosub（上游 `const NOSUB = Q.has('nosub')`）
+        const ac = await get('/api/style-switches?slug=ascii-crt');
+        need(ac.status === 200, `GET /api/style-switches?slug=ascii-crt → ${ac.status}（应 200）`);
+        const acKeys = ((ac.json && ac.json.switches) || []).map((s) => s.key);
+        need(acKeys.includes('nosub'),
+          `ascii-crt 应派生出开关 nosub（上游是 \`URLSearchParams.has('nosub')\` 形态），实际 ${JSON.stringify(acKeys)}`);
+        // 同时钉住 `.get()` 形态的既有开关没被这次改动弄丢
+        need(acKeys.includes('frame') && acKeys.includes('t'),
+          `ascii-crt 的 \`.get()\` 形态开关（frame / t）不该丢，实际 ${JSON.stringify(acKeys)}`);
+        // ② 有牙：不许误收 Map/Set 味儿的键
+        const acBad = acKeys.filter((k) => SUSPECT.includes(k));
+        need(acBad.length === 0,
+          `ascii-crt 派生出疑似来自 Map/Set 的键 ${JSON.stringify(acBad)} ⇒ 判据过宽（不该裸匹配 .has( ）`);
+
+        // ③ backrooms 三个开关（nosub / raw / sheet）**全是 `.has()` 形态** ⇒ 旧判据对它回空列表
+        const br = await get('/api/style-switches?slug=backrooms');
+        need(br.status === 200, `GET /api/style-switches?slug=backrooms → ${br.status}（应 200）`);
+        const brKeys = ((br.json && br.json.switches) || []).map((s) => s.key);
+        for (const k of ['nosub', 'raw', 'sheet']) {
+          need(brKeys.includes(k),
+            `backrooms 应派生出 ${k}（上游三个开关全是 \`URLSearchParams.has(...)\`），实际 ${JSON.stringify(brKeys)}`);
+        }
+
+        // ④ 全库 43 个风格扫一遍：任何风格的 keys 都不许出现 Map/Set 味儿的键（跨风格的有牙断言）
+        const dm = await get('/api/demos');
+        need(dm.status === 200 && dm.json && Array.isArray(dm.json.styles),
+          `GET /api/demos → ${dm.status}（拿不到 styles）`);
+        const off = [];
+        let scannedStyles = 0;
+        for (const s of dm.json.styles) {
+          const r = await get(`/api/style-switches?slug=${encodeURIComponent(s.slug)}`);
+          if (r.status !== 200 || !r.json || !Array.isArray(r.json.switches)) { off.push(`${s.slug}→HTTP ${r.status}`); continue; }
+          scannedStyles++;
+          const hit = r.json.switches.map((x) => x.key).filter((k) => SUSPECT.includes(k));
+          if (hit.length) off.push(`${s.slug}→${hit.join(',')}`);
+        }
+        need(off.length === 0, `这些风格派生出疑似 Map/Set 的键（判据误匹配）：${off.join('；')}`);
+        // ★ 防空转：必须**真扫过**全部风格，否则上面那条断言等于没跑
+        need(scannedStyles === dm.json.styles.length && scannedStyles > 0,
+          `全库扫只覆盖了 ${scannedStyles}/${dm.json.styles.length} 个风格 ⇒ 本断言空转`);
+
+        notes.push(`M5 ascii-crt ⇒ [${acKeys.join(',')}]（含 \`.has()\` 形态的 nosub）；backrooms ⇒ [${brKeys.join(',')}]（三个全是 \`.has()\`）；全库 ${scannedStyles} 个风格扫描：Map/Set 味儿键名 0 个`);
       });
     }
   } finally {
