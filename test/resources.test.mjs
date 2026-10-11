@@ -210,6 +210,45 @@ test('RESOURCES：注册表非空、id 唯一、schema 合法（契约 §五）'
   }
 });
 
+// ── ★ 防再分叉：同一句 fix 文案只许有一处来源 ────────────────────────────────
+//   由来（2026-10-11）：assets.inst 的 fix 文案原本**抄了三份**，三份会各自漂，而且**没有闸门守**：
+//     ① lib/env.mjs 的 warn('assets.inst', …) 第 4 参（生产路径 /api/env）；
+//     ② 本模块 assets.inst 台账条目的 fix（生产路径 /api/resources/scan）；
+//     ③ lib/setup.mjs 的 fixturePartialAssets()（演练路径 /api/env?simulate=partial 与 --simulate）。
+//   现正文只写在 lib/env.mjs 的 ASSETS_INST_FIX，另两处 import 它（零行为变更：三处值逐字节相同）。
+//   ★ 断言必须**有牙**：直接取三处的**值**互比（不是「断言非空」），并断言这句文案在三个文件的源码里
+//     只作为**字面量**出现在 lib/env.mjs 一处 —— 谁再把文案抄回去（或抄回去还抄歪了），这条当场变红。
+
+test('★ 防再分叉：assets.inst 的 fix 文案只有一处来源（env.mjs 的 ASSETS_INST_FIX）', async () => {
+  const { ASSETS_INST_FIX } = await import('../lib/env.mjs');
+  assert.ok(typeof ASSETS_INST_FIX === 'string' && ASSETS_INST_FIX.length > 0,
+    'lib/env.mjs 应导出非空的 ASSETS_INST_FIX');
+
+  // ① 值比：env.mjs 的常量 == resources.mjs 台账条目的 fix
+  const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
+  const inst = list.find((e) => e.id === 'assets.inst');
+  assert.ok(inst, 'RESOURCES 里找不到 assets.inst');
+  assert.equal(inst.fix, ASSETS_INST_FIX,
+    `assets.inst 的 fix 与 lib/env.mjs 的 ASSETS_INST_FIX 不一致：\n`
+    + `  台账 fix = ${JSON.stringify(inst.fix)}\n`
+    + `  常量     = ${JSON.stringify(ASSETS_INST_FIX)}`);
+
+  // ② 值比：setup.mjs 演练夹具的 fix 也同源（否则 --simulate 会演一份假事实）
+  const { fixturePartialAssets } = await import('../lib/setup.mjs');
+  const fixFixture = fixturePartialAssets().groups.flatMap((g) => g.items)
+    .find((i) => i.id === 'assets.inst').fix;
+  assert.equal(fixFixture, ASSETS_INST_FIX,
+    `fixturePartialAssets 的 assets.inst fix 与 ASSETS_INST_FIX 不一致：${JSON.stringify(fixFixture)}`);
+
+  // ③ 文本扫描：这句文案只许在 lib/env.mjs 里作为字面量出现（另两处必须是 import 引用）
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const files = ['lib/env.mjs', 'lib/resources.mjs', 'lib/setup.mjs'];
+  const hits = files.filter((f) => fs.readFileSync(path.join(repoRoot, f), 'utf8').includes(ASSETS_INST_FIX));
+  assert.deepEqual(hits, ['lib/env.mjs'],
+    '这句文案只许写在 lib/env.mjs 一处（本项目铁律：同一句文案不要有两处）；'
+    + `实得字面量出现在：${hits.join(', ') || '（一处都没有！）'}`);
+});
+
 // ── ⑨ mount 接线（堵「有导出 ≠ 有功能」的假绿）───────────────────────────────
 //   ★ 静态：两个入口的**函数体**里必须真的出现 `await mount(`（不真下载、不起 WSL）。
 //   ★ 行为：用 `opts.mount === false` 与失败路径验证**返回字段**与**不挂载**。

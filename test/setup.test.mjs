@@ -615,7 +615,11 @@ const CASES = [
       assert.strictEqual(coarse.status, 'ok');
       assert.ok(coarse.detail.includes('1/5 个采样库已装'), `「文件数够但库不全」必须看得见：${coarse.detail}`);
 
-      // ⑤ 演练夹具的 assets.inst 文案是**手写**的 ⇒ 钉它与真实函数同源（否则 --simulate 会演一份假事实）
+      // ⑤ 演练夹具的 assets.inst **detail** 是**手写**的 ⇒ 钉它与真实函数同源（否则 --simulate 会演一份假事实）
+      //   ★ 2026-10-11（同日第三批）：夹具的 **fix** 已**收口**成引用 env.mjs 的 ASSETS_INST_FIX
+      //     （原本它手抄了同一句，与 env.mjs 的 warn 第 4 参、resources.mjs 的台账条目三份并存）⇒
+      //     fix 不再需要在这里钉值；那条「防再分叉」断言在 test/resources.test.mjs（取三处值互比 +
+      //     断言字面量只许出现在 lib/env.mjs 一处）。这里只留 detail 的同源钉法。
       const fixOf = (data) => data.groups.flatMap((g) => g.items).find((i) => i.id === 'assets.inst').detail;
       assert.strictEqual(fixOf(fixturePartialAssets()), instrumentLibState(0, {}).detail,
         'fixturePartialAssets 的 assets.inst 文案与 instrumentLibState(0, {}) 不一致');

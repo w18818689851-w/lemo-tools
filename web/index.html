@@ -756,6 +756,7 @@
           <span class="lbl">用已上传的</span>
           <select id="dubSrcSel" class="input dub-src-sel" title="复用之前上传过的口播素材，不必重传"></select>
           <button class="btn ghost small" id="btnDubClear" title="清除已选的口播素材">清除</button>
+          <button class="btn danger small" id="btnDubSrcDel" title="把这条已上传的口播素材从服务器删掉（登记表 + 磁盘文件，不可恢复）">删除</button>
         </div>
       </div>
 
@@ -780,6 +781,7 @@
           <span class="lbl">用已上传的</span>
           <select id="dubBgSel" class="input dub-src-sel" title="复用之前上传过的背景图，不必重传"></select>
           <button class="btn ghost small" id="btnDubBgClear" title="清除已选背景图（出片改用工具生成的渐变背景）">清除</button>
+          <button class="btn danger small" id="btnDubBgDel" title="把这张已上传的背景图从服务器删掉（登记表 + 磁盘文件，不可恢复）">删除</button>
         </div>
         <div class="dub-bg-note">不给背景图 = 用工具按风格生成的内置渐变背景（画面尺寸/裁切与加这个功能之前一致）。</div>
       </div>
@@ -803,6 +805,7 @@
           <span class="lbl">用已上传的</span>
           <select id="dubSrtSel" class="input dub-src-sel" title="复用之前上传过的 SRT"></select>
           <button class="btn ghost small" id="btnDubSrtClear" title="不给 SRT，让工具自己对齐（优先 ASR）">清除</button>
+          <button class="btn danger small" id="btnDubSrtDel" title="把这条已上传的 SRT 从服务器删掉（登记表 + 磁盘文件，不可恢复）">删除</button>
         </div>
         <div class="dub-srt-note">不给 SRT 会自动对齐（优先 ASR）—— 口播里念的和文案一致时，自动对齐通常够用。</div>
       </div>

@@ -840,6 +840,40 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
      真实机 `/api/env` ⇒ `3869 个文件 · 5/5 个采样库已装`。`test/setup.test.mjs` 16 → **19**、`setup-api` 12 → **13**。
    · ★ 如实登记（B）：**卡片仍不消失**（装过的库点它幂等跳过）；「目录在但 0 个文件」时 env 报「缺」而单库守卫
      （`[ -d ]`）会跳过 —— 差别只在这一档，**有意不动**（收紧会动到 ⑭/⑮ 逐字节钉住的脚本正文）。
+   ★ **2026-10-11（同日再一处）** 补齐**撤销上传**（真实可用性缺口）：此前只有 `POST /api/dub/upload`（收）
+   与 `GET /api/dub/sources`（列），**没有任何删除能力** ⇒ `dubDiskUsage()` 会**上报** `_uploads/` 占用
+   （RISK-11）却**无人能清**，用户素材只增不减。
+   · `lib/dub.mjs: unregisterUpload(token)` —— ★★ 安全底线：**只认登记表里的 token**（绝不拿 token 拼路径删文件）、
+     **越界守卫照抄 `scripts/prune-dub.mjs` 的 `withinRoot`**（规范化后 `abs === root || abs.startsWith(root + path.sep)`）
+     + **拒符号链接穿透**（同处 `rmSafe`）、**自愈**（登记有而文件没了 ⇒ 条目照样摘掉）、
+     **绝不静默删**（逐项回报 token/文件/字节/在不在/删没删）、**跨进程锁整段在锁内 + 降级语义照抄 `registerUpload`**。
+   · `server.mjs`：`DELETE /api/dub/upload?token=` ⇒ 缺 token **400** / 不在登记表 **404**
+     （与既有 `DELETE /api/briefs/:id` 口径一致）；`README.md` 接口表 **58 → 59** 行。
+   · 前端：文案出片卡加删除入口（含确认 + 删后**清掉悬空选择**）。
+   · `test/dub-api.test.mjs` 新增 **㊱ 安全回归**（伪造·穿越 token ⇒ 404 且**磁盘零变化**；登记表被塞进
+     「指向 `_uploads/` 之外」的条目也删不动）。
+   · ★ 主控用它**合规地**清掉了第 12 批遗留的 2 个验证上传（用户的真实素材未动）。
+   ★ **2026-10-11（同日再一处）** 「判据两处」收口：那句 fix 文案（「采样库被 .gitignore 排除时需单独获取…」）
+   ★★ 原本**抄了三份**且**无闸门守** —— ① `lib/env.mjs` 的 `warn('assets.inst', …)` 第 4 参；
+   ② `lib/resources.mjs` 的台账条目 `fix`；③ **`lib/setup.mjs` 的演练夹具 `fixturePartialAssets()`**。
+   ⇒ 收口成 **`lib/env.mjs: export const ASSETS_INST_FIX`**（唯一来源），另两处 import；
+   ★ 导出形态是**值导出**（不是函数）⇒ `check-lib-exports` 不对它数调用点（该闸门只判可调用导出）。
+   ★ 顺带订正陈旧注释：`lib/setup.mjs` 的 CLI 注释「用 **4** 个合成场景」→ **5**（实现是权威）。
+   ★★ **2026-10-11（同日再一处）· 全套测试终验抓到的潜伏 3 批的回归**：
+   主控**第一次**把 **32 个测试入口全部串行跑一遍** ⇒ **31 绿 / 1 红**：`test/gate-blindness.test.mjs`
+   **133 passed / 7 failed**。★★ **根因**：7 条失败全是「★自证」段 —— 它们把**闸门副本**拷进
+   `<夹具>/scripts/`，却**没给该目录配 `lib/`**；而同日那批把 9 个闸门的剥注释器抽成 `lib/js-scan.mjs`
+   ⇒ 副本里 `import '../lib/js-scan.mjs'` 解析失败 ⇒ 子进程 `ERR_MODULE_NOT_FOUND` ⇒ 自证断言全废。
+   ★ 而 `gate-blindness.test.mjs` **不在 52 个闸门里**、**从未被例行跑到** ⇒ 潜伏了 **3 批**。
+   ⇒ 修法（★ **不由人手工列依赖**）：新增 `stageGateDeps()` —— **静态解析闸门源码的相对 import（含传递闭包）**，
+   从真实仓把依赖拷进夹具对应位置；依赖清单**来自源码** ⇒ 闸门以后 import 新模块，夹具**自动跟上**。
+   ★★ 并加**一条守卫用例**：断言「每个带相对 import 的闸门，其夹具树里**必须真有**那些模块」+ 变异自证
+   （拆掉 `stageGateDeps` ⇒ 守卫必红）。★ 顺手挖出 **2 条「闸门崩了反而冒充变绿」的假绿自证**
+   （`check-dna-coverage` / `check-esm-import-paths`：断言是 `assert.throws(正向断言)` ⇒ 闸门崩了就通过）。
+   修后 `gate-blindness.test.mjs` = **141 passed / 0 failed**。
+   ★★ **教训（可复用）**：**「52/52 闸门绿」≠「全部测试绿」** —— 闸门与测试入口是**两层**防线，
+   而**测试入口此前从未一次性全跑过**（每次都只跑「受影响的几个」+ `smoke`）⇒ **跨套件/夹具与源码的耦合**
+   这类问题**只有全跑才看得见**。★ 另：「智能体的调用返回空输出」时**先查磁盘**（本批 A/B 落盘、C 没有）。
    ★ **2026-10-11** 控制台侧新增 **`GET /api/style-switches`**（`--q` 开关助手的数据源）：从库仓
    `styles/<slug>/demo/**` **机械派生**该风格的页面开关（**不维护任何会漂的名单**）。判据经一轮修正：
    ★★ **首版只认 `.get('x')` 与 `location.search.includes('x')`，漏掉 `.has()` 形态** ——

@@ -30,6 +30,13 @@
  *   ★ 断言锚定**正面真值**（响应体字符串里搜不到唯一可识别的密钥 / 头值）。
  *   为什么放在本文件：它已经在用**真起服务 + node:http 直连**打 HTTP 面，复用同一套起服务 / 隔离成片根 /
  *   逐字节还原的纪律，不必另造一个入口（★ 覆盖文件落在隔离成片根内，绝不碰用户真实 `D:\lemo-films`）。
+ * ★★ 2026-10-11 追加 ㉞㉟㊱：**撤销上传**（`DELETE /api/dub/upload?token=…` ⇒ `lib/dub.mjs` 的 `unregisterUpload`）——
+ *   ㉞ 缺 token ⇒ 400 / 真删 ⇒ 200（`removed:true`、`bytes` 对得上）+ `GET /api/dub/sources` 里消失
+ *   + **磁盘文件真没了** + 重复删 ⇒ 404（删除**不静默成功**：登记表里没这条就是没这条）；
+ *   ㉟ **自愈**（登记表里有、磁盘文件已被手删 ⇒ 仍摘掉登记条目，`existed:false` / `removed:false` / `bytes:0`）；
+ *   ㊱ **安全回归**：伪造 · 穿越形态的 token ⇒ 404 且**磁盘零变化**；登记表被塞进「指向 `_uploads/` 之外」
+ *   的条目 ⇒ **越界守卫**（照 `scripts/prune-dub.mjs` 的 `withinRoot` 口径）拒绝删文件（`ok:false` + `warning`），
+ *   哨兵文件 sha256 必须不变。★ 全程在**隔离成片根**内进行，绝不碰用户真实 `_uploads/`。
  * 它们承担着上传安全（防目录穿越）、请求形状校验、语义结果注入等关键逻辑，
  * 此前**没有任何测试**（全仓 grep 只在 README 里提到 /api/dub/analyze 一次）。
  *
@@ -62,6 +69,7 @@ import http from 'node:http';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';   // ㊱ 越界守卫回归：对哨兵文件做 md5/sha256 比对（照 ui.test.mjs 的同一句）
 
 // ★★ 隔离成片根（**默认隔离**，可被外部 env 覆盖）—— 与 briefs.test.mjs / ui.test.mjs 同款。
 //   为什么必须有：②③ 会上传文件、由**测试服务**写 `dub.UPLOAD_DIR/index.json` 登记表，⑮ 收尾再按字节
@@ -1440,6 +1448,128 @@ async function main() {
         } catch { /* 尽力而为 */ }
       }
       notes.push('㉛ 安全回归：GET /api/llm/services 响应体搜不到明文密钥（P0）/ 自定义头值（P1）；每项无 apiKey 字段、回 hasHeaders 布尔、hasKey:true；legacy 覆盖头也只回布尔；覆盖文件已逐字节还原');
+    });
+
+    // ══ ㉞ ★ 撤销上传：DELETE /api/dub/upload?token=… ══════════
+    await runCase('㉞ ★ 撤销上传 DELETE /api/dub/upload：缺 token ⇒ 400；真删 ⇒ 200（removed:true、bytes 对得上）+ sources 里消失 + 磁盘文件没了；再删同一条 ⇒ 404', async () => {
+      // ① 缺 token ⇒ 400 + 中文文案
+      const noTok = await httpSend(P, { method: 'DELETE', path: '/api/dub/upload' });
+      need(noTok.status === 400 && /缺少 token/.test((noTok.json && noTok.json.error) || ''),
+        `缺 token 应 400 + 「缺少 token」，实际 ${noTok.status}：${noTok.text.slice(0, 160)}`);
+
+      // ② 先真传一条（kind=video），记下 path / size
+      const up = await uploadRaw(P, '待撤销.mp4', Buffer.from('DELETE-ME-PAYLOAD'));
+      need(up.status === 200, `上传失败：${up.status} ${up.text.slice(0, 160)}`);
+      const tok = up.json.token;
+      const filePath = up.json.path;
+      const bytes = up.json.size;
+      UPLOAD_PATHS.add(filePath);
+      need(fs.existsSync(filePath), `上传后文件应存在：${filePath}`);
+
+      // ③ 删它
+      const del = await httpSend(P, { method: 'DELETE', path: `/api/dub/upload?token=${encodeURIComponent(tok)}` });
+      need(del.status === 200 && del.json && del.json.ok === true, `删除应 200 + ok:true，实际 ${del.status}：${del.text.slice(0, 200)}`);
+      need(del.json.token === tok, `响应 token 不对：${JSON.stringify(del.json.token)}`);
+      need(del.json.removed === true, `removed 应为 true，实际 ${JSON.stringify(del.json.removed)}`);
+      need(del.json.existed === true, `existed 应为 true，实际 ${JSON.stringify(del.json.existed)}`);
+      need(del.json.bytes === bytes, `bytes 应等于上传时的 size（${bytes}），实际 ${JSON.stringify(del.json.bytes)}`);
+
+      // ④ ★ 磁盘文件真的没了
+      need(!fs.existsSync(filePath), `★ 磁盘文件仍在：${filePath}`);
+
+      // ⑤ ★ sources 清单里也没了
+      const list = await get('/api/dub/sources');
+      need(list.status === 200 && Array.isArray(list.json.uploads), `sources 异常：${list.status}`);
+      need(!list.json.uploads.some((u) => u.token === tok), `★ sources 里仍有已删 token=${tok}`);
+
+      // ⑥ 再删同一条 ⇒ 404（删除不静默成功：登记表里没这条就是没这条）
+      const again = await httpSend(P, { method: 'DELETE', path: `/api/dub/upload?token=${encodeURIComponent(tok)}` });
+      need(again.status === 404, `重复删除应 404，实际 ${again.status}：${again.text.slice(0, 160)}`);
+      need(again.json && /没有这个上传记录/.test(again.json.error || ''), `404 文案不对：${again.text.slice(0, 160)}`);
+
+      notes.push(`㉞ 撤销上传：缺 token 400 / 真删 200（removed:true、bytes=${bytes}、磁盘已无）/ sources 已消失 / 重复删 404`);
+    });
+
+    // ══ ㉟ ★ 撤销上传自愈：登记有、文件已不在 ⇒ 仍摘登记 ═══════
+    await runCase('㉟ ★ 撤销上传自愈：登记表里有、磁盘文件已被手删 ⇒ 200 + existed:false/removed:false，且登记条目照样摘掉', async () => {
+      const up = await uploadRaw(P, '手删后撤销.mp4', Buffer.from('SELF-HEAL'));
+      need(up.status === 200, `上传失败：${up.status} ${up.text.slice(0, 160)}`);
+      const tok = up.json.token;
+      const filePath = up.json.path;
+      UPLOAD_PATHS.add(filePath);
+
+      // 模拟「用户手动把文件删了，但登记表还留着」——先把它摘出待清理集合，免得收尾再删一次报错
+      UPLOAD_PATHS.delete(filePath);
+      fs.unlinkSync(filePath);
+      need(!fs.existsSync(filePath), '前置：文件应已不在');
+
+      const del = await httpSend(P, { method: 'DELETE', path: `/api/dub/upload?token=${encodeURIComponent(tok)}` });
+      need(del.status === 200 && del.json && del.json.ok === true, `自愈删除应 200，实际 ${del.status}：${del.text.slice(0, 200)}`);
+      need(del.json.existed === false, `existed 应为 false（文件当时不在），实际 ${JSON.stringify(del.json.existed)}`);
+      need(del.json.removed === false, `removed 应为 false（没删到文件），实际 ${JSON.stringify(del.json.removed)}`);
+      need(del.json.bytes === 0, `bytes 应为 0，实际 ${JSON.stringify(del.json.bytes)}`);
+
+      // ★ 自愈的关键：登记条目必须被摘掉（删操作要收敛，不能卡住）
+      const list = await get('/api/dub/sources');
+      need(!list.json.uploads.some((u) => u.token === tok), `★ 自愈失败：登记条目还在（token=${tok}）`);
+
+      const again = await httpSend(P, { method: 'DELETE', path: `/api/dub/upload?token=${encodeURIComponent(tok)}` });
+      need(again.status === 404, `自愈后再删应 404，实际 ${again.status}`);
+
+      notes.push('㉟ 自愈：文件先被手删 ⇒ DELETE 仍摘掉登记条目（existed:false / removed:false / bytes:0），再删 404');
+    });
+
+    // ══ ㊱ ★★ 安全回归：删不动 _uploads/ 之外的东西 ════════════
+    await runCase('㊱ ★★ 安全回归：伪造·穿越 token ⇒ 404 且磁盘零变化；登记表被塞进「指向 _uploads/ 之外」的条目 ⇒ 越界守卫拒绝删，目标文件必须逐字节还在', async () => {
+      // ① 在隔离成片根内、但在 _uploads **之外**造一个哨兵文件
+      const outsideDir = path.join(TEST_FILM_ROOT, 'dub', '_outsider');
+      fs.mkdirSync(outsideDir, { recursive: true });
+      const sentinel = path.join(outsideDir, 'sentinel.mp4');
+      const SENTINEL_BODY = 'SENTINEL-MUST-SURVIVE';
+      fs.writeFileSync(sentinel, SENTINEL_BODY);
+      const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+      const sentinelHash = sha(sentinel);
+
+      // ② 伪造 / 穿越形态的 token（都不在登记表里）⇒ 404，且磁盘零变化
+      const dirBefore = listDir(UPLOAD_DIR);
+      const fakeToks = ['../../../../windows/win.ini', 'zz-not-registered', '../index.json'];
+      for (const ft of fakeToks) {
+        const r = await httpSend(P, { method: 'DELETE', path: '/api/dub/upload?token=' + encodeURIComponent(ft) });
+        need(r.status === 404, `伪造 token ${JSON.stringify(ft)} 应 404（登记表里没有 ⇒ 绝不拼路径删），实际 ${r.status}：${r.text.slice(0, 160)}`);
+      }
+      need(fs.existsSync(sentinel), '★ 伪造 token 删动了 _uploads/ 之外的文件');
+      need(sha(sentinel) === sentinelHash, '★ 哨兵文件内容被改动');
+      need(JSON.stringify(listDir(UPLOAD_DIR)) === JSON.stringify(dirBefore), '★ 伪造 token 改动了上传目录');
+
+      // ③ 直接往登记表里塞一条**指向 _uploads/ 之外**的条目（模拟登记表被改坏）——
+      //    再调删除：越界守卫必须拒绝删文件（登记条目仍会被摘掉），目标文件必须原封不动。
+      //    ★ 兼容 `--filter`：别的用例都没跑时 `_uploads/` 与 index.json 可能还不存在 ⇒ 先造出来，
+      //      收尾再按「原本有没有」逐字还原。
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      const idxRaw = fs.existsSync(INDEX_FILE) ? fs.readFileSync(INDEX_FILE, 'utf8') : null;
+      const evilTok = 'evil-outside-token-0001';
+      const idxWithEvil = (idxRaw ? JSON.parse(idxRaw) : [])
+        .concat([{ token: evilTok, name: 'sentinel.mp4', size: Buffer.byteLength(SENTINEL_BODY), path: sentinel, at: Date.now(), kind: 'video' }]);
+      fs.writeFileSync(INDEX_FILE, JSON.stringify(idxWithEvil, null, 2), 'utf8');
+      try {
+        const r = await httpSend(P, { method: 'DELETE', path: `/api/dub/upload?token=${encodeURIComponent(evilTok)}` });
+        need(r.status === 200, `越界条目应 200（登记摘掉、文件不删），实际 ${r.status}：${r.text.slice(0, 200)}`);
+        need(r.json && r.json.ok === false, `★ 越界守卫没拦住：ok 应为 false，实际 ${JSON.stringify(r.json && r.json.ok)}`);
+        need(r.json.removed === false, `★ 越界守卫没拦住：removed 应为 false，实际 ${JSON.stringify(r.json.removed)}`);
+        need(typeof r.json.warning === 'string' && /越界/.test(r.json.warning),
+          `越界应回 warning 说明「越界」，实际 ${JSON.stringify(r.json.warning)}`);
+        // ★★ 关键断言：目标文件必须**逐字节**还在
+        need(fs.existsSync(sentinel), '★★ 越界守卫失效：_uploads/ 之外的文件被删掉了');
+        need(sha(sentinel) === sentinelHash, '★★ 越界守卫失效：哨兵文件内容被改动');
+      } finally {
+        // 登记表还原成「塞入之前」的样子（外层收尾还会再逐字节还原一次，这里是第二道防线）
+        try {
+          if (idxRaw === null) { try { fs.unlinkSync(INDEX_FILE); } catch { /* 本来就没有 */ } }
+          else fs.writeFileSync(INDEX_FILE, idxRaw);
+        } catch { /* 尽力而为 */ }
+        try { fs.rmSync(outsideDir, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
+      }
+      notes.push('㊱ 安全回归：伪造/穿越 token ⇒ 404、磁盘零变化；登记表被塞进越界 path ⇒ 越界守卫拒绝删（ok:false / removed:false / warning「越界」），哨兵文件 sha256 不变');
     });
 
   } finally {

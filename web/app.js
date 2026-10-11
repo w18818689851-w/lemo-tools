@@ -3188,6 +3188,73 @@ function uploadDubFile(file) { uploadDubAsset(file, 'video'); }
 function uploadDubSrtFile(file) { uploadDubAsset(file, 'srt'); }
 function uploadDubBgFile(file) { uploadDubAsset(file, 'image'); }
 
+// ── 撤销上传（把服务端那条素材**真的删掉**）─────────────────────
+//
+// ★ 与旁边的「清除」是两件事（两个按钮挨着，文案已把代价写进 title，别让用户混淆）：
+//   · 清除 = 只取消**本地选择**（素材还在服务器上，下拉里随时能再选回来）；
+//   · 删除 = 把服务器上那条素材真的删掉（`_uploads/index.json` 里的登记 + 磁盘文件），**不可恢复**。
+// ★ 删前二次确认：照 `delBrief` 用原生 `confirm`（本仓用户确认的唯一做法，零依赖、不引弹层）。
+// ★ 删完必须自洽：被删的 token 若还挂在任意一个下拉 / state 上，一律清掉 —— 绝不留下指向已删
+//   token 的悬空选择。三个下拉按 kind 分流，同一个 token 只会落在一个下拉里；但服务端 kind 有
+//   可能变（老登记项按扩展名补 kind），所以**逐个扫**一遍最稳。
+// ★ kind → 选择点 / state 字段的映射照抄 uploadDubAsset 的三元写法（同一套口径，别另立一份）。
+function dubDelSelOf(kind) {
+  return kind === 'srt' ? 'dubSrtSel' : (kind === 'image' ? 'dubBgSel' : 'dubSrcSel');
+}
+function dubDelTokenOf(kind) {
+  return kind === 'srt' ? 'dubSrtToken' : (kind === 'image' ? 'dubBgToken' : 'dubVideoToken');
+}
+function dubDelNameOf(kind) {
+  return kind === 'srt' ? 'dubSrtName' : (kind === 'image' ? 'dubBgName' : 'dubVideoName');
+}
+function dubDelSlotOf(kind) {
+  return kind === 'srt' ? 'dubSrtUpload' : (kind === 'image' ? 'dubBgUpload' : 'dubUpload');
+}
+function dubDelRenderOf(kind) {
+  return kind === 'srt' ? renderDubSrtUpload : (kind === 'image' ? renderDubBgUpload : renderDubUpload);
+}
+
+/** 把某个 token 从**所有** dub 选择点（state + 三个下拉）上摘掉，并刷新对应提示。 */
+function clearDubTokenEverywhere(tok) {
+  for (const kind of ['video', 'srt', 'image']) {
+    if (state[dubDelTokenOf(kind)] !== tok) continue;
+    state[dubDelTokenOf(kind)] = '';
+    state[dubDelNameOf(kind)] = '';
+    state[dubDelSlotOf(kind)] = { busy: false, pct: 0, name: '', error: '' };
+    const sel = $(dubDelSelOf(kind));
+    if (sel) sel.value = '';
+    dubDelRenderOf(kind)();
+  }
+  renderDubVideoHint();
+  renderDubSrtHint();
+  renderDubBgHint();
+  syncDubCropWarn();       // 选中的素材可能被摘掉了 → 重核「会不会被裁」
+}
+
+/** 撤销上传：把当前选中（该 kind 的下拉里）那条素材从服务器删掉。 */
+async function dubDeleteUpload(kind) {
+  const tok = state[dubDelTokenOf(kind)];
+  if (!tok) { toast('先在下拉里选一条已上传的素材，再点「删除」', true); return; }
+  const name = state[dubDelNameOf(kind)] || tok;
+  if (!confirm(`把这条已上传的素材从服务器上删掉？\n\n${name}\n\n★ 不可恢复：登记表里的记录和磁盘上的文件都会被删掉。\n（只想取消选择、素材留着以后再用 ⇒ 点旁边的「清除」。）`)) return;
+  let r;
+  try {
+    r = await api('/api/dub/upload?token=' + encodeURIComponent(tok), { method: 'DELETE' });
+  } catch (e) {
+    toast('删除失败：' + e.message, true);
+    return;
+  }
+  clearDubTokenEverywhere(tok);
+  await loadDubSources();     // 重拉清单：那条会从下拉里消失
+  // ★ 如实回报（不静默删）：文件真删掉了才说「释放 xx」；登记有、文件本来就没了 ⇒ 照实说；
+  //   文件没能删掉（越界 / 符号链接 / unlink 失败）⇒ 把服务端给的 warning 原样摆出来，绝不假装删掉了。
+  toast(r && r.removed
+    ? `已删除素材：${name}（释放 ${fmtSize(r.bytes || 0)}）`
+    : (r && r.warning
+      ? `已从清单里摘掉：${name} —— 磁盘文件没删（${r.warning}）`
+      : `已删除素材：${name}（登记已摘除；磁盘上本来就没有这个文件）`));
+}
+
 async function loadDubStyles() {
   if (state.dubStylesBusy) return;
   state.dubStylesBusy = true;
@@ -6183,6 +6250,10 @@ function bind() {
       toast('已清除 SRT —— 出片时自动对齐（优先 ASR）');
     });
   }
+  // 撤销上传：三个「用已上传的」下拉各配一个删除按钮（与「清除」并排，删的是服务器那条）。
+  if ($('btnDubSrcDel')) $('btnDubSrcDel').addEventListener('click', () => dubDeleteUpload('video'));
+  if ($('btnDubSrtDel')) $('btnDubSrtDel').addEventListener('click', () => dubDeleteUpload('srt'));
+  if ($('btnDubBgDel')) $('btnDubBgDel').addEventListener('click', () => dubDeleteUpload('image'));
   if ($('dubVoice')) {
     $('dubVoice').addEventListener('change', (e) => {
       state.dubVoiceOverride = e.target.value;

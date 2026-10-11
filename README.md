@@ -117,6 +117,7 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | GET | `/api/dub/styles` | 风格清单（供 UI 填下拉） | 同步 |
 | GET | `/api/dub/sources` | 已上传的素材（供 UI 复用上次传的那条；每条带 kind） | 同步 |
 | GET | `/api/dub/source-meta` | 口播素材的像素尺寸（宽 × 高） | 同步 |
+| DELETE | `/api/dub/upload` | 撤销一次上传：登记表里摘掉该 token 并删掉磁盘文件（token 走 query；不在登记表 ⇒ 404） | 同步 |
 | GET | `/api/briefs/processable` | 给外部 LLM 读的：列出所有 pending 工单 + 每个风格的完整素材 | 同步 |
 | POST | `/api/briefs/:id/run` | 出片。只有 status=ready 能出（failed 需显式 {"retry":true}） | 异步任务 |
 | GET | `/api/briefs/:id` | 读一张工单的当前内容（每次从磁盘读，不缓存） | 同步 |
@@ -137,8 +138,8 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
 | POST | `/api/resources/download` | 一键下载（后台任务，日志走既有任务/SSE 通道） | 同步 |
 
-★ 上表共 **58** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
-其余 **56** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
+★ 上表共 **59** 条（`server.mjs` 分发块的 `方法 路径` 语句数）。用途全部有出处、**0** 行是「（无注释）」：
+其余 **57** 行各摘录其处理函数的一句 `/** ... */` JSDoc 首句（机械摘录、不做发挥）；`GET /api/jobs` 与
 `DELETE /api/jobs/:id` **无处理函数**、内联在分发块里，用 `//` 行注释说明。
 ★ `GET /api/logs/:id` 是 **SSE 长连接**，不属于上面三类，这里按「请求内直接应答」归为 `同步`。
 

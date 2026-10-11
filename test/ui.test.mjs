@@ -5097,6 +5097,179 @@ async function main() {
       await cdp.evalJs(`(() => { window.__pFetchPatched = false; window.__pRunBodies = []; return true; })()`);
       await cdp.goto(base + '/', 4000);   // 重新加载 ⇒ 拿回真 fetch
     }
+
+    // ══ Q. 撤销上传（DELETE /api/dub/upload?token=…）——「用已上传的」旁的「删除」按钮 ═══════════
+    //
+    // 为什么补这一节：上传之后此前**没有任何办法删掉** —— 素材落在 `<dubRoot>/_uploads/`（含
+    // `index.json` 登记表），只增不减；服务端只有「收」与「列」两条路由。这一节钉的就是新补的
+    // **用户点击路径**：真点「删除」⇒ 那条从下拉里消失 + 磁盘文件真没了。
+    // ★ 与「清除」的区别是本组的核心断言对象：「清除」只去掉**本地选择**（素材还在服务器上），
+    //   「删除」才真的把登记条目与磁盘文件干掉 —— 两件事必须分得开（Q2 用「取消确认 ⇒ 什么都不变」钉住）。
+    // ★ 铁律：**绝不真出片** —— 本组只走 upload / sources / DELETE 三个接口，**不碰** `/api/dub/run`。
+    // ★ 夹具是**几十字节**的假 mp4/srt/png，全部落在**隔离成片根**内（`LEMO_FILM_DIR` 覆盖点）；
+    //   跑完按确切路径清 + 把 `index.json` 逐字节还原（复用 E7 的 `DUB_UPLOAD_PATHS` / `dubIndexBackup`）。
+    log('');
+    log(C.b('  Q. 撤销上传（DELETE /api/dub/upload）——「用已上传的」旁的「删除」按钮'));
+
+    /** 把某个下拉里选中 token（走真实 change 路径），并轮询等它出现。 */
+    const qPick = (selId, token) => cdp.evalJs(`(async () => {
+      document.getElementById('btnDubRefresh').click();
+      for (let i = 0; i < 60; i++) {
+        const sel = document.getElementById(${JSON.stringify(selId)});
+        if ([...sel.options].some((o) => o.value === ${JSON.stringify(token)})) {
+          sel.value = ${JSON.stringify(token)};
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          return { ok: true, value: sel.value };
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return { ok: false, opts: [...document.getElementById(${JSON.stringify(selId)}).options].map((o) => o.value) };
+    })()`, { awaitPromise: true });
+
+    /** 装一个可切换答案的 confirm 记录器（headless 下原生 confirm 会挡住点击）。 */
+    const qArmConfirm = (answer) => cdp.evalJs(`(() => {
+      if (!window.__qOrigConfirm) window.__qOrigConfirm = window.confirm;
+      if (!window.__qConfirm) window.__qConfirm = [];
+      window.__qAnswer = ${answer ? 'true' : 'false'};
+      window.confirm = (msg) => { window.__qConfirm.push(String(msg)); return window.__qAnswer === true; };
+      return true;
+    })()`);
+    const qRestoreConfirm = () => cdp.evalJs(`(() => {
+      if (window.__qOrigConfirm) { window.confirm = window.__qOrigConfirm; delete window.__qOrigConfirm; }
+      window.__qAnswer = undefined;
+      return true;
+    })()`);
+
+    await runCase('Q1 三个「用已上传的」行各有「删除」按钮：#btnDubSrcDel / #btnDubSrtDel / #btnDubBgDel（与各自「清除」并排、danger 小按钮、title 写明不可恢复）', async () => {
+      await ensureDubPage();
+      const info = await cdp.evalJs(`(() => {
+        const rows = [['btnDubSrcDel', 'dubSrcSel'], ['btnDubSrtDel', 'dubSrtSel'], ['btnDubBgDel', 'dubBgSel']];
+        return rows.map(([bid, sid]) => {
+          const b = document.getElementById(bid), s = document.getElementById(sid);
+          return {
+            bid, hasBtn: !!b, tag: b && b.tagName, text: b && b.textContent.trim(),
+            cls: (b && b.className) || '', title: (b && b.title) || '',
+            sameRow: !!(b && s && b.parentElement === s.parentElement),
+            clearInRow: !!(b && b.parentElement && b.parentElement.querySelector('button[id^="btnDub"][id$="Clear"]')),
+          };
+        });
+      })()`);
+      for (const r of info) {
+        need(r.hasBtn, `缺按钮 #${r.bid}`);
+        need(r.tag === 'BUTTON', `#${r.bid} 应是 button：${JSON.stringify(r)}`);
+        need(r.text === '删除', `#${r.bid} 的文案应是「删除」，实际「${r.text}」`);
+        need(/danger/.test(r.cls), `#${r.bid} 应是 danger 样式（好与旁边的「清除」区分开）：${r.cls}`);
+        need(r.sameRow, `#${r.bid} 应与它那一行的下拉同属一个父节点`);
+        need(r.clearInRow, `#${r.bid} 所在行里应有对应的「清除」按钮`);
+        need(/不可恢复/.test(r.title), `#${r.bid} 的 title 必须写明「不可恢复」：「${r.title}」`);
+      }
+      notes.push(`Q1 三处删除按钮就位（与各自「清除」并排、danger 样式、title 写明不可恢复）：${info.map((r) => r.bid).join(' / ')}`);
+    });
+
+    await runCase('Q2 ★ 真点 #btnDubSrcDel：先「取消确认」⇒ 文件与下拉都原封不动；再「确认」⇒ token 从 #dubSrcSel 消失 + 磁盘文件真没了 + 无悬空选择', async () => {
+      await ensureDubPage();
+      // ① 真上传一个几十字节的假 mp4（拿真 token）
+      if (dubIndexBackup === undefined) {
+        try { dubIndexBackup = fs.readFileSync(DUB_INDEX_FILE); } catch { dubIndexBackup = null; }
+      }
+      const up = await uploadDubRaw(server.port, 'ui-q2-del.mp4', Buffer.from('FAKE-MP4-for-ui-q2-delete'));
+      need(up.status === 200 && up.json && up.json.ok === true, `上传夹具失败：${up.status} ${up.text.slice(0, 160)}`);
+      const token = up.json.token;
+      const filePath = up.json.path;
+      DUB_UPLOAD_PATHS.add(filePath);
+      need(fs.existsSync(filePath), `夹具应已落盘：${filePath}`);
+
+      try {
+        // ② 刷新清单 + 在下拉里选中它（走真实 change 路径）
+        const picked = await qPick('dubSrcSel', token);
+        need(picked.ok, `#dubSrcSel 里没有刚上传的夹具（选项=${JSON.stringify(picked.opts)}）`);
+
+        // ③ 第一次：确认框回「取消」⇒ 必须**什么都不发生**（这正是「删除」≠「清除」的边界）
+        await qArmConfirm(false);
+        await cdp.evalJs(`document.getElementById('btnDubSrcDel').click()`);
+        await sleep(600);
+        const c1 = await cdp.evalJs(`window.__qConfirm`);
+        need(c1.length === 1, `点一次「删除」应恰好弹 1 次确认，实际 ${c1.length}`);
+        need(String(c1[0]).includes('ui-q2-del.mp4'), `确认文案应带上那条素材的名字：「${c1[0]}」`);
+        need(/不可恢复/.test(String(c1[0])), `确认文案必须写明「不可恢复」：「${c1[0]}」`);
+        need(fs.existsSync(filePath), '★ 点了「取消」却把磁盘文件删了');
+        need(await cdp.evalJs(`[...document.getElementById('dubSrcSel').options].some((o) => o.value === ${JSON.stringify(token)})`) === true,
+          '★ 点了「取消」却把下拉里那条去掉了');
+
+        // ④ 第二次：确认 ⇒ 真删
+        await qArmConfirm(true);
+        await cdp.evalJs(`document.getElementById('btnDubSrcDel').click()`);
+        await waitFor(cdp.evalJs,
+          `[...document.getElementById('dubSrcSel').options].every((o) => o.value !== ${JSON.stringify(token)})`,
+          { timeoutMs: 20000 });
+        need(!fs.existsSync(filePath), `★ 确认删除后磁盘文件仍在：${filePath}`);
+        need(await cdp.evalJs(`window.__qConfirm.length`) === 2, '应一共弹了 2 次确认');
+        const toast = await cdp.evalJs(`document.getElementById('toast').textContent`);
+        need(/已删除素材/.test(toast), `删除成功的 toast 不对：「${toast}」`);
+
+        // ⑤ ★ 删除后自洽：被删的 token 不许留在任何 state / 任何一个下拉上（无悬空选择）
+        const st = await cdp.evalJs(`(() => ({
+          v: state.dubVideoToken, s: state.dubSrtToken, b: state.dubBgToken,
+          selV: document.getElementById('dubSrcSel').value,
+          selS: document.getElementById('dubSrtSel').value,
+          selB: document.getElementById('dubBgSel').value,
+          hint: document.getElementById('dubVideoHint').textContent,
+          dangling: ['dubSrcSel', 'dubSrtSel', 'dubBgSel'].some((id) =>
+            [...document.getElementById(id).options].some((o) => o.value === ${JSON.stringify(token)})),
+        }))()`);
+        need(st.v === '' && st.s === '' && st.b === '', `state 里仍挂着已删 token：${JSON.stringify(st)}`);
+        need(st.selV === '' && st.selS === '' && st.selB === '', `下拉里仍留着已删 token：${JSON.stringify(st)}`);
+        need(st.dangling === false, '★ 某个下拉里仍留着已删 token 的 option（悬空选择）');
+        need(!/已选/.test(st.hint), `#dubVideoHint 还写着「已选」：「${st.hint}」`);
+
+        // ⑥ 服务端权威面也确认没了
+        const list = await get('/api/dub/sources');
+        need(!(((list.json && list.json.uploads) || []).some((u) => u.token === token)),
+          `★ /api/dub/sources 里仍有已删 token=${token}`);
+        notes.push(`Q2 真点 #btnDubSrcDel：取消 ⇒ 文件与下拉原封不动；确认 ⇒ 下拉里消失 + 磁盘文件没了 + sources 里也没了；state/三下拉全清空（token=${token}）`);
+      } finally {
+        await qRestoreConfirm();
+      }
+    });
+
+    // 三种 kind 的「kind → 下拉 / state 字段」映射是三元写法，最容易抄错一格 ⇒ srt / image 各真点一次。
+    for (const k of [
+      { kind: 'srt', selId: 'dubSrtSel', btnId: 'btnDubSrtDel', name: 'ui-q3-del.srt', body: '1\n00:00:00,000 --> 00:00:01,000\n春天一到。\n', label: 'SRT' },
+      { kind: 'image', selId: 'dubBgSel', btnId: 'btnDubBgDel', name: 'ui-q3-del.png', body: 'FAKE-PNG-BYTES-for-ui-q3', label: '背景图' },
+    ]) {
+      await runCase(`Q3 真点 #${k.btnId}（kind=${k.kind}）⇒ 那条${k.label}从 #${k.selId} 消失、磁盘文件真没了（kind → 下拉/字段映射对得上）`, async () => {
+        await ensureDubPage();
+        if (dubIndexBackup === undefined) {
+          try { dubIndexBackup = fs.readFileSync(DUB_INDEX_FILE); } catch { dubIndexBackup = null; }
+        }
+        const up = await uploadDubRaw(server.port, k.name, Buffer.from(k.body, 'utf8'));
+        need(up.status === 200 && up.json && up.json.ok === true, `上传 ${k.name} 失败：${up.status} ${up.text.slice(0, 160)}`);
+        need(up.json.kind === k.kind, `${k.name} 的 kind 应为 ${k.kind}，实际 ${up.json.kind}`);
+        const token = up.json.token;
+        const filePath = up.json.path;
+        DUB_UPLOAD_PATHS.add(filePath);
+        need(fs.existsSync(filePath), `夹具应已落盘：${filePath}`);
+        try {
+          const picked = await qPick(k.selId, token);
+          need(picked.ok, `#${k.selId} 里没有刚上传的 ${k.label}（选项=${JSON.stringify(picked.opts)}）`);
+          await qArmConfirm(true);
+          await cdp.evalJs(`document.getElementById(${JSON.stringify(k.btnId)}).click()`);
+          await waitFor(cdp.evalJs,
+            `[...document.getElementById(${JSON.stringify(k.selId)}).options].every((o) => o.value !== ${JSON.stringify(token)})`,
+            { timeoutMs: 20000 });
+          need(!fs.existsSync(filePath), `★ 确认删除后磁盘文件仍在：${filePath}`);
+          const toast = await cdp.evalJs(`document.getElementById('toast').textContent`);
+          need(/已删除素材/.test(toast), `删除成功的 toast 不对：「${toast}」`);
+          const list = await get('/api/dub/sources');
+          need(!(((list.json && list.json.uploads) || []).some((u) => u.token === token)),
+            `★ /api/dub/sources 里仍有已删 token=${token}`);
+          notes.push(`Q3（${k.kind}）真点 #${k.btnId}：${k.name} 从 #${k.selId} 消失、磁盘文件已删、sources 里已无（token=${token}）`);
+        } finally {
+          await qRestoreConfirm();
+        }
+      });
+    }
+
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）

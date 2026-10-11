@@ -1795,6 +1795,33 @@ async function apiDubUpload(req, res, url) {
 }
 
 /**
+ * DELETE /api/dub/upload?token=<token> —— 撤销一次上传：登记表里摘掉它 + 删掉磁盘文件。
+ *
+ * ★ 为什么用 query 传 token（而不是 DELETE /api/dub/upload/:token）：dub 族里 token 一直走 query
+ *   （见同族的 GET /api/dub/source-meta?token=...），保持一种口径。且 token 不进路径，就不用操心
+ *   路径段里的转义。★ 路由写法与分发块里的同族兄弟一致（「if (p === ... && m === ...)」那一族），
+ *   这样 scripts/check-api-docs.mjs 才认得出来、才能与 README 接口表双向比对。
+ * ★ token 缺失 ⇒ 400（中文文案）；token 不在登记表 ⇒ 404（与既有 DELETE /api/briefs/:id 的
+ *   「资源不存在 ⇒ 404」口径一致；删除不静默成功，避免前端把「本来就没有」当成「删掉了」）。
+ * ★ 判据与落盘全在 lib/dub.mjs:unregisterUpload（含越界守卫 + 跨进程锁 + 自愈），这里只做 HTTP 映射。
+ */
+function apiDubUploadDelete(req, res, url) {
+  const token = (url.searchParams.get('token') || '').trim();
+  if (!token) return sendJson(res, 400, { error: '缺少 token（用法：DELETE /api/dub/upload?token=<token>）' });
+
+  const r = dub.unregisterUpload(token);
+  if (!r.found) return sendJson(res, 404, { error: `没有这个上传记录（可能已被删掉）：${token}` });
+  // ★ 200 的响应体把「删了什么」说全（绝不静默删）：token / 原文件名 / 字节数 / 文件当时在不在 / 到底删没删。
+  //   ★ `ok` 原样透出 lib 的判定：文件删不掉（越界 / 符号链接 / unlink 失败）⇒ `ok:false` + `warning`，
+  //     但 HTTP 仍 200（登记条目已经摘掉了）—— 「200 + ok:false」是本仓既有口径（见 POST /api/llm/validate 空配置那档）。
+  sendJson(res, 200, {
+    ok: !!r.ok, token: r.token, name: r.name || '', bytes: r.bytes || 0,
+    existed: !!r.existed, removed: !!r.removed,
+    ...(r.why ? { warning: r.why } : {}),
+  });
+}
+
+/**
  * POST /api/dub/preview —— 只做断句，让用户在出片前核对。
  *
  * ★ **同步**接口（不排队）：断句是纯文本活，不进后台队列 —— 让用户为了看一眼断句去排队等 GPU，
@@ -2866,6 +2893,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/voices/test' && m === 'POST') return await apiVoiceTest(req, res);
     // ── 文案出片（/api/dub*）──
     if (p === '/api/dub/upload' && m === 'POST') return await apiDubUpload(req, res, url);
+    if (p === '/api/dub/upload' && m === 'DELETE') return apiDubUploadDelete(req, res, url);
     if (p === '/api/dub/preview' && m === 'POST') return await apiDubPreview(req, res);
     if (p === '/api/dub/analyze' && m === 'POST') return await apiDubAnalyze(req, res);
     if (p === '/api/dub/run' && m === 'POST') return await apiDubRun(req, res);

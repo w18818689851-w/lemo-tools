@@ -5,9 +5,14 @@
  * 用法：node test/gate-blindness.test.mjs
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 140 条用例 / 覆盖全部 52 个闸门）
+ * ★ 本套件覆盖**两类**回归（2026-10-09 扩批后共 141 条用例 / 覆盖全部 52 个闸门）
  *   ★★ 2026-10-10 订正：`check-llm-api` 的**判据⑧** 补一条回归用例（原只由闸门头注释「手工」验证，
  *     且其点名的 `doubao`/`siliconflow` 已删）⇒ 用例总数 **139 → 140**（覆盖闸门数不变，仍 52）。
+ *   ★★ 2026-10-11 补一条**防复发守卫**（用例 **140 → 141**，覆盖闸门数不变）：由「把散在 9 个闸门里的
+ *     剥注释器抽成 `lib/js-scan.mjs`、却没给夹具树带上它 ⇒ 7 条断言全废、**潜伏 3 批**」这个真回归
+ *     反推出来的**耦合守卫** —— 静态解析每个被测闸门的**相对 import**（传递闭包），断言夹具树里
+ *     **真的存在**；同时把它做成**修复**（`stageGateDeps()` 按同一套解析**自动**补齐依赖）。
+ *     见 `★守卫 gate-blindness` 用例。
  * ══════════════════════════════════════════════════════════════════════════════
  *   ① **失明 / 空转守卫**（绝大多数用例）：闸门的循环把对象全 `continue` 掉、`fails`/`blind`
  *      双空 ⇒ 打印 `✓` + exit 0，其实一个东西都没检查。近几批至少出现 6 次以上，
@@ -280,6 +285,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+// ★ 2026-10-11：仅为「静态解析闸门 import」那条**防复发守卫**而引入（剥注释 ⇒ 头注释里的示例
+//   import 不假阳）。**只读**用，不改 lib/**。★ 它同时是**被守对象**：本文件缺了它自己也会当场红。
+import { stripComments } from '../lib/js-scan.mjs';
 
 // ── 常量 ────────────────────────────────────────────────────────────────────
 const TOOLS = 'D:/lemo-tools';
@@ -338,11 +347,103 @@ const runGate = (name, env) => run(NODE, [path.join(SCRIPTS, name)], { env });
 const runGateArgs = (name, args, env) =>
   run(NODE, [path.join(SCRIPTS, name), ...args], { env });
 
+// ── ★ 2026-10-11 新增：闸门「相对 import」的**静态解析** + 夹具**依赖补齐/守卫** ───────────────
+//   由来（潜伏 3 批的真回归）：2026-10-11 把散在 9 个闸门里的剥注释器抽成 `lib/js-scan.mjs`，
+//   `scripts/check-*.mjs` 里那 9 个改成 `import … from '../lib/js-scan.mjs'` —— 但本文件给这些闸门
+//   造的**夹具树**（`copyGate`/`patchGate`/`mutate` 把闸门拷进 `<夹具>/scripts/`）**没带上新模块**
+//   ⇒ 夹具里闸门一启动就 `ERR_MODULE_NOT_FOUND` ⇒ 正向断言 / ★自证全废（实测 7 条）。
+//   ★ 根因是**两件事没耦合**：「闸门 import 了 `lib/**` 的谁」↔「夹具树里有没有它」。
+//   ⇒ 本段用**静态解析**把两者绑死（同时也是那条**防复发守卫**的实现）。
+/**
+ * 静态抽出一份 JS 源码里**所有相对模块说明符**（`./x` / `../x`）。
+ *   覆盖：`import … from 'rel'`、`export … from 'rel'`、副作用 `import 'rel'`、动态 `import('rel')`。
+ *   ★ 先用 `lib/js-scan.mjs` 的 `stripComments`（抹注释、**保字符串**）⇒ 头注释里的示例 import 不假阳。
+ *   ★ 覆盖边界（**如实登记**）：① 不做变量/模板拼接的动态说明符（`import(x)`、`` import(`./${n}`) ``）；
+ *     ② 不认 `require()`（本项目全 ESM，实测 0 处）；③ `from'rel'`（`from` 与引号间无空白）这类
+ *     非常规写法不认；④ 中间段不含 `'` `"` `` ` `` `;`（多行 `import {\n … \n} from '…'` **认**）。
+ *     ①②③ 对本仓 52 个闸门**实测 0 命中**（守卫用例里逐闸门断言过）。
+ */
+const REL_SPEC_FROM_RE = /(?:^|[^\w$.])(?:import|export)\s+(?:[^'"`;]*?\bfrom\s+)?['"](\.{1,2}\/[^'"`\n]+)['"]/g;
+const REL_SPEC_DYN_RE = /(?:^|[^\w$.])import\s*\(\s*['"](\.{1,2}\/[^'"`\n]+)['"]\s*\)/g;
+const relSpecifiers = (src) => {
+  const code = stripComments(src);
+  const out = new Set();
+  for (const re of [REL_SPEC_FROM_RE, REL_SPEC_DYN_RE]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(code))) out.add(m[1]);
+  }
+  return [...out];
+};
+
+/**
+ * ★ 守卫（**纯查询**版，供用例做「变异 ⇒ 必红」自证）：返回夹具树里**缺失**的相对 import 闭包。
+ *   解析基准与 `stageGateDeps()` 完全同一套 ⇒ 它就是「夹具 ↔ 闸门 import」这对耦合的**判定器**：
+ *     · `realDir`：闸门源码在真实仓里的目录（用来按同一相对路径找**真值**、递归传递闭包）；
+ *     · `dstFile`：闸门副本在夹具里的落点（它的目录就是夹具侧的解析基准）。
+ *   返回**相对 `dstFile` 的路径**列表（便于报错点名）。
+ */
+const fixtureDepsMissing = (realDir, srcText, dstFile) => {
+  const missing = [];
+  const seen = new Set();
+  const walk = (src, realBase, dstBase) => {
+    for (const spec of relSpecifiers(src)) {
+      const dstDep = path.resolve(dstBase, spec);
+      const key = dstDep.toLowerCase();          // Windows 路径大小写不敏感
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!fs.existsSync(dstDep)) { missing.push(path.relative(path.dirname(dstFile), dstDep)); continue; }
+      const realDep = path.resolve(realBase, spec);
+      if (fs.existsSync(realDep)) walk(fs.readFileSync(realDep, 'utf8'), path.dirname(realDep), path.dirname(dstDep));
+    }
+  };
+  walk(srcText, realDir, path.dirname(dstFile));
+  return missing;
+};
+
+/**
+ * ★ 修复 + 守卫**一体**：把 `srcText` 里**所有相对 import 的传递闭包**从真实仓（按 `realDir` 解析）
+ *   精确拷进夹具（按 `dstFile` 所在目录解析），随后**逐个断言夹具里真的存在**。
+ *
+ *   ★ 修法 = **精确补**（**不是**「整棵拷真实 `lib/`」）：只补源码里**真的 import 了**的那些模块。
+ *     理由：某些闸门的判据依赖「`lib/` 里**只有**夹具放的东西」—— 例：`check-lib-exports` 扫
+ *     `<root>/lib/**` 的**可调用导出**，若整棵拷真实 `lib/`，`lib/js-scan.mjs` 的 `stripComments`
+ *     就会变成「零调用导出」⇒ 夹具**假红**。精确补既修好、又不污染任何判据。
+ *   ★ 依赖清单由**源码静态解析**得出（不是手抄的声明）⇒ 以后闸门再 import 新 `lib/**` 模块，
+ *     夹具会**自动**带上，这类破坏**不可能再潜伏**。
+ */
+const stageGateDeps = (realDir, srcText, dstFile) => {
+  const seen = new Set();
+  const walk = (src, realBase, dstBase) => {
+    for (const spec of relSpecifiers(src)) {
+      const realDep = path.resolve(realBase, spec);
+      const dstDep = path.resolve(dstBase, spec);
+      const key = dstDep.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      assert.ok(fs.existsSync(realDep),
+        `★守卫：闸门的相对 import 指向的模块在**真实仓**里不存在\n  import '${spec}' ⇒ 期望 ${realDep}`);
+      if (!fs.existsSync(dstDep)) {
+        mk(path.dirname(dstDep));
+        fs.copyFileSync(realDep, dstDep);
+      }
+      walk(fs.readFileSync(realDep, 'utf8'), path.dirname(realDep), path.dirname(dstDep));
+    }
+  };
+  walk(srcText, realDir, path.dirname(dstFile));
+  // ★ 守卫有牙：拷完**再逐个断言存在**（不是「拷过了就算」）—— 夹具里缺一个就**当场红**。
+  const missing = fixtureDepsMissing(realDir, srcText, dstFile);
+  assert.equal(missing.length, 0,
+    `★守卫：夹具树没带齐闸门的相对 import 依赖 [${missing.join(', ')}] ⇒ 夹具里闸门会 ERR_MODULE_NOT_FOUND`);
+};
+
 /** 拷一个闸门到 `<root>/scripts/<name>`，返回副本路径（供「落点写死在脚本位置」的闸门做非破坏变异）。 */
 const copyGate = (name, root) => {
   const out = path.join(root, 'scripts', name);
   mk(path.dirname(out));
+  const src = fs.readFileSync(path.join(SCRIPTS, name), 'utf8');
   fs.copyFileSync(path.join(SCRIPTS, name), out);
+  stageGateDeps(SCRIPTS, src, out);   // ★ 带上该闸门相对 import 的传递闭包（否则夹具里会崩在路径上）
   return out;
 };
 
@@ -368,6 +469,7 @@ const patchGate = (gateName, outDir, subs) => {
   }
   const out = path.join(outDir, gateName);
   wf(out, src);
+  stageGateDeps(SCRIPTS, src, out);   // ★ 同上：补上闸门相对 import 的传递闭包
   return out;
 };
 
@@ -503,6 +605,100 @@ const expectClean = (res, needle, hint) => {
   assert.ok(!res.out.includes(needle),
     `${hint}：exit 0 却出现了失明文案「${needle}」\n${res.out.slice(0, 900)}`);
 };
+
+// ── 0. ★防复发守卫：夹具树必须带齐被测闸门的**相对 import 依赖**（2026-10-11 新增）──────────────
+//   由来（**潜伏 3 批**的真回归）：2026-10-11 把散在 9 个闸门里的剥注释器抽成 `lib/js-scan.mjs`，
+//   `scripts/check-*.mjs` 里那 9 个改成 `import … from '../lib/js-scan.mjs'` —— 但本文件给这些闸门
+//   造的**夹具树**（`copyGate`/`patchGate`/`mutate` 把闸门拷进 `<夹具>/scripts/`）**没带上新模块**
+//   ⇒ 夹具里闸门一启动就 `ERR_MODULE_NOT_FOUND`（实测报错：
+//     `Cannot find module 'D:/lemo-tmp/gb-blind-<pid>/vh/gmut/lib/js-scan.mjs'`）⇒ 7 条断言全废。
+//   ★★ 而本文件**不在 52 个闸门里、此前从未被例行跑到** ⇒ 这个回归**潜伏了 3 批**。
+//   ⇒ 加这条守卫把「闸门 import 了谁」与「夹具树里有没有它」**绑死**：静态解析闸门源码的相对
+//     import（**传递闭包**），逐个断言**夹具树里真的存在**。它同时是修复（`stageGateDeps()` 按
+//     同一套解析**自动**补齐）。★ 全量核对覆盖本文件里**每一个**「拷闸门」调用点。
+test('★守卫 gate-blindness：夹具树必须带齐被测闸门的相对 import 依赖（静态解析 + 变异自证）', async () => {
+  const dir = path.join(TMP, 'deps');
+  const SELF = fileURLToPath(import.meta.url);
+  const sha = (p) => createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+  // ★ 真实文件全程只读 ⇒ 记录改动前指纹，末尾断言**逐字节相同**。
+  const REAL_SHA_BEFORE = {
+    gate: sha(path.join(SCRIPTS, 'check-visible-hints.mjs')),
+    lib: sha(path.join(TOOLS, 'lib', 'js-scan.mjs')),
+  };
+  try {
+    // ── ① 全量核对：本文件里所有「拷闸门进夹具」的调用点（copyGate / patchGate / mutate）涉及的闸门 ──
+    const self = fs.readFileSync(SELF, 'utf8');
+    const gates = [...new Set([...self.matchAll(/\b(?:copyGate|patchGate|mutate)\(\s*'([^']+\.mjs)'/g)]
+      .map((m) => m[1]))].sort();
+    assert.ok(gates.length >= 30,
+      `守卫自身失效：本文件里只解析出 ${gates.length} 个「拷闸门」调用点（应当远多于 30）`);
+
+    const withDeps = [];
+    for (const g of gates) {
+      const src = fs.readFileSync(path.join(SCRIPTS, g), 'utf8');
+      const specs = relSpecifiers(src);
+      // ①(a) 源码里每个相对说明符都必须在**真实仓**里存在（否则守卫「补」不出来）
+      for (const s of specs) {
+        assert.ok(fs.existsSync(path.resolve(SCRIPTS, s)),
+          `${g} 里 import '${s}' ⇒ **真实仓**里不存在（${path.resolve(SCRIPTS, s)}）`);
+      }
+      if (specs.length) withDeps.push({ gate: g, specs });
+      // ①(b) 用**真实**的夹具助手把闸门拷进一棵临时树 ⇒ 依赖必须**真的**到位（不是「解析到了」就算）
+      const out = copyGate(g, path.join(dir, `chk-${g}`));
+      const miss = fixtureDepsMissing(SCRIPTS, src, out);
+      assert.equal(miss.length, 0,
+        `${g}：copyGate() 之后夹具树仍缺 [${miss.join(', ')}] ⇒ 夹具里闸门会 ERR_MODULE_NOT_FOUND`);
+    }
+    // ①(c) 非空转守卫：本仓**至少 9 个**闸门 import 了 `../lib/**`（= 2026-10-11 抽 js-scan 那一批）
+    assert.ok(withDeps.length >= 9,
+      `本仓应当有 ≥9 个闸门 import 了 '../lib/**'，实测只解析出 ${withDeps.length} 个 ⇒ 解析器可能失效`);
+    // ①(d) 覆盖完整性：本文件里出现过的**每一个**带相对 import 的闸门，都必须落在上面那套
+    //       「拷闸门」调用点里 —— 否则它可能被**别的方式**（裸 `fs.copyFileSync`）拷进夹具、绕开本守卫。
+    const named = [...new Set([...self.matchAll(/'(check-[a-z0-9-]+\.mjs)'/g)].map((m) => m[1]))].sort();
+    for (const g of named) {
+      const p = path.join(SCRIPTS, g);
+      if (!fs.existsSync(p)) continue;
+      if (relSpecifiers(fs.readFileSync(p, 'utf8')).length === 0) continue;
+      assert.ok(gates.includes(g),
+        `${g} 带相对 import，却没出现在 copyGate/patchGate/mutate 调用点里 ⇒ 它可能被别的方式拷进夹具、绕开本守卫`);
+    }
+    // ★ 把全量核对结果打出来（③ 要的报告就在这儿：还有没有别的闸门也缺模块）。
+    log(C.dim(`    ℹ 相对 import 全量核对：${gates.length} 个「拷闸门」调用点 / ${withDeps.length} 个闸门带相对 import`));
+    for (const { gate, specs } of withDeps) log(C.dim(`      · ${gate} ⇒ ${specs.join(', ')}`));
+
+    // ── ② 变异自证之一：**闸门新 import 一个夹具里没有的模块** ⇒ 守卫必须**变红** ──
+    //   ★ 在 **D:/lemo-tmp 下的合成闸门**上做（**绝不**碰真实 `scripts/**` —— 项目红线）。
+    const fakeDir = path.join(dir, 'fake');
+    const fakeSrc = "#!/usr/bin/env node\nimport { x } from '../lib/__NOPE__not-a-module.mjs';\nconsole.log(x);\n";
+    wf(path.join(fakeDir, 'scripts', 'check-fake.mjs'), fakeSrc);
+    assert.throws(
+      () => stageGateDeps(SCRIPTS, fakeSrc, path.join(fakeDir, 'scripts', 'check-fake.mjs')),
+      /真实仓.*不存在|__NOPE__not-a-module/s,
+      '闸门新 import 一个真实仓里不存在的模块时，守卫**必须**报红');
+
+    // ── ③ 变异自证之二：把夹具里那个模块**删掉**（= 精确复现 2026-10-11 那个回归的形态）⇒ 守卫必红 ──
+    const root = path.join(dir, 'mut');
+    const gateSrc = fs.readFileSync(path.join(SCRIPTS, 'check-visible-hints.mjs'), 'utf8');
+    const out = copyGate('check-visible-hints.mjs', root);
+    const staged = path.join(root, 'lib', 'js-scan.mjs');
+    assert.ok(fs.existsSync(staged), '守卫自身失效：copyGate() 没把 lib/js-scan.mjs 带进夹具');
+    assert.equal(fixtureDepsMissing(SCRIPTS, gateSrc, out).length, 0, '未变异时依赖应当齐全');
+    fs.rmSync(staged);                                   // ★ 变异：删掉夹具里那份模块
+    const miss = fixtureDepsMissing(SCRIPTS, gateSrc, out);
+    assert.deepEqual(miss, [path.join('..', 'lib', 'js-scan.mjs')],
+      `删掉夹具里的 lib/js-scan.mjs 后，守卫必须**只**点名它，实得 [${miss.join(', ')}]`);
+    // ★ 还原（重拷真实那份）⇒ 守卫重新变绿，且**逐字节相同**
+    fs.copyFileSync(path.join(TOOLS, 'lib', 'js-scan.mjs'), staged);
+    assert.equal(fixtureDepsMissing(SCRIPTS, gateSrc, out).length, 0, '还原后依赖应当重新齐全');
+    assert.equal(sha(staged), REAL_SHA_BEFORE.lib, '还原后夹具里那份必须与真实 lib/js-scan.mjs 逐字节相同');
+
+    // ── ④ 真实文件**只读**：本用例跑完，真实仓那两个文件必须与开头**逐字节相同** ──
+    assert.equal(sha(path.join(SCRIPTS, 'check-visible-hints.mjs')), REAL_SHA_BEFORE.gate,
+      '本用例不得改动真实 scripts/**（红线）');
+    assert.equal(sha(path.join(TOOLS, 'lib', 'js-scan.mjs')), REAL_SHA_BEFORE.lib,
+      '本用例不得改动真实 lib/**（红线）');
+  } finally { rm(dir); }
+});
 
 // ── 1. check-tp-prose.mjs ───────────────────────────────────────────────────
 test('check-tp-prose：CUR 反向守卫（HIST+CUR 同行 ⇒ 不豁免 ⇒ 陈旧读数 1）', async () => {
@@ -2627,8 +2823,11 @@ const mutateFile = (srcPath, dstPath, from, to) => {
 };
 
 /** 读**闸门**源码 → 断言待替换片段确实存在 → 替换 → 写副本。返回副本路径。 */
-const mutate = (gateName, outDir, from, to) =>
-  mutateFile(path.join(SCRIPTS, gateName), path.join(outDir, gateName), from, to);
+const mutate = (gateName, outDir, from, to) => {
+  const out = mutateFile(path.join(SCRIPTS, gateName), path.join(outDir, gateName), from, to);
+  stageGateDeps(SCRIPTS, fs.readFileSync(out, 'utf8'), out);   // ★ 同上：补上相对 import 的传递闭包
+  return out;
+};
 
 test('★自证 check-config-notes：删掉「全无 notes」守卫后，正向断言必须变红', async () => {
   const dir = path.join(TMP, 'mut-cfg');
