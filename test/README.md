@@ -21,7 +21,7 @@ node test/originality.test.mjs   # 「从零原创」审计器的纯逻辑测试
 node test/style-skill-reader.test.mjs  # 风格 Skill 文档读取入口的纯逻辑测试（6 条，★ 钉「缺失即 null 绝不抛」的硬契约）
 node test/triple-check.test.mjs   # 三者一致性校验门（**全项目唯一允许调 7B VLM 的地方**）的纯逻辑测试（29 条）
 node test/dub-lexicon.test.mjs    # 规则词表 TAG_LEXICON / lexiconCoverage 的纯逻辑测试（12 条，★ 词表数据完整性）
-node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（34 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越 + ★ LLM 端点与多套服务 CRUD 的最小回归 ㉔~㉗：`POST /api/llm/chat` / `POST /api/llm/invoke`（只打非法参错误路径，绝不起 run）/ `POST /api/llm/models`（agent 守卫拒绝，绝不打网关）/ 多套服务 CRUD（`GET`+`POST /api/llm/services*`）；★ **2026-10-10 减法**：原 ㉑㉒㉓ 钉的 `GET|POST /api/llm/config` 与 `GET /api/llm/profiles` **已随「超出参考标准」的端点整体删除** ⇒ 三条用例随端点一并删（32 → 29））+ ★★ **㉛ 安全回归（P0/P1）**：`GET /api/llm/services` 响应体**搜不到明文密钥**、**搜不到自定义头的值**，每行**无** `apiKey` 字段、`headers` **只回布尔 `hasHeaders`**）
+node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（35 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越 + ★ LLM 端点与多套服务 CRUD 的最小回归 ㉔~㉗：`POST /api/llm/chat` / `POST /api/llm/invoke`（只打非法参错误路径，绝不起 run）/ `POST /api/llm/models`（agent 守卫拒绝，绝不打网关）/ 多套服务 CRUD（`GET`+`POST /api/llm/services*`）；★ **2026-10-10 减法**：原 ㉑㉒㉓ 钉的 `GET|POST /api/llm/config` 与 `GET /api/llm/profiles` **已随「超出参考标准」的端点整体删除** ⇒ 三条用例随端点一并删（32 → 29））+ ★★ **㉛ 安全回归（P0/P1）**：`GET /api/llm/services` 响应体**搜不到明文密钥**、**搜不到自定义头的值**，每行**无** `apiKey` 字段、`headers` **只回布尔 `hasHeaders`**）+ ★★ **㊲ F1 越界回归（2026-10-11 第二批对抗性审计）**：成片根内的 **junction 指向根外**时 `GET /api/films/<链接名>/<文件>` 必须 **403**、响应里**绝不带**根外文件内容（审计用同一手法读出过明文 apiKey）；对照：根内真文件仍 **200**；并钉住**取舍** —— junction 指向**根内**仍 **200**（判据是「真路径是否在根内」而不是「是不是链接」）。★ 只在**本套件自己拥有的**临时成片根里造链接；外部设了 `LEMO_FILM_DIR` 或环境建不了 junction 时**如实降级**为源码级判据（8 处「路径越界」全走 `withinRoot` + `realish` 用 `realpathSync`），**不是静默跳过**）
 node test/voices-api.test.mjs     # /api/voices/{sources,import,test,test/audio} 的契约与校验测试（10 条，只测失败路径）
 node test/style-scan.test.mjs     # 风格源码指纹机制（约定一「自动纳入」的判据）测试（16 条，★ 该变就变/不该变就不变）
 node test/triple-check-flow.test.mjs  # verifyTriple 主流程端到端测试（17 条，★ 用桩 LM Studio，绝不碰真实模型；★ 2026-10-10 补 2 条「面板优先 / 回落」用例，见 lib/triple-check.mjs 的 askVlm）
@@ -414,6 +414,15 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 ★ **readcheck 的廉价预判**：跑之前先在 demo 源码里找 `window.TEXTS` / `TEXTS(` 痕迹，找不到就**跳过并打印理由**
 （预判保守：命中就照跑）。理由 = `readcheck` 检查的是页面**自报**的文字框，没有这个接口就**无从检查**
 （不是「通过」也不是「不达标」）⇒ `readcheck.mjs` 的退出码 `0`/`1`/`2` 必须**区分**，`2` 单独一档报「无从检查」。
+
+★★ **正式归档（2026-10-11）：第 6 步在真实出片里「恒走跳过」是**已解释的既定事实，不是缺口**。**
+实测三条：① `core/render/readcheck.mjs` 查的是页面**自报**的 `window.TEXTS(t)`（上面的页面约定）；
+② 全库 **43** 个「有 demo 的风格」**0** 个实现它（`grep -rl "TEXTS" styles/*/demo/` 命中 **0**）
+⇒ 那道廉价预判**必然跳过**、成本 ≈ 0（**不会**真跑那约 1000 次 `window.render(t)`）；③ 所以这一步**当前
+不产出任何读数**，原因是**页面侧没实现该接口**（上游 43 个风格全都如此），**不是**编排器漏接、**也不是**
+测试 / 闸门漏判 —— **别再把它当缺口登记**。★ 上一批已判定 `lemo-make.mjs` 里这段的注释（`demoHasTexts()`
+预判 + 第 6 步的跳过分支）**已足够** ⇒ **红线文件未动**。★ 将来某个风格真的实现了 `window.TEXTS`
+⇒ 预判自动放行、这一步自动开始真跑，**无需改编排器**。
 
 ★ **2026-10-10 对齐核查的「有意不跟」一项（如实登记，不是漏改）**：上游 `core/README.md:35` 的 `--workers`
 **默认 3**（注「up to 6 workers for a single render」），我们 **CLI 与 UI 都保持 6**。

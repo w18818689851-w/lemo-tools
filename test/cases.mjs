@@ -1069,6 +1069,28 @@ export const SERVER_CASES = [
       assert.strictEqual(r.status, 400, `状态码 ${r.status}（期望 400）body=${r.text.slice(0, 200)}`);
       const r2 = await ctx.post('/api/run', { slug: 'ascii-crt', opts: ['--out; rm -rf /'] });
       assert.strictEqual(r2.status, 400, `opts 里的非法字符没被拦下：${r2.status} ${r2.text.slice(0, 200)}`);
+
+      // ★★ 2026-10-11（第二批对抗性审计 F4）：slug **长度**上限。
+      //   为什么：编排器拿 slug 拼**锁文件名**（`lemo-make.mjs` 的 `path.join(lockDir, '.' + slug + '.lock')`），
+      //   超 MAX_PATH 时那一步写不了锁，而它的 catch 把**任何**写失败都当成「锁被占用」⇒ 打印**假诊断**
+      //   「接管过期锁（旧 pid NaN，已不在）」（根本没有锁、pid 也是 NaN），随后无保护地再写一次
+      //   ⇒ 未捕获抛错 + 原始堆栈代替结构化错误。实测 300 字符 slug 必现 ⇒ 在入参处挡住。
+      const jobsBefore = await ctx.get('/api/jobs');
+      const n0 = Array.isArray(jobsBefore.json && jobsBefore.json.jobs) ? jobsBefore.json.jobs.length : -1;
+      const long = await ctx.post('/api/run', { slug: 'a'.repeat(300), opts: [] });
+      assert.strictEqual(long.status, 400, `300 字符 slug 应 400，实际 ${long.status}：${long.text.slice(0, 200)}`);
+      assert.match(String(long.json && long.json.error || ''), /过长|上限/,
+        `400 文案没点明「过长 / 上限」：${long.text.slice(0, 200)}`);
+      // 边界对照（**不启任务**）：80 字符仍在上限内 ⇒ 不该被「长度」判据拒 ——
+      //   给一条必然非法的 opts，让它走到**下一步**的 opts 校验才 400，从而证明长度判据放行了 80 字符。
+      const edge = await ctx.post('/api/run', { slug: 'a'.repeat(80), opts: ['--out; rm -rf /'] });
+      assert.strictEqual(edge.status, 400, `80 字符 slug 应走到 opts 校验才 400，实际 ${edge.status}`);
+      assert.ok(!/过长/.test(String(edge.json && edge.json.error || '')),
+        `80 字符被长度判据误拒了（它仍在上限内）：${edge.text.slice(0, 200)}`);
+      // 上面两条都必须**没起任务**（起了就会去 spawn 编排器 —— 那是真出片）
+      const jobsAfter = await ctx.get('/api/jobs');
+      const n1 = Array.isArray(jobsAfter.json && jobsAfter.json.jobs) ? jobsAfter.json.jobs.length : -1;
+      assert.strictEqual(n1, n0, `超长 / 边界 slug 起了任务（任务数 ${n0} → ${n1}）—— 它们本该在入参处就被挡住`);
     },
   },
   {
@@ -1292,7 +1314,31 @@ export const SERVER_CASES = [
       assert.strictEqual(evil.json.mode, 'film', `mode=${evil.json.mode}`);
       assert.ok(evil.json.error, `非法影片模块名应给出 error：${JSON.stringify(evil.json.error)}`);
       assert.deepStrictEqual(evil.json.supported, ['16:9'], '非法影片模块名应退回「只支持 16:9」');
-      ctx.note('③ /api/aspects：engraving 5 比例、未声明风格只支持 16:9、未知 slug / 非法 film 名都不抛');
+
+      // ★★ 2026-10-11（第二批对抗性审计 F3）：本端点原来是这一族里**唯一**没做 slug 白名单 + 越界守卫的。
+      //   实测修复前：`?slug=../../../../Windows` 回 200 + `demoDir:"D:\\Windows\\demo"`（把拼出来的
+      //   **绝对路径原样回给前端** = 目录结构泄露 + 目录存在性探测），且 `film=` 能借它读风格根外
+      //   任意目录下的 `*.js`。现在照同族 `apiStyle` / `apiStyleSwitches` 补上：
+      //   形状白名单（`^[A-Za-z0-9._-]+$` ⇒ 400）+ resolve 后必须在风格根内（`withinRoot` ⇒ 403）。
+      for (const bad of ['../../../../Windows', '..\\..\\Windows', 'C:\\Windows', 'a/b', '..']) {
+        const r = await ctx.get('/api/aspects?slug=' + encodeURIComponent(bad));
+        assert.ok([400, 403].includes(r.status),
+          `越界 slug ${JSON.stringify(bad)} 应 400/403，实际 ${r.status}：${r.text.slice(0, 200)}`);
+        assert.ok(!(r.json && r.json.demoDir),
+          `越界 slug ${JSON.stringify(bad)} 回显了 demoDir（根外绝对路径泄露）：${r.text.slice(0, 200)}`);
+        assert.ok(!(r.json && r.json.source),
+          `越界 slug ${JSON.stringify(bad)} 回显了 source（根外绝对路径泄露）：${r.text.slice(0, 200)}`);
+      }
+      // ★ 对照：上面 5 条里只有 `..` 是「形状合法」的 —— 它靠**越界守卫**才被拦（403），不是靠白名单。
+      //   这条对照很关键：白名单挡不住 `..`，两道判据缺一不可。
+      const dotdot = await ctx.get('/api/aspects?slug=..');
+      assert.strictEqual(dotdot.status, 403,
+        `slug=.. 形状合法、只能靠越界守卫拦 ⇒ 必须 403，实际 ${dotdot.status}：${dotdot.text.slice(0, 200)}`);
+      assert.match(String(dotdot.json && dotdot.json.error || ''), /越界/,
+        `slug=.. 的 403 理由不是「路径越界」：${dotdot.text.slice(0, 200)}`);
+
+      ctx.note('③ /api/aspects：engraving 5 比例、未声明风格只支持 16:9、未知 slug / 非法 film 名都不抛；'
+        + '★ 越界 slug（含形状合法的 `..`）一律 400/403 且不回显根外绝对路径');
     },
   },
   {

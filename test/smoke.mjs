@@ -60,6 +60,27 @@ import {
 //   设了这个环境变量，本进程 spawn 出的 server.mjs 会跳过写入。下面的备份/还原是第二道防线，保留。
 process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 
+// ★ 编排器的**并发锁**也必须隔离到临时树（2026-10-11 定性「首跑 6 红」时补）。
+//
+//   它默认落在 `D:\lemo-films\.<slug>.lock`（= 成片根，见 lemo-make.mjs 的 lockDir），
+//   那是**用户真实出片根**里的共享资源。本套件会真跑几次 lemo-make（⑤ CLI dry-run、
+//   ④⑥ 的 dry-run 任务），而 `--dry-run` **也会**抢这把锁 —— 编排器在 dry-run 分支
+//   **之前**就抢锁，并一直持有到进程退出（实测：WSL 冷启动时持锁可达 80s，见下）。
+//   此时若另有 lemo-make 在跑同一个 demo（并发的另一个测试套件 / 用户自己的一次出片），
+//   两边互斥 ⇒ 本套件会红成：
+//     · ⑤「CLI 退出码 1」+ ⑤ 依赖它的那条
+//     · ④「任务状态 failed（期望 done），error=null」（子进程非零退出 ⇒ finishJob 不给 error）
+//     · ⑦ 三条依赖 ④ 前置结果的用例级联红
+//   实测（2026-10-11）：只压一把活锁 ⇒ 一次跑出 6 条红，与「首跑 6 红」的现象集合逐条对上。
+//   ⇒ 指到临时树，与 test/briefs.test.mjs / test/ui.test.mjs / test/gate-blindness.test.mjs
+//     三个套件同一口径（它们早就这么做了，只有本套件漏了）。
+//   ★ 只对**编排器**生效（它认 LEMO_LOCK_DIR）。服务的 /api/precheck 读的是真实锁路径
+//     （lib/jobs.mjs:checkLock 用 FILM_DIR 硬算，不认这个变量）⇒ ⑧ 两条锁用例自己造锁
+//     自己读，不受影响。
+//   ★ 临时根口径照 `scripts/run-all-tests.mjs:74`：`LEMO_TMP || 'D:/lemo-tmp'`（非 C 盘）。
+const TMP_ROOT = path.resolve(process.env.LEMO_TMP || 'D:/lemo-tmp');
+process.env.LEMO_LOCK_DIR = path.join(TMP_ROOT, `smoke-lock-${process.pid}-${Date.now().toString(36)}`);
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const ORCH_PATH = path.join(ROOT, 'lemo-make.mjs');
@@ -422,6 +443,11 @@ async function main() {
     } catch (e) {
       log(C.bad(`  ⚠️ 测试产物清理异常：${e.message}`));
     }
+
+    // ── 收掉隔离出来的并发锁目录（编排器的 `.<slug>.lock` 落在里面）──
+    try {
+      fs.rmSync(process.env.LEMO_LOCK_DIR, { recursive: true, force: true });
+    } catch { /* 清不掉也不影响结论 */ }
   }
 
   // ── 汇总 ──

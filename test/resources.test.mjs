@@ -218,50 +218,68 @@ test('RESOURCES：注册表非空、id 唯一、schema 合法（契约 §五）'
 //   现正文只写在 lib/env.mjs 的常量里，另两处 import 它（零行为变更：三处值逐字节相同）。
 //   ★ 断言必须**有牙**：直接取三处的**值**互比（不是「断言非空」），并断言这句文案在三个文件的源码里
 //     只作为**字面量**出现在 lib/env.mjs 一处 —— 谁再把文案抄回去（或抄回去还抄歪了），这条当场变红。
-//   ★ 覆盖：`ASSETS_INST_FIX`（assets.inst，2026-10-11 第一批收口）+
-//     2026-10-11 第二批收口的 `ASSETS_FONTS_FIX` / `LIB_WIN_FIX` / `WSL_NODE_FIX`。
-//   ★★ 第二批**只收口这 3 句**的理由（本批的取舍，见 lib/env.mjs 那三个常量的说明）：
-//     它们是**仅有的**同时满足「**三处**字面量逐字节相同」+「无插值」的精确重复 ⇒ 无条件零行为变更。
-//     其余重复只登记、本次不动（按**实测**分三类）：
-//       ㈠ 两处精确重复（env ↔ setup，resources 侧值不同）：win.ffmpeg / win.gpu / wsl.alive /
-//          wsl.ffmpeg / tool.sync + lib.wsl 的 warn 文案（`可能 clone 不完整，重新 clone`）——
-//          ★ 同样零插值 ⇒ 收口**也能**无条件零行为变更，本批未做（取舍：只有 2 处、漂移面小于
-//          本批那 4 条 3 处的）⇒ 可收口候选。
-//       ㈡ 三处精确重复但含 `${CFG.wslLib}` 插值：lib.wsl / wsl.venv（fail 文案）—— 且 setup 夹具
-//          把该值硬编码 ⇒ 收口是**条件**行为变更。
-//       ㈢ 近重复（env ↔ resources 值本就不同）：win.platform / win.ffmpeg / win.gpu / wsl.alive /
-//          wsl.ffmpeg / tool.sync —— 在 env ↔ resources 这一维收口会改输出文本。
+//
+//   ★★ 覆盖范围**已参数化**（2026-10-11 第三批扩）：`places` 标出这句文案在**本仓**有几处
+//     「逐字节相同的字面量来源」，两种档：
+//       · `places: 3` —— **三处**（env + resources + setup）逐字节相同 ⇒ 连 resources 台账的 fix
+//         一起比。共 4 句：`ASSETS_INST_FIX`（2026-10-11 第一批）+ `ASSETS_FONTS_FIX` /
+//         `LIB_WIN_FIX` / `WSL_NODE_FIX`（第二批）。
+//       · `places: 2` —— 只有**两处**（env + setup）：`lib/resources.mjs` 侧的值**本来就不同**
+//         （如 `win.ffmpeg` 在那边是 `…放到候选目录之一：${CFG.ffmpegDirs.join(' / ')}`）
+//         ⇒ 不能跨到那边收口（那会改 `/api/resources/scan` 的输出文本）⇒ **不比 resources**，
+//         且**反过来断言**这句文案**不得**出现在 `lib/resources.mjs`（那正是「不能跨过去」的理由）。
+//         共 6 句（第三批收口）：`WIN_FFMPEG_FIX` / `WIN_GPU_FIX` / `WSL_ALIVE_FIX` /
+//         `WSL_FFMPEG_FIX` / `TOOL_SYNC_FIX` / `LIB_WSL_WARN_FIX`。
+//   ★★ **仍然只登记、未收口的**（不在下表，故本用例**不覆盖**它们 —— 如实登记）：
+//     · `lib.wsl` 的 **fail** 文案（`git clone … ${CFG.wslLib}`）与 `wsl.venv` 的 fail 文案
+//       （`cd ${CFG.wslLib} && …`）：**含插值**，且 setup 夹具把该值**硬编码**成
+//       `/home/lemo/lemo-opuscar` ⇒ 收口要把夹具的取值方式从硬编码改成引用常量，
+//       那会在 `LEMO_LIB_WSL` 被设时改变演练输出（**条件**行为变更）。
+//     · `win.platform` 等**近重复**（env ↔ resources 值本就不同）：在那一维收口必然改输出文本。
 const FIX_SINGLE_SOURCE = [
-  { constName: 'ASSETS_INST_FIX', itemId: 'assets.inst' },
-  { constName: 'ASSETS_FONTS_FIX', itemId: 'assets.fonts' },
-  { constName: 'LIB_WIN_FIX', itemId: 'lib.win' },
-  { constName: 'WSL_NODE_FIX', itemId: 'wsl.node' },
+  // —— places: 3（env + resources + setup 三处逐字节相同）——
+  { constName: 'ASSETS_INST_FIX', itemId: 'assets.inst', places: 3 },
+  { constName: 'ASSETS_FONTS_FIX', itemId: 'assets.fonts', places: 3 },
+  { constName: 'LIB_WIN_FIX', itemId: 'lib.win', places: 3 },
+  { constName: 'WSL_NODE_FIX', itemId: 'wsl.node', places: 3 },
+  // —— places: 2（只有 env + setup；resources 侧值不同）——
+  { constName: 'WIN_FFMPEG_FIX', itemId: 'win.ffmpeg', places: 2 },
+  { constName: 'WIN_GPU_FIX', itemId: 'win.gpu', places: 2 },
+  { constName: 'WSL_ALIVE_FIX', itemId: 'wsl.alive', places: 2 },
+  { constName: 'WSL_FFMPEG_FIX', itemId: 'wsl.ffmpeg', places: 2 },
+  { constName: 'TOOL_SYNC_FIX', itemId: 'tool.sync', places: 2 },
+  // ★ `lib.wsl` 在本批收口的**只有 warn 文案**（fail 文案含插值 ⇒ 只登记）⇒ 必须按 status 挑，
+  //   否则会把 bare 场景里那条 fail 项的 `git clone …` 也拿去比（那是**另一句**、本来就该不同）。
+  { constName: 'LIB_WSL_WARN_FIX', itemId: 'lib.wsl', places: 2, fixtureStatus: 'warn' },
 ];
 
-test('★ 防再分叉：这 4 句 fix 文案各自只有一处来源（lib/env.mjs 的常量）', async () => {
+test('★ 防再分叉：这 10 句 fix 文案各自只有一处来源（lib/env.mjs 的常量）', async () => {
   const env = await import('../lib/env.mjs');
   const { FIXTURES } = await import('../lib/setup.mjs');
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
   const files = ['lib/env.mjs', 'lib/resources.mjs', 'lib/setup.mjs'];
   const srcCache = Object.fromEntries(files.map((f) => [f, fs.readFileSync(path.join(repoRoot, f), 'utf8')]));
   const list = Array.isArray(RESOURCES) ? RESOURCES : Object.values(RESOURCES);
-  // 演练夹具（全部场景合起来，覆盖这 4 个 id）
+  // 演练夹具（全部场景合起来，覆盖下表这 10 个 id）
   const fixtureItems = Object.values(FIXTURES).flatMap((f) => f.make().groups).flatMap((g) => g.items);
 
-  for (const { constName, itemId } of FIX_SINGLE_SOURCE) {
+  for (const { constName, itemId, places, fixtureStatus } of FIX_SINGLE_SOURCE) {
     const val = env[constName];
     assert.ok(typeof val === 'string' && val.length > 0, `lib/env.mjs 应导出非空的 ${constName}`);
 
-    // ① 值比：env.mjs 的常量 == resources.mjs 台账条目的 fix
+    // ① 值比（只对 places===3）：env.mjs 的常量 == resources.mjs 台账条目的 fix
     const entry = list.find((e) => e.id === itemId);
     assert.ok(entry, `RESOURCES 里找不到 ${itemId}`);
-    assert.equal(entry.fix, val,
-      `${itemId} 的 fix 与 lib/env.mjs 的 ${constName} 不一致：\n`
-      + `  台账 fix = ${JSON.stringify(entry.fix)}\n  常量     = ${JSON.stringify(val)}`);
+    if (places === 3) {
+      assert.equal(entry.fix, val,
+        `${itemId} 的 fix 与 lib/env.mjs 的 ${constName} 不一致：\n`
+        + `  台账 fix = ${JSON.stringify(entry.fix)}\n  常量     = ${JSON.stringify(val)}`);
+    }
 
     // ② 值比：setup.mjs 演练夹具里**带 fix 的**同一 id 项也同源（否则 --simulate 会演一份假事实）
-    const fx = fixtureItems.filter((i) => i.id === itemId && i.fix);
-    assert.ok(fx.length >= 1, `演练夹具里找不到带 fix 的 ${itemId}（--simulate 演不到这条提示）`);
+    const fx = fixtureItems.filter((i) => i.id === itemId && i.fix && (!fixtureStatus || i.status === fixtureStatus));
+    assert.ok(fx.length >= 1,
+      `演练夹具里找不到${fixtureStatus ? ` status=${fixtureStatus} 且` : ''}带 fix 的 ${itemId}（--simulate 演不到这条提示）`);
     for (const f of fx) {
       assert.equal(f.fix, val,
         `演练夹具 ${itemId} 的 fix 与 ${constName} 不一致：${JSON.stringify(f.fix)}`);
@@ -275,6 +293,15 @@ test('★ 防再分叉：这 4 句 fix 文案各自只有一处来源（lib/env.
     assert.deepEqual(hits, ['lib/env.mjs'],
       `${constName} 的文案只许写在 lib/env.mjs 一处（本项目铁律：同一句文案不要有两处）；`
       + `实得字面量出现在：${hits.join(', ') || '（一处都没有！）'}`);
+
+    // ④ places===2 的**反向**断言：这句文案**不得**出现在 lib/resources.mjs
+    //   —— 那正是「不能跨到 resources 去收口」的理由（那边的 fix 值本来就不同）；
+    //      谁哪天把 resources 的文案也改成这一句，说明「两处变三处」了 ⇒ 该改成 places:3 并同步台账。
+    if (places === 2) {
+      assert.equal(srcCache['lib/resources.mjs'].includes(literal), false,
+        `${constName} 只声明了 2 处来源，但它现在**也**出现在 lib/resources.mjs 的源码里`
+        + ' ⇒ 「两处」这个前提已不成立（要么把台账改成同源并升为 places:3，要么查出是谁抄过去的）');
+    }
   }
 });
 

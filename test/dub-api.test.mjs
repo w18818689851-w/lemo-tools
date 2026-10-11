@@ -37,6 +37,12 @@
  *   ㊱ **安全回归**：伪造 · 穿越形态的 token ⇒ 404 且**磁盘零变化**；登记表被塞进「指向 `_uploads/` 之外」
  *   的条目 ⇒ **越界守卫**（照 `scripts/prune-dub.mjs` 的 `withinRoot` 口径）拒绝删文件（`ok:false` + `warning`），
  *   哨兵文件 sha256 必须不变。★ 全程在**隔离成片根**内进行，绝不碰用户真实 `_uploads/`。
+ * ★★ 2026-10-11 追加 ㊲：**F1 越界回归**（第二批对抗性审计）—— 成片根内的 **junction** 指向根外时，
+ *   `GET /api/films/<链接名>/<文件>` 必须 **403**、且响应里**绝不带**根外文件内容（审计用同一手法读出过
+ *   明文 apiKey）；对照：根内真文件仍 200；★ 并钉住**取舍**：junction 指向**根内**仍 200
+ *   （判据是「真路径是否在根内」，不是「是不是链接」）。★ 只在**本套件自己拥有的**临时成片根里造链接；
+ *   外部设了 `LEMO_FILM_DIR` 或环境建不了 junction 时**如实降级**为源码级判据（8 处「路径越界」全走
+ *   `withinRoot` + `realish` 用 `realpathSync`），不是静默跳过。
  * 它们承担着上传安全（防目录穿越）、请求形状校验、语义结果注入等关键逻辑，
  * 此前**没有任何测试**（全仓 grep 只在 README 里提到 /api/dub/analyze 一次）。
  *
@@ -1570,6 +1576,95 @@ async function main() {
         try { fs.rmSync(outsideDir, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
       }
       notes.push('㊱ 安全回归：伪造/穿越 token ⇒ 404、磁盘零变化；登记表被塞进越界 path ⇒ 越界守卫拒绝删（ok:false / removed:false / warning「越界」），哨兵文件 sha256 不变');
+    });
+
+    // ══ ㊲ ★★ F1 越界回归：成片根内的 junction 指向根外 ⇒ 必须 403 ════════
+    //
+    // 为什么要有这条（2026-10-11 第二批对抗性审计 F1）：`server.mjs` 原先的「越界 403」守卫只做
+    //   `path.resolve` + `startsWith` 的**字符串**比较 —— 它不看链接。在允许的根内放一个 junction
+    //   指向根外，路径字符串**仍然**以根开头 ⇒ 守卫放行 ⇒ 能读出根外任意文件（审计实测：以
+    //   `LEMO_FILM_DIR` 指到临时树 + 根内一个 junction 指向工具仓，`GET /api/films/<链接名>/server.mjs`
+    //   回 200 + 源码；junction 指向成片根自身时还能读出 `_llm-api.json` 里的**明文 apiKey**）。
+    // 修法：**唯一**判据 `withinRoot(root, candidate)`（字符串那半照抄 `scripts/prune-dub.mjs` 的
+    //   `withinRoot`，再追加 `fs.realpathSync` 真路径那半），全文件 8 处守卫统一走它：
+    //   `serveStatic` / `apiStyle` / `apiStyleSwitches` / `apiReveal` / `apiFilmFile` / `apiDubFilmFile` /
+    //   `apiJobFilmFile` / `apiVoiceTestAudio`。
+    // ★ 本用例**只在本套件自己拥有的临时成片根里造链接**（`OWNS_FILM_ROOT`）——
+    //   外部设了 `LEMO_FILM_DIR` 时**绝不**去用户的真实成片根里造 junction。
+    // ★ 夹具用 `fs.symlinkSync(..., 'junction')`（Windows 上不需要管理员/开发者模式；
+    //   `test/prune-dub.test.mjs` 同款）。建不了时**如实降级**为源码级判据，见下面 fallback。
+    await runCase('㊲ ★★ F1 越界回归：成片根内 junction 指向根外 ⇒ 403（不吐根外字节）；指向根内 ⇒ 仍 200（按真路径判，不按「是不是链接」判）', async () => {
+      const marker = `SECRET-MARKER-F1-${process.pid}`;
+      const link = path.join(TEST_FILM_ROOT, '_f1link');
+      const alias = path.join(TEST_FILM_ROOT, '_f1alias');
+      const realDir = path.join(TEST_FILM_ROOT, '_f1real');
+      const outside = path.join(path.dirname(TEST_FILM_ROOT), `_f1outside-${process.pid}`);
+
+      // ── 降级判据（环境造不了链接 / 不拥有成片根时用）：源码级 —— 8 处「路径越界」必须全走 withinRoot ──
+      //   ★ 它不是「跳过」：它正是**能抓住这次缺陷**的判据（旧的裸 `startsWith` 守卫会被它抓出来）。
+      const fallback = (why) => {
+        const src = fs.readFileSync(path.join(ROOT, 'server.mjs'), 'utf8');
+        const ri = src.indexOf('function realish');
+        const wi = src.indexOf('function withinRoot');
+        need(ri > 0 && wi > ri, 'server.mjs 里找不到 realish / withinRoot 的定义（或顺序不对）');
+        need(/fs\.realpathSync\(/.test(src.slice(ri, wi)),
+          'realish 里没有 fs.realpathSync —— 真路径那一半没实现（只做字符串判断等于没修）');
+        const guards = src.split('\n').map((l, i) => ({ l, n: i + 1 }))
+          .filter((x) => x.l.includes('路径越界') && !x.l.trim().startsWith('//') && !x.l.trim().startsWith('*'));
+        need(guards.length >= 8, `「路径越界」守卫只有 ${guards.length} 处（期望 ≥8：serveStatic + 7 条路由）`);
+        const calls = (src.match(/withinRoot\(/g) || []).length;
+        need(calls >= guards.length + 1, `withinRoot( 只出现 ${calls} 次（期望 ≥ ${guards.length + 1}：1 处定义 + ${guards.length} 处调用）`);
+        const bare = guards.filter((g) => /startsWith\(/.test(g.l));
+        need(bare.length === 0,
+          `有 ${bare.length} 处「路径越界」还是旧的裸字符串判据（没走 withinRoot）：行 ${bare.map((b) => b.n).join(', ')}`);
+        notes.push(`㊲ ${why} ⇒ 降级为**源码级判据**：${guards.length} 处「路径越界」全部走 withinRoot（0 处裸 startsWith）+ realish 用 realpathSync`);
+      };
+
+      if (!OWNS_FILM_ROOT) { fallback('外部设了 LEMO_FILM_DIR（本套件不拥有成片根，绝不在用户根里造链接）'); return; }
+
+      try {
+        fs.rmSync(outside, { recursive: true, force: true });
+        fs.mkdirSync(outside, { recursive: true });
+        fs.writeFileSync(path.join(outside, 'secret.txt'), marker + '\n');
+        try { fs.rmdirSync(link); } catch { /* 上次残留 */ }
+        fs.symlinkSync(outside, link, 'junction');
+        need(fs.lstatSync(link).isSymbolicLink(), 'junction 建了但 lstat 说它不是链接');
+      } catch (e) {
+        try { fs.rmSync(outside, { recursive: true, force: true }); } catch { /* ignore */ }
+        fallback(`本环境建不了 junction（${e.code || e.message}）`);
+        return;
+      }
+
+      try {
+        // ① ★ 经 junction 读**根外** ⇒ 必须 403，且**绝不**吐 marker（这是审计的逃逸手法）
+        const bad = await getPartial(P, '/api/films/_f1link/secret.txt', { maxBytes: 8192 });
+        need(bad.status === 403, `经 junction 读根外应 403，实际 ${bad.status}：${bad.buf.toString('utf8').slice(0, 160)}`);
+        need(/路径越界/.test(bad.buf.toString('utf8')), `403 的理由不是「路径越界」：${bad.buf.toString('utf8').slice(0, 160)}`);
+        need(!bad.buf.includes(marker), '★★ 越界响应里带了根外文件内容（marker 泄露）—— 守卫没生效');
+
+        // ② 对照：根内真文件照常 200（别把正常播放一起修坏）
+        fs.mkdirSync(realDir, { recursive: true });
+        const bytes = Buffer.from('NORMAL-FILM-BYTES\n', 'utf8');
+        fs.writeFileSync(path.join(realDir, 'f.mp4'), bytes);
+        const okr = await getPartial(P, '/api/films/_f1real/f.mp4', { maxBytes: 8192 });
+        need(okr.status === 200, `根内真文件应 200，实际 ${okr.status}`);
+        need(okr.buf.equals(bytes), '根内真文件回的字节与磁盘上的不一致');
+
+        // ③ ★ 取舍（判据是「真路径是否在根内」，不是「是不是链接」）：junction 指向**根内** ⇒ 仍 200
+        try { fs.rmdirSync(alias); } catch { /* ignore */ }
+        fs.symlinkSync(realDir, alias, 'junction');
+        const ali = await getPartial(P, '/api/films/_f1alias/f.mp4', { maxBytes: 8192 });
+        need(ali.status === 200,
+          `指向根内的 junction 应仍 200（真路径在根内），实际 ${ali.status}：${ali.buf.toString('utf8').slice(0, 120)}`);
+        need(ali.buf.equals(bytes), '经根内 junction 回的字节与目标不一致');
+
+        notes.push('㊲ F1 越界回归：根内 junction→根外 ⇒ **403 路径越界**（marker 零泄露）；根内真文件 200；'
+          + 'junction→根内 ⇒ 仍 200（判据是「真路径在根内」而不是「是不是链接」）');
+      } finally {
+        // ★ 清链接一律用 rmdirSync：**只删链接本身、不穿透目标**（实测：目标里的文件完好）
+        for (const p of [link, alias]) { try { fs.rmdirSync(p); } catch { /* ignore */ } }
+        try { fs.rmSync(outside, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
     });
 
   } finally {

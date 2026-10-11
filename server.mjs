@@ -173,11 +173,78 @@ function streamFile(res, full, { status = 200, headers = {}, start, end } = {}) 
   return src;
 }
 
+// ── 路径越界判据（**唯一一处**：本文件所有「越界 403」都走它）──────────
+//
+// ★★ 为什么不能只做字符串比较（2026-10-11 第二批对抗性审计 F1，实测复现）：
+//   「path.resolve 出来的字符串以『根 + 分隔符』开头」这个判据**不看链接**。在允许的根内放一个
+//   junction 指向根外，路径字符串仍然以根开头 ⇒ 判据放行 ⇒ 能读出根外任意文件。
+//   审计实测：把成片根指到临时树、在根内建一个 junction 指向工具仓，
+//   「GET /api/films/<链接名>/server.mjs」回 200 + 源码；junction 指向成片根自身时，
+//   还能原样读出根内那个 _llm-api.json 里的**明文 apiKey**（面板侧严格脱敏，被这条路绕过去了）。
+//   ⇒ 字符串判据之后，必须再比一次**真路径**（把链接解开）。
+//
+// ★ 口径**照抄** scripts/prune-dub.mjs 的 withinRoot（那半句逐字相同），只**追加**真路径那一半。
+//   本项目「拒绝符号链接穿透」的判据本来就有两处（scripts/prune-dub.mjs 的 rmSafe、
+//   lib/dub.mjs 的 removeUploadFile），这里与它们同源，不另立一套。
+//
+// ★ 语义（写清楚，别让调用方猜）：
+//   · true  = 在根内（**含根自身**，与 prune-dub 的 withinRoot 一致）；
+//   · false = 越界，调用方回 403；
+//   · 路径**还不存在**时不算越界 —— 见 realish 的说明（只把**已存在的那一段**解开就够了，
+//     不存在的尾巴不可能是链接）。只有「一路到盘根都解不开」才判越界。
+//   ★ 调用方原本若是**严格**判据（「!p.startsWith(root+sep)」，即根自身也拒），
+//     自己补一句「p === root ||」，别把判据放宽（本文件 5 处就是这种，逐处保持原语义）。
+
+/**
+ * 把路径里**已存在的那一段**解开符号链接/junction，再把还不存在的尾巴原样接回（返回绝对路径）。
+ *
+ * ★ 为什么不直接 realpathSync(p) 一抛就当越界：本文件好几处守卫的调用方要靠**守卫之后**的
+ *   stat/exists 回 404（典型：apiVoiceTestAudio 的「试听产物还没合成完」= 404「不存在」，
+ *   见 test/voices-api.test.mjs ②）。把「文件还没生成」一律改判 403 既**改变了既有 HTTP 语义**，
+ *   也**并不更安全** —— 不存在的路径不可能是链接，只要**已存在的那一段**都在根内就够了。
+ * ★ 仍是「绝不放行」：真值已知的部分一律以真路径判定，链接该解开的全解开。
+ */
+function realish(p) {
+  const abs = path.resolve(p);
+  let cur = abs;
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync(cur);
+      return tail.length ? path.join(real, ...tail) : real;
+    } catch { /* 本级不存在 / 解不开 ⇒ 往上一层找 */ }
+    const parent = path.dirname(cur);
+    if (parent === cur) return abs;   // 一路到盘根都解不开（不该发生）⇒ 退回原字符串，由字符串判据兜底
+    tail.unshift(path.basename(cur));
+    cur = parent;
+  }
+}
+
+/**
+ * 规范化后的绝对路径是否**确实**在根内（字符串 + 真路径双重判定）。
+ * @param {string} root 允许的根（绝对或相对都行，内部会 resolve）
+ * @param {string} candidate 待判的路径
+ * @returns {boolean} true = 在根内（含根自身）；false = 越界
+ */
+function withinRoot(root, candidate) {
+  const r = path.resolve(root);
+  const abs = path.resolve(candidate);
+  // ① 字符串判据（口径照抄 scripts/prune-dub.mjs 的 withinRoot，逐字相同）
+  if (abs !== r && !abs.startsWith(r + path.sep)) return false;
+  // ② 真路径判据（把链接解开再判一次）—— 这一半是 F1 的修复本体
+  const rr = realish(r);
+  const ra = realish(abs);
+  return ra === rr || ra.startsWith(rr + path.sep);
+}
+
 // ── 静态文件（只服务 web/ 目录，防目录穿越）───────────────
 function serveStatic(req, res, urlPath) {
   const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
   const full = path.resolve(WEB_DIR, rel);
-  if (full !== WEB_DIR && !full.startsWith(WEB_DIR + path.sep)) {
+  // ★ 越界守卫走唯一判据 withinRoot（字符串 + 真路径）。语义与改动前的
+  //   「full !== WEB_DIR && !full.startsWith(WEB_DIR + path.sep)」**逐字等价**（含 full === WEB_DIR 放行），
+  //   只多一道「把链接解开再判」—— web/ 下实测无任何链接，故现网行为不变。
+  if (!withinRoot(WEB_DIR, full)) {
     return sendJson(res, 403, { error: '路径越界' });
   }
   fs.stat(full, (err, st) => {
@@ -264,8 +331,8 @@ function enqueueRender(slug, opts, meta, angle) {
 /**
  * POST /api/run —— 入队一个出片任务（异步）。
  *
- * ★ 形状校验只做在这里：slug 必须匹配 [A-Za-z0-9._-]，opts 交给 lib/briefs.mjs:validateOpts
- *   （与 /api/briefs/:id/run 共用同一处判据，免得两处漂移）。
+ * ★ 形状校验只做在这里：slug 必须匹配 [A-Za-z0-9._-] 且 ≤80 字符（见下「长度上限」说明），
+ *   opts 交给 lib/briefs.mjs:validateOpts（与 /api/briefs/:id/run 共用同一处判据，免得两处漂移）。
  * ★ 批次字段（batchId/batchIndex/batchTotal）只做形状校验，不改队列语义 —— 队列仍是串行的。
  * ★ body.angle = 这次渲染要用的 LEMO_ANGLE（Chromium 图形后端）。**不给 / 给 default ⇒ 不设该变量**
  *   （与旧版逐字节一致）；形状只允许 A-Za-z0-9._- 。它**不进** opts（不是 CLI 参数），
@@ -279,6 +346,13 @@ async function apiRun(req, res) {
   const slug = body.slug;
   if (typeof slug !== 'string' || !slug.trim()) return sendJson(res, 400, { error: '缺少 slug' });
   if (!/^[A-Za-z0-9._-]+$/.test(slug)) return sendJson(res, 400, { error: `slug 含非法字符：${slug}` });
+  // ★★ 长度上限（2026-10-11 第二批对抗性审计 F4）：slug 会被编排器拿去拼**锁文件名**
+  //   （lemo-make.mjs 的 path.join(lockDir, '.' + slug + '.lock')）。超 MAX_PATH 时那一步写不了锁，
+  //   而它的 catch 把**任何**写失败都当成「锁被占用」⇒ 打印**假诊断**「接管过期锁（旧 pid NaN，已不在）」
+  //   （根本没有锁、pid 也是 NaN），随后**无保护地**再写一次 ⇒ 未捕获抛错 + 原始堆栈代替结构化错误。
+  //   实测：300 字符 slug 必现；本机真实 slug 最长 17（45 个风格目录）/ 26（成片目录名）。
+  //   ⇒ 在入参处挡住，与同文件 batchId（≤40）/ 音色名（≤80）同一套「安全 token + 上限」口径。
+  if (slug.length > 80) return sendJson(res, 400, { error: `slug 过长：${slug.length} 字符（上限 80）` });
 
   const opts = Array.isArray(body.opts) ? body.opts : [];
   // ★ 选项校验的判据只有一处：lib/briefs.mjs:validateOpts（/api/briefs/:id/run 也调它，免得两处漂移）。
@@ -879,7 +953,8 @@ function apiStyle(req, res, slug) {
 
   const root = path.resolve(resolveStylesRoot(CFG.winLib));   // ★ 风格源码根唯一来源；外层 resolve 保留（下面那道越界守卫要绝对路径，结果与改动前同一表达式一致）
   const dir = path.resolve(root, slug);
-  if (dir !== root && !dir.startsWith(root + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+  // ★ 越界守卫走唯一判据 withinRoot（语义与改动前「dir !== root && !dir.startsWith(root + path.sep)」逐字等价）。
+  if (!withinRoot(root, dir)) return sendJson(res, 403, { error: '路径越界' });
 
   const read = (name) => {
     try { return fs.readFileSync(path.join(dir, name), 'utf8'); } catch { return null; }
@@ -948,7 +1023,8 @@ function apiStyleSwitches(req, res, slug) {
   const root = path.resolve(resolveStylesRoot(CFG.winLib));   // ★ 风格源码根唯一来源
   const dir = path.resolve(root, slug);
   // ★ 越界守卫：照抄 `apiStyle` 的既有做法（同一个根、同一道守卫、同一句错）—— 这是**显式**拒绝，不是`绝不抛`那一类。
-  if (dir !== root && !dir.startsWith(root + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+  //   ★ 判据本体走唯一入口 withinRoot（字符串 + 真路径）；语义与改动前逐字等价。
+  if (!withinRoot(root, dir)) return sendJson(res, 403, { error: '路径越界' });
 
   const demoDir = path.join(dir, 'demo');
   if (!fs.existsSync(demoDir)) return empty(`${slug} 下没有 demo 目录`);
@@ -1070,7 +1146,8 @@ async function apiReveal(req, res) {
 
   const root = path.resolve(CFG.exportDir);
   const dir = path.resolve(root, slug);
-  if (!dir.startsWith(root + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+  // ★ 越界守卫走唯一判据 withinRoot；原判据是**严格**的（根自身也拒）⇒ 这里补一句 dir === root 保持逐字等价。
+  if (dir === root || !withinRoot(root, dir)) return sendJson(res, 403, { error: '路径越界' });
   if (!fs.existsSync(dir)) return sendJson(res, 404, { error: `目录不存在：${dir}` });
 
   // ⚠️ explorer.exe **即使成功也会返回退出码 1**，所以不能等它、更不能按退出码判成败。
@@ -1249,7 +1326,8 @@ function apiFilmFile(req, res, slug, file) {
   }
   const full = path.resolve(CFG.exportDir, slug, file);
   const rootResolved = path.resolve(CFG.exportDir);
-  if (!full.startsWith(rootResolved + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+  // ★ 越界守卫走唯一判据 withinRoot；原判据是**严格**的（根自身也拒）⇒ 补一句 full === rootResolved 保持逐字等价。
+  if (full === rootResolved || !withinRoot(rootResolved, full)) return sendJson(res, 403, { error: '路径越界' });
 
   fs.stat(full, (err, st) => {
     if (err || !st.isFile()) return sendJson(res, 404, { error: '成片不存在' });
@@ -1307,7 +1385,8 @@ function apiDubFilmFile(req, res, dir, file) {
   }
   const dubRoot = path.resolve(CFG.exportDir, 'dub');
   const full = path.resolve(dubRoot, dir, file);
-  if (!full.startsWith(dubRoot + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+  // ★ 越界守卫走唯一判据 withinRoot；原判据是**严格**的（根自身也拒）⇒ 补一句 full === dubRoot 保持逐字等价。
+  if (full === dubRoot || !withinRoot(dubRoot, full)) return sendJson(res, 403, { error: '路径越界' });
   serveRangeFile(req, res, full,
     MIME[path.extname(full).toLowerCase()] || 'video/mp4',
     '成片不存在（可能还在合成，或已被清理）');
@@ -1332,7 +1411,8 @@ function apiJobFilmFile(req, res, jobId, file) {
   }
   const jobsRoot = path.resolve(CFG.exportDir, '_jobs');
   const full = path.resolve(jobsRoot, jobId, file);
-  if (!full.startsWith(jobsRoot + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+  // ★ 越界守卫走唯一判据 withinRoot；原判据是**严格**的（根自身也拒）⇒ 补一句 full === jobsRoot 保持逐字等价。
+  if (full === jobsRoot || !withinRoot(jobsRoot, full)) return sendJson(res, 403, { error: '路径越界' });
   serveRangeFile(req, res, full,
     MIME[path.extname(full).toLowerCase()] || 'video/mp4',
     '成片不存在（可能还在合成，或已被清理）');
@@ -1468,11 +1548,24 @@ function apiLangs(req, res, url) {
  *   所以这里**读源码文本**探测（见 lib/aspects.mjs，如实标注 probe='text'）。
  * ★ 没声明 / 文件不存在 / 写得不合法 → **只支持 16:9**（= 没改造过，给别的尺寸会被裁切）。**不抛错**。
  * ★ 给了 film 就只探那一部（精确）；不给就取该 demo 下所有 film*.js 的**并集**（乐观）。
+ * ★ slug 形状白名单（A-Za-z0-9._-）+ resolve 后必须在风格根内（越界 403）—— 与同族 `apiStyle` /
+ *   `apiStyleSwitches` 同口径；未知 slug 仍照答 200（只是读不到 demo）。
  * ★ 纯只读：只读影片源码文本，不写库、不写工单。
  */
 function apiAspects(req, res, url) {
   const slug = (url.searchParams.get('slug') || '').trim();
   if (!slug) return sendJson(res, 400, { error: '缺少 slug' });
+  // ★★ 形状白名单 + 越界守卫：照抄同族 apiStyleSwitches 的那两行（同一个根、同一道守卫、同一句错）。
+  //   为什么补：本端点是这一族里**唯一**没守的成员（2026-10-11 第二批对抗性审计 F3）。
+  //   实测修复前 `?slug=../../../../Windows` 回 200 + `demoDir:"D:\\Windows\\demo"`（拼出来的绝对
+  //   路径原样回给前端 = 目录结构泄露 + 存在性探测），且 `film=` 能借它读风格根外任意目录下的 *.js。
+  //   ★ 白名单是**形状**白名单（不是 slug 成员白名单）—— 未知 slug 照答 200 的既有口径不变，
+  //     只是它再也跑不出风格根（见 test/cases.mjs ③ 的两条对照断言）。
+  if (!/^[A-Za-z0-9._-]+$/.test(slug)) return sendJson(res, 400, { error: `slug 含非法字符：${slug}` });
+  const root = path.resolve(resolveStylesRoot(CFG.winLib));   // ★ 风格源码根唯一来源
+  const dir = path.resolve(root, slug);
+  if (!withinRoot(root, dir)) return sendJson(res, 403, { error: '路径越界' });
+
   const film = (url.searchParams.get('film') || '').trim() || null;
   const info = aspects.styleAspects(slug, { film });
   // 白名单外的 slug 也照答（本接口不限于 4 个工单风格）—— 只是读不到 demo 就按「只支持 16:9」。
@@ -1549,7 +1642,9 @@ function apiVoiceTestAudio(req, res, file) {
   if (!/^[A-Za-z0-9._-]+$/.test(file)) return sendJson(res, 400, { error: `试听文件名非法：${file}` });
   const root = path.resolve(voices.VOICE_TEST_DIR);
   const full = path.resolve(root, file);
-  if (!full.startsWith(root + path.sep)) return sendJson(res, 403, { error: '路径越界' });
+  // ★ 越界守卫走唯一判据 withinRoot；原判据是**严格**的（根自身也拒）⇒ 补一句 full === root 保持逐字等价。
+  //   ★ 这条守卫经 HTTP **不可达**（路由正则禁 `/`、`..` 被 URL 归一化），但判据照样收口（见 test/voices-api.test.mjs ②）。
+  if (full === root || !withinRoot(root, full)) return sendJson(res, 403, { error: '路径越界' });
   serveRangeFile(req, res, full, 'audio/wav', '试听产物不存在（可能还没合成完，或已被清理）');
 }
 

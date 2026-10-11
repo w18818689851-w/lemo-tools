@@ -606,7 +606,14 @@ const OVERRIDES = {
       + '（**只读健康检查，不做任何推理**；见 `scripts/check-llm-call-sites.mjs` 的例外登记）✓',
   },
   LEMO_TMP: {
-    readers: ['scripts/check-plate-pixel.mjs', 'test/originality.test.mjs'],
+    readers: ['scripts/check-plate-pixel.mjs', 'test/originality.test.mjs',
+      // ★ 2026-10-11 补：`run-all-tests.mjs`（全套测试跑器）也读它 —— 逐入口日志落在
+      //   `<LEMO_TMP>/run-all-tests/<stamp>/`，且**解析到 C 盘就直接以退出码 2 终止**
+      //   （`scripts/run-all-tests.mjs:74` 的 `path.resolve(process.env.LEMO_TMP || 'D:/lemo-tmp')`
+      //   + `:76` 的 C 盘硬拒）。它原先**不在** readers 清单里 ⇒ 判据③ 只打一条 ℹ「新读者未登记」。
+      //   补进来后判据② 会守它 —— 已核「不会误伤」：`:74` 那处是**真代码**（剥注释/字符串后仍在），
+      //   判据② 立刻满足。
+      'scripts/run-all-tests.mjs'],
     what: '★ 临时根（默认 D:/lemo-tmp；**禁止写 C 盘** ⇒ 读者一律「解析到 C 盘就直接炸」）。'
       + '2026-10-08 加：`check-plate-pixel` 原先往 C 盘写临时文件、`originality.test.mjs` 原先用 `os.tmpdir()`（= C 盘）',
   },
@@ -788,7 +795,13 @@ const OVERRIDES = {
       //   · check-sources-paths：按仓根校验来源路径
       'scripts/check-distill-fields.mjs', 'scripts/check-gate-self-claims.mjs', 'scripts/check-header-counts.mjs',
       'scripts/check-lib-exports.mjs', 'scripts/check-no-sync-spawn.mjs', 'scripts/check-readme-files.mjs',
-      'scripts/check-resources.mjs', 'scripts/check-sources-paths.mjs'],
+      'scripts/check-resources.mjs', 'scripts/check-sources-paths.mjs',
+      // ★ 2026-10-11 补：`run-all-tests.mjs`（全套测试跑器）也把 `LEMO_TOOLS_ROOT` 当**本仓根覆盖点**
+      //   （`scripts/run-all-tests.mjs:72` 的 `path.resolve(process.env.LEMO_TOOLS_ROOT || path.join(HERE,'..'))`
+      //   ⇒ 入口 = `<LEMO_TOOLS_ROOT>/test/*.test.mjs`）—— 同上是「按仓根定位待扫文件」的扫描根，
+      //   夹具靠它指向临时副本。它原先**不在** readers 清单里 ⇒ 判据③ 只打一条 ℹ。
+      //   补进来后判据② 会守它 —— 已核「不会误伤」：`:72` 那处是**真代码**，判据② 立刻满足。
+      'scripts/run-all-tests.mjs'],
     what: 'lemo-tools 仓根（本仓自身）',
   },
   LEMO_VOICE_TEST_TMP: {
@@ -1041,6 +1054,10 @@ const ok = unregistered.length === 0 && gone.length === 0 && blind.length === 0 
 //   ★★ 但**差额 ≠ 这一项**：差额 = (扫到但未登记) − (登记但不在扫描范围)，两项都可能非零
 //   ⇒ **别只凭差额的符号/大小下结论**。实测订正（2026-10-11）：本批补登记前差额是 **+1**（不是原先
 //     那句文案写的 −N —— 它只算了后一项、漏了前一项，方向写反了）；补登记后两项各 2、净差额 **0**。
+//   ★★ 2026-10-11 续（同一批的收口）：把 `scripts/run-all-tests.mjs` 补进 `LEMO_TOOLS_ROOT` /
+//      `LEMO_TMP` 的 readers 之后 —— 「扫到但未登记」归 **0**（判据③ 的 2 条 ℹ 清零）、
+//      「登记但不在扫描范围」仍是 **2**（本闸门自己 1 + `test/originality.test.mjs` 1）
+//      ⇒ 净差额 **-2**。★ 这正是上面那句「别只看符号」的实例：负数**不代表**有覆盖点漏登记。
 const scannedRels = new Set(files.map((f) => path.relative(ROOT, f).replace(/\\/g, '/')));
 const selfReaders = [...Object.values(OVERRIDES), ...Object.values(EXTERNAL)]
   .reduce((a, e) => a + e.readers.filter((r) => r === `scripts/${SELF}`).length, 0);
