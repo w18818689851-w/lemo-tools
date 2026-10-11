@@ -25,8 +25,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-// 只借 CFG 的常量（wslDistro / exportDir）。env.mjs 顶层没有任何副作用 —— 不会触发探测。
-import { CFG } from '../lib/env.mjs';
+// 只借 CFG 的常量（wslDistro / exportDir）与 findFfmpegDir（造成片夹具用）。
+// env.mjs 顶层没有任何副作用 —— 不会触发探测。
+import { CFG, findFfmpegDir } from '../lib/env.mjs';
 
 // ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
 //   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
@@ -1891,48 +1892,113 @@ export const PROCESS_CASES = [
       ARTIFACTS.wslFiles.add(pidFile);
       ARTIFACTS.wslFiles.add(aliveMark);
 
-      // 无害长任务：写两个标记文件 → sleep 120 →（自然结束时）删掉 alive 标记
+      // 无害长任务：写 pid/标记文件 → 打一行 READY → sleep 120 →（自然结束时）删掉 alive 标记
       // ★ sleep 给足 120s：这样「取消后 45s 内进程必须消失」的判定，永远发生在它自然结束之前。
       //   （本机 WSL 发行版会因空闲被回收，wsl.exe 可能是冷启动、单次要几十秒，窗口得留够。）
+      //
+      // ★★ 为什么要 READY 这一行（而不是在外面反复 spawn wsl.exe 去 `test -e` 标记文件）：
+      //   实测（3 路并发 × 3 轮，见 probe-job4 的 poll/watch 对照）——
+      //   · poll：外面每 500ms 起一条 wsl.exe 去探标记文件 ⇒ **4/9 路** 的长驻 `su - lemo`
+      //     会话在 WSL 冷启动窗口里被环境收掉（stderr `Session terminated, killing shell...`、
+      //     步骤退出码 **15**）⇒ 任务在「取消」发生**之前**就 failed ⇒ ⑥ 必红。
+      //   · watch：一次多余的 wsl.exe 都不起，只读 job 自己的日志 ⇒ **9/9 全绿**。
+      //   两组的冷启动耗时**一样长**（85–90s）⇒ 坐实了触发条件是「并发的 wsl.exe」，
+      //   不是「冷启动本身」。而 runStep 本来就把脚本 stdout 逐行转发进 job（pushLine），
+      //   所以等 READY 行既零成本、又比探文件更强（它同时证明脚本跑了 + 输出真的传到了 job 日志）。
+      // ★★ 为什么 pid 也要打在 READY 行上（而不是事后 `wsl cat ${pidFile}`）：
+      //   实测（probe-job5 的 watch3/cat3 对照，3 路并发）——READY 之后**只多起一条** wsl.exe，
+      //   长驻 `su - lemo` 会话就会在 **~3.4s** 后被环境收掉；一条都不起时是 **~10.2s**
+      //   （probe-job6 的 watch10）。每多一条并发 wsl.exe，这段窗口就被压得更短。
+      //   所以「取消」之前**一条 wsl.exe 都不起**，竞态窗口从「几百 ms」压到 0。
+      const READY = '__smoke-wsl-ready__';
       const script = [
         `echo "$$" > ${pidFile}`,
         `touch ${aliveMark}`,
+        `echo "${READY} $$"`,
         'sleep 120',
         `rm -f ${aliveMark}`,
       ].join('\n');
 
       let jobId = null;
       try {
-        const job = jobs.enqueueSetup({
-          actionId: 'cg.cancel-probe',
-          title: '取消测试（无害 sleep 30）',
-          steps: [{ kind: 'wsl', label: '无害长任务（sleep 30）', script, timeoutMs: 180000 }],
-        });
-        jobId = job.id;
-        ARTIFACTS.jobIds.add(jobId);
-        ctx.note(`⑥ 安装任务已入队：${jobId}`);
+        // ★★ 为什么「入队 → 等 READY → 确认 running」这一小段要带**有界重试**：
+        //   WSL 在这台机器上是**全局单例**资源。实测（3 路并发 × 多轮 + probe-job5/6 对照）：
+        //   只要**别的** smoke 实例同时在起 wsl.exe（最典型的是 ③ 的 `/api/env` —— server 侧
+        //   `checkEnv()` 一次串行起 3 条），⑥ 这条长驻 `su - lemo` 会话就会被环境收掉：
+        //   job 日志里出现 `Session terminated, killing shell...`、步骤退出码 **15**
+        //   ⇒ 任务在「取消」发生**之前**就 failed 了。
+        //   这是**环境形态**，不是产品逻辑 —— 取消 / 进程组收割的断言全在它后面，
+        //   一次都没被绕过（重试成功之后那些断言照跑不误）。
+        //   ⇒ 只在「取消尚未发生 **且** 命中该签名」这一种情况下重试；其余失败一律原样炸出来，
+        //     绝不用重试掩盖真失败（cancelJob 坏了、_lemoKillExtra 坏了，重试都救不了）。
+        //   （另外已经做了两件事把窗口拉到最大：取消前**零** wsl.exe、pid 从 READY 行取 —— 见上面 ★★）
+        const MAX_ATTEMPTS = 4;
+        const KILL_SIG = /Session terminated, killing shell\.\.\./;
+        let wslPid = 0;
+        let st = null;
+        let logTail = [];
+        const tail = () => `\n        —— job 日志尾 ——\n        ${logTail.slice(-12).join('\n        ') || '(无日志)'}`;
 
-        // 1) 等 WSL 侧真的跑起来（标记文件出现 = 脚本已经在 sleep 里）
-        let up = false;
-        let probe = null;
-        const t0 = Date.now();
-        while (Date.now() - t0 < 120000) {
-          probe = await wsl(`test -e ${aliveMark} && echo YES || echo NO`);
-          if (String(probe.out).includes('YES')) { up = true; break; }
-          await ctx.sleep(500);
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          const job = jobs.enqueueSetup({
+            actionId: 'cg.cancel-probe',
+            title: '取消测试（无害 sleep 30）',
+            steps: [{ kind: 'wsl', label: '无害长任务（sleep 30）', script, timeoutMs: 180000 }],
+          });
+          jobId = job.id;
+          ARTIFACTS.jobIds.add(jobId);
+          ctx.note(`⑥ 安装任务已入队：${jobId}${attempt > 1 ? `（第 ${attempt} 次尝试）` : ''}`);
+
+          // 1) 等 WSL 侧真的跑起来：只认 job 日志里的 READY 行（零额外 wsl.exe，见上面 ★★）
+          let up = false;
+          let terminal = null;
+          const myTail = (logTail = []);
+          // ★ 订阅**不注销**：后面每条断言都用它的日志尾当现场（失败时才能看到 `Session terminated…` 这类线索）
+          jobs.subscribe(jobId, (e) => {
+            if (e.type === 'line') {
+              myTail.push(`[${e.stream}] ${e.line}`);
+              const m = new RegExp(`${READY}\\s+(\\d+)`).exec(String(e.line));
+              if (m) { up = true; wslPid = Number(m[1]); }
+            } else if (e.type === 'end') {
+              terminal = e;
+            }
+          }, { from: 0 });
+
+          const t0 = Date.now();
+          while (Date.now() - t0 < 120000) {
+            if (up) break;
+            const s = jobs.getSummary(jobId);
+            if (['done', 'failed', 'canceled'].includes(s.status)) {
+              terminal = { status: s.status, exitCode: s.exitCode, error: s.error };
+              break;
+            }
+            await ctx.sleep(200);
+          }
+
+          st = jobs.getSummary(jobId);
+          if (up && Number.isInteger(wslPid) && wslPid > 0 && st.status === 'running') break;  // 进入可取消态
+
+          // 没进可取消态：先判是不是「环境把 WSL 会话收掉」那一种
+          const killed = KILL_SIG.test(logTail.join('\n')) || st.exitCode === 15;
+          if (killed && attempt < MAX_ATTEMPTS) {
+            ctx.note(`⑥ 第 ${attempt} 次尝试：WSL 侧会话被环境收掉（exit ${st.exitCode}，取消尚未发生）→ 重试`);
+            try { jobs.cancelJob(jobId); } catch { /* 已是终态，忽略 */ }
+            continue;
+          }
+          assert.ok(up, `120s 内 WSL 侧没起来（job 日志里没等到 ${READY} 行）。`
+            + `任务状态 ${st.status}`
+            + (terminal ? ` · exitCode=${terminal.exitCode} error=${JSON.stringify(terminal.error)}` : '')
+            + tail());
+          assert.ok(Number.isInteger(wslPid) && wslPid > 0, `READY 行里读不到 WSL 侧 pid（读到 ${wslPid}）${tail()}`);
+          assert.strictEqual(st.status, 'running',
+            `取消前任务状态 ${st.status}（期望 running）· exitCode=${st.exitCode} error=${JSON.stringify(st.error)}`
+            + `${attempt > 1 ? ` · 已重试 ${attempt - 1} 次` : ''}${tail()}`);
         }
-        assert.ok(up, `120s 内 WSL 侧没起来（${aliveMark} 未出现）。wsl out=${JSON.stringify(probe?.out)} err=${JSON.stringify(probe?.err)}`);
-
-        const st = jobs.getSummary(jobId);
-        assert.strictEqual(st.status, 'running', `取消前任务状态 ${st.status}（期望 running）`);
-
-        const pidRes = await wsl(`cat ${pidFile}`);
-        const wslPid = Number(String(pidRes.out).trim());
-        assert.ok(Number.isInteger(wslPid) && wslPid > 0, `读不到 WSL 侧 pid：${JSON.stringify(pidRes.out)}`);
 
         // 2) 取消（走的就是 DELETE /api/jobs/:id 背后那一个 cancelJob）
+        //    ★ 从 READY 到这里**一条 wsl.exe 都没起** —— 竞态窗口为 0（见上面 ★★）
         const c = jobs.cancelJob(jobId);
-        assert.strictEqual(c.ok, true, `cancelJob 返回 ${JSON.stringify(c)}`);
+        assert.strictEqual(c.ok, true, `cancelJob 返回 ${JSON.stringify(c)}${tail()}`);
 
         let s2 = null;
         const t1 = Date.now();
@@ -3926,3 +3992,96 @@ STATIC_CASES.push({
     }
   },
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 成片夹具（★ 隔离成片根之后，⑨ 的 Range 用例需要一条「**真的** mp4」）
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ 由来（2026-10-11）：`test/smoke.mjs` 此前**有意不隔离成片根**（`test/README.md` 写「⑨ 的
+//   Range 用例依赖真实成片库」）。但真实成片根是**用户数据** —— 于是 ⑧（落盘总量裁剪）与
+//   ⑨（索引条数上限）会往**真实** `D:/lemo-films/.console` 写，多个 smoke 并发跑就互相污染
+//   （实测 3 路并发 3/3 红），而且会把用户真实任务历史从索引里挤掉（**真实数据损失**）。
+//   ⇒ 现在 smoke 启动时把 `LEMO_FILM_DIR` 指到**本次运行独占的临时根**（见 test/smoke.mjs），
+//     成片根不再是用户数据；⑨ 要的那条真 mp4 由**本函数现造**（测试自己造输入、跑完随临时根删）。
+// ★ 为什么必须是**真 mp4**（不是几个字节的假文件）：⑨ 打的是 `/api/films/ascii-crt/ascii-crt.mp4`
+//   的 **Range 语义** —— 服务端要 stat 出真实长度、按扩展名定 MIME（`video/mp4`）、
+//   按字节区间切片（206 / 后缀 Range / 越界 416 / `Accept-Ranges: bytes`）。假文件验不出这些。
+// ★ 为什么用 **Windows** ffmpeg（`CFG.ffmpegDirs`）而不是 WSL 的：本机 Windows 侧就有 ffmpeg
+//   （`findFfmpegDir()`），不必为一条夹具把 WSL 拉起来（发行版空闲被回收时冷启动可达 60s）。
+//   ★ 只造**输入**，不渲染、不跑 TTS、不占 GPU（`-c:v libx264` 走 CPU）。
+// ★ 为什么体积必须 `> 200000`：⑨ 里有一条**既有**守卫断言 `size > 200000`（原是给 29MB 真成片
+//   定的，用来挡「成片缺失/被截断」）。夹具用 `testsrc`（高熵测试图案，比纯色难压缩）+ 无损编码
+//   （`-crf 0`）⇒ 320×180 / 5s 实测 **~430KB**，稳过守卫并留 ~2× 余量（实测数字见 `_distill` 报告）。
+// ★ 落点：`<成片根>/ascii-crt/ascii-crt.mp4` —— 与 ⑨ 里写死的 `slug === 'ascii-crt'` /
+//   `file === 'ascii-crt.mp4'` 逐字对应；`apiFilms()` 会扫到它（一级目录下的 `.mp4`）。
+//   ★ 成片根此时已是**本次运行独占的临时根**（test/smoke.mjs 启动时设的 `LEMO_FILM_DIR`）
+//     ⇒ 夹具绝不会落进用户的 `D:/lemo-films/<slug>/`。
+const FIXTURE_SLUG = 'ascii-crt';
+const FIXTURE_FILE = 'ascii-crt.mp4';
+const FIXTURE_MIN_BYTES = 200000;   // 与 ⑨ 的 `assert.ok(size > 200000)` 同源（改这里要同步改 ⑨）
+const FIXTURE_W = 320, FIXTURE_H = 180, FIXTURE_FPS = 30, FIXTURE_DUR = 5;
+
+/** 异步跑一个可执行文件（★ 本机 spawnSync/execFileSync 一律 EBUSY ⇒ 只能异步 spawn）。 */
+function runExe(exe, args, { timeoutMs = 60000 } = {}) {
+  return new Promise((resolve) => {
+    let out = '', err = '', done = false, child;
+    const finish = (r) => { if (done) return; done = true; clearTimeout(timer); resolve(r); };
+    const timer = setTimeout(() => {
+      try { child?.kill(); } catch { /* ignore */ }
+      finish({ code: null, out, err: `${err}\n[超时 ${timeoutMs}ms]` });
+    }, timeoutMs);
+    try { child = spawn(exe, args, { windowsHide: true }); }
+    catch (e) { return finish({ code: -1, out: '', err: String((e && e.message) || e) }); }
+    child.stdout?.on('data', (d) => { out += d.toString('utf8'); });
+    child.stderr?.on('data', (d) => { err += d.toString('utf8'); });
+    child.on('error', (e) => finish({ code: -1, out, err: String((e && e.message) || e) }));
+    child.on('close', (code) => finish({ code, out, err }));
+  });
+}
+
+/**
+ * 造一条极小的**真 mp4**到 `<成片根>/ascii-crt/ascii-crt.mp4`（供 ⑨ 的 Range 用例）。
+ *
+ * @returns {Promise<{path:string, size:number, cached:boolean, ffmpeg?:string}>}
+ * @throws 找不到 ffmpeg / ffmpeg 非零退出 / 造出的文件不够大 —— 都抛错（⑨ 会因此**明确失败**，不静默降级）
+ */
+export async function ensureFilmFixture() {
+  const dir = path.join(CFG.exportDir, FIXTURE_SLUG);
+  const out = path.join(dir, FIXTURE_FILE);
+
+  // 已经造好且够大 ⇒ 直接复用（同一进程内重复调用不重造）
+  try {
+    const st = fs.statSync(out);
+    if (st.size > FIXTURE_MIN_BYTES) return { path: out, size: st.size, cached: true };
+  } catch { /* 还没造 */ }
+
+  const ffDir = findFfmpegDir();
+  if (!ffDir) {
+    throw new Error('找不到 Windows ffmpeg —— ⑨ 的 Range 用例需要一条真 mp4 夹具。'
+      + `候选目录：${CFG.ffmpegDirs.join(' / ')}（见 lemo-make.mjs 的 CFG.ffmpegDirs）`);
+  }
+  const ffmpeg = path.join(ffDir, 'ffmpeg.exe');
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${out}.tmp.mp4`;   // 先写临时名，校验通过再改名 —— 避免半截文件被 /api/films 当成成片
+
+  const args = [
+    '-hide_banner', '-nostdin', '-y',
+    '-f', 'lavfi', '-i', `testsrc=size=${FIXTURE_W}x${FIXTURE_H}:rate=${FIXTURE_FPS}`,
+    '-t', String(FIXTURE_DUR),
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '0', '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    tmp,
+  ];
+  const r = await runExe(ffmpeg, args, { timeoutMs: 60000 });
+  if (r.code !== 0) {
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    throw new Error(`造 mp4 夹具失败（ffmpeg exit=${r.code}）：\n  ${ffmpeg} ${args.join(' ')}\n--- stderr ---\n${r.err.slice(-1500)}`);
+  }
+  const size = fs.statSync(tmp).size;
+  if (size <= FIXTURE_MIN_BYTES) {
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    throw new Error(`造出的夹具只有 ${size} 字节（⑨ 的守卫要求 > ${FIXTURE_MIN_BYTES}）—— `
+      + `请调大 FIXTURE_DUR / FIXTURE_W（当前 ${FIXTURE_W}x${FIXTURE_H} / ${FIXTURE_DUR}s / crf 0）`);
+  }
+  fs.renameSync(tmp, out);
+  return { path: out, size, cached: false, ffmpeg };
+}

@@ -43,6 +43,15 @@
  *   （判据是「真路径是否在根内」，不是「是不是链接」）。★ 只在**本套件自己拥有的**临时成片根里造链接；
  *   外部设了 `LEMO_FILM_DIR` 或环境建不了 junction 时**如实降级**为源码级判据（8 处「路径越界」全走
  *   `withinRoot` + `realish` 用 `realpathSync`），不是静默跳过。
+ * ★★ 2026-10-11 追加 ⑤b：**F1 回归（第四批对抗性审计 · 长跑健壮性）** —— `POST /api/dub/upload` 的
+ *   **客户端中途断开**（裸 socket 声明一个 Content-Length、只发 256KB 就 `socket.destroy()`）。
+ *   改前 `server.mjs` 用 `req.pipe(ws)`：pipe **不把源流的错误传给目标流** ⇒ 客户端一断，`req` 会
+ *   `error:ECONNRESET` 但 `ws` 既不会 finish 也不会 close ⇒ `await wsClosed` 永不 resolve ⇒
+ *   handler 永久挂住 + 半截文件永久残留 + fd 泄漏（审计实测：100 次断开 ⇒ 句柄 258→358、残留 100 个文件）。
+ *   本用例钉住的**可观察后果**：① **8s 有界时间内磁盘零残留**（handler 若挂死，文件永远不会消失）
+ *   ② 断开之后**正常上传仍 200**（服务没被搞坏）。★ 变异自证：撤掉 `abortWs()` 与超时兜底 ⇒ 本用例变红。
+ * ★ 为什么用裸 socket：`node:http` 客户端会按真实 body 长度校正 Content-Length，发不出「声明得比实际大」
+ *   的请求，也就造不出「中途断开」（与 ④ 的 headerOnlyRequest 同一理由）。
  * 它们承担着上传安全（防目录穿越）、请求形状校验、语义结果注入等关键逻辑，
  * 此前**没有任何测试**（全仓 grep 只在 README 里提到 /api/dub/analyze 一次）。
  *
@@ -296,6 +305,42 @@ function uploadOverLimitChunked(port, name, limitBytes) {
   });
 }
 
+/**
+ * ★★ F1 回归（2026-10-11 第四批对抗性审计 · 长跑健壮性）：**客户端上传到一半就断开**。
+ *
+ * 声明一个 Content-Length、只发一小半字节，等一小会儿（让服务端真的收到并开始写盘）后
+ * `socket.destroy()`（模拟关标签页 / 断网 / 切走）。
+ * ★ 为什么用裸 socket 而不是 node:http 客户端：后者会按真实 body 长度校正 Content-Length，
+ *   发不出「声明得比实际大」的请求，也就造不出「中途断开」这个场景（与 headerOnlyRequest 同一理由）。
+ * ★ 为什么 destroy 而不是 end()：end() 是「正常发完」——那会走 finish 的正常路径，不是本条要验的形态。
+ */
+function uploadAbort(port, name, { declaredBytes, sendBytes, holdMs = 200 }) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    let done = false;
+    const finish = () => { if (done) return; done = true; try { socket.destroy(); } catch { /* ignore */ } resolve(); };
+    socket.on('connect', () => {
+      socket.write(
+        `POST /api/dub/upload?name=${encodeURIComponent(name)} HTTP/1.1\r\n` +
+        `Host: 127.0.0.1:${port}\r\nAccept: application/json\r\n` +
+        `Content-Type: application/octet-stream\r\n` +
+        `Content-Length: ${declaredBytes}\r\nConnection: close\r\n\r\n`,
+      );
+      const chunk = Buffer.alloc(1 << 16, 0x62);
+      let sent = 0;
+      while (sent < sendBytes) {
+        const n = Math.min(chunk.length, sendBytes - sent);
+        socket.write(chunk.subarray(0, n));
+        sent += n;
+      }
+      setTimeout(finish, holdMs);      // 留一点时间让服务端收到并开始写盘，然后**硬断**
+    });
+    socket.on('error', finish);
+    socket.on('close', finish);
+    socket.setTimeout(20000, finish);
+  });
+}
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -541,6 +586,37 @@ async function main() {
       } else {
         notes.push('⑤ 无 content-length 中途超限 → 413（未落盘）');
       }
+    });
+
+    // ══ ⑤b ★ F1 回归（第四批对抗性审计 · 长跑健壮性）════════
+    //   改前：客户端中途断开时 `req.pipe(ws)` 不把源流错误传给写流 ⇒ ws 永不 close ⇒
+    //   handler 永久挂住 + 半截文件永久残留 + fd 泄漏（审计实测 100 次断开 ⇒ 句柄 258→358）。
+    //   本用例钉住的**可观察后果**：① 磁盘无残留（8s 有界等待 —— 若 handler 挂死，文件永远不会消失）
+    //   ② 断开之后服务仍能正常收一份完整上传（handler 没把进程 / 连接池搞坏）。
+    await runCase('⑤b ★ F1 回归：上传中途断开 ⇒ 磁盘无残留（有界时间内收尾）+ 之后正常上传仍 200', async () => {
+      const before = listDir(UPLOAD_DIR);
+      const declaredBytes = MAX_UPLOAD_BYTES;        // 声明在上限**之内** ⇒ 不触发 413 预检，走「真收字节」那条路
+      const sendBytes = 256 * 1024;                  // 只发 256KB（远小于声明值）
+      await uploadAbort(P, 'aborted.mp4', { declaredBytes, sendBytes });
+
+      // ★ 有界等待：handler 若挂死在 `await wsClosed` 上，这个半截文件**永远不会**被删。
+      const deadline = Date.now() + 8000;
+      let leaked = [];
+      for (;;) {
+        leaked = listDir(UPLOAD_DIR).filter((n) => !before.includes(n));
+        if (leaked.length === 0 || Date.now() > deadline) break;
+        await sleep(200);
+      }
+      for (const n of leaked) EXTRA_PATHS.add(path.join(UPLOAD_DIR, n));
+      need(leaked.length === 0,
+        `★★ F1 回归失败：中途断开后磁盘残留 ${JSON.stringify(leaked)}（8s 内没被清掉 ⇒ handler 挂死 / 半截文件没删）`);
+
+      // ★ 「不挂死」的另一个可见后果：断开之后服务仍能正常收一份完整上传。
+      const ok = await uploadRaw(P, 'after-abort.mp4', Buffer.from('AFTER-ABORT-OK'));
+      need(ok.status === 200, `中途断开之后，正常上传应仍 200，实际 ${ok.status}：${ok.text.slice(0, 160)}`);
+      UPLOAD_PATHS.add(ok.json.path);
+
+      notes.push(`⑤b F1 中途断开（声明 ${declaredBytes} 字节 / 实发 ${sendBytes} 字节后硬断）⇒ 8s 内磁盘零残留；之后正常上传仍 200`);
     });
 
     // ══ ⑥ sources：刚上传的 token 出现在清单里（增量）════════

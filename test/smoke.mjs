@@ -32,10 +32,16 @@
  *   4. **不启动真实渲染**（除非显式 --full）；取消用例取消的是 dry-run，不是真渲染。
  *   5. 测试服务启动时会覆写 `.console-port` / `打开控制台.url` —— 跑前备份、跑后**逐字节还原**，
  *      保证用户那个 18080 实例的「固定入口」不被改掉。
- *   6. **测试产物登记 + 收尾清理**：进程用例会往 D:\lemo-films\.console 写任务记录、往 WSL 侧写临时
- *      文件、--full 的现场 TTS 用例还会建一个 `_smoke-tts-*` 输出目录；`cases.mjs` 的 ARTIFACTS
- *      登记它们，本文件在 finally 里统一摘干净（见 cleanupArtifacts）。
- *   7. **--full 会真的调 GPU TTS**（Index-TTS 全局串行锁是独占的）：
+ *   6. **成片根隔离（2026-10-11 根治）**：启动时把 `LEMO_FILM_DIR` 指到**本次运行独占**的临时根
+ *      （`<LEMO_TMP>/smoke-films-<pid>-<ts>`），跑完递归删 ⇒ 测试**绝不碰**用户真实的
+ *      `D:/lemo-films/.console`（此前 ⑧/⑨ 会往那里写、并发跑互相污染、还会把用户真实任务历史
+ *      从索引里挤掉 —— 那是**真实数据损失**）。⑨ 的 Range 用例要的那条真 mp4 由
+ *      `ensureFilmFixture()` 现造到临时根里。★ 解析到 C 盘则**拒绝**隔离并告警。详见下面
+ *      `★★ 隔离成片根` 那段。
+ *   7. **测试产物登记 + 收尾清理**：进程用例会往**临时成片根**的 `.console` 写任务记录、往 WSL 侧
+ *      写临时文件、--full 的现场 TTS 用例还会建一个 `_smoke-tts-*` 输出目录；`cases.mjs` 的
+ *      ARTIFACTS 登记它们，本文件在 finally 里统一摘干净（见 cleanupArtifacts）。
+ *   8. **--full 会真的调 GPU TTS**（Index-TTS 全局串行锁是独占的）：
  *        · 跑之前若配音锁已被占用 → 用例**立刻失败**并说明「这是环境占用」，
  *          绝不等锁到 LOCK_TIMEOUT（2 小时）；
  *        · 所以 `--full` 要求本机装好 Index-TTS、且没有别的配音任务在跑。
@@ -50,15 +56,13 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
-import {
-  STATIC_CASES, SERVER_CASES, PROCESS_CASES, FULL_CASES,
-  ORCH_MD5, md5Of, cleanupArtifacts,
-} from './cases.mjs';
-
 // ★ 起服务的测试实例不该写用户的固定入口文件（.console-port / 打开控制台.url）——
 //   否则每跑一次测试就把它们改成测试端口；跑崩时还原语句没执行，脏值还会残留（见 server.mjs 文件头）。
 //   设了这个环境变量，本进程 spawn 出的 server.mjs 会跳过写入。下面的备份/还原是第二道防线，保留。
 process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
+
+// ★ 临时根口径照 `scripts/run-all-tests.mjs:74`：`LEMO_TMP || 'D:/lemo-tmp'`（非 C 盘）。
+const TMP_ROOT = path.resolve(process.env.LEMO_TMP || 'D:/lemo-tmp');
 
 // ★ 编排器的**并发锁**也必须隔离到临时树（2026-10-11 定性「首跑 6 红」时补）。
 //
@@ -74,12 +78,45 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //   实测（2026-10-11）：只压一把活锁 ⇒ 一次跑出 6 条红，与「首跑 6 红」的现象集合逐条对上。
 //   ⇒ 指到临时树，与 test/briefs.test.mjs / test/ui.test.mjs / test/gate-blindness.test.mjs
 //     三个套件同一口径（它们早就这么做了，只有本套件漏了）。
-//   ★ 只对**编排器**生效（它认 LEMO_LOCK_DIR）。服务的 /api/precheck 读的是真实锁路径
+//   ★ 只对**编排器**生效（它认 LEMO_LOCK_DIR）。服务的 /api/precheck 读的是成片根下的锁路径
 //     （lib/jobs.mjs:checkLock 用 FILM_DIR 硬算，不认这个变量）⇒ ⑧ 两条锁用例自己造锁
-//     自己读，不受影响。
-//   ★ 临时根口径照 `scripts/run-all-tests.mjs:74`：`LEMO_TMP || 'D:/lemo-tmp'`（非 C 盘）。
-const TMP_ROOT = path.resolve(process.env.LEMO_TMP || 'D:/lemo-tmp');
+//     自己读，不受影响（隔离后它们造的锁与读的锁都在**临时成片根**里，见下）。
 process.env.LEMO_LOCK_DIR = path.join(TMP_ROOT, `smoke-lock-${process.pid}-${Date.now().toString(36)}`);
+
+// ── ★★ 隔离成片根（本批根治「smoke 会动用户真实 D:/lemo-films」）──────────────
+//
+// ★ 为什么必须隔离（**真实数据损失**，不只是「测试偶尔红」）：
+//   `test/cases.mjs` 的 ⑧（落盘总量裁剪，`lib/store.mjs:saveIndex` ④ 段扫**整个** LOG_DIR 算总量）
+//   与 ⑨（索引条数上限，saveIndex ① 段从最旧开始丢）用的是**真实** `D:/lemo-films/.console`
+//   （`index.json` + `logs/`）。于是：
+//     · 别的实例的测试数据被算进本次的裁剪账 ⇒ **并发跑必红**（实测 3 路并发 3/3 红）；
+//     · 更严重的是**把用户真实的任务历史从索引里挤掉**（实测清理时发现 `.console/index.json`
+//       里 111 条**全是**测试残留 slug `__test-cap__`）—— 这是**真实的用户数据损失**。
+//   `test/README.md` 原先写「smoke **有意**不隔离成片根 —— ⑨ 的 Range 用例依赖真实成片库」；
+//   但仓里**早已有一处**用例示范了正确做法（`test/cases.mjs` 的 ⑩ 自己把 `LEMO_FILM_DIR` 指到
+//   自建的 `_smoke-` 临时根）⇒ 模式已经在仓里，本批只是把它**推广到整个 smoke 运行**。
+//
+// ★ 做法：启动时把 `LEMO_FILM_DIR` 指到一个**本次运行独占**的临时根（名字带 pid + 时间戳
+//   ⇒ 并发实例互不相撞），并保证它在 import `./cases.mjs`（进而 `lib/env.mjs` 的 `CFG.exportDir`）
+//   **之前**就设好 —— `CFG.exportDir` 在模块求值那一刻定死（照 test/dub-api.test.mjs 的做法：
+//   先设 env、再**动态 import**）。这样：
+//     · `test/cases.mjs` 的 `FILM_DIR` / `CONSOLE_ROOT` / `CONSOLE_LOGS` / `CONSOLE_INDEX` 全部跟随；
+//     · 测试进程自己 import 的 `lib/jobs.mjs` / `lib/store.mjs` 跟随；
+//     · 本进程 spawn 出的 `server.mjs`（含 ⑦ 的重启用例）继承 `process.env` ⇒ 跟随。
+//   ★ ⑨ 的 Range 用例需要的那条**真 mp4**由 `ensureFilmFixture()`（test/cases.mjs 末尾）现造到
+//     临时根里 —— 不再读用户真实成片库。
+//   ★ 边界（**如实登记**）：编排器 `lemo-make.mjs` 的 `exportDir` 是硬编码字面量、**不认**
+//     `LEMO_FILM_DIR`（红线文件）。所以 `--full` 里**真出片**的用例，产物落点仍由它们**显式**
+//     `--out` 控制（⑤+ 等都给 `--out <CFG.exportDir>/_smoke-*` ⇒ 也落在临时根、跑完随临时根删）。
+//   ★ C 盘硬规则：`TMP_ROOT` 解析到 C 盘 ⇒ **拒绝隔离**（保持旧行为，跑真实根）并**明确告警**；
+//     绝不把临时成片根建到 C 盘（本项目硬规则：产物/缓存非 C 盘）。
+const ISOLATE = !/^[cC]:[\\/]/.test(TMP_ROOT);
+const SMOKE_FILM_ROOT = path.join(TMP_ROOT, `smoke-films-${process.pid}-${Date.now().toString(36)}`);
+const EXTERNAL_FILM_DIR = process.env.LEMO_FILM_DIR || '';
+if (ISOLATE) {
+  process.env.LEMO_FILM_DIR = SMOKE_FILM_ROOT;
+  fs.mkdirSync(SMOKE_FILM_ROOT, { recursive: true });
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -87,6 +124,13 @@ const ORCH_PATH = path.join(ROOT, 'lemo-make.mjs');
 
 // 测试服务启动会覆写这两个「固定入口」文件 —— 必须备份还原（它们是用户 18080 实例的地址来源）
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
+
+// ★ 动态 import：让上面的 `LEMO_FILM_DIR` 在 `./cases.mjs`（⇒ `lib/env.mjs` 的 `CFG.exportDir`）
+//   **求值之前**先生效（静态 import 会被提升到文件顶部，早于上面的赋值）。
+const {
+  STATIC_CASES, SERVER_CASES, PROCESS_CASES, FULL_CASES,
+  ORCH_MD5, md5Of, cleanupArtifacts, ensureFilmFixture,
+} = await import('./cases.mjs');
 
 // ── 命令行参数 ──────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -500,6 +544,29 @@ async function main() {
   log(C.dim(`  编排器   ${ORCH_PATH}`));
   log(C.dim(`  md5      ${md5Of(orchBuf)}  (期望 ${ORCH_MD5})`));
   log(C.dim(`  模式     ${OPT.full ? '全量（含完整回归）' : '快速'}${OPT.filter ? ` · filter="${OPT.filter}"` : ''}`));
+  if (ISOLATE) {
+    log(C.dim(`  成片根   ${SMOKE_FILM_ROOT}  (本次运行独占的临时根；跑完递归删)`));
+    if (EXTERNAL_FILM_DIR) {
+      log(C.dim(`           ★ 外部 LEMO_FILM_DIR="${EXTERNAL_FILM_DIR}" 被本次运行覆盖（隔离优先，见文件头 6.）`));
+    }
+  } else {
+    log(C.bad(`  ⚠️ LEMO_TMP 解析到 C 盘（${TMP_ROOT}）—— 按硬规则**拒绝**把临时成片根建到 C 盘，`));
+    log(C.bad('     本次**不隔离**（跑真实 D:/lemo-films）。请把 LEMO_TMP 指到非 C 盘。'));
+  }
+  log('');
+
+  // ── 成片夹具（⑨ 的 Range 用例要一条**真的** mp4；落在本次运行独占的临时成片根里）──
+  //   ★ 现造而不是读用户成片库：⑨ 依赖的是「一条能被 Range 服务的真 mp4」，不是用户那条。
+  //   ★ 造失败（缺 ffmpeg 等）⇒ **不中止整轮**，只告警；⑨ 会因此明确失败（不静默降级）。
+  if (ISOLATE) {
+    try {
+      const fx = await ensureFilmFixture();
+      log(C.dim(`  成片夹具 ${fx.path}  (${(fx.size / 1024).toFixed(0)} KB${fx.cached ? '，复用' : '，现造'})`));
+    } catch (e) {
+      log(C.bad(`  ⚠️ 造成片夹具失败：${String((e && e.message) || e)}`));
+      log(C.dim('     —— ⑨（Range）会因此明确失败；其余用例不受影响。'));
+    }
+  }
   log('');
 
   // ── 备份「固定入口」文件（测试服务会覆写它们）──
@@ -619,6 +686,25 @@ async function main() {
     try {
       fs.rmSync(process.env.LEMO_LOCK_DIR, { recursive: true, force: true });
     } catch { /* 清不掉也不影响结论 */ }
+
+    // ── 收掉本次运行独占的临时成片根（成片夹具 / 测试任务落盘 / `_smoke-*` 输出目录都在里面）──
+    //   ★ 三道守卫同时成立才删：在 TMP_ROOT 之下、basename 对得上、且**解析不到 C 盘**。
+    if (ISOLATE) {
+      try {
+        const abs = path.resolve(SMOKE_FILM_ROOT);
+        const underTmp = abs.startsWith(path.resolve(TMP_ROOT) + path.sep);
+        const named = path.basename(abs).startsWith('smoke-films-');
+        const onC = /^[cC]:[\\/]/.test(abs);
+        if (underTmp && named && !onC) {
+          fs.rmSync(abs, { recursive: true, force: true });
+          log(C.dim(`  临时成片根已删：${abs}`));
+        } else {
+          log(C.bad(`  ⚠️ 临时成片根守卫不通过，拒删：${abs}（underTmp=${underTmp} named=${named} onC=${onC}）`));
+        }
+      } catch (e) {
+        log(C.bad(`  ⚠️ 删临时成片根失败：${(e && e.message) || e}`));
+      }
+    }
   }
 
   // ── 汇总 ──

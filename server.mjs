@@ -687,6 +687,25 @@ function resNotReadyMsg(e) {
 const resScanCache = new Map();     // key → { at, data }
 const resScanInflight = new Map();  // key → Promise
 
+// ★★ F2（第四批对抗性审计 · 长跑健壮性）：本缓存的**容量上限**。
+//   改前 resScanCache 全仓只有 get/set、**没有任何 delete**，且命中判据「过期」只判不删 ⇒
+//   过期条目连同它持有的整份扫描结果（data）**永久驻留**。实测：+6000 个唯一 only 键 ⇒
+//   内存 63.8 → 74.5MB，等 45s（远超 RES_TTL_MS=30000）后仍是 74.5MB、**零回收**。
+//   键只受白名单正则约束、取值空间无上限（且本路由无鉴权）⇒ 对「跑几天」是单调上涨的不可回收内存。
+//   ⇒ 两道收口：① 命中但过期 ⇒ **真的 delete**；② 容量到顶 ⇒ 淘汰**最久未用**的一条（见 resCacheSet）。
+//   ★ 边界（别改坏本缓存的目的）：**同一个键第二次仍然命中缓存**（命中即把该键挪到 Map 尾部 = 刷新 LRU）。
+const RES_CACHE_MAX = 64;
+
+/** 放一条扫描结果 —— ★ F2：容量到顶就淘汰**最久未用**的那条（Map 迭代序 = 插入序，命中时会重新插入）。 */
+function resCacheSet(key, data) {
+  resScanCache.set(key, { at: Date.now(), data });
+  while (resScanCache.size > RES_CACHE_MAX) {
+    const oldest = resScanCache.keys().next().value;
+    if (oldest === undefined) break;
+    resScanCache.delete(oldest);
+  }
+}
+
 /** 解析 ?only=a,b —— 逐个校验 id 白名单（防路径穿越，与契约 §九.4 同一条正则）。 */
 function parseOnlyParam(url) {
   const raw = (url.searchParams.get('only') || '').trim();
@@ -704,6 +723,8 @@ function parseOnlyParam(url) {
  *
  * ★ 返回 lib/resources.mjs 的 scanAll() 结果（原样透传，前端只渲染不重推）。
  * ★ 30s 缓存 + 并发合并：扫描要起 WSL，成本高，并发请求只真跑一次。
+ * ★★ F2（第四批对抗性审计）：缓存是**有界**的 —— 过期即回收（命中判据里真的 delete），
+ *   容量上限 RES_CACHE_MAX 条、到顶淘汰最久未用（见 resCacheSet）。同键第二次仍命中。
  */
 async function apiResourcesScan(req, res, url) {
   const { only, error } = parseOnlyParam(url);
@@ -717,8 +738,16 @@ async function apiResourcesScan(req, res, url) {
 
   if (!force) {
     const hit = resScanCache.get(key);
-    if (hit && Date.now() - hit.at < RES_TTL_MS) {
-      return sendJson(res, 200, { ...hit.data, cached: true, cacheAgeMs: Date.now() - hit.at });
+    if (hit) {
+      if (Date.now() - hit.at < RES_TTL_MS) {
+        // ★ F2：命中即刷新 LRU 位置（删了再塞 = 挪到 Map 尾部）⇒ 淘汰时先淘汰**最久未用**的。
+        //   ★ 同键第二次仍然命中（本缓存的目的），行为不变。
+        resScanCache.delete(key);
+        resScanCache.set(key, hit);
+        return sendJson(res, 200, { ...hit.data, cached: true, cacheAgeMs: Date.now() - hit.at });
+      }
+      // ★★ F2：过期 ⇒ **真的回收**（改前只判不删 ⇒ 条目连同整份扫描结果永久驻留，实测零回收）。
+      resScanCache.delete(key);
     }
   }
   // 并发请求只跑一次全量扫描（探测要起 WSL，成本高）—— 用 inflight 去重
@@ -726,7 +755,7 @@ async function apiResourcesScan(req, res, url) {
   if (!p) {
     p = Promise.resolve()
       .then(() => (only ? loaded.mod.scanAll({ only, force }) : loaded.mod.scanAll({ force })))
-      .then((d) => { resScanCache.set(key, { at: Date.now(), data: d }); return d; })
+      .then((d) => { resCacheSet(key, d); return d; })
       .finally(() => { resScanInflight.delete(key); });
     resScanInflight.set(key, p);
   }
@@ -1795,6 +1824,10 @@ function watchVoiceImport(jobId) {
 // ★ 为什么必须异步：配音要**逐句**合成（空载时几十秒一句，机器忙时可能到几分钟；模型首次加载 1~2 分钟），
 //   一个 HTTP 请求挂着等必被浏览器掐断。
 
+// ★★ F1（第四批对抗性审计）：上传失败后「等写流 close 再 unlink」的**超时兜底**（毫秒）。
+//   正常情形下 destroy() 之后 close 是立刻来的；这个上限只是保证「任何失败路径下 handler 都不会挂死」。
+const WS_CLOSE_TIMEOUT_MS = 5000;
+
 /**
  * POST /api/dub/upload?name=<原始文件名> —— 收下素材（**raw body**，不是 multipart）。
  *
@@ -1843,6 +1876,28 @@ async function apiDubUpload(req, res, url) {
   const ws = fs.createWriteStream(dest);
   // ★ 写流**真正关闭**（fd 已释放）的时点。失败路径必须等它再 unlink —— 见下面两处说明。
   const wsClosed = new Promise((r) => ws.on('close', r));
+
+  // ★★ F1（第四批对抗性审计 · 长跑健壮性）：客户端**中途断开**时，「req.pipe(ws)」**不传播错误** ——
+  //   pipe 只在源 end 时转发、**不转发源流的 error**（Node 的著名陷阱；只有 stream.pipeline 会顺带销毁目标）。
+  //   实测该路径下 server 侧 req 的事件序列是 aborted → error:ECONNRESET → close，
+  //   而 ws 既不会 finish 也不会 close ⇒ 上面那个 wsClosed **永不 resolve** ⇒
+  //   ① 该请求的 handler 永久挂住 ② 下面的 unlink 永不执行 ⇒ 半截文件永久残留 ③ fd 泄漏
+  //   （审计实测：100 次中途断开 ⇒ 句柄 258→358、精确 1:1，并留下 100 个半截文件）。
+  //   ⇒ 任何「请求侧失败」都必须**显式** destroy 写流，让 close 一定到来。
+  //   ★ 为什么不用 stream.pipeline：它的错误传播是**双向**的（会连 req 一起销毁），而本函数另有一条
+  //     tooBig 路径**故意**保留 req 可读（要 req.resume() 把剩余字节读掉、好让客户端读到 413）；
+  //     pipeline 在 ws.destroy() 时会连 req 一起销毁 ⇒ 客户端只见 ECONNRESET、读不到 413（会打坏既有用例）。
+  //     ⇒ 这里用**单向**的显式 destroy，语义与既有 tooBig 分支完全一致。
+  const abortWs = () => {
+    try { req.unpipe(ws); } catch { /* ignore */ }
+    try { ws.destroy(); } catch { /* ignore */ }
+  };
+  // 客户端已经走了 ⇒ 这条响应没人收；硬写会触发 res 的 'error'（未挂监听即 uncaught）。统一走这里。
+  const replyIfAlive = (code, obj) => {
+    if (res.writableEnded || res.destroyed || !res.socket || res.socket.destroyed) return;
+    try { sendJson(res, code, obj); } catch { /* 尽力而为 */ }
+  };
+
   const result = await new Promise((resolve) => {
     let settled = false;
     const settle = (v) => { if (!settled) { settled = true; resolve(v); } };
@@ -1855,8 +1910,7 @@ async function apiDubUpload(req, res, url) {
           ok: false, code: 413,
           error: `素材过大：超过上限 ${dub.MAX_UPLOAD_BYTES / 1048576}MB（传了一半被拒，没有落盘）`,
         });
-        try { req.unpipe(ws); } catch { /* ignore */ }
-        ws.destroy();
+        abortWs();                    // ★ 与「请求侧失败」共用同一处收口（unpipe + destroy）
         // ★★ 这里**不能**立刻 unlink：`destroy()` 只是"请求销毁"，fd 可能还没释放，
         //   甚至 `createWriteStream` 的 open 还在飞 —— 此时 unlink 之后，那次 open 会把文件
         //   **重新建出来**，留下一个半截文件（实测：dub-api 的「无残留」用例偶发红，报"新增 <token>.mp4"）。
@@ -1867,17 +1921,35 @@ async function apiDubUpload(req, res, url) {
     req.pipe(ws);
     ws.on('finish', () => settle({ ok: true }));
     ws.on('error', (e) => settle({ ok: false, code: 500, error: `写盘失败：${String(e.message || e)}` }));
-    req.on('error', (e) => settle({ ok: false, code: 500, error: `上传中断：${String(e.message || e)}` }));
+    // ★★ F1：请求侧失败（客户端断开 / 读体出错）⇒ ① 显式销毁写流（让 close 一定到来）
+    //   ② **同时结束等待**（否则若某版本只发 aborted / close 而不发 error，这个 Promise 自己就会挂住）。
+    const failReq = (msg) => { abortWs(); settle({ ok: false, code: 500, error: msg }); };
+    req.on('error', (e) => failReq(`上传中断：${String(e.message || e)}`));
+    // ★ 另外两条「可能没有 error 事件」的断开形态也要兜住（不同 Node 版本 / 直接 RST）——
+    //   aborted = 请求被中止；close 且 req.complete 为假 = 请求体没读完就断了。
+    //   ★ 判据用 req.complete：正常收完时它为**真** ⇒ 绝不误伤正常路径（大文件 / 慢客户端照常走 finish）。
+    req.on('aborted', () => failReq('上传中断：客户端中止了请求'));
+    req.on('close', () => { if (!req.complete) failReq('上传中断：请求体没读完连接就断了'); });
   });
 
   if (!result.ok) {
-    await wsClosed;                   // ★ 等 fd 释放再删 —— 否则可能"删了又被 open 建回来"
-    try { fs.unlinkSync(dest); } catch { /* ignore */ }
-    return sendJson(res, result.code || 500, { error: result.error });
+    // ★★ F1：wsClosed 加**超时兜底** —— 即便将来又冒出某条没料到的路径让 ws 不 close，
+    //   也绝不能让 handler 永久挂住（那会连 unlink 一起永不执行）。超时后**照样 unlink**，并打日志说明。
+    let closeTimer = null;
+    const closed = await Promise.race([
+      wsClosed.then(() => true),
+      new Promise((r) => { closeTimer = setTimeout(() => r(false), WS_CLOSE_TIMEOUT_MS); closeTimer.unref?.(); }),
+    ]);
+    if (closeTimer) clearTimeout(closeTimer);
+    if (!closed) {
+      console.error(`⚠️ 上传失败后写流 ${WS_CLOSE_TIMEOUT_MS}ms 内未 close（${path.basename(dest)}）—— 仍按残留删除，避免 handler 挂死`);
+    }
+    try { fs.unlinkSync(dest); } catch { /* ignore */ }   // ★ 等 fd 释放再删 —— 否则可能"删了又被 open 建回来"
+    return replyIfAlive(result.code || 500, { error: result.error });
   }
   if (size === 0) {
     try { fs.unlinkSync(dest); } catch { /* ignore */ }
-    return sendJson(res, 400, { error: '上传内容为空（body 里一个字节都没有）' });
+    return replyIfAlive(400, { error: '上传内容为空（body 里一个字节都没有）' });
   }
 
   const entry = dub.registerUpload({ token, name, size, path: dest, at: Date.now(), kind });
@@ -2875,7 +2947,7 @@ function llmWriteAllowed(method, path) {
  * `readBody` 超限抛的错带 `code === 'BODY_TOO_LARGE'` —— 那是「请求体过大」，
  * 不能跟「不是合法 JSON」混为一谈（旧代码一律报后者，误导排查）。
  * ★ 判据只此一处，各 handler 的 catch 都调它，免得 20 处文案各自漂移。
- * ★ 定义位置在 readBody 之后（函数声明提升 ⇒ 调用方不受位置影响）：避免在 `server.mjs:2070`
+ * ★ 定义位置在 readBody 之后（函数声明提升 ⇒ 调用方不受位置影响）：避免在 `server.mjs:2142`
  *   之前增删行 —— 那个行号被 `test/README.md` 的引用钉住（check-ref-lines 会因行号漂移报错）。
  */
 function bodyReadError(e) {
@@ -3268,7 +3340,7 @@ process.on('unhandledRejection', (e) => {
 // ── §setup 端点共用 envCache（D8② 续，2026-10-10）─────────────────────────────
 //
 // ★ 本段是 `apiSetupActions` 头注释点名的「文末理由」，**故意写在这里**：本文件有多个被
-//   `test/README.md` / 其它闸门**用裸行号钉住**的位置（如 `server.mjs:2070`），
+//   `test/README.md` / 其它闸门**用裸行号钉住**的位置（如 `server.mjs:2142`），
 //   ★ 在那些行号**之前**增删行会让引用整体漂移（`check-ref-lines` 的判据 (d) 只判「非空」、
 //   **判不出漂移**）⇒ 所以新增长文一律落在**所有被钉行号之后**（同 `dub.mjs` 的 `uniqueOutName` 做法）。
 //

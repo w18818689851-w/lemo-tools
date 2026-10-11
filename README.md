@@ -110,7 +110,7 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | POST | `/api/voices/import` | 把一个源素材转成参考音（= 加一个可选音色） | 异步任务 |
 | GET | `/api/voices/test/audio/:file` | 试听产物（POST /api/voices/test 的落点） | 静态 |
 | POST | `/api/voices/test` | 用指定音色真的合成一句，让用户先听效果再决定 | 异步任务 |
-| POST | `/api/dub/upload` | 收下素材（raw body，不是 multipart） | 同步 |
+| POST | `/api/dub/upload` | 收下素材（raw body，不是 multipart）；★ 客户端**中途断开**（关标签页/断网/慢速）⇒ 显式销毁写流 + 5s 超时兜底 ⇒ 半截文件必删、fd 不泄漏（改前实测 100 次断开泄漏 100 个句柄） | 同步 |
 | POST | `/api/dub/preview` | 只做断句，让用户在出片前核对 | 同步 |
 | POST | `/api/dub/analyze` | 断段 + 语义标签 + 风格匹配（同步，约 1 秒） | 同步 |
 | POST | `/api/dub/run` | 文案 → 成片（异步任务） | 异步任务 |
@@ -133,7 +133,7 @@ URL 上加 `?simulate=clean|bare|partial|all|ready` 也能在页面上切换演�
 | DELETE | `/api/llm/services/:id` | ★ 2026-10-10 订正（标准 §7 1.1）：本路由**保留但只回 405 JSON**（写方法非白名单）—— 原句保留作历史：「删除一套算力服务；不存在 ⇒ 404 + 结构化错误」；**删除请改用 `POST /api/llm/services/delete`** | 同步 |
 | POST | `/api/llm/services/active` | **切换当前算力服务**（★ 全局实时生效：切换后所有调用立即走它） | 同步 |
 | POST | `/api/llm/services/delete` | ★ 2026-10-10 新增（标准 §7 1.1 写操作白名单）：删除一套算力服务，body `{id}`；**替代原 `DELETE /api/llm/services/:id`**（写方法一律 POST）；缺 id ⇒ 400、不存在 ⇒ 404 + 结构化错误 | 同步 |
-| GET | `/api/resources/scan` | 资源全量/子集扫描（返回 `lib/resources.mjs` 的 `scanAll()`；30s 缓存 + 并发合并） | 同步 |
+| GET | `/api/resources/scan` | 资源全量/子集扫描（返回 `lib/resources.mjs` 的 `scanAll()`；30s 缓存 + 并发合并）；★ 缓存**有界**：过期即回收 + 上限 64 条 LRU 淘汰 | 同步 |
 | GET | `/api/resources/dirplan` | 目录规划（纯函数、不碰 IO，直接透传） | 同步 |
 | POST | `/api/resources/import` | 手动导入用户自备的包（未知 id ⇒ 400） | 同步 |
 | POST | `/api/resources/download` | 一键下载（后台任务，日志走既有任务/SSE 通道） | 同步 |

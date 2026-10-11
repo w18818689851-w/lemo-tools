@@ -12,7 +12,18 @@
  *   1. `scripts/` 下每个 `check-*.mjs` 都必须在 **`test/README.md`** 与 **`_distill/AGENT-BRIEF.md`** 里被**登记**；
  *   2. `scripts/` 下每个「工具类」脚本（`sync-*` / `patch-*` / `normalize-*` / `refresh-*` / `fix-*` / `measure-*`）
  *      至少在其中**一个**文档里被**登记**。
- *   ★ 只在「新增了脚本却忘了写文档」时报错；不检查文字质量。
+ *   3. （2026-10-07 起）文档里的「**计数声称**」（闸门数 / 用例数 / ★自证数 / 顶层 README 的库级计数）↔ 实测；
+ *   4. （2026-10-09 起）`test/README.md` 每个写了条数的**测试入口** ↔ 实测；
+ *   5. （2026-10-11 起）**顶层 `README.md`** 的**测试入口条数**声称 ↔ 实测（smoke 总条数 / `--full` / 服务端用例）。
+ *      ★ **判据⑤ 的边界（什么算声称、什么不算）**：只认**有明确锚点、且真值可现算**的 4 种写法 ——
+ *        ① `^node test/<name>.test.mjs …（N 条`；② `^node test/smoke.mjs …（N 条`；
+ *        ③ `^node test/smoke.mjs --full …共 N 条`；④ `**N 条服务端用例**`。
+ *      ★ **不**把 `（N 条）` 当万能模式（实测宽形态命中 11 处、**3 处误报**：接口条数 / 「第 4 条硬伤」/「9 条台词」）；
+ *        也不判**重述**（如「因为「44 条」是冻结的验收基线」——它与上行同数、无自己的锚点）。
+ *        静态数算不准（`cases.mjs` 读不到 / 区域找不到）⇒ **只列不判**，不 FAIL。
+ *      ★ **适用边界**：只在顶层 README **真的列了测试入口**（含 `^node test/` 行）时生效；没有该节 ⇒ 跳过（不判失明）。
+ *        有该节却一条声称都抽不到 / 某定长锚点命中 ≠ 1 ⇒ **判失明**（形态变了不许静默放行）。
+ *   ★ 只在「新增了脚本却忘了写文档 / 数字没跟」时报错；不检查文字质量。
  *
  * ★★ 2026-10-06 收紧「登记」的判据：由**纯子串**改为**行锚定**（修一个已确认的假绿）。
  *   旧判据 `t.includes(f)` 只要求脚本名在整份文档里**出现过** ⇒ **行被并掉、格式被破坏它都看不见**
@@ -293,6 +304,91 @@ if (entryClaims.length === 0) {
 if (stylesNote) console.log(`\nℹ ${stylesNote}`);
 if (entryListOnly.length) console.log(`\nℹ 「测试入口条数」只列不判（静态数不准）：${entryListOnly.join('、')}`);
 
+// ── ★★ 2026-10-11 延伸⑤：把**顶层 `README.md`** 的「测试入口条数」声称纳入同一判据 ─────────────
+//   由来（上一批**手工**修的 5 处陈旧计数）：顶层 `README.md` 的「测试」段用**命令行注释**写入口条数
+//   （`node test/ui.test.mjs  # …（115 条…）`）与「**N 条服务端用例**」，而这些数字**无闸门守** ——
+//   判据③④ 此前只扫 `test/README.md`（`ENTRY_CLAIM_RE` 只吃 `^node test/<x>.test.mjs …（N 条`）。
+//   ★★ **判据的边界（什么算声称、什么不算）—— 先跑一遍量出来的**：
+//     · 顶层 README 里 `N 条` 的**宽形态**（任何 `（N 条` / `N 条`）实测命中 **11 处**，其中 **3 处是误报**
+//       （`**5 条 /api/llm/services*` 的接口条数`、`第 4 条硬伤`、`9 条台词`）⇒ **不能**把 `（N 条）` 当万能模式。
+//     · 只认**有明确锚点、且指向一个可现算真值**的 4 种写法（实测 7 处、**误报 0**）：
+//       ① `^node test/<name>.test.mjs …（N 条`   ⇒ 真值 = 该入口静态用例数（与 test/README 同口径 `countCasesStatic`）；
+//       ② `^node test/smoke.mjs …（N 条`         ⇒ 真值 = `cases.mjs` 的 STATIC+SERVER+PROCESS（= 44）；
+//       ③ `^node test/smoke.mjs --full …共 N 条` ⇒ 真值 = 上式 + FULL_CASES（= 53）；
+//       ④ `**N 条服务端用例**`                   ⇒ 真值 = `cases.mjs` 的 `SERVER_CASES`（= 28）。
+//     · **不算声称**（有意不判）：`test/setup.test.mjs` 那句「因为「44 条」是冻结的验收基线」——它是 ② 的
+//       **重述**、没有自己的锚点（不被上面 4 条命中 ⇒ 既不重复判、也不漏判，因为它与上行同数）。
+//     · 静态数算不准（`cases.mjs` 读不到 / 区域找不到 / 计数为 0）⇒ **只列不判**（不 FAIL），同既有纪律。
+//     · **适用边界（防误伤最小合法夹具）**：只在**顶层 README 真的列了测试入口**（含 `^node test/` 行）时生效；
+//       README 没有测试入口清单 ⇒ 整块跳过（不是失明）。★ 失明守卫：**有** `^node test/` 行、却**一条**
+//       声称都解析不到（或某个定长锚点命中 ≠ 1）⇒ 判失明（形态变了不许静默放行）。
+//       ★ 已知盲区（如实登记）：把整段「测试」（含 `node test/` 行）删掉会让本判据**静默停止适用**。
+const CASES_MJS = path.join(testDir, 'cases.mjs');
+const casesText = fs.existsSync(CASES_MJS) ? fs.readFileSync(CASES_MJS, 'utf8') : '';
+// `cases.mjs` 里某个 `export const <ARR> = [ … ]` 的**顶层元素数**（现算）：
+//   区域 = 从该数组的 `[` 到**行首 0 列**的 `];`（这些数组一律 `export const X = [ … \n];` 写法）；
+//   ★ 为什么不用**括号配平**切区域：实测 `FULL_CASES` 的字符串/正则里有**未配平的 `[`** ⇒ 配平会走到文件尾
+//     （`end=-1`）⇒ 该数组计数失真（实测踩过）。改用「行首 0 列的 `];`」= 顶层声明结束，稳。
+//   顶层元素数 = 数区域里**行首恰 2 空格**的 `{`（顶层条目）+ 该数组的 `<ARR>.push({` 次数
+//   （本仓 STATIC_CASES 末尾补了 1 条）。找不到 / 得 0 ⇒ `null`（只列不判，绝不硬算）。
+const countCasesArray = (arr) => {
+  if (!casesText) return null;
+  const m = new RegExp('const\\s+' + arr + '\\s*=\\s*\\[').exec(casesText);
+  if (!m) return null;
+  const rest = casesText.slice(casesText.indexOf('[', m.index));
+  const endM = /\n\];/.exec(rest);
+  const seg = endM ? rest.slice(0, endM.index) : rest;
+  const n = (seg.match(/^  \{/gm) || []).length
+    + (casesText.match(new RegExp(arr + '\\.push\\(\\{', 'g')) || []).length;
+  return n > 0 ? n : null;
+};
+const smokeBaseCount = (() => {
+  const a = countCasesArray('STATIC_CASES'), b = countCasesArray('SERVER_CASES'), c = countCasesArray('PROCESS_CASES');
+  return (a === null || b === null || c === null) ? null : a + b + c;
+})();
+const smokeFullCount = (() => {
+  const f = countCasesArray('FULL_CASES');
+  return (smokeBaseCount === null || f === null) ? null : smokeBaseCount + f;
+})();
+const serverCasesCount = countCasesArray('SERVER_CASES');
+const readmeEntryListOnly = [];
+let readmeEntryHits = 0;
+let readmeEntryChecked = 0;
+// ★ **判据⑤ 的适用边界（防误伤最小合法夹具）**：只在**顶层 README 真的在文档里列了测试入口**
+//   （含 `^node test/` 命令行）时生效。README **没有**测试入口清单（如 `gate-blindness.test.mjs`
+//   的合成夹具树里的 `README.md`）⇒ **无可核对象** ⇒ 整块跳过（**不是失明**）。
+//   ★ 已知盲区（如实登记）：若有人把顶层 README 的「测试」整段（含 `node test/` 行）删掉，本判据
+//     会**静默停止适用** —— 与 `ENTRY_CLAIM_RE`（判据④）的「派生式声称」同一性质，属**已知边界**。
+const readmeHasTestSection = /^node\s+test\//m.test(readmeTop);
+if (readmeTop && readmeHasTestSection) {
+  for (const m of readmeTop.matchAll(/^node\s+test\/(\S+\.test\.mjs)\b[^\n]*?（(\d+)\s*条/gm)) {   // ①
+    readmeEntryHits++;
+    const p = path.join(testDir, m[1]);
+    const src = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
+    const truth = src === null ? null : countCasesStatic(src);
+    if (truth === null) { readmeEntryListOnly.push(`README.md·${m[1]}（${src === null ? '文件读不到' : '静态数不准'}）`); continue; }
+    readmeEntryChecked++;
+    if (Number(m[2]) !== truth) countBad.push(`顶层README·测试入口条数(${m[1]})：文档写 **${m[2]}**、实测 **${truth}**（README.md）`);
+  }
+  for (const [re, truth, label] of [                                                              // ②③④
+    [/^node\s+test\/smoke\.mjs\b[^\n]*?（(\d+)\s*条/gm, smokeBaseCount, '顶层README·smoke 总条数'],
+    [/^node\s+test\/smoke\.mjs\s+--full\b[^\n]*?共\s*(\d+)\s*条/gm, smokeFullCount, '顶层README·smoke --full 条数'],
+    [/\*\*(\d+)\s*条服务端用例\*\*/gm, serverCasesCount, '顶层README·服务端用例条数'],
+  ]) {
+    const hits = [...readmeTop.matchAll(re)];
+    if (hits.length !== 1) { countBlind.push(`${label}：锚点命中 **${hits.length}** 处（应为 1）⇒ 抽不到 / 不唯一（形态变了？）`); continue; }
+    readmeEntryHits++;
+    if (truth === null) { readmeEntryListOnly.push(`${label}（cases.mjs 读不到 / 静态数不准）`); continue; }
+    readmeEntryChecked++;
+    if (Number(hits[0][1]) !== truth) countBad.push(`${label}：文档写 **${hits[0][1]}**、实测 **${truth}**（README.md）`);
+  }
+}
+if (readmeTop && readmeHasTestSection && readmeEntryHits === 0) {
+  countBlind.push('顶层 `README.md` 的「测试」段里**一个**入口条数声称都解析不到（清单形态变了 / 条数被删？）⇒ 「顶层 README 测试入口条数」这条**判据已失明**');
+}
+
+if (readmeEntryListOnly.length) console.log(`\nℹ 顶层 README 的「测试入口条数」只列不判（静态数不准）：${readmeEntryListOnly.join('、')}`);
+
 if (countBad.length) {
   console.log(`\n✘ 文档里的计数声称与实测不符 ${countBad.length} 处：`);
   for (const c of countBad) console.log(`  ${c}`);
@@ -301,6 +397,7 @@ if (countBad.length) {
   const extra = README_CLAIMS.length ? `、顶层 README ${README_CLAIMS.length} 条声称` : '';
   console.log(`\n✓ 文档里的计数声称与实测一致（闸门 ${gateCount} 个、用例 ${caseCount} 条、★自证 ${selfCount} 条${extra}）。`);
   if (entryClaims.length) console.log(`✓ ${entryClaims.length} 个「写了条数」的测试入口，条数都与实测一致。`);
+  if (readmeEntryChecked) console.log(`✓ 顶层 README ${readmeEntryChecked} 条「测试入口条数」声称（含 smoke 总条数 / --full / 服务端用例）都与实测一致。`);
 }
 
 if (missing.length) {
