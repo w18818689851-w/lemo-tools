@@ -36,7 +36,7 @@
 
 | | 谁能装 | 例子 |
 |---|---|---|
-| **可自动** | 控制台替你跑（后台串行队列，实时日志，可取消） | `git clone` 库 · `apt install ffmpeg/nodejs` · 上游 `setup.sh deps voice music` · 跑 `fetch-all-fonts.sh` · `tools/fetch.sh instruments all` · `lemo-lib-sync.sh push` |
+| **可自动** | 控制台替你跑（后台串行队列，实时日志，可取消） | `git clone` 库 · `apt install ffmpeg/nodejs` · 上游 `setup.sh deps voice music` · 跑 `fetch-all-fonts.sh` · `tools/fetch.sh instruments all`（或按库单装：向导里每个采样库各一张卡，命令是 `instruments <lib>`）· `lemo-lib-sync.sh push` |
 | **需手动** | 只能你来做，控制台**只给指引、不代跑** | 装 WSL 发行版（要重启）· 装 Windows 侧 ffmpeg 二进制（几百 MB）· 装显卡驱动 · 索取 `lemo-lib-sync.sh` |
 
 分界很硬：**能自动做的才给按钮**。装 WSL 发行版需要重启、装 ffmpeg 二进制是几百 MB 的第三方包 ——
@@ -538,7 +538,7 @@ python core/tts/tts_indextts.py --list-voices          :: 看有哪些可选（�
 ```bash
 node test/smoke.mjs          # 冒烟测试（41 条，约 15–40 秒，不渲染；WSL 冷启动会到 1–2 分钟）
 node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒起，共 50 条）
-node test/setup.test.mjs     # 首次运行安装的纯逻辑测试（12 条，约 5 秒，不起服务、不用 WSL）
+node test/setup.test.mjs     # 首次运行安装的纯逻辑测试（16 条，约 5 秒，不起服务、不用 WSL）
 node test/setup-api.test.mjs # 「首次运行向导」两个接口的 HTTP 契约测试（9 条，约 20 秒，★ 绝不真安装）
 node test/ui.test.mjs        # Web UI 层测试（无头 Edge 渲染 DOM + CDP 真点击，59 条）
 node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条，不起浏览器）

@@ -441,6 +441,8 @@ async function main() {
     let videoPath = '';
     let srtToken = '';
     let srtPath = '';
+    // ㉜/㉝ 用：背景图（kind='image'）的 token（在 ㉜ 里真上传拿到）
+    let imageToken = '';
     await runCase('② upload 成功：.mp4 → kind=video；.srt → kind=srt；响应形状正确', async () => {
       const v = await uploadRaw(P, '口播素材.mp4', Buffer.from('FAKE-MP4-BYTES-not-a-real-video'));
       need(v.status === 200, `上传 .mp4 应 200，实际 ${v.status}：${v.text.slice(0, 160)}`);
@@ -697,6 +699,60 @@ async function main() {
       const after = await jobsCount(P);
       need(after === before, `上面 4 条 400 里有人起了任务（${before} → ${after}）`);
       notes.push(`⑭ run：videoToken 未登记 / videoToken=srt / bgToken 未登记 / srtToken=视频 → 400；任务数全程 ${before}`);
+    });
+
+    // ══ ㉜ upload：背景图（.png/.jpg/.jpeg/.webp）→ kind=image ══
+    //   由来（2026-10-11）：dub.mjs 早就有 `--bg <image>`（形态 A 的背景图），控制台的
+    //   server.mjs 也早收 bgToken ⇒ 但**上传通道拒收图片**（lib/dub.mjs 的 kindOfExt 只认
+    //   video/srt）⇒ 用户根本拿不到图片 token。本条钉住「图片真能上传、kind 正确」。
+    await runCase('㉜ upload 成功：.png / .jpg / .jpeg / .webp → kind=image（背景图）；落盘基名恰好 <token><ext>', async () => {
+      const upDirAbs = path.resolve(UPLOAD_DIR);
+      const cases = [['背景.png', '.png'], ['背景.jpg', '.jpg'], ['背景.jpeg', '.jpeg'], ['背景.webp', '.webp']];
+      for (const [name, ext] of cases) {
+        const r = await uploadRaw(P, name, Buffer.from('FAKE-IMAGE-BYTES-not-a-real-image'));
+        need(r.status === 200, `上传 ${name} 应 200，实际 ${r.status}：${r.text.slice(0, 160)}`);
+        need(r.json && r.json.ok === true, `${name} 响应缺 ok:true：${r.text.slice(0, 160)}`);
+        need(r.json.kind === 'image', `${name} 的 kind 应是 image，实际 ${r.json.kind}`);
+        need(r.json.name === name, `${name} 的 name 应原样回显，实际 ${r.json.name}`);
+        const p = String(r.json.path);
+        UPLOAD_PATHS.add(p);
+        need(path.extname(p) === ext, `${name} 落盘扩展名应是 ${ext}，实得 ${path.extname(p)}（${p}）`);
+        need(path.basename(p) === `${r.json.token}${ext}`,
+          `${name} 落盘基名必须**恰好**是 <token><ext>：实得 ${path.basename(p)}`);
+        need(path.dirname(path.resolve(p)) === upDirAbs, `${name} 落盘目录不是 UPLOAD_DIR：${p}`);
+        need(fs.existsSync(p), `${name} 落盘文件不存在：${p}`);
+        if (ext === '.png') imageToken = r.json.token;   // ㉝ 用它当「图片」样本
+      }
+      need(imageToken, '㉜ 没拿到 .png 的 token ⇒ ㉝ 的「图片」样本为空（判据会空转）');
+      notes.push(`㉜ 4 种图片扩展名（${cases.map((c) => c[1]).join(' / ')}）都上传成功且 kind=image（落盘基名恰好 <token><ext>）；png token=${imageToken}`);
+    });
+
+    // ══ ㉝ run：**用途校验**（消费侧）—— 图片只能当 bgToken ══════
+    //   ★ 为什么放在**消费侧**而不是上传端点：上传通道是「一次上传、token 后面按需用」的模型 ——
+    //     上传那一刻还不知道这个 token 将来当口播视频、字幕还是背景图（同一份 token 池、前端同一个
+    //     端点）⇒ 只有到 /api/dub/run 用的时候才知道用途，判据只能落在这里。
+    //   ★ 每条都断言**没起任务**（runExpect400 内部已断言）；绝不提交一条「合法」的 bgToken
+    //     （那会真的入队出片 → 跑 TTS/GPU）。
+    await runCase('㉝ run 用途校验（消费侧）：图片当 videoToken / 视频·字幕当 bgToken / 图片当 srtToken → 400 且不起任务', async () => {
+      const before = await jobsCount(P);
+      // ① 图片**不能**当 videoToken（成片素材）
+      const a = await runExpect400(P, { script: 'x', videoToken: imageToken }, 'videoToken 指向图片');
+      need(/不是口播视频/.test(a.json.error), `① 的理由没说清「不是口播视频」：${a.json.error}`);
+      // ② 背景图**必须**是图片：视频 / 字幕都不能当 bgToken
+      const b = await runExpect400(P, { script: 'x', bgToken: videoToken }, 'bgToken 指向视频');
+      need(/不是背景图/.test(b.json.error), `② 的理由没说清「不是背景图」：${b.json.error}`);
+      const c = await runExpect400(P, { script: 'x', bgToken: srtToken }, 'bgToken 指向字幕');
+      need(/不是背景图/.test(c.json.error), `③ 的理由没说清「不是背景图」：${c.json.error}`);
+      // ③ 图片也不能当 srtToken（字幕时间轴）
+      const d = await runExpect400(P, { script: 'x', srtToken: imageToken }, 'srtToken 指向图片');
+      need(/不是字幕/.test(d.json.error), `④ 的理由没说清「不是字幕」：${d.json.error}`);
+      // ④ ★ 反空转对照：错误理由**按 kind 分得开**（未登记 ≠ 用途不对）—— 若某天把用途校验删了，
+      //    这里会变成「不在已上传清单里」（因为 token 确实登记过，故不会命中那一支）⇒ 立刻变红。
+      const e = await runExpect400(P, { script: 'x', bgToken: 'zz-not-registered' }, 'bgToken 未登记（对照）');
+      need(/不在已上传清单里/.test(e.json.error), `⑤ 未登记的理由变了（应仍是「不在已上传清单里」）：${e.json.error}`);
+      const after = await jobsCount(P);
+      need(after === before, `上面 5 条 400 里有人起了任务（${before} → ${after}）`);
+      notes.push(`㉝ 用途校验：图片→videoToken 400 / 视频·字幕→bgToken 400 / 图片→srtToken 400 / 未登记→400（理由按 kind 分得开）；任务数全程 ${before}`);
     });
 
     // ══ ⑯ run：--keep-original-limit 的契约（形状 + 语义）═════

@@ -1840,6 +1840,7 @@ html[data-theme="light"] {
 .dub-kv .k { color: var(--fg-faint); margin-right: 4px; }
 .dub-score { font-family: var(--mono); font-size: var(--fs-sm); color: var(--fg-dim); }
 .dub-srt-note,
+.dub-bg-note,
 .dub-keep-params-note { font-size: var(--fs-sm); color: var(--fg-faint); margin-top: 8px; line-height: 1.6; }
 
 /* ── 素材比例 × 输出比例的防呆提示 ───────────────────────────────

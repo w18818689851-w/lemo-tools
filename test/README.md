@@ -11,9 +11,9 @@ node test/smoke.mjs --full       # 额外跑完整回归：全链路出片 + **�
 node test/smoke.mjs --filter ③   # 只跑名字里含 "③" 的用例
 node test/smoke.mjs --keep-server  # 跑完不杀测试服务（调试用，自己记得收）
 
-node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（13 条）
+node test/setup.test.mjs         # 首次运行安装的**纯逻辑**测试（16 条，★ ⑭⑮⑯：采样库**单库可选** —— 默认仍是 `instruments all`、库名清单逐字比对上游 `tools/fetch.sh` 的 `$LIBS`）
 node test/setup-api.test.mjs     # 「首次运行向导」两个接口的 HTTP 契约测试（12 条，★ 绝不真安装；★ 2026-10-10 ⑪ 从**一次冷启动**钉住三件事：① 未知 id 的 404 **不付探测**（实测 22ms ≪ 冷态全量探测 6519ms —— 钉 `apiSetupRun` 先查 id 白名单、不空跑整轮环境探测）、② `GET /api/setup/actions` 写进**共享** `envCache`（随后 `/api/env` 必 `cached:true`）、③ `POST /api/setup/run` 读同一份缓存（实测 1ms，不再每请求重探））
-node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（99 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见；★ L 组 7 条（2026-10-11）：上一批 5 个 UI 入口的**进仓**回归钉 —— 启动表单 `#runRatio`→`--ratio` / `#runSizeW·H`→`--size`（★ 且**奇数尺寸不传**的反向断言）、`#fNoPreflight`→`--no-preflight`、`#fFilm`→`--film`、算力面板 `#btnLlmTryRun`→`POST /api/llm/invoke`（页面内 fetch 桩，绝不真发外网）+ 侧栏 `.style-item` 中英名/slug 真值比对 + 浅色 hover 底色对比度盲区）
+node test/ui.test.mjs            # Web UI 层测试：无头 Edge 渲染 DOM + CDP 真点击（103 条，★ 含「资源检测」面板 J1~J4：5 态徽标 / **ready 不出现下载按钮** / 非 ready 才出现；★ I12：算力面板的 `extra` 回填 / 清空发 `clearExtra` / `llmPath`+`llmExtract` 对 `openai-compatible` 可见；★ L 组 7 条（2026-10-11）：上一批 5 个 UI 入口的**进仓**回归钉 —— 启动表单 `#runRatio`→`--ratio` / `#runSizeW·H`→`--size`（★ 且**奇数尺寸不传**的反向断言）、`#fNoPreflight`→`--no-preflight`、`#fFilm`→`--film`、算力面板 `#btnLlmTryRun`→`POST /api/llm/invoke`（页面内 fetch 桩，绝不真发外网）+ 侧栏 `.style-item` 中英名/slug 真值比对 + 浅色 hover 底色对比度盲区）
 node test/consistency.test.mjs   # 「字幕 ↔ 语义 ↔ 画面」一致性校验门的纯逻辑测试（17 条）
 node test/dub-semantic.test.mjs  # 语义解析 / 风格匹配的纯逻辑测试（11 条，★ 含 visual 维度的向后兼容）
 node test/briefs.test.mjs        # 「主题工单」数据层 + 接口 + UI 的测试（16 条，★ 含「控制台出片写进 _jobs 独立目录、不覆盖样板片」+「--ratio 的 `:` 判据」「filmUrl 指向本次产物」）
@@ -21,7 +21,7 @@ node test/originality.test.mjs   # 「从零原创」审计器的纯逻辑测试
 node test/style-skill-reader.test.mjs  # 风格 Skill 文档读取入口的纯逻辑测试（6 条，★ 钉「缺失即 null 绝不抛」的硬契约）
 node test/triple-check.test.mjs   # 三者一致性校验门（**全项目唯一允许调 7B VLM 的地方**）的纯逻辑测试（29 条）
 node test/dub-lexicon.test.mjs    # 规则词表 TAG_LEXICON / lexiconCoverage 的纯逻辑测试（12 条，★ 词表数据完整性）
-node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（29 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越 + ★ LLM 端点与多套服务 CRUD 的最小回归 ㉔~㉗：`POST /api/llm/chat` / `POST /api/llm/invoke`（只打非法参错误路径，绝不起 run）/ `POST /api/llm/models`（agent 守卫拒绝，绝不打网关）/ 多套服务 CRUD（`GET`+`POST /api/llm/services*`）；★ **2026-10-10 减法**：原 ㉑㉒㉓ 钉的 `GET|POST /api/llm/config` 与 `GET /api/llm/profiles` **已随「超出参考标准」的端点整体删除** ⇒ 三条用例随端点一并删（32 → 29））+ ★★ **㉛ 安全回归（P0/P1）**：`GET /api/llm/services` 响应体**搜不到明文密钥**、**搜不到自定义头的值**，每行**无** `apiKey` 字段、`headers` **只回布尔 `hasHeaders`**）
+node test/dub-api.test.mjs        # /api/dub/* 七个接口的契约与校验测试（31 条，★ 含上传路径穿越防护 + 文案出片成片字节路由 /api/films/dub/:dir/:file 的 200/206/416/HEAD 与路径穿越 + ★ LLM 端点与多套服务 CRUD 的最小回归 ㉔~㉗：`POST /api/llm/chat` / `POST /api/llm/invoke`（只打非法参错误路径，绝不起 run）/ `POST /api/llm/models`（agent 守卫拒绝，绝不打网关）/ 多套服务 CRUD（`GET`+`POST /api/llm/services*`）；★ **2026-10-10 减法**：原 ㉑㉒㉓ 钉的 `GET|POST /api/llm/config` 与 `GET /api/llm/profiles` **已随「超出参考标准」的端点整体删除** ⇒ 三条用例随端点一并删（32 → 29））+ ★★ **㉛ 安全回归（P0/P1）**：`GET /api/llm/services` 响应体**搜不到明文密钥**、**搜不到自定义头的值**，每行**无** `apiKey` 字段、`headers` **只回布尔 `hasHeaders`**）
 node test/voices-api.test.mjs     # /api/voices/{sources,import,test,test/audio} 的契约与校验测试（10 条，只测失败路径）
 node test/style-scan.test.mjs     # 风格源码指纹机制（约定一「自动纳入」的判据）测试（16 条，★ 该变就变/不该变就不变）
 node test/triple-check-flow.test.mjs  # verifyTriple 主流程端到端测试（17 条，★ 用桩 LM Studio，绝不碰真实模型；★ 2026-10-10 补 2 条「面板优先 / 回落」用例，见 lib/triple-check.mjs 的 askVlm）
@@ -41,6 +41,7 @@ node test/styles.test.mjs         # lib/styles.mjs（风格索引解析 + `escap
 node test/review.test.mjs        # 编排器 ⑩「审核回路」（--review）的回归测试（10 条，★ opt-in ⇒ 默认出片路径不跑它 ⇒ 既有测试零覆盖：CLI 契约 + blackdetect **真值**（合成「黑/白/黑」= 2 段、全白 = 0 段、真成片 ≥1 段）+ 端到端真产 sheet.jpg 并核几何（宽 = cols×w = 1920）；库 / WSL / ffmpeg 缺依赖时**显式 skip**，绝不假装通过）
 node test/asr-cli.test.mjs       # 编排器 ⑪「ASR 三参数 CLI 出口」（--asr-lang / --asr-model / --asr-threshold）的回归测试（12 条，★ 从源码重建内嵌 WSL 脚本 ⇒ 钉「默认路径那条 asr_check 命令与改动前**逐字节一致**」+ **真跑 Git Bash**（桩 python 收 argv）证参数真进了库侧命令 + 显式参数取消既有「按行自动跳过 CJK」；不碰真实输出目录 / 成片库）
 node test/js-scan.test.mjs       # 共享剥注释器 `lib/js-scan.mjs` 的回归测试（7 条，★ 钉「**正则字面量含裸引号**不复带偏」（= 2026-10-11 `check-llm-call-params` 失明事故的最小复现）+ 「注释含反引号」+ 与旧实现**逐字节等价性**（安全文件）+ 新实现更正确（危险文件）+ 基本语义/行号保留 + ★ **变异自证**：去掉正则识别 ⇒ 用例 1/3/5/7 必变红）
+node test/readcheck-probe.test.mjs # 上游 `core/render/readcheck.mjs` 三个退出码的端到端回归（3 条，★ 夹具建在 `D:/lemo-tmp/` 下、**库仓之外**：全库 43 个风格 0 个实现 `window.TEXTS` ⇒ 编排器廉价预判必然跳过、真跑必然返 2 ⇒ **`exit 0`/`exit 1` 两条分支此前从未实跑过**；最小夹具把 2/0/1 各钉一条 + 2 处变异自证）
 ```
 
 `test/setup.test.mjs` 与 `test/ui.test.mjs` 都是**独立入口**，故意不并进 `smoke.mjs`：安装逻辑、UI 层各自一个数字，三边互不干扰。
@@ -971,7 +972,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/setup.test.mjs` 覆盖了什么（12 条）
+## `test/setup.test.mjs` 覆盖了什么（16 条）
 
 | 用例 | 断言 |
 |---|---|
@@ -1030,7 +1031,7 @@ risograph 的网点色（粉/蓝）在 JPEG 的 4:2:0 里会被吃掉，`core/re
 
 ---
 
-## `test/ui.test.mjs` 覆盖了什么（99 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条 + 第十四批 7 条 + 第十五批 4 条 + 第十六批 1 条 + **第十七批 5 条**） + 第十四批 7 条 + **第十五批 4 条 + 第十六批 1 条**）
+## `test/ui.test.mjs` 覆盖了什么（103 条：第四批 20 条 + 第五批 1 条 + 第七批 4 条 + 第八批 10 条 + 第九批 6 条 + 第十批 13 条 + 第十一批 5 条 + 第十二批 6 条 + 第十三批 4 条 + 第十四批 7 条 + 第十五批 4 条 + 第十六批 1 条 + 第十七批 5 条 + **第十八批 4 条**）
 <!-- ★ 2026-10-10 订正：本标题原写「69 条」，与入口行不一致（**旧漂移**）。上列批次之和确为 69，
      另 6 条来自其后未逐批列出的批次 ⇒ 总数改为 **75**（★ 以本文件「测试入口」表那一行为准）。
      ★ 另：2026-10-10「AI 算力配置」面板极简化时，I 组 6 条被**同数重写**（6 换 6）⇒ 总数不变。★ 2026-10-10 第二轮（通用算力模块重建）：I 组换锚点 + 新增 I7~I11（多套列表/新增/切换/删除/空状态）⇒ ui.test 由 75 → **80**；同轮 llm-api.test 71 → **78**、dub-api.test 27 → **31**。 -->

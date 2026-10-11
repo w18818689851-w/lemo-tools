@@ -9,6 +9,11 @@
  *   安装逻辑的用例另起一个入口，两个数字互不干扰（smoke 仍是 19，这里是 13）。
  *   ★ 2026-10-08 复核：smoke 现为 **41** 条（`STATIC 9 + SERVER 27 + PROCESS 5`）——「19」是更早的快照；
  *     本文件（安装纯逻辑）仍为 **13** 条。
+ *   ★★ 2026-10-11：本文件 **13 → 16** 条 —— 新增 ⑭⑮⑯ 三条，钉「乐器采样库单库可选」这个改动：
+ *     ⑭ 默认路径（不选）逐字节不变（仍是 `instruments all`）；⑮ 每个库能单装、非法库名进不了命令；
+ *     ⑯ 硬编码的库名 / 体积逐字等于**上游** `tools/fetch.sh` 的 `$LIBS` 与 `tools/assets.json`。
+ *     ★ 因此本套件现在**依赖上游 Windows 库可读**（`CFG.winLib`，默认 `D:\lemo-opuscar`）——
+ *     读不到时 ⑯ 判「无法判定」并 FAIL（刻意：宁可红，也不要静默放行一条会发错命令的硬编码）。
  *
  * ★ 为什么这些用例**必须**存在：
  *   这台机器环境已 12/12 就绪，「检测到缺失 → 生成安装动作」这条路径**本地永远走不到**。
@@ -28,7 +33,7 @@ import { spawn } from 'node:child_process';
 import {
   planActions, serializeAction, actionSatisfied, classifyFailure, stepCommand,
   FIXTURES, fixtureClean, fixtureBareWsl, fixturePartialAssets, fixtureReady, fixtureAllMissing,
-  knownActionIds, simulateEnv, TIMEOUTS,
+  knownActionIds, simulateEnv, TIMEOUTS, INSTRUMENT_LIBS,
 } from '../lib/setup.mjs';
 // ★ driftCheck / CFG：本套件既有的「漂移哨兵」（⑤）本就以 lib/env.mjs 为对象，故一并向它取用。
 import { CFG, driftCheck } from '../lib/env.mjs';
@@ -82,6 +87,23 @@ function envItemIdsFromSource() {
   return [...ids].sort();
 }
 
+/**
+ * 读**上游库仓**（Windows 侧那份）里的 `tools/*` 文件 —— ⑯ 用它做「清单不漂」的逐字比对。
+ * ★ 读不到就返回 null（由用例判「无法判定」并 FAIL，**不**静默放行 —— 本项目的既有纪律）。
+ * ★ 候选根：`CFG.winLib`（认 `LEMO_LIB_WIN`）与它的默认值 `D:\lemo-opuscar`（去重）。
+ */
+function readUpstreamTools(names) {
+  const roots = [...new Set([CFG.winLib, 'D:\\lemo-opuscar'])];
+  for (const r of roots) {
+    try {
+      const out = { root: r };
+      for (const n of names) out[n] = fs.readFileSync(path.join(r, 'tools', n), 'utf8');
+      return out;
+    } catch { /* 这个候选根不完整 ⇒ 换下一个 */ }
+  }
+  return null;
+}
+
 // ── 用例 ────────────────────────────────────────────────────
 const CASES = [
   {
@@ -119,8 +141,10 @@ const CASES = [
         assert.ok(by[id].manual.note.includes('手动'), `${id} 的指引没有明说「这一步需要你手动做」`);
         assert.strictEqual(by[id].steps, undefined, `${id} 是 manual 却带了可执行步骤 —— 会让人误以为能自动跑`);
       }
-      // 覆盖度：12 项全部要有动作
-      assert.strictEqual(actions.length, 12, `最坏情况下应规划出 12 个动作，实得 ${actions.length}：${actions.map((a) => a.id).join(', ')}`);
+      // 覆盖度：12 项全部要有动作（★ 2026-10-11：`assets.inst` 额外派生「单库」可选项 ⇒ 12 + N）
+      const want = 12 + INSTRUMENT_LIBS.length;
+      assert.strictEqual(actions.length, want,
+        `最坏情况下应规划出 ${want} 个动作（12 个检测项 + ${INSTRUMENT_LIBS.length} 个采样库单库可选项），实得 ${actions.length}：${actions.map((a) => a.id).join(', ')}`);
     },
   },
   {
@@ -164,7 +188,8 @@ const CASES = [
       const fb = actions.filter((a) => a.id.startsWith('fallback.'));
       assert.deepStrictEqual(fb.map((a) => a.id), [],
         `以下 env 检测项在 lib/setup.mjs 里没有专门的安装动作，只落到了兜底分支（env.mjs 加了新检查？）：\n  ${fb.map((a) => a.id).join('\n  ')}`);
-      assert.strictEqual(actions.length, ids.length, `动作数 ${actions.length} 与 env 项数 ${ids.length} 不一致`);
+      assert.strictEqual(actions.length, ids.length + INSTRUMENT_LIBS.length,
+        `动作数 ${actions.length} ≠ 「env 项数 ${ids.length} + 采样库单库可选项 ${INSTRUMENT_LIBS.length}」（★ 后者是 assets.inst 的附加动作，见 ⑭/⑮）`);
       // 顺带确认 fixtureReady 里的 id 集合与 env.mjs 一致
       const readyIds = fixtureReady().groups.flatMap((g) => g.items.map((i) => i.id)).sort();
       assert.deepStrictEqual(readyIds, ids, `fixtureReady 的 id 与 env.mjs 不一致：\n  fixture=${readyIds.join(',')}\n  env.mjs=${ids.join(',')}`);
@@ -345,6 +370,155 @@ const CASES = [
       const d2 = litDrift.find((d) => d.id === 'drift.wslLib');
       assert.ok(d2, '不一致的字面量必须产出条目');
       assert.match(d2.msg, /漂移/, `不一致应报「漂移」而非「无法判定」，实得：${d2.msg}`);
+    },
+  },
+  {
+    name: '⑭ 采样库默认路径逐字节不变：不选 ⇒ 仍是 `instruments all`，且排在可选项之前',
+    run: () => {
+      // ★ 铁律（与 `--color default` 同源口径）：**不选任何库**时，用户看到的卡片、点到的按钮、
+      //   跑的命令必须与「加单库可选之前」逐字节一致。下面第 ② 段就是改动前 lib/setup.mjs 里
+      //   那段脚本的**逐字节副本** —— 想改它，先想清楚为什么（改了这里就必须同步那里）。
+      const actions = planActions(fixturePartialAssets());   // 该场景 assets.inst = warn
+      const def = actions.find((a) => a.id === 'assets.inst');
+      assert.ok(def, `没有规划出 assets.inst（默认的「全部」动作）；实得 ${actions.map((a) => a.id).join(', ')}`);
+
+      // ① 元数据逐字节
+      assert.strictEqual(def.kind, 'auto');
+      assert.strictEqual(def.title, '下载乐器采样库（约 1.4 GB，可断点续传）');
+      assert.strictEqual(def.estBytes, 1.4e9);
+      assert.deepStrictEqual(def.envIds, ['assets.inst']);
+      assert.strictEqual(def.steps.length, 1);
+      assert.strictEqual(def.steps[0].label, 'sh tools/fetch.sh instruments all');
+      assert.strictEqual(def.steps[0].timeoutMs, TIMEOUTS.download);
+
+      // ② 脚本正文逐字节（= 改动前的原文）
+      assert.strictEqual(def.steps[0].script, [
+        '',
+        'set -e',
+        `L="${CFG.wslLib}"`,
+        'cd "$L"',
+        'if [ ! -f tools/fetch.sh ]; then echo "✗ 找不到 $L/tools/fetch.sh"; exit 2; fi',
+        'echo "→ 下载 5 个采样库，共约 1.4 GB；中断后重跑同一命令会自动续传"',
+        'sh tools/fetch.sh instruments all',
+        'echo "→ 校验"',
+        'echo "inst=$(find $L/core/audio/instruments -type f 2>/dev/null | wc -l)"',
+        '',
+      ].join('\n'), '默认动作（assets.inst）的脚本正文变了 —— 违反「不选 ⇒ 与改动前逐字节一致」这条铁律');
+
+      // ③ 默认动作必须是这一项的**第一条**（UI 第一张卡 = 默认路径；可选项只许排在它后面）
+      const sameEnv = actions.filter((a) => (a.envIds || []).includes('assets.inst')).map((a) => a.id);
+      assert.strictEqual(sameEnv[0], 'assets.inst', `assets.inst 的主动作不在第一位：${sameEnv.join(', ')}`);
+      assert.deepStrictEqual(sameEnv, ['assets.inst', ...INSTRUMENT_LIBS.map((l) => `assets.inst.${l.name}`)],
+        'assets.inst 那一组动作的构成 / 顺序不对');
+    },
+  },
+  {
+    name: '⑮ 采样库可选：每个库都能单装（命令里是该库名、不带 all），非法库名进不了命令',
+    run: () => {
+      const actions = planActions(fixturePartialAssets());
+      const by = Object.fromEntries(actions.map((a) => [a.id, a]));
+      const allowed = new Set([...INSTRUMENT_LIBS.map((l) => l.name), 'all']);
+
+      // ① 构成：1 个「全部」+ N 个单库，且都在同一个检测项（assets.inst）下
+      const inst = actions.filter((a) => a.id === 'assets.inst' || a.id.startsWith('assets.inst.'));
+      assert.strictEqual(inst.length, 1 + INSTRUMENT_LIBS.length,
+        `采样库相关动作数不对：${inst.map((a) => a.id).join(', ')}`);
+
+      for (const l of INSTRUMENT_LIBS) {
+        const a = by[`assets.inst.${l.name}`];
+        assert.ok(a, `缺少单库动作 assets.inst.${l.name}`);
+        assert.strictEqual(a.kind, 'auto', `${a.id} 应是 auto`);
+        assert.strictEqual(a.estBytes, l.bytes, `${a.id} 的体积与清单不符（UI 要显示它）`);
+        assert.deepStrictEqual(a.envIds, ['assets.inst'], `${a.id} 的 envIds 应挂在 assets.inst 上`);
+        assert.ok(a.why && a.why.length > 0, `${a.id} 没有 why`);
+
+        // ② 命令里出现**那个库名**、且**不带 all**
+        const calls = a.steps.flatMap((s) => String(s.script || '').split('\n'))
+          .filter((x) => /fetch\.sh\s+instruments/.test(x));
+        assert.strictEqual(calls.length, 1, `${a.id} 的 fetch.sh 调用不唯一：${calls.join(' | ')}`);
+        assert.strictEqual(calls[0], `sh tools/fetch.sh instruments ${l.name}`,
+          `${a.id} 的调用不是「只装这个库」：${calls[0]}`);
+        assert.ok(!/\ball\b/.test(calls[0]), `${a.id} 的命令里出现了 all：${calls[0]}`);
+
+        // ③ 幂等守卫盯的就是这个库的目录（目录名 = 库名，见上游 core/audio/INSTRUMENTS.md §9）
+        assert.ok(String(a.steps[0].script).includes(`core/audio/instruments/${l.name}`),
+          `${a.id} 的幂等守卫没盯 core/audio/instruments/${l.name}`);
+      }
+
+      // ④ 白名单：计划里**所有** `fetch.sh instruments <x>` 的 <x> 都必须是「某个库名或 all」
+      const args = [];
+      for (const a of actions) {
+        for (const s of a.steps || []) {
+          for (const line of String(s.script || '').split('\n')) {
+            const m = /^sh tools\/fetch\.sh instruments (\S+)$/.exec(line);
+            if (m) args.push(m[1]);
+          }
+        }
+      }
+      assert.ok(args.length >= 1 + INSTRUMENT_LIBS.length, `计划里只抽出 ${args.length} 条 fetch.sh 调用，太少`);
+      for (const x of args) assert.ok(allowed.has(x), `计划里出现了白名单外的库名：${x}`);
+      assert.ok(args.includes('all'), '默认动作的 `instruments all` 不见了（默认路径被改坏了）');
+
+      // ⑤ 非法库名**进不了命令**：它们既不在 knownActionIds()（⇒ server 直接 404、不执行），
+      //   也不会被任何动作拼进 shell —— 「用户输入直拼命令」这条注入面在这里是关着的。
+      const bad = ['zzz', 'all2', 'vsco2ce;rm -rf /', '../etc', 'freepats vcsl', '', 'ALL'];
+      const known = knownActionIds();
+      for (const b of bad) {
+        assert.ok(!known.includes(`assets.inst.${b}`), `knownActionIds() 里竟然有非法 id assets.inst.${b}`);
+        assert.ok(!known.includes(`assets.inst.${b} `), `knownActionIds() 里竟然有带空格的 id`);
+        for (const line of args) assert.notStrictEqual(line, b, `非法库名 ${JSON.stringify(b)} 被拼进了命令`);
+      }
+      for (const l of INSTRUMENT_LIBS) assert.ok(known.includes(`assets.inst.${l.name}`), `knownActionIds() 少了 assets.inst.${l.name}（server 会误判 404）`);
+    },
+  },
+  {
+    name: '⑯ 采样库清单不漂：硬编码的库名 / 体积逐字等于上游（fetch.sh 的 $LIBS + assets.json）',
+    run: () => {
+      // ★ 为什么必须有这条：库名清单是**硬编码**的（理由见 lib/setup.mjs 的 INSTRUMENT_LIBS 段：
+      //   这个动作恰恰是给「库还没装」的机器看的，那时上游文件也不存在 ⇒ 派生必然退化成常量）。
+      //   硬编码就必须有闸门 —— 否则上游改名 / 增删库，我们只会**悄悄**发一条错命令。
+      // ★ 判据形态：读上游原文逐字比对。**读不到上游 ⇒ 判「无法判定」并 FAIL**（不静默放行，
+      //   沿用本套件 ⑬ 的口径：「匹配不上」必须与「匹配上且一致」区分开）。
+      const up = readUpstreamTools(['fetch.sh', 'assets.json']);
+      assert.ok(up, `读不到上游 tools/fetch.sh 与 tools/assets.json（候选：${CFG.winLib} / D:\\lemo-opuscar）`
+        + ' ⇒ **无法判定**库名清单是否漂移。这不是「无问题」：请先让 Windows 库就位（或设 LEMO_LIB_WIN）再跑本套件。');
+
+      // ① fetch.sh 的 $LIBS（= usage 行里 `instruments <lib>` 的 libs）
+      const m = /^LIBS="([^"]*)"/m.exec(up['fetch.sh']);
+      assert.ok(m, '上游 fetch.sh 里找不到 `LIBS="..."` 这一行（上游形态变了？）⇒ 本套件的解析已失明，必须同步它');
+      const upstreamLibs = m[1].trim().split(/\s+/).filter(Boolean);
+      assert.ok(upstreamLibs.length >= 1, `上游 $LIBS 解析出 ${upstreamLibs.length} 个库名，解析可能失效：${JSON.stringify(m[1])}`);
+      const mine = INSTRUMENT_LIBS.map((l) => l.name).sort();
+      assert.deepStrictEqual(mine, [...upstreamLibs].sort(),
+        `★ 库名清单与上游不一致（上游改了名 / 增删了库？）—— 同步 lib/setup.mjs 的 INSTRUMENT_LIBS：\n`
+        + `  本仓：${mine.join(', ')}\n  上游：${[...upstreamLibs].sort().join(', ')}`);
+
+      // ② 体积：与上游 assets.json 的 `instruments-<lib>.size` 逐字相同（只影响 UI 显示，但显示错就是错）
+      const man = JSON.parse(up['assets.json']);
+      for (const l of INSTRUMENT_LIBS) {
+        const p = man.packs && man.packs[`instruments-${l.name}`];
+        assert.ok(p, `上游 assets.json 里没有 instruments-${l.name} 这个 pack（上游改名了？）`);
+        assert.strictEqual(l.bytes, p.size,
+          `assets.inst.${l.name} 的体积显示与上游不符：本仓 ${l.bytes} / 上游 ${p.size}`);
+      }
+      // 反向：上游多出来的 instruments-* pack 也必须在本仓清单里（否则用户装不到）
+      const extra = Object.keys(man.packs || {})
+        .filter((k) => k.startsWith('instruments-'))
+        .map((k) => k.slice('instruments-'.length))
+        .filter((x) => !mine.includes(x));
+      assert.deepStrictEqual(extra, [], `上游有本仓清单里没有的采样库：${extra.join(', ')}（用户装不到它）`);
+
+      // ③ 幂等守卫假设的目录名 = 库名：上游 INSTRUMENTS.md 的授权表里逐个写着 `instruments/<lib>/`
+      //    （守卫写错目录名不会报错，只会**永远不跳过** ⇒ 一键安装会把 1.4 GB 再下一遍，故一并钉住）
+      let doc = null;
+      for (const r of [...new Set([up.root, 'D:\\lemo-opuscar'])]) {
+        try { doc = fs.readFileSync(path.join(r, 'core', 'audio', 'INSTRUMENTS.md'), 'utf8'); break; } catch { /* 换下一个 */ }
+      }
+      assert.ok(doc, `读不到上游 core/audio/INSTRUMENTS.md（候选：${up.root}）⇒ 无法钉住「目录名 = 库名」这个假设`);
+      for (const l of INSTRUMENT_LIBS) {
+        assert.ok(doc.includes(`instruments/${l.name}/`),
+          `上游 INSTRUMENTS.md 里找不到 \`instruments/${l.name}/\` ⇒ 单库动作的幂等守卫盯错了目录（上游改了目录结构？）`);
+      }
     },
   },
 ];

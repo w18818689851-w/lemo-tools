@@ -777,6 +777,34 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
      （无判据/结论变化、全 exit 0）；另做了**全仓 131 文件 × 3 口径**的横证（模式 B/A：相同 87 / 可解释 44 / **无法解释 0**；
      模式 C：相同 78 / 可解释 53 / **0**）。新测试 `test/js-scan.test.mjs`（7 条，含**变异自证**：去掉正则识别 ⇒ 用例 1/3/5/7 必变红）。
      ★ 冻结指纹 `597b7f5d…` → **`963b2dbbedfa25e299d84da045a8e7e29985f5d4c81e8dd14e2603744317ede7`**（`--write` 重冻结）。
+   ★ **2026-10-11（同日再一处）** 控制台侧收口 ⚠️ 维 + 采样库单库可选 + `readcheck` 端到端：
+   · **背景图上传（⚠️11）**：`lib/dub.mjs` 新增 `ALLOWED_IMG_EXTS = ['.jpg','.jpeg','.png','.webp']`
+     （★ **有意不收 `.gif`**：dub 侧是 `-loop 1 -i <图>`，给的是**一张静止画面**，动图与「背景图」语义不符且本仓从未实测）；
+     `kindOfExt()` 多回一个 **`'image'`**；`UPLOAD_EXTS` 跟着扩。
+     ★★ **用途校验放在消费侧**（`server.mjs` 的 `/api/dub/run`）：上传端点**只判「扩展名认不认得」** ——
+     那是「一次上传、token 后面按需用」的通道，上传那刻还不知道它将来当什么用；
+     真正按用途判的是 `videoToken`（必须 `video`）与 `bgToken`（必须 `image`），各带精确 400 文案。
+   · **`asr_check` 三参数 UI（⚠️6）**：高级参数区加 `#fAsrLang` / `#fAsrModel` / `#fAsrThreshold`；
+     ★ **默认值等于「不传」**（`--asr-threshold` 只在 `!== '' && !== 0.92` 时才带）⇒ 默认路径逐字节不变。
+   · **采样库单库可选（❌11）**：`lib/setup.mjs` 新增 `INSTRUMENT_LIBS`（★ **硬编码，来源 = 上游
+     `tools/fetch.sh` 第 7 行 `LIBS="freepats karoryfer salamander vcsl vsco2ce"`**），派生
+     `assets.inst.<lib>` 动作挂在 `EXTRA` 表上、**排在主动作之后**；`AUTO['assets.inst']`（`instruments all`）
+     **逐字节未改** = 默认路径。★ 之所以硬编码而不是运行时派生：`lib/env.mjs` 只在 **WSL 库存在**时才检测
+     `assets.inst`，而「库还没装」恰恰是最需要这份清单的时候 ⇒ 只能常量 + 一条**哨兵测试**（⑯）：
+     读上游 `fetch.sh` 的 `$LIBS`、`tools/assets.json`、`core/audio/INSTRUMENTS.md` **逐字比对**，
+     **读不到上游 ⇒ FAIL**（不静默放行）。★ 另加**幂等守卫** `[ -d core/audio/instruments/<lib> ]` ——
+     上游 `fetch.sh` 没有「已装则跳过」，不守卫的话「一键安装所有可自动项」会把 1.4 GB **重下一遍**。
+     ★ **UI 一行没改**（实测 `renderSetup()` 是按服务端 `actions` 自动渲染；`?simulate=partial` 的卡片数 4 → 9）。
+     ★ 闸门：`test/setup.test.mjs` ⑭（默认逐字节）/ ⑮（单库 + 白名单）/ ⑯（清单逐字比对上游）。
+   · **`readcheck` 的 `exit 0/1` 端到端（反复登记的缺口，本批关闭）**：★ 已核实**夹具能放库仓之外** ——
+     `core/render/serve.mjs` 的 `pageURL()` 对仓库外目录走 **`/@film/` 挂载**（`resolveRequest()` 同款前缀分支）
+     ⇒ 夹具建在 `D:/lemo-tmp/readcheck-probe/` 即可，**绝不需要动库仓**（两侧一致约束下这是唯一安全做法）。
+     ★ 新增 `test/readcheck-probe.test.mjs`（3 条，临时夹具 + 2 处变异自证）把 **`2`（无 `window.TEXTS` ⇒
+     NOT CHECKED，= 全库 43 风格的当前形态）/ `0`（短文达标）/ `1`（长文不达标）** 各钉一条。
+     ★ 顺带实测到一个**假绿陷阱**并写进测试注释：本机 Node 22.22.2 把 `{ skip: null }` 判成 **SKIP 但函数体照样执行**
+     ⇒ 选项必须**条件传参**（`MISSING ? { skip: MISSING } : {}`），不能写死。
+     ★ 如实登记：**编排器第 6 步本身仍未被端到端跑到**（那需要「某个风格实现了 `window.TEXTS`」或一次完整出片）
+     —— 本批关掉的是「`exit 0/1` 从未实跑」，**没**关掉「编排器真跑到 readcheck」。
    ★ **2026-10-11** 控制台侧新增 **`GET /api/style-switches`**（`--q` 开关助手的数据源）：从库仓
    `styles/<slug>/demo/**` **机械派生**该风格的页面开关（**不维护任何会漂的名单**）。判据经一轮修正：
    ★★ **首版只认 `.get('x')` 与 `location.search.includes('x')`，漏掉 `.has()` 形态** ——

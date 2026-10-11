@@ -503,6 +503,35 @@
             <span class="lbl" title="对应命令行参数 --film">影片模块</span>
             <input id="fFilm" class="input" placeholder="留空 = 用该风格自带的影片模块（如 film_coffee.js）" autocomplete="off">
           </label>
+          <!-- ★ ASR 三参数（对应 CLI 的 --asr-lang / --asr-model / --asr-threshold；库侧是
+               core/tts/asr_check.py 的 --lang / --model / --threshold）。
+               ★★ 三个都**留默认 = 一个字都不传** —— 命令行与旧版逐字节一致（照 --fps / --workers /
+                 --color 的做法）。★ 注意：显式给出**任一个** ASR 参数，编排器就**不再按行自动跳过** ASR。 -->
+          <label class="field">
+            <span class="lbl" title="对应命令行参数 --asr-lang（库侧 core/tts/asr_check.py 的 --lang，默认 auto）">ASR 语言</span>
+            <select id="fAsrLang" class="input"
+                    title="对应命令行参数 --asr-lang（库侧 core/tts/asr_check.py 的 --lang，默认 auto：按文本是否含 CJK 自动判定）">
+              <option value="">默认（不传 --asr-lang）</option>
+              <option value="auto">auto（自动判定，且不做按行跳过）</option>
+              <option value="en">en</option>
+              <option value="zh">zh</option>
+              <option value="ja">ja</option>
+              <option value="ko">ko</option>
+            </select>
+            <span class="hint" id="fAsrLangHint">默认（不传）= 库侧 auto，并按行自动跳过；显式给出即不再自动跳过</span>
+          </label>
+          <label class="field">
+            <span class="lbl" title="对应命令行参数 --asr-model（库侧 core/tts/asr_check.py 的 --model，默认空）">ASR 模型</span>
+            <input id="fAsrModel" class="input" autocomplete="off"
+                   placeholder="留空 = 不传（库自己定：en → base.en，其它 → base）">
+            <span class="hint" id="fAsrModelHint">默认（不传）= 库自己定：en → base.en，其它 → base</span>
+          </label>
+          <label class="field">
+            <span class="lbl" title="对应命令行参数 --asr-threshold（库侧 core/tts/asr_check.py 的 --threshold，默认 0.92）">ASR 相似度阈值</span>
+            <input id="fAsrThreshold" class="input" type="number" step="0.01" min="0" max="1"
+                   placeholder="留空 = 0.92" inputmode="decimal" autocomplete="off">
+            <span class="hint" id="fAsrThresholdHint">默认（不传）= 0.92；越接近 1 越严格</span>
+          </label>
         </div>
         <!-- ★ 起飞前检查开关（CLI 的 --no-preflight）：与上面那排勾选项**同一种写法**（.chk）。
              勾上 = 不跑起飞前检查直接启动（编排器默认是开启该检查，但**只提示、绝不阻断**）。
@@ -723,6 +752,31 @@
           <select id="dubSrcSel" class="input dub-src-sel" title="复用之前上传过的口播素材，不必重传"></select>
           <button class="btn ghost small" id="btnDubClear" title="清除已选的口播素材">清除</button>
         </div>
+      </div>
+
+      <!-- 形态 1 专属：可选背景图（CLI 的 --bg <image>）。★ 与口播视频/SRT 走**同一条**上传通道
+           （同一个 /api/dub/upload、同一套进度与错误呈现），只是 kind 不同（image）。
+           不给 = 用工具按风格生成的内置渐变背景（与加这个功能之前逐字节一致）。 -->
+      <div class="dub-block dub-script-only" id="dubBgBlock">
+        <div class="dub-block-head">
+          背景图（可选）
+          <span class="hint" id="dubBgHint"></span>
+        </div>
+        <div class="dub-drop" id="dubBgDrop">
+          <input type="file" id="dubBgFile" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden>
+          <div class="dub-drop-main">
+            把图片拖到这里，或
+            <button class="btn small" type="button" id="btnDubBgPick">选择文件</button>
+          </div>
+          <div class="dub-drop-sub">支持 .jpg / .jpeg / .png / .webp，单个上限 200MB（存在 D:\lemo-films\dub\_uploads）</div>
+        </div>
+        <div class="dub-upload" id="dubBgState" hidden></div>
+        <div class="dub-src-row">
+          <span class="lbl">用已上传的</span>
+          <select id="dubBgSel" class="input dub-src-sel" title="复用之前上传过的背景图，不必重传"></select>
+          <button class="btn ghost small" id="btnDubBgClear" title="清除已选背景图（出片改用工具生成的渐变背景）">清除</button>
+        </div>
+        <div class="dub-bg-note">不给背景图 = 用工具按风格生成的内置渐变背景（画面尺寸/裁切与加这个功能之前一致）。</div>
       </div>
 
       <!-- 形态 2 专属：可选 SRT。不给就走工具自己的对齐（优先 ASR）。 -->

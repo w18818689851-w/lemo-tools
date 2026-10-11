@@ -1705,9 +1705,15 @@ function watchVoiceImport(jobId) {
 /**
  * POST /api/dub/upload?name=<原始文件名> —— 收下素材（**raw body**，不是 multipart）。
  *
- * ★ 收两种素材，靠扩展名区分，回传的 `kind` 是 `'video' | 'srt'`：
- *   `video` = 口播视频（.mp4/.mov/.m4v/.webm）；`srt` = 字幕时间轴（.srt，形态 2 可选）。
- *   两条走**同一条**通道 —— 同一份 token 登记表、同一套清洗与限额，安全做法只有一处。
+ * ★ 收三种素材，靠扩展名区分，回传的 kind 是 'video' | 'srt' | 'image'：
+ *   'video' = 口播视频（.mp4/.mov/.m4v/.webm）；'srt' = 字幕时间轴（.srt，形态 2 可选）；
+ *   'image' = 背景图（.jpg/.jpeg/.png/.webp，形态 1 的 --bg）。
+ *   三条走**同一条**通道 —— 同一份 token 登记表、同一套清洗与限额，安全做法只有一处。
+ * ★ 这里**只判「扩展名认不认得」**，不判用途：这是一条「一次上传、token 后面按需用」的通道，
+ *   上传那一刻还不知道这个 token 将来要当口播视频、字幕还是背景图 ⇒ **用途校验放在消费侧**
+ *   （/api/dub/run 的 videoToken / bgToken / srtToken 三处按 kind 判，见那里的注释）。
+ *   ★ 为什么不在上传时按用途拒：前端是同一个端点、同一个 token 池，同一条素材允许被用户
+ *     在界面上换着用（例如先当背景图试、不合适再删）；把用途钉死在上传时刻会让「复用」无从谈起。
  * ★ 为什么用 raw body：multipart 要自己写解析器（零依赖项目里那是一个真·负担），
  *   而前端只需要传一个文件 —— 文件名走 query、字节走 body，一次 POST 搞定，还少一层出错的地方。
  * ★ 边收边写盘（不是先缓进内存）：200MB 全缓进内存对控制台进程是灾难。
@@ -1972,12 +1978,21 @@ async function apiDubRun(req, res) {
     }
   }
 
+  // ★ 用途校验（2026-10-11）：token 是**一次上传、后面按需用**的 —— 上传端点只认扩展名，
+  //   到这里才知道这个 token 要当什么用，所以**按用途判 kind**（三条各判一次，写在消费侧）：
+  //   · videoToken 必须是口播视频（kind 'video'）—— 图片 / 字幕都不能当素材；
+  //   · bgToken 必须是背景图（kind 'image'）—— dub.mjs 的 --bg 是 `-loop 1 -i <图>`，收的是静态图；
+  //   · srtToken 必须是字幕（kind 'srt'，见下面那一处）。
+  //   旧登记项（加 kind 之前写下的）由 dub.listUploads() 按扩展名补 kind，故老 .mp4 仍判 video。
   let videoPath = '';
   if (o.videoToken) {
     const up = dub.getUpload(o.videoToken);
     if (!up) return sendJson(res, 400, { error: `videoToken 不在已上传清单里（或文件已被删除）：${o.videoToken}` });
-    if (up.kind === 'srt') {
-      return sendJson(res, 400, { error: `videoToken 指的是一条字幕（${up.name}），不是视频 —— 请传口播视频` });
+    if (up.kind !== 'video') {
+      const what = up.kind === 'srt' ? '一条字幕' : (up.kind === 'image' ? '一张背景图' : `一条 ${up.kind} 素材`);
+      return sendJson(res, 400, {
+        error: `videoToken 指的不是口播视频（${up.name}，它是${what}）—— 口播视频请用 ${dub.ALLOWED_EXTS.join(' / ')} 上传`,
+      });
     }
     videoPath = up.path;
   }
@@ -1985,6 +2000,11 @@ async function apiDubRun(req, res) {
   if (o.bgToken) {
     const up = dub.getUpload(o.bgToken);
     if (!up) return sendJson(res, 400, { error: `bgToken 不在已上传清单里（或文件已被删除）：${o.bgToken}` });
+    if (up.kind !== 'image') {
+      return sendJson(res, 400, {
+        error: `bgToken 指的不是背景图（${up.name}）—— 背景图请用 ${dub.ALLOWED_IMG_EXTS.join(' / ')} 上传`,
+      });
+    }
     bgPath = up.path;
   }
   // 形态 2 的可选 SRT：同样**只查登记表**，且必须是 srt 那一条

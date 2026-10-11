@@ -92,6 +92,11 @@ const state = {
   dubSrtToken: '',       // 形态 2 的可选 SRT token（'' = 不给，让工具自己对齐）
   dubSrtName: '',
   dubSrtUpload: { busy: false, pct: 0, name: '', error: '' },
+  // 形态 1 的可选背景图 token（'' = 不给 ⇒ 不传 bgToken，出片改用工具生成的渐变背景；
+  // 与加这个功能之前逐字节一致）。★ 与口播素材/SRT 同一条上传通道，只是 kind = 'image'。
+  dubBgToken: '',
+  dubBgName: '',
+  dubBgUpload: { busy: false, pct: 0, name: '', error: '' },
   // 输出尺寸（与「主题出片」同一套纪律：比例清单来自 /api/sizes，前端**不硬编码**）——
   // '' = 用户还没选过 → 用服务端给的 defaultRatio（9:16）；'__custom' = 自定义像素
   dubRatio: '',
@@ -2050,6 +2055,9 @@ const DUB_MAX_BYTES = 200 * 1024 * 1024;
 const DUB_EXTS = ['.mp4', '.mov', '.m4v', '.webm'];
 // 形态 2 的可选字幕时间轴（与视频走同一条上传通道，服务端按扩展名判 kind）
 const DUB_SRT_EXTS = ['.srt'];
+// 形态 1 的可选背景图（与视频/字幕走同一条上传通道，服务端按扩展名判 kind='image'）。
+// ★ 只收静态图：dub.mjs 侧是 `-loop 1 -i <图>`（见 lib/dub.mjs 的 ALLOWED_IMG_EXTS）。
+const DUB_IMG_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
 const DUB_MAX_TICKS = 1900;            // 2 秒一次 × 1900 ≈ 63 分钟（服务端单步超时 60 分钟）
 // ★ 尺寸**不做前端兜底表**：比例清单与「比例 → 像素」换算的唯一来源是库侧 core/render/size.mjs
 //   （控制台侧 lib/sizes.mjs 代理），经 GET /api/sizes 给出来 —— 见下面的 fillDubRatios()。
@@ -2112,6 +2120,7 @@ function renderDubMode() {
   }
   const panel = $('dubModePanel'); if (panel) panel.setAttribute('aria-labelledby', keep ? 'dubModeKeep' : 'dubModeScript'); renderDubVideoHint();
   renderDubSrtHint();
+  renderDubBgHint();
   renderDubLimitHint();
   syncDubCropWarn();       // 形态决定「素材会不会被缩放/裁切」—— 切形态就要重核提示
 }
@@ -2822,8 +2831,21 @@ function renderDubSources() {
     }
   }
 
+  const bsel = $('dubBgSel');
+  if (bsel) {
+    const { list } = fillDubSourceSelect(bsel, 'image', '（不给背景图，用生成的渐变背景）');
+    const okTok = loaded && list.some((u) => u.token === state.dubBgToken);
+    bsel.value = okTok ? state.dubBgToken : '';
+    if (loaded && !okTok && state.dubBgToken) {
+      state.dubBgToken = '';
+      state.dubBgName = '';
+      toast('之前选的背景图已不在清单里（文件可能被删了）—— 已清除', true);
+    }
+  }
+
   renderDubVideoHint();
   renderDubSrtHint();
+  renderDubBgHint();
   syncDubCropWarn();       // 素材清单变了（选中项可能被清掉）→ 重核提示
 }
 
@@ -2845,6 +2867,16 @@ function renderDubSrtHint() {
   hint.textContent = state.dubSrtToken
     ? `已选：${state.dubSrtName || state.dubSrtToken}`
     : '不给 SRT = 自动对齐（优先 ASR）';
+}
+
+// 背景图提示（形态 1）。★ 只说「已选 / 没选」——「没选 = 用生成的渐变背景」这条要说透，
+//   它是「默认路径与加这个功能之前一致」的落点。
+function renderDubBgHint() {
+  const hint = $('dubBgHint');
+  if (!hint) return;
+  hint.textContent = state.dubBgToken
+    ? `已选：${state.dubBgName || state.dubBgToken}`
+    : '不给 = 用工具生成的渐变背景';
 }
 
 // ★ 形态 2 的「限幅到交付线」开关提示：勾选时**明说**成片音轨会被重编码、不再逐字节相同。
@@ -2881,6 +2913,25 @@ function renderDubSrtUpload() {
   const box = $('dubSrtState');
   if (!box) return;
   const u = state.dubSrtUpload;
+  box.textContent = '';
+  if (!u.busy && !u.error) { box.hidden = true; return; }
+  box.hidden = false;
+
+  if (u.error) { box.appendChild(el('div', 'dub-err-detail', '✗ ' + u.error)); return; }
+
+  box.appendChild(el('div', 'dub-up-line', `正在上传 ${u.name} … ${u.pct}%`));
+  const track = el('div', 'dub-up-track');
+  const fill = el('div', 'dub-up-fill');
+  fill.style.width = `${u.pct}%`;
+  track.appendChild(fill);
+  box.appendChild(track);
+}
+
+// 背景图上传进度（与视频/SRT 同一套呈现：同一个 /api/dub/upload，只是 kind='image'）。
+function renderDubBgUpload() {
+  const box = $('dubBgState');
+  if (!box) return;
+  const u = state.dubBgUpload;
   box.textContent = '';
   if (!u.busy && !u.error) { box.hidden = true; return; }
   box.hidden = false;
@@ -3055,13 +3106,15 @@ async function previewDub() {
 // ★ 前端这一层也做一次扩展名/大小预检：不是安全边界（服务端才是），纯粹是**别让用户
 //   传完 200MB 才被告知格式不对**。
 function dubUploadExtsOf(kind) {
-  return kind === 'srt' ? DUB_SRT_EXTS : DUB_EXTS;
+  if (kind === 'srt') return DUB_SRT_EXTS;
+  if (kind === 'image') return DUB_IMG_EXTS;
+  return DUB_EXTS;
 }
 
 function uploadDubAsset(file, kind) {
   if (!file) return;
   const exts = dubUploadExtsOf(kind);
-  const label = kind === 'srt' ? 'SRT' : '视频';
+  const label = kind === 'srt' ? 'SRT' : (kind === 'image' ? '背景图' : '视频');
   const ext = dubExtOf(file.name);
   if (!exts.includes(ext)) {
     toast(`不支持的${label}格式「${ext || '（无扩展名）'}」—— 只收 ${exts.join(' / ')}`, true);
@@ -3072,8 +3125,8 @@ function uploadDubAsset(file, kind) {
     return;
   }
 
-  const slot = kind === 'srt' ? 'dubSrtUpload' : 'dubUpload';
-  const render = kind === 'srt' ? renderDubSrtUpload : renderDubUpload;
+  const slot = kind === 'srt' ? 'dubSrtUpload' : (kind === 'image' ? 'dubBgUpload' : 'dubUpload');
+  const render = kind === 'srt' ? renderDubSrtUpload : (kind === 'image' ? renderDubBgUpload : renderDubUpload);
   if (state[slot].busy) { toast(`已经有一个${label}上传在跑，等它结束再选`, true); return; }
 
   state[slot] = { busy: true, pct: 0, name: file.name, error: '' };
@@ -3096,6 +3149,9 @@ function uploadDubAsset(file, kind) {
       if (kind === 'srt') {
         state.dubSrtToken = data.token;
         state.dubSrtName = data.name || file.name;
+      } else if (kind === 'image') {
+        state.dubBgToken = data.token;
+        state.dubBgName = data.name || file.name;
       } else {
         state.dubVideoToken = data.token;
         state.dubVideoName = data.name || file.name;
@@ -3103,11 +3159,14 @@ function uploadDubAsset(file, kind) {
       render();
       renderDubVideoHint();
       renderDubSrtHint();
+      renderDubBgHint();
       syncDubCropWarn();       // 刚选中的素材要去探一次尺寸，探回来才知道会不会被裁
       toast(kind === 'srt'
         ? `已上传 ${state.dubSrtName}（${fmtSize(data.size)}）—— 出片时用它当字幕时间轴`
-        : `已上传 ${state.dubVideoName}（${fmtSize(data.size)}）—— 出片时会用你的视频当画面`);
-      loadDubSources();          // 刷新两个「用已上传的」清单（这条新素材也在里面）
+        : (kind === 'image'
+          ? `已上传背景图 ${state.dubBgName}（${fmtSize(data.size)}）—— 出片时用它当画面背景`
+          : `已上传 ${state.dubVideoName}（${fmtSize(data.size)}）—— 出片时会用你的视频当画面`));
+      loadDubSources();          // 刷新三个「用已上传的」清单（这条新素材也在里面）
       return;
     }
     const msg = (data && data.error) || `HTTP ${xhr.status}`;
@@ -3125,6 +3184,7 @@ function uploadDubAsset(file, kind) {
 
 function uploadDubFile(file) { uploadDubAsset(file, 'video'); }
 function uploadDubSrtFile(file) { uploadDubAsset(file, 'srt'); }
+function uploadDubBgFile(file) { uploadDubAsset(file, 'image'); }
 
 async function loadDubStyles() {
   if (state.dubStylesBusy) return;
@@ -3180,6 +3240,9 @@ async function startDubRun() {
   // 只把**用户真的设过**的字段发出去 —— 空值让服务端用工具的默认，别用前端的猜测覆盖工具默认
   const body = { script };
   if (state.dubVideoToken) body.videoToken = state.dubVideoToken;
+  // ★ 背景图（形态 1 的可选 --bg）：与 videoToken **同一套带法** —— 有才带，没有就一个键都不加
+  //   ⇒ 没选背景图时请求体与加这个功能之前**逐字节一致**（服务端因此不传 --bg）。
+  if (state.dubBgToken) body.bgToken = state.dubBgToken;
 
   if (keep) {
     // ★ 形态 2：素材的画面/声音/时长一律不动 —— 所以**不发**音色/语速/停顿/尺寸/fit/保留原声，
@@ -3381,6 +3444,19 @@ function buildOpts() {
   if (lines) o.push('--lines', lines);
   // --color（CLI 已有、UI 此前没有）：★ 默认 `default` ⇒ **一个字都不传**（命令行逐字节与旧版一致）。
   if (color && color !== 'default') o.push('--color', color);
+  // ★ ASR 三参数（CLI 的 --asr-lang / --asr-model / --asr-threshold；库侧 core/tts/asr_check.py 的
+  //   --lang / --model / --threshold）：三个都**留默认 = 一个字都不传**（照 --fps / --workers / --color 的做法）
+  //   ⇒ 命令行与加这三项之前逐字节一致。★ 只把用户**真的改过**的值发出去，绝不发「等于默认」的值：
+  //     · lang 默认 ''（不传）—— 显式 auto 与不传**语义不同**（显式给出会取消编排器的按行自动跳过），
+  //       所以 '' 与 'auto' 都要能表达（前者不传、后者传 --asr-lang auto）。
+  //     · model 默认 ''（库自己定）。
+  //     · threshold 默认 0.92（库侧默认）—— 用**数值**比较，写成 0.920 也不传。
+  const asrLang = $('fAsrLang') ? $('fAsrLang').value : '';
+  if (asrLang) o.push('--asr-lang', asrLang);
+  const asrModel = $('fAsrModel') ? $('fAsrModel').value.trim() : '';
+  if (asrModel) o.push('--asr-model', asrModel);
+  const asrThreshold = $('fAsrThreshold') ? $('fAsrThreshold').value.trim() : '';
+  if (asrThreshold !== '' && Number(asrThreshold) !== 0.92) o.push('--asr-threshold', asrThreshold);
   // --web-cut（CLI 已有、UI 此前没有）：opt-in，默认关 ⇒ 只有勾上才传。
   if ($('fWebCut') && $('fWebCut').checked) o.push('--web-cut');
   if ($('fSkipSync').checked) o.push('--skip-sync');
@@ -4784,6 +4860,11 @@ function applyOptsToForm(opts) {
     else if (o === '--q') { $('fQ').value = val(); applied.push(o + ' ' + val()); i++; }
     else if (o === '--grain') { $('fGrain').value = val(); applied.push(o + ' ' + val()); i++; }
     else if (o === '--out') { $('fOut').value = val(); applied.push(o + ' ' + val()); i++; }
+    // ★ ASR 三参数（本批新加的 UI 控件）：也映射回表单 —— 否则「重新生成」会**谎报**
+    //   「表单不支持、已忽略」（表单现在支持它们，见 buildOpts 里那一段）。
+    else if (o === '--asr-lang' && $('fAsrLang')) { $('fAsrLang').value = val(); applied.push(o + ' ' + val()); i++; }
+    else if (o === '--asr-model' && $('fAsrModel')) { $('fAsrModel').value = val(); applied.push(o + ' ' + val()); i++; }
+    else if (o === '--asr-threshold' && $('fAsrThreshold')) { $('fAsrThreshold').value = val(); applied.push(o + ' ' + val()); i++; }
     // 声音版块新增的两个选项：也映射回表单，否则「重新生成」会谎报「表单不支持、已忽略」
     else if (o === '--voice') {
       state.voiceSel = val() || '';
@@ -5994,6 +6075,50 @@ function bind() {
       renderDubSrtHint();
     });
   }
+  // 背景图：与视频/SRT 同一套交互（选/拖/复用已上传/清除）
+  if ($('btnDubBgPick')) $('btnDubBgPick').addEventListener('click', () => $('dubBgFile').click());
+  if ($('dubBgFile')) {
+    $('dubBgFile').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      uploadDubBgFile(f);
+      e.target.value = '';
+    });
+  }
+  if ($('dubBgDrop')) {
+    const drop = $('dubBgDrop');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('over');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      uploadDubBgFile(f);
+    });
+    drop.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      if ($('dubBgFile')) $('dubBgFile').click();
+    });
+  }
+  if ($('dubBgSel')) {
+    $('dubBgSel').addEventListener('change', (e) => {
+      const tok = e.target.value;
+      state.dubBgToken = tok;
+      const u = dubUploadsOfKind('image').find((x) => x.token === tok);
+      state.dubBgName = u ? u.name : '';
+      renderDubBgHint();
+    });
+  }
+  if ($('btnDubBgClear')) {
+    $('btnDubBgClear').addEventListener('click', () => {
+      state.dubBgToken = '';
+      state.dubBgName = '';
+      if ($('dubBgSel')) $('dubBgSel').value = '';
+      state.dubBgUpload = { busy: false, pct: 0, name: '', error: '' };
+      renderDubBgUpload();
+      renderDubBgHint();
+      toast('已清除背景图 —— 出片改用工具生成的渐变背景');
+    });
+  }
   if ($('btnDubClear')) {
     $('btnDubClear').addEventListener('click', () => {
       state.dubVideoToken = '';
@@ -6129,7 +6254,7 @@ function bind() {
   //   ★ 本批新增的 `fWebCut`（复选）/ `fColor`（下拉）/ `fLines`（文本）同理并入。
   for (const id of ['fSlug', 'fFps', 'fWorkers', 'fVenc', 'fQ', 'fGrain', 'fOut', 'fFilm',
                     'fSkipSync', 'fSkipRender', 'fAudioOnly', 'fRenderOnly', 'fDryRun', 'fNoPreflight',
-                    'fWebCut', 'fColor', 'fLines']) {
+                    'fWebCut', 'fColor', 'fLines', 'fAsrLang', 'fAsrModel', 'fAsrThreshold']) {
     $(id).addEventListener('change', syncPreview);
     $(id).addEventListener('input', syncPreview);
   }

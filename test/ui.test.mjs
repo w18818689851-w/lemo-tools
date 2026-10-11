@@ -4663,6 +4663,252 @@ async function main() {
         notes.push(`N5 angle=gl ⇒ renderEnv.LEMO_ANGLE="gl"；再不带 ⇒ 还原成 ${JSON.stringify(inherited)}（= 启动时继承值，硬规则「不传 ⇒ 逐字节不变」）`);
       });
     }
+
+    // ══ O. 本轮两项「UI 缺控件」收口（背景图上传 · asr_check 三参数）══
+    //
+    // 为什么补这一节：功能对齐核查里还剩两项 **⚠️ UI 缺控件** ——
+    //   ① **文案出片的「背景图上传」**：后端**早就**收了 `bgToken`（server.mjs 里映射成 `--bg <path>`），
+    //      但**上传通道拒收图片**（lib/dub.mjs 的 kindOfExt 只认 video/srt）⇒ 用户根本拿不到图片 token。
+    //      本轮把 `lib/dub.mjs` + `server.mjs` + `web/**` 三方打通 ⇒ 这里钉「用户点得到、传得进、提交带得上」。
+    //   ② **`asr_check` 三参数**：编排器早已开 CLI 出口（`--asr-lang` / `--asr-model` / `--asr-threshold`），
+    //      但**前端没有控件**。本轮在「高级参数区」加 3 个控件 ⇒ 这里钉「默认不传（逐字节不变）+ 设了就传」。
+    // ★ 铁律（沿用本套件）：**绝不真出片** —— 提交一律用页面内 `window.fetch` 桩短路；
+    //   真上传（O1 走页面自己的 XHR、O2 走 HTTP）落在隔离成片根里，跑完按确切路径删 + 逐字节还原登记表。
+    log('');
+    log(C.b('  O. 本轮两项 UI 缺控件收口（背景图上传 #dubBgFile/#dubBgSel · asr_check 三参数 #fAsr*）'));
+
+    // ★ 页面在 N 组末尾被 cdp.goto 重载过 ⇒ E 组装的 fetch 桩**已不在**。这里重装一次
+    //   （带 __oDubPatched 幂等守卫：同一次页面生命周期内不重复包 fetch）。
+    const ensureDubRunPatch = async () => {
+      await cdp.evalJs(`(() => {
+        if (window.__oDubPatched) return true;
+        window.__oDubPatched = true;
+        window.__dubRunBodies = [];
+        const of = window.fetch;
+        const fake = (obj) => ({ ok: true, status: 200, text: async () => JSON.stringify(obj) });
+        window.fetch = function (u, o) {
+          try {
+            const s = String(u);
+            const m = (o && o.method) || 'GET';
+            if (s.indexOf('/api/dub/run') >= 0 && m === 'POST') {
+              window.__dubRunBodies.push({ url: s, body: o && o.body });
+              return Promise.resolve(fake({ ok: true, job: { id: 'FAKE-DUB-JOB', status: 'queued' },
+                out: '', outName: '', artifacts: {}, style: '', keepOriginal: false, hint: '' }));
+            }
+            if (s.indexOf('/api/jobs') >= 0 && s.indexOf('/api/jobs/') < 0) {
+              return Promise.resolve(fake({ jobs: [{ id: 'FAKE-DUB-JOB', status: 'canceled', slug: 'dub' }] }));
+            }
+          } catch (e) { /* 拦不住就走真网络 */ }
+          return of.apply(this, arguments);
+        };
+        return true;
+      })()`);
+    };
+
+    // ① 背景图上传（形态 1 专属）
+    await runCase('O1 背景图上传 #dubBgFile：真传一张小 png（kind=image）⇒ #dubBgHint 显示「已选」、提交 body 带 bgToken；点「清除」⇒ body 不再带（默认路径逐字节不变）', async () => {
+      await ensureDubPage();
+      await ensureDubRunPatch();
+      // ★ 「选择文件」按钮真接线：点它必须触发 #dubBgFile.click()（只钉接线，不弹系统文件框）
+      const wired = await cdp.evalJs(`(() => {
+        const inp = document.getElementById('dubBgFile');
+        let clicked = 0;
+        inp.addEventListener('click', () => { clicked++; });
+        document.getElementById('btnDubBgPick').click();
+        return clicked;
+      })()`);
+      need(wired >= 1, '点 #btnDubBgPick 没有触发 #dubBgFile.click()（控件没接线）');
+
+      // 上传登记表按字节备份（E7 已备过就复用）
+      if (dubIndexBackup === undefined) {
+        try { dubIndexBackup = fs.readFileSync(DUB_INDEX_FILE); } catch { dubIndexBackup = null; }
+      }
+
+      // ★ 真上传：往 #dubBgFile 塞一个真 File（DataTransfer）再派发 change —— 走**页面自己的上传链路**
+      //   （不是绕过前端直接打 HTTP），这样才钉得住「控件 → uploadDubBgFile → 同一个 /api/dub/upload」。
+      await cdp.evalJs(`(() => {
+        document.getElementById('dubModeScript').click();
+        const ta = document.getElementById('dubScript');
+        ta.value = ${JSON.stringify(DUB_SCRIPT)};
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        const bytes = new Uint8Array([137,80,78,71,13,10,26,10, 0,0,0,13,73,72,68,82,
+          0,0,0,1,0,0,0,1, 8,6,0,0,0, 31,21,196,137]);
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], 'ui-o1-bg.png', { type: 'image/png' }));
+        const inp = document.getElementById('dubBgFile');
+        inp.files = dt.files;
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+
+      const hint = await waitFor(cdp.evalJs,
+        `(() => { const t = document.getElementById('dubBgHint').textContent; return /已选/.test(t) ? t : null; })()`,
+        { timeoutMs: 25000 });
+      need(/ui-o1-bg\.png/.test(hint), `#dubBgHint 没显示刚上传的图片名：「${hint}」`);
+
+      // ★ 服务端权威清单拿 token / path（不猜、不拼）
+      const src = await get('/api/dub/sources');
+      need(src.status === 200 && src.json && Array.isArray(src.json.uploads), `GET /api/dub/sources → ${src.status}`);
+      const mine = src.json.uploads.find((u) => u.name === 'ui-o1-bg.png');
+      need(mine, `sources 里没有刚上传的 ui-o1-bg.png（现有=${JSON.stringify(src.json.uploads.map((u) => u.name))}）`);
+      need(mine.kind === 'image', `上传的图片 kind 应为 image，实际 ${mine.kind}`);
+      DUB_UPLOAD_PATHS.add(mine.path);
+      const token = mine.token;
+
+      // 提交 ⇒ body 带 bgToken（同一个 token）
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run（背景图那次提交被拦了？）');
+      const body = JSON.parse(cap.body || '{}');
+      need(body.bgToken === token,
+        `body.bgToken=${JSON.stringify(body.bgToken)}，期望 ${JSON.stringify(token)}（body=${cap.body}）`);
+
+      // 清除 ⇒ 再提交，body **不含** bgToken（= 默认路径逐字节不变）
+      await cdp.evalJs(`document.getElementById('btnDubBgClear').click(); true`);
+      const hint2 = await cdp.evalJs(`document.getElementById('dubBgHint').textContent`);
+      need(!/已选/.test(hint2), `清除后 #dubBgHint 仍显示「已选」：「${hint2}」`);
+      const caps2 = await dubRunCapture();
+      const cap2 = caps2[caps2.length - 1];
+      need(cap2, '清除背景图后没捕获到第二次 POST /api/dub/run');
+      const body2 = JSON.parse(cap2.body || '{}');
+      need(!('bgToken' in body2), `清除背景图后 body 仍带 bgToken：${cap2.body}`);
+      notes.push(`O1 真上传 ui-o1-bg.png（kind=image，token=${token}）⇒ body 带 bgToken；清除后 body keys=[${Object.keys(body2).join(', ')}]（无 bgToken）`);
+    });
+
+    // ② 背景图「用已上传的」下拉 + 用途分类
+    await runCase('O2 背景图下拉 #dubBgSel：只列 kind=image 的素材（口播视频 token 绝不混入）；选中 ⇒ #dubBgHint 已选、提交 body 带该 token', async () => {
+      await ensureDubPage();
+      await ensureDubRunPatch();
+      if (dubIndexBackup === undefined) {
+        try { dubIndexBackup = fs.readFileSync(DUB_INDEX_FILE); } catch { dubIndexBackup = null; }
+      }
+      // 自足夹具：本用例自己传一张图（--filter O2 单跑时也不依赖 O1）
+      const up = await uploadDubRaw(server.port, 'ui-o2-bg.png', Buffer.from('FAKE-PNG-BYTES-for-ui-o2'));
+      need(up.status === 200 && up.json && up.json.ok === true && up.json.kind === 'image',
+        `上传假 png 失败：${up.status} ${up.text.slice(0, 160)}`);
+      DUB_UPLOAD_PATHS.add(up.json.path);
+
+      // 真点「刷新」→ 等下拉里出现刚上传的那条
+      await cdp.evalJs(`document.getElementById('btnDubRefresh').click(); true`);
+      const sel = await waitFor(cdp.evalJs, `(() => {
+        const s = document.getElementById('dubBgSel');
+        if (!s) return null;
+        const vals = [...s.options].map((o) => o.value);
+        return vals.includes(${JSON.stringify(up.json.token)}) ? vals : null;
+      })()`, { timeoutMs: 20000 });
+      need(sel[0] === '', `#dubBgSel 首项应是空值（不给背景图），实际 ${JSON.stringify(sel[0])}`);
+
+      // ★ 有牙断言：下拉里**恰好**是服务端清单里 kind=image 的那些 token（顺序也一致），
+      //   且 kind=video / srt 的 token **一个都不在** —— 证明「按 kind 分类」不是摆设。
+      const src = await get('/api/dub/sources');
+      need(src.status === 200 && src.json && Array.isArray(src.json.uploads), `GET /api/dub/sources → ${src.status}`);
+      const imgToks = src.json.uploads.filter((u) => u.kind === 'image').map((u) => u.token);
+      const otherToks = src.json.uploads.filter((u) => u.kind !== 'image').map((u) => u.token);
+      need(imgToks.length > 0, '服务端清单里一个 kind=image 都没有 ⇒ O2 判据空转');
+      need(JSON.stringify(sel.slice(1)) === JSON.stringify(imgToks),
+        `#dubBgSel 的选项应恰好是 kind=image 的 token：\n  下拉 ${JSON.stringify(sel.slice(1))}\n  清单 ${JSON.stringify(imgToks)}`);
+      for (const v of otherToks) need(!sel.includes(v), `非图片素材（kind≠image）混进了背景图下拉：${v}`);
+
+      // 选中 ⇒ 提示 + 提交带该 token
+      await cdp.evalJs(`(() => { const s = document.getElementById('dubBgSel');
+        s.value = ${JSON.stringify(up.json.token)}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      const hint = await cdp.evalJs(`document.getElementById('dubBgHint').textContent`);
+      need(/已选/.test(hint), `在 #dubBgSel 里选中后 #dubBgHint 没显示「已选」：「${hint}」`);
+      const caps = await dubRunCapture();
+      const cap = caps[caps.length - 1];
+      need(cap, '没捕获到 POST /api/dub/run（选中背景图那次提交被拦了？）');
+      const body = JSON.parse(cap.body || '{}');
+      need(body.bgToken === up.json.token,
+        `body.bgToken=${JSON.stringify(body.bgToken)}，期望 ${JSON.stringify(up.json.token)}（body=${cap.body}）`);
+      // 复位，别把状态留给后续
+      await cdp.evalJs(`document.getElementById('btnDubBgClear').click(); true`);
+      notes.push(`O2 #dubBgSel 选项=${JSON.stringify(sel.slice(1))}（恰好等于服务端 kind=image 的 ${imgToks.length} 条）；非图片 token ${otherToks.length} 个全部不在其中；选中 ⇒ body.bgToken=${body.bgToken}`);
+    });
+
+    // ③ asr_check 三参数（高级参数区）
+    await runCase('O3 asr_check 三参数：三个都留默认 ⇒ 提交参数里**不出现** --asr-lang/--asr-model/--asr-threshold（默认路径逐字节不变）；各设一个值 ⇒ 各自出现且值正确；复位 ⇒ 又都不出现', async () => {
+      await cdp.goto(base + '/', 4000);
+      await waitFor(cdp.evalJs,
+        `!!document.getElementById('fAsrLang') && !!document.getElementById('fAsrModel') && !!document.getElementById('fAsrThreshold')`,
+        { timeoutMs: 30000 });
+      const oForm = () => cdp.evalJs(`(() => { const b = buildOpts();
+        return { opts: b.opts, cmd: document.getElementById('cmdPreview').textContent }; })()`);
+      const oSet = (id, v) => cdp.evalJs(`(() => { const n = document.getElementById(${JSON.stringify(id)});
+        n.value = ${JSON.stringify(v)}; n.dispatchEvent(new Event('input', { bubbles: true }));
+        n.dispatchEvent(new Event('change', { bubbles: true })); return n.value; })()`);
+      const ASR = ['--asr-lang', '--asr-model', '--asr-threshold'];
+      const valOf = (opts, f) => { const i = opts.indexOf(f); return i >= 0 ? opts[i + 1] : undefined; };
+
+      // ★ #cmdPreview 只在有 slug 时才画（见 syncPreview：`slug ? … : ''`）⇒ 先填一个**真实**的 slug
+      //   （从 /api/demos 取，不硬编码风格名）—— 否则「命令预览里出现 --asr-*」这条断言会假红。
+      const oDemos = await get('/api/demos');
+      const oSlug = (oDemos.json && Array.isArray(oDemos.json.styles) && oDemos.json.styles[0] && oDemos.json.styles[0].slug) || '';
+      need(oSlug, `GET /api/demos 没给任何 slug ⇒ O3 的「命令预览」半边测不了（判据会空转）：${oDemos.status}`);
+      await cdp.evalJs(`(() => { const f = document.getElementById('fSlug');
+        f.value = ${JSON.stringify(oSlug)}; f.dispatchEvent(new Event('input', { bubbles: true }));
+        f.dispatchEvent(new Event('change', { bubbles: true })); return f.value; })()`);
+
+      // ① 三项都留默认（空）⇒ 一个 flag 都不出现
+      await oSet('fAsrLang', ''); await oSet('fAsrModel', ''); await oSet('fAsrThreshold', '');
+      const def = await oForm();
+      for (const f of ASR) need(!def.opts.includes(f), `三项都留默认时不该出现 ${f}：${JSON.stringify(def.opts)}`);
+
+      // ② 各设一个值 ⇒ 各自出现（值原样透传）
+      await oSet('fAsrLang', 'zh');
+      const l = await oForm();
+      need(valOf(l.opts, '--asr-lang') === 'zh', `--asr-lang 的值不对：${JSON.stringify(l.opts)}`);
+      need(l.cmd.includes('--asr-lang zh'), `#cmdPreview 里没有 --asr-lang zh：「${l.cmd}」`);
+      await oSet('fAsrModel', 'base.en');
+      const m = await oForm();
+      need(valOf(m.opts, '--asr-model') === 'base.en', `--asr-model 的值不对：${JSON.stringify(m.opts)}`);
+      await oSet('fAsrThreshold', '0.8');
+      const t = await oForm();
+      need(valOf(t.opts, '--asr-threshold') === '0.8', `--asr-threshold 的值不对：${JSON.stringify(t.opts)}`);
+      need(t.cmd.includes('--asr-threshold 0.8'), `#cmdPreview 里没有 --asr-threshold 0.8：「${t.cmd}」`);
+
+      // ③ ★ 反向：写成库侧默认值（0.920 == 0.92）⇒ **不传**（默认路径不许被「等价写法」破坏）
+      await oSet('fAsrThreshold', '0.920');
+      const t2 = await oForm();
+      need(!t2.opts.includes('--asr-threshold'), `0.920 等于库侧默认 0.92，不该传：${JSON.stringify(t2.opts)}`);
+
+      // ④ 复位三项 ⇒ 全部不出现
+      await oSet('fAsrLang', ''); await oSet('fAsrModel', ''); await oSet('fAsrThreshold', '');
+      const back = await oForm();
+      for (const f of ASR) need(!back.opts.includes(f), `复位后仍出现 ${f}：${JSON.stringify(back.opts)}`);
+      notes.push(`O3 默认 ⇒ opts=${JSON.stringify(def.opts)}（无三个 ASR flag）；lang=zh/model=base.en/threshold=0.8 ⇒ 各自出现；threshold=0.920 ⇒ 不传；复位 ⇒ 又都不出现`);
+    });
+
+    // ④ 三参数的「对应关系 + 默认值」必须在控件旁写清
+    await runCase('O4 asr 三控件旁写清「对应库侧 asr_check.py 的哪个参数、默认值是什么」（title 或 hint 里可见）', async () => {
+      await cdp.goto(base + '/', 4000);
+      await waitFor(cdp.evalJs,
+        `!!document.getElementById('fAsrLang') && !!document.getElementById('fAsrModel') && !!document.getElementById('fAsrThreshold')`,
+        { timeoutMs: 30000 });
+      const info = await cdp.evalJs(`(() => {
+        const pick = (id) => {
+          const n = document.getElementById(id);
+          const l = n && n.closest('label');
+          const s = l && l.querySelector('.lbl');
+          const h = document.getElementById(id + 'Hint');
+          return { has: !!n, title: s ? (s.getAttribute('title') || '') : '', hint: h ? h.textContent : '' };
+        };
+        return { lang: pick('fAsrLang'), model: pick('fAsrModel'), thr: pick('fAsrThreshold') };
+      })()`);
+      need(info.lang.has && info.model.has && info.thr.has, '三个 ASR 控件必须都在页面上');
+      // 每个控件的 title 都要点名「库侧哪个参数 + 默认值」
+      need(/asr_check\.py/.test(info.lang.title) && /--lang/.test(info.lang.title) && /auto/.test(info.lang.title),
+        `#fAsrLang 的 title 没写清「库侧 asr_check.py 的 --lang、默认 auto」：「${info.lang.title}」`);
+      need(/asr_check\.py/.test(info.model.title) && /--model/.test(info.model.title),
+        `#fAsrModel 的 title 没写清「库侧 asr_check.py 的 --model」：「${info.model.title}」`);
+      need(/asr_check\.py/.test(info.thr.title) && /--threshold/.test(info.thr.title) && /0\.92/.test(info.thr.title),
+        `#fAsrThreshold 的 title 没写清「库侧 asr_check.py 的 --threshold、默认 0.92」：「${info.thr.title}」`);
+      // hint 要说清「默认 = 不传」（这正是「默认路径逐字节不变」的用户可见落点）
+      for (const [id, v] of [['fAsrLangHint', info.lang], ['fAsrModelHint', info.model], ['fAsrThresholdHint', info.thr]]) {
+        need(/不传/.test(v.hint), `#${id} 没说清「默认 = 不传」：「${v.hint}」`);
+      }
+      need(/0\.92/.test(info.thr.hint), `#fAsrThreshold 的 hint 没写默认值 0.92：「${info.thr.hint}」`);
+      notes.push(`O4 title/hint 齐备：lang「${info.lang.title}」/ model「${info.model.title}」/ thr「${info.thr.title}」；三条 hint 都写了「默认（不传）」`);
+    });
   } finally {
     // ── 收尾 ──
     // ★ 测试工单必须在**停服务之前**删（删工单要走 HTTP DELETE）
