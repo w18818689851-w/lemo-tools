@@ -10,7 +10,7 @@
  *   ① 产物目录 `D:/lemo-films/_jobs/<id>/`；
  *   ② 注册表 `D:/lemo-films/.console/index.json` 里那条 job 记录；
  *   ③ 日志 `D:/lemo-films/.console/logs/<id>.jsonl`。
- *   只删①会留下「点进去 404」的僵尸任务；只删②会留下永远没人认领的孤儿目录。**三者要一起删**。
+ *   只删①会留下「点进去 404」的僵尸任务；只删②会留下永远没人认领的孤儿目录。**三者要一起删**。★ 反向（2026-10-12 修 F4）：UI 的 `deleteJob`（`lib/jobs.mjs`）只做②③ ⇒ 留下①的孤儿，而旧版本脚本**只遍历②**（注册表）⇒ 那些目录**既不删也不报**（永久占盘、且不可发现）；现本脚本**也扫 `_jobs/`**，把没有注册表条目的目录当孤儿认领（dry-run 报告 + `--apply` 时按同一把安全闸删）。
  *
  * 判据（机械、可解释）：
  *   · 只处理**已结束**（`status` ∈ done/failed/canceled，即 `endedAt` 有值）的任务 —— **绝不动 running**；
@@ -24,7 +24,7 @@
  *   node scripts/prune-jobs.mjs --keep 20       # 换保留条数（仍只报告）
  *   node scripts/prune-jobs.mjs --apply         # 真正执行（删目录 + 摘注册表条目 + 删日志）
  *   node scripts/prune-jobs.mjs --apply --keep 5
- * 退出码：0 正常（含「无待清理」）；1 有安全闸拦截（junction / 越界路径）。
+ * 退出码：0 正常（含「无待清理」）；1 有安全闸拦截（junction / 越界路径）；2 注册表读不到 / 形状不对 ⇒ **拒绝执行**（一个字节都不动，见下 F5）。
  *
  * ★ 覆盖点：`LEMO_FILM_DIR`（默认 `D:/lemo-films`，与 lib/jobs.mjs 的 FILM_DIR 同义），
  *   便于在临时树上做非破坏性验证（不碰真实产物）。
@@ -78,8 +78,27 @@ if (!fs.existsSync(INDEX)) {
   console.log(`[prune-jobs] 注册表不存在：${INDEX} ⇒ 无事可做`);
   process.exit(0);
 }
-const reg = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
-const jobs = Array.isArray(reg.jobs) ? reg.jobs : [];
+// ★★ 2026-10-12 修 F5：**首次读**注册表也要「如实降级 + 明确告警」（照本文件下面「拿锁后重读」那处的口径）。
+//   旧版这行 `JSON.parse` 在 try 之外 ⇒ 注册表一坏就抛**未捕获异常**（`SyntaxError` + 原始堆栈 + exit 1），
+//   这个「专门用来收拾 `_jobs/` 的运维命令」在最需要它的时候**完全不可用**（实测：截断到 55% 即崩）。
+//   ★ 为什么**不能**「读不到就当空表继续跑」：本脚本现在还负责认领 `_jobs/` 里的孤儿目录（见下 F4），
+//     把「读不到」当「盘上是空的」⇒ **每一个产物目录都会被判成孤儿** ⇒ `--apply` 会删光用户全部成片。
+//   ★ 判据与 `lib/store.mjs:233`（`if (!arr) throw new Error('index.json 里没有 jobs 数组')`）同源：
+//     顶层必须是对象、且必须有 jobs 数组；两条都不满足就**拒绝执行**（exit 2），一个字节都不动。
+let reg;
+try {
+  reg = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
+  const arr = reg && typeof reg === 'object' && !Array.isArray(reg) && Array.isArray(reg.jobs) ? reg.jobs : null;
+  if (!arr) throw new Error(Array.isArray(reg) ? '顶层是数组（本仓写的是 {version, savedAt, jobs} 形状）' : 'index.json 里没有 jobs 数组');
+} catch (e) {
+  console.error(`[prune-jobs] ✘ 注册表读不到 / 形状不对 / 解析失败：${INDEX}`);
+  console.error(`  ${e.message}`);
+  console.error('  ⇒ **拒绝执行**（exit 2）：本次一个字节都不动（既不动 `_jobs/`，也不动注册表与日志）。');
+  console.error('  ★ 为什么不是「当成空注册表」：那样 `_jobs/` 下每一个产物目录都会被判成孤儿 ⇒ `--apply` 会删光全部成片。');
+  console.error('  处置：先修好 / 恢复 index.json（或人工确认后把它移走）再重跑本命令。');
+  process.exit(2);
+}
+const jobs = reg.jobs;
 const ended = jobs.filter((j) => j && j.id && (j.endedAt || DONE.has(String(j.status || '').toLowerCase())));
 ended.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
@@ -118,6 +137,47 @@ function dirSize(d) {
   walk(d); return s;
 }
 
+// ── ★★ 2026-10-12 修 F4：`_jobs/` 里**没有注册表条目**的目录 = 孤儿（认领 + 报告 + `--apply` 时删）──────
+//
+// ★ 缺陷（第八批审计 F4）：UI 的 `deleteJob`（`lib/jobs.mjs`）只删②注册表条目 + ③日志，**不碰①产物目录**
+//   ⇒ 每个被「删除记录」的任务都留下一个 `_jobs/<id>/`（含 `film.mp4` + `.srt`，实测 100+ MB），
+//   而旧版本本脚本**只遍历注册表条目**（`drop` 来自 `reg.jobs`）⇒ 这些目录**既不删也不报**、
+//   **永久占盘且不可发现**（`prune-dub.mjs` 只管 `dub/`）。这直接违反本文件开头那条「三条一致性」。
+// ★ 判据（机械、可解释）：目录名**不在注册表 id 集里** ⇒ 孤儿。`--keep` 对它们**不适用**（它们不是任务）。
+// ★ 动作：dry-run 逐个列出（名 + 字节）并计入汇总；`--apply` 时按**同一把** `rmInside` 安全闸删
+//   （越界 / junction / 符号链接一律拒删并计一次拦截 ⇒ exit 1）。
+// ★ 为什么不设「年龄门槛」（与 `lib/store.mjs` 的孤儿**日志**不同，那里有一道 10 秒门槛）：注册表条目在
+//   **入队时**就落盘（`lib/jobs.mjs` 的 `persistSoon`，≤500ms 去抖），而 `_jobs/<id>/` 是编排器**跑起来、
+//   真正产出**时才创建的（远晚于那 500ms）⇒「目录在、条目不在」几乎不可能是「正在跑的任务」。
+//   ★ 残留风险（如实登记，不假装不存在）：若 `--apply` 恰好在「目录刚建、条目还没落盘」这个极窄窗口里
+//     跑（或另一实例的条目被它自己摘掉），那个目录会被当孤儿删掉。⇒ 本脚本**默认只报告**、
+//     `--apply` 必须人工确认，且 dry-run 会把每一个待删目录**逐个列名 + 列字节**（不静默）。
+const orphanDirs = [];
+try {
+  const known = new Set(jobs.filter((j) => j && j.id).map((j) => String(j.id)));
+  for (const ent of fs.readdirSync(JOBS_DIR, { withFileTypes: true })) {
+    if (!ent.isDirectory()) continue;                       // 只认目录（`_jobs/` 下别的形态不归本脚本管）
+    if (known.has(ent.name)) continue;                      // 有条目 ⇒ 不是孤儿
+    const dir = path.join(JOBS_DIR, ent.name);
+    let sz = 0;
+    try { sz = dirSize(dir); } catch { /* ignore */ }
+    orphanDirs.push({ name: ent.name, dir, sz });
+  }
+} catch { /* `_jobs/` 不存在 ⇒ 没有孤儿 */ }
+orphanDirs.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+let orphansRemoved = 0, orphanBytes = 0;
+if (orphanDirs.length) {
+  console.log(`  ★ 孤儿产物目录（_jobs/ 下有、注册表里没有 ⇒ 没有任何任务记录认领）：${orphanDirs.length} 个`);
+  for (const o of orphanDirs) {
+    orphanBytes += o.sz;
+    const g = rmInside(o.dir);
+    if (!g.ok) { blockers++; console.log(`  ✘ [孤儿] ${o.name}：${g.why} ⇒ 跳过`); continue; }
+    console.log(`  ${APPLY ? '−' : '·'} [孤儿] ${o.name}：${APPLY ? '删目录' : '待删目录'}（${(o.sz / 1048576).toFixed(1)}MB）`);
+    if (APPLY) { const r = rmDir(o.dir); if (r.removed) { dirsRemoved++; orphansRemoved++; } }
+  }
+}
+
 if (APPLY && droppedIds.length) {
   // ★★ 与 `lib/store.mjs` 共用同一把跨进程写锁（同一 root ⇒ 同一个 `.console/index.lock`）——
   //   否则下面这句**整文件重写**会盖掉并发 console 刚建的任务（教科书式 lost update，第 9 轮审计 A1）。
@@ -151,6 +211,6 @@ if (APPLY && droppedIds.length) {
   }
 }
 
-console.log(`\n[prune-jobs] 汇总：待清理 ${drop.length} 个（可回收约 ${(bytes / 1048576).toFixed(1)}MB）｜${APPLY ? `实删目录 ${dirsRemoved}` : '未删任何东西'}｜安全闸拦截 ${blockers}`);
-if (!APPLY && drop.length) console.log('  ⇒ 确认无误后加 --apply 执行。');
+console.log(`\n[prune-jobs] 汇总：待清理 ${drop.length} 个（可回收约 ${(bytes / 1048576).toFixed(1)}MB）｜孤儿目录 ${orphanDirs.length} 个（可回收约 ${(orphanBytes / 1048576).toFixed(1)}MB）｜${APPLY ? `实删目录 ${dirsRemoved}（其中孤儿 ${orphansRemoved}）` : '未删任何东西'}｜安全闸拦截 ${blockers}`);
+if (!APPLY && (drop.length || orphanDirs.length)) console.log('  ⇒ 确认无误后加 --apply 执行。');
 process.exit(blockers ? 1 : 0);

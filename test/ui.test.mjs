@@ -6288,10 +6288,21 @@ async function main() {
           'web cut 的调用点竟然排在混流之前 —— 分母要重数');
         need(orchSrc.indexOf('音频链路 · 配音前置') > orchSrc.indexOf('await exportEventsAndSubs();'),
           '配音前置竟然排在「导出事件与字幕」之前 —— 步序变了，分母要重数');
-        // step() 的调用点数（= 分母的「原料」）：20 次出现 = 1 处定义 + **19** 处调用点。
+        // step( 的**文本**出现次数：21 = 1 处定义 + **19** 处调用点 + **1 处字符串字面量**。
+        //   ★ 第三个来源是 `--dry-run` 表头那句「★ 下面的序号 = 实时日志里 step() 打的 [N]，**同一套**」
+        //     —— `stripComments()` 只剥注释、**不剥字符串**，所以字面量里的 `step()` 也会被这条正则数进去。
+        //   ★ 这条锚点**原样保留**（没删、没放宽），只是数字从 20 修到 21：第六批 §3-5 把 dry-run 计划表
+        //     改成与真实 `[N]` 同一套时，多出的正是这处**文案**里的 `step()`；**真实调用点一个没增没减**。
         const stepHits = (orchSrc.match(/(?<![\w$.])step\(/g) || []).length;
-        need(stepHits === 20,
-          `lemo-make.mjs 里 step( 出现 ${stepHits} 次，期望 20（1 处定义 + 19 处调用点）—— 新增/删除了步骤，分母要重数`);
+        need(stepHits === 21,
+          `lemo-make.mjs 里 step( 出现 ${stepHits} 次，期望 21（1 处定义 + 19 处调用点 + 1 处 dry-run 文案里的字符串字面量 step()）—— 新增/删除了步骤，分母要重数`);
+        // ★ 分母的**原料** = 真·调用点数（行首缩进后的 `step(`；不含定义、不含字符串字面量）。
+        //   实证 = **19**（编排器副本的 run/runLive/runWsl 打桩后真跑，逐 opts 组合数 [N] 标记 ⇒ 下面那张真值表）。
+        //   ★ 单独钉这一条的理由：上一条会把「改文案」也当成「步序变了」⇒ 若只留上一条，后人可以靠改字符串
+        //     把数字凑回去。这一条只认调用点，谁也绕不过去（删/加一步必然变号）。
+        const callSites = (orchSrc.match(/^\s*step\(/gm) || []).length;
+        need(callSites === 19,
+          `lemo-make.mjs 里 step( 调用点 ${callSites} 处，期望 19 —— 新增/删除了步骤，分母（与下面那张真值表）要重数`);
         // ★★ 「换内容多**两个** step」的第二个来源：exportEventsAndSubs() 被调用**两次**，
         //   而它的第一句就是 step() ⇒ 屏上会出现两步**同名**的「导出事件与字幕」。
         //   ★ 这条是 Q1-3 复核时**实测**出来的（把编排器副本的三处重活打桩后真跑：
@@ -6350,7 +6361,7 @@ async function main() {
         need(partialBase !== base, `partial 与默认路径的分母竟然相同（都是 ${base}）—— 分档逻辑失效`);
 
         notes.push(`T1 进度分母：${TABLE.length} 组 opts 全部与真值一致（默认 ${base} / +content= ${withQ} / partial ${partialBase}）；`
-          + `编排器锚点 ${ANCHORS.length} 条 + 顺序 4 条 + step( 计数 ${stepHits} + exportEventsAndSubs 调用 ${exportCalls} 次 全部命中`
+          + `编排器锚点 ${ANCHORS.length} 条 + 顺序 4 条 + step( 文本计数 ${stepHits} / 调用点 ${callSites} + exportEventsAndSubs 调用 ${exportCalls} 次 全部命中`
           + `（★ 期望值是**实证**的：编排器副本打桩后真跑，数 step 标记行）`);
       });
     }

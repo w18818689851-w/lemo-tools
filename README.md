@@ -556,7 +556,7 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `9ec6a25f0a0f5d1f11efe4e02772ceeb`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `e55e34c5282968b78afa1b85bec6dd34`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
 - **28 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`
@@ -571,7 +571,7 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 测试自己用**随机空闲端口**起一个临时服务、跑完自己停，**不碰**你正在用的控制台实例
 （启动时会覆写 `.console-port` / `打开控制台.url`，测试跑前备份、跑后按字节还原）。
 详见 `test/README.md`（含「不覆盖什么」与副作用说明）。
-★ **改动后必跑**：`node scripts/run-all-tests.mjs` —— 一次**串行**跑完全部 32 个测试入口（本机两次实测 **429.1s / 600.8s ≈ 7–10 分钟**）；「52/52 闸门绿」≠「全部测试绿」（闸门与测试入口是**两层**防线，见 `test/README.md` §「★ 改动后必跑」）。
+★ **改动后必跑**：`node scripts/run-all-tests.mjs` —— 一次**串行**跑完全部 35 个测试入口（本机两次实测 **429.1s / 600.8s ≈ 7–10 分钟**，那两次跑的是 32 入口时代的清单，本批新增的 3 个入口实测共 ≈6.5s）；「52/52 闸门绿」≠「全部测试绿」（闸门与测试入口是**两层**防线，见 `test/README.md` §「★ 改动后必跑」）。
 
 ## 文件
 

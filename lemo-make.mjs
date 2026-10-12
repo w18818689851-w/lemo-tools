@@ -34,7 +34,7 @@ import { readStyleSkill, summarizeStyleSkill, describeStyleSkill } from './lib/s
 //   主题通路的 TTS 在 WSL 里跑，但显存判据（nvidia-smi）读的是 **Windows** 这张卡，
 //   所以守卫只能在 Windows 侧 JS 里调，不能塞进 WSL 的 bash 脚本（那里读不到这张卡）。
 //   调用点在下面「音频链路」之前（见那里的说明）。
-import { ensureVramFree } from './lib/vram.mjs';
+import { ensureVramFree } from './lib/vram.mjs'; import { LOCK_MAX_AGE_MS } from './lib/lock.mjs'; import { RUN_TIMEOUT_MS } from './lib/env.mjs';   // ★ 并发锁过期窗口（6h）的**唯一**来源 = lib/lock.mjs（与 lib/jobs.mjs / scripts/check-film-delivery.mjs 同一个常量；本行 = 合并进已有 import，不新增行）★ 2026-10-12 再并入 RUN_TIMEOUT_MS（120s，探测类命令上限的**唯一**口径来源 = lib/env.mjs，与它的 run() 默认超时同一个常量）：**只**在 `:1929` 的 `ffmpeg -version` 纯探测处传，其余 11 处调用点一律不传 ⇒ 分钟级的 WSL 渲染/混流/编解码绝无被误杀的可能（红线）。
 
 // ─────────────────────────── 配置 ───────────────────────────
 
@@ -1599,7 +1599,7 @@ async function main() {
   // 所以这里不再写死一条路径：音频脚本跑完会回报实际产出路径，混流脚本也会自己三处探测。
   const mixWavCands = ['mix.wav', 'audio/mix.wav', 'out/mix.wav'].map(p => `${demoRel}/${p}`);
   const videoWsl = `${demoWsl}/out/video_gpu.mp4`;
-  const finalWin = path.join(CFG.winLib, 'styles', o.slug, `${o.slug}.mp4`);
+  // ★ 成片真实落点 = path.join(outDir, `${o.slug}.mp4`)：混流脚本读 `OUT=${outDir}` 直接写进输出目录，第 7 步核验的 `dst` 与它同源（不再另设指向库仓的变量）。
   // 混流参数：--grain 优先，其次 build.sh 里写的，再次**风格档案**，最后交给 mux 脚本自己的默认值
   const intent = muxIntent(o.slug);
   // ── 风格特质档案（style-dna）接入：本通路也读**同一个**知识库（约定一）─────────────
@@ -1903,7 +1903,7 @@ async function main() {
     if (Number.isInteger(oldPid) && oldPid > 0) {
       try { process.kill(oldPid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
     }
-    if (alive && ageMs < 6 * 3600 * 1000) {
+    if (alive && ageMs < LOCK_MAX_AGE_MS) {   // ★ 6h 的唯一来源 = lib/lock.mjs（原先这里是行内字面量）
       fail(
         `已有另一个 lemo-make 在跑同一个 demo（pid ${oldPid}，锁创建于 ${Math.round(ageMs / 1000)} 秒前）。\n` +
         '      并发跑会往同一批文件写；mux.sh 没有输出锁，交错写会产出损坏的成片（实测过）。\n' +
@@ -1926,8 +1926,8 @@ async function main() {
 
   const ffDir = findFfmpegDir();
   if (!ffDir) fail(`找不到可用的 Windows ffmpeg，检查这些目录：\n      ${CFG.ffmpegDirs.join('\n      ')}`);
-  const ffv = await run(path.join(ffDir, 'ffmpeg.exe'), ['-hide_banner', '-version']);
-  ok(`ffmpeg  ${ffDir}`);
+  const ffv = await run(path.join(ffDir, 'ffmpeg.exe'), ['-hide_banner', '-version'], { timeout: RUN_TIMEOUT_MS });   // ★ 2026-10-12：**唯一**一处给 run() 传 timeout 的调用点。本处是**纯探测**（实参全是常量、不碰任何素材/产物），挂住会把整个编排器卡在 [1] 环境自检且**永不 resolve**（run() 没有计时器 ⇒ 连 fail() 都到不了）⇒ 必须封顶。★ 机制 = Node `spawn` 的原生 `timeout` 选项（超时 ⇒ SIGTERM/TerminateProcess ⇒ `close(null,'SIGTERM')` ⇒ 本 run() 的 `child.on('close')` 照常 resolve，不会吊死；实测见报告）。★ 口径 = lib/env.mjs 的 RUN_TIMEOUT_MS（120s，与它的 run() 默认超时同一个常量）。★ **其余 11 处调用点一律不传**（`:186` 的 WSL 长任务、`:3522` 编码、`:3607` 解码、`:3629` ffprobe、`:2279`/`:2304`/`:2317`/`:2334` 四个 node 生成器、`:263` mklink、`:3451` 自杀桩、`runLive`）—— 它们是分钟级的，统一加 120s 会把正常渲染杀掉（红线）。
+  if (ffv.code === 0) ok(`ffmpeg  ${ffDir}`); else fail(`ffmpeg 在 ${ffDir}，但**跑不起来**（退出码 ${ffv.code}${ffv.code === null ? '，' + (RUN_TIMEOUT_MS / 1000) + 's 内无响应 ⇒ 已按上面的超时杀掉' : ''}）：${(ffv.stderr || ffv.error?.message || '').trim().split('\n')[0] || '(无输出)'}\n      ★ 判据与 lib/env.mjs 的「能跑」同口径（code === 0），不再只看「文件在」—— 渲染要真用这个 ffmpeg，起不来就该在这里拦下。`);
   if (ffv.stdout) info(C.dim(ffv.stdout.split('\n')[0]));
 
   if (!fs.existsSync(CFG.winLib)) fail(`Windows 库不存在：${CFG.winLib}`);
@@ -2056,16 +2056,16 @@ async function main() {
   }
 
   if (o.dryRun) {
-    console.log(C.warn('\n--dry-run：以下步骤不会真正执行\n')); if (o.stillsOnly) { dryRunStillsOnly(o, outDir); process.exit(0); }  // ⑫ --stills-only 的真实计划与「正常出片」**不是同一张清单**（只跑 1 + 分镜）⇒ 走专用分支，别拿上面那张清单糊弄
-    console.log(`  1. 库同步   ${o.skipSync ? '（跳过）' : 'WSL → Windows 下发字体/素材'}`);
-    console.log(`  2. 音频     ${o.skipAudio ? '（跳过）' : `WSL：TTS/声线/配乐/混音 → ${mixWavCands.join(' 或 ')}`}`);
-    console.log(`  3. 渲染     ${o.skipRender ? '（跳过）' : `Windows GPU → ${videoWsl}`}`);
+    console.log(C.warn('\n--dry-run：以下步骤不会真正执行\n')); console.log(C.dim('  ★ 下面的序号 = 实时日志里 step() 打的 [N]，**同一套**（换内容/换配音行时 [4] 会另起一步，见末尾说明）')); console.log(`  1. 环境自检  Windows Node / ffmpeg（能跑）/ 库与 demo / WSL / core 两侧一致（只读检查）`); if (o.stillsOnly) { dryRunStillsOnly(o, outDir); process.exit(0); }  // ⑫ --stills-only 的真实计划与「正常出片」**不是同一张清单**（真实 3 步：环境自检 + 库同步 + 分镜）⇒ 走专用分支，别拿上面那张清单糊弄
+    console.log(`  2. 库同步   ${o.skipSync ? '（跳过）' : 'WSL → Windows 下发字体/素材'}`); console.log(`  3. 导出事件与字幕  Windows 侧 events.json / subs.json（时间窗按 voices/dur.json 排）→ 回传 WSL`);
+    console.log(`  4. 音频     ${o.skipAudio ? '（跳过）' : `WSL：TTS/声线/配乐/混音 → ${mixWavCands.join(' 或 ')}`}`);
+    console.log(`  5. 渲染     ${o.skipRender ? '（跳过）' : `Windows GPU → ${videoWsl}`}`);
     if (!o.skipRender) console.log(C.dim(`     $ node ${renderVArgs.join(' ')}`));
-    console.log(`  4. 混流     ${(o.skipRender || o.skipAudio) ? '（依赖缺失，跳过）' : `WSL ${demoMuxRel || 'core/render/mux.sh'}（${o.venc}）→ ${finalWin}`}`);
-    console.log(`  5. 导出     ${outDir}`);
-    // 6/7 是 2026-10-10 接入的两步（② readcheck / ③ poster）。干跑也要能看见它们，
+    console.log(`  6. 混流     ${(o.skipRender || o.skipAudio) ? '（依赖缺失，跳过）' : `WSL ${demoMuxRel || 'core/render/mux.sh'}（${o.venc}）→ ${path.join(outDir, `${o.slug}.mp4`)}`}`);
+    console.log(`  7. 核验导出  ${path.join(outDir, `${o.slug}.mp4`)}`);
+    // 8/9 是 2026-10-10 接入的两步（② readcheck / ③ poster）。干跑也要能看见它们，
     // 否则「默认会跑什么」在 dry-run 里是看不全的（本项目反复强调 dry-run 必须能反映真实计划）。
-    console.log(`  6. 自检     ${o.noReadcheck ? '（--no-readcheck 跳过）'
+    console.log(`  8. 自检     ${o.noReadcheck ? '（--no-readcheck 跳过）'
       : `WSL 无关 · Windows 开页面跑 core/render/readcheck.mjs（${demoHasTexts(demoRel) ? '本 demo 有 TEXTS 痕迹 ⇒ 会真跑' : '无 TEXTS 痕迹 ⇒ 会跳过并打印理由'}）`
         + `${o.readcheckStrict ? ' · --readcheck-strict（不达标即阻断）' : ' · 只报告不阻断'}`}`);
     {
@@ -2076,16 +2076,16 @@ async function main() {
         if (sj && Number.isFinite(Number(sj.frame_sec))) fs2 = Number(sj.frame_sec);
       } catch { /* 同运行时：读不到就退下一档 */ }
       const pt = o.posterT ?? (pi ? pi.t : null) ?? fs2 ?? 0;
-      console.log(`  7. 交付图   ${o.noPoster ? '（--no-poster 跳过）'
+      console.log(`  9. 交付图   ${o.noPoster ? '（--no-poster 跳过）'
         : `poster.jpg（t=${pt}s）→ ${path.join(outDir, 'poster.jpg')}`}`);
     }
-    // 8 是 2026-10-10 接入的第三步（⑧ 交付文档）—— 同样要能在干跑里看见。
-    console.log(`  8. 交付文档 ${o.noDeliverables ? '（--no-deliverables 跳过）'
-      : `TREATMENT.md + CREDITS → ${outDir}`}`); if (o.webCut) console.log(`  9. web cut  720p 小样（${o.venc}）→ ${path.join(outDir, `${o.slug}-720p.mp4`)}`); if (o.review) console.log(`  10. 审核回路  sheet.jpg（每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px）+ blackdetect（d=${o.blackdetectD}s）→ ${path.join(outDir, 'sheet.jpg')}`);
+    // 10 是 2026-10-10 接入的第三步（⑧ 交付文档）—— 同样要能在干跑里看见。
+    console.log(`  10. 交付文档 ${o.noDeliverables ? '（--no-deliverables 跳过）'
+      : `TREATMENT.md + CREDITS → ${outDir}`}`); if (o.webCut) console.log(`  11. web cut  720p 小样（${o.venc}）→ ${path.join(outDir, `${o.slug}-720p.mp4`)}`); if (o.review) console.log(`  12. 审核回路  sheet.jpg（每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px）+ blackdetect（d=${o.blackdetectD}s）→ ${path.join(outDir, 'sheet.jpg')}`);
     console.log(C.dim((contentOf(qRender) || contentOf(qEvents) || o.lines)
-      ? '\n  换内容/换配音行时：2 的「配音」阶段会先单独跑完并回传 voices/*.json，\n'
-        + '  之后 2 的「配乐+混音」与 3 才并行（页面要靠 dur.json 排口播时间窗）。\n'
-      : '\n  2 与 3 会并行执行。\n'));
+      ? '\n  换内容/换配音行时（从 [4] 起比上表**多 2 步**）：[4]「配音前置」先单独跑完并回传 voices/*.json，\n'
+        + '  [5] 按真实时长重排事件与字幕，之后 [6] 的「配乐+混音」与 [7] 渲染才并行（页面靠 dur.json 排口播窗）⇒ 真实 12 步。\n'
+      : '\n  4 与 5 会并行执行。\n'));
     process.exit(0);
   }
 
@@ -3675,18 +3675,18 @@ function stillsFallbackDur() { return 30; }   // style.json 读不到 dur 时的
 
 /**
  * `--dry-run --stills-only` 的**专用**计划清单（由 dry-run 块里的 `if (o.stillsOnly)` 调用）。
- * ★ 为什么不能复用「正常出片」那张清单：那张列的是 1–10 步；而 --stills-only 的真实计划只有
- *   「1 库同步（含 demo 软链 / 页面贴图准备）+ 分镜」⇒ 拿那张清单去印**就是骗人**（本项目反复强调
- *   「dry-run 必须能反映真实计划」）。故单列一张。
+ * ★ 为什么不能复用「正常出片」那张清单：那张列的是 [1]–[10] 步；而 --stills-only 的真实计划只有
+ *   「[2] 库同步（含 demo 软链 / 页面贴图准备）+ [3] 分镜」（[1] 是环境自检）⇒ 拿那张清单去印**就是骗人**
+ *   （本项目反复强调「dry-run 必须能反映真实计划」）。故单列一张，且**沿用同一套 [N]**。
  */
 function dryRunStillsOnly(o, outDir) {
   console.log(C.warn('--stills-only：**渲染之前停下**，只出分镜帧 + 分镜总览图（不渲染、不混流、不产成片）\n'));
-  console.log(`  1. 库同步   ${o.skipSync ? '（--skip-sync 跳过）' : 'WSL → Windows 下发字体/素材'}（含 demo 级 node_modules junction、demo 自带一次性素材生成器）`);
-  console.log(`  2. 分镜     每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px → ${path.join(outDir, 'storyboard.jpg')}`);
+  console.log(`  2. 库同步   ${o.skipSync ? '（--skip-sync 跳过）' : 'WSL → Windows 下发字体/素材'}（含 demo 级 node_modules junction、demo 自带一次性素材生成器）`);
+  console.log(`  3. 分镜     每 ${o.sheetStep}s 一帧 · ${o.sheetCols} 列 × ${o.sheetW}px → ${path.join(outDir, 'storyboard.jpg')}`);
   console.log(C.dim(`             时长取 style.json 的 dur；读不到退化成「前 ${stillsFallbackDur()} 秒」并如实标注`));
   console.log(C.dim(`             实现：core/render/still.mjs --range 出帧 → core/render/sheet.py 拼图（与 --review 同一份代码）`));
-  console.log(C.warn(`\n  以下步骤**不会执行**：2 音频 / 3 渲染 / 4 混流 / 5 导出 / 6 自检 / 7 交付图 / 8 交付文档`
-    + (o.webCut ? ' / 9 web cut' : '') + (o.review ? ' / 10 审核回路' : '')));
+  console.log(C.warn(`\n  以下步骤**不会执行**：4 音频 / 5 渲染 / 6 混流 / 7 核验导出 / 8 自检 / 9 交付图 / 10 交付文档`
+    + (o.webCut ? ' / 11 web cut' : '') + (o.review ? ' / 12 审核回路' : '')));
   console.log(C.dim('\n  ★ 确认分镜后：去掉 --stills-only 用**同样参数**重跑一次即开始完整出片（本项目没有帧级缓存，不是「续跑」）。\n'));
 }
 

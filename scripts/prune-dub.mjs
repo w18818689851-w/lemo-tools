@@ -19,7 +19,13 @@
  *     （照 `lib/resources.mjs:dirFor` 的路径穿越防护口径）；② `lstat` 判定**不是符号链接/junction**
  *     （本机踩过「junction 的 `rm -rf` 会穿透删真实目标」）⇒ 命中即**拒绝并计入拦截（exit 1）**。
  *   · **`_uploads/`（用户素材）默认不动**：只有显式 `--include-uploads` 才纳入，且**醒目提示**
- *     「这是用户上传的素材」；`_uploads/index.json`（登记表）**永远保留**（删了会孤立其余素材）。
+ *     「这是用户上传的素材」；`_uploads/index.json`（登记表）**文件本身永远保留**（删了会孤立其余素材）。
+ *     ★★ 2026-10-12（第八批审计 F7 修）：`--apply` **真删掉** `_uploads/` 下的文件之后，**同一把锁内**
+ *       把登记表里**指向这些已删文件的条目一并摘掉** —— 否则留下「文件没了、登记还在」的**幽灵条目**
+ *       （`listUploads()` 按 `statSync` 过滤 ⇒ UI 上看不见 ⇒ 静默；且永久占用 `MAX_UPLOADS=200` 的额度）。
+ *       这与「已知项 3」（只丢登记不删文件）互为镜像，两条方向**一起补齐**才算对称。
+ *       ★ 读不出登记表（坏 JSON / 形状不认识）⇒ **一个字节都不改它**，只醒目告警（绝不覆盖读不懂的文件）。
+ *       ★ dry-run 也会**预告**将摘掉几条（不写回）。
  *   · **只读辅助目录**（`_fonts` / `_visual-tmp` 等以 `_` 开头、但不是 `_verify`/`_uploads` 的）
  *     默认跳过，并在报告里**逐条说明跳过了什么**。
  *   · **逐个列出**将要删 / 已删的**完整路径 + 字节数**，最后给汇总（条数 / 总字节）。不许只报总数。
@@ -47,6 +53,11 @@ import path from 'node:path';
 // ★ dubRoot 的**唯一真相源**：`lib/dub.mjs` 的 `DUB_ROOT`（= `<CFG.exportDir>/dub`）——
 //   与「谁生成产物目录」（`newOutDir()`）同源，避免两处各写一份 join 而漂移。
 import { DUB_ROOT } from '../lib/dub.mjs';
+// ★ 跨进程写锁（2026-10-12 修 F7）：`--apply` 现在也要写 `_uploads/index.json`，而 `lib/dub.mjs` 的
+//   `registerUpload` / `unregisterUpload` 是**跨进程读-改-写**同一个文件 ⇒ 必须用**同一把锁**
+//   （同 root ⇒ 同一个 `.console/index.lock`）才能与它们真正串行化。**绝不另写一份锁**。
+//   （照 `scripts/prune-jobs.mjs:40` 对同一个 `index.json` 的做法。）
+import { acquireLock, releaseLock } from '../lib/store.mjs';
 
 const ARTIFACT_RE = /^\d{8}-\d{6}-[0-9a-f]{4}$/;   // newOutDir(): `${YYYYMMDD}-${HHMMSS}-${4 hex}`
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -75,7 +86,7 @@ function usage() {
                         ★ 缺此项 ⇒ 不选任何待清理项（绝不「不带阈值就删全部」）
   --only <dir>          只处理指定一个产物目录名（须是 <时间戳>-<id> 形态，防路径穿越）
   --include-uploads     ★ 连 <dubRoot>/_uploads/（用户上传的素材）一起纳入（默认不动；
-                        index.json 登记表永远保留）
+                        登记表 index.json 的**文件本身**永远保留，但删掉的文件对应的**条目会被摘掉**）
   --json                输出机器可读 JSON（stdout 只出 JSON）
   --root <dir>          指定 dubRoot（默认 = lib/dub.mjs 的 DUB_ROOT；测试 / 临时树用）
   -h, --help            显示本帮助
@@ -217,7 +228,7 @@ function scanUploads(dir) {
   for (const ent of ents) {
     const full = path.join(dir, ent.name);
     if (ent.name === 'index.json') {
-      skipped.push({ name: '_uploads/index.json', why: '上传登记表（永远保留：删了会孤立其余素材）' });
+      skipped.push({ name: '_uploads/index.json', why: '上传登记表（**文件本身**永远保留：删了会孤立其余素材；--apply 删掉同目录文件后会**摘掉对应条目**，见 F7）' });
       continue;
     }
     addCandidate(full, 'upload', `_uploads/${ent.name}`);
@@ -249,17 +260,103 @@ const selBytes = selected.reduce((s, c) => s + c.bytes, 0);
 const candBytes = candidates.reduce((s, c) => s + c.bytes, 0);
 
 let deleted = 0, deletedBytes = 0, missing = 0;
+/** ★ 本次「文件真的不在盘上了」的 `_uploads/` 项（实删的 + 本来就不在的）—— 供 F7 摘登记用。 */
+const goneUploadPaths = [];
 
 function runDeletions() {
   for (const c of selected) {
     const r = rmSafe(c.full);
     if (!r.ok) { blockers.push({ full: c.full, why: r.why }); continue; }
+    // ★ 实删 与 「本来就不在」都算「盘上没有这个文件了」⇒ 登记表里那条都成了幽灵，一并摘掉。
+    if (c.kind === 'upload') goneUploadPaths.push(c.full);
     if (r.missing) { missing++; continue; }
     deleted++;
     deletedBytes += c.bytes;
   }
 }
 if (APPLY) runDeletions();
+
+// ── F7（2026-10-12 第八批审计）：删了 `_uploads/` 里的文件，就把登记表里对应的条目一并摘掉 ──────
+//   ★ 由来：本工具此前只 `rmSafe(c.full)`，**不碰** `_uploads/index.json` ⇒ 留下「文件没了、登记还在」
+//     的**幽灵条目**（`lib/dub.mjs` 的 `listUploads()` 按 `statSync` 过滤 ⇒ UI 上看不见 ⇒ 静默；
+//     且永久占 `MAX_UPLOADS=200` 的额度、登记表只增不减）。这与「已知项 3」（只丢登记不删文件）
+//     互为镜像 —— 两个方向都缺一步，本处补的是「删文件」这一半。
+//   ★ 两条安全底线（与 `lib/dub.mjs` 的 F3 修同一口径）：
+//     ① **绝不改一份自己读不懂的登记表** —— 坏 JSON / 顶层不是数组 ⇒ 只告警、一个字节都不写；
+//     ② 写回走 `acquireLock`（与 `registerUpload`/`unregisterUpload` **同一把锁**）+ pid 化 tmp + rename。
+//   ★ 已知边界（如实登记）：锁文件落在 `<CFG.exportDir>/.console/index.lock`，即**按成片根**而不是按
+//     `--root` 取 —— 正常用法里 `--root` 就是 `<CFG.exportDir>/dub`（同一个 root），两者一致；
+//     只有「`--root` 指到别处、却没同时改 `LEMO_FILM_DIR`」的夹具场景才会锁错树（夹具已显式设环境变量）。
+const UPLOADS_DIR = path.join(ROOT, '_uploads');
+const UPLOADS_INDEX = path.join(UPLOADS_DIR, 'index.json');
+
+/** 读 `_uploads/index.json`。三态：`{ok:true,entries}` / `{ok:false,why}`（ENOENT = 合法空表）。 */
+function readUploadsIndex() {
+  let raw;
+  try { raw = fs.readFileSync(UPLOADS_INDEX, 'utf8'); }
+  catch (e) {
+    return e.code === 'ENOENT'
+      ? { ok: true, entries: [] }
+      : { ok: false, why: `读不到（${e.message}）` };
+  }
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { return { ok: false, why: `JSON 解析失败（${e.message}）` }; }
+  if (!Array.isArray(parsed)) return { ok: false, why: `顶层不是数组（是 ${parsed === null ? 'null' : typeof parsed}）` };
+  return { ok: true, entries: parsed };
+}
+
+/**
+ * 摘掉「指向已删文件」的登记条目。
+ * @param {string[]} targets 本次盘上已不在的 `_uploads/` 文件（绝对路径）
+ * @param {boolean} apply true = 真写回；false = 只算「将摘掉几条」
+ * @returns {{status:'unreadable'|'no-match'|'would-prune'|'pruned'|'write-failed', removed:number, total:number|null,
+ *            left?:number, why?:string}}
+ */
+function syncUploadsRegistry(targets, apply) {
+  const gone = new Set(targets.map((p) => path.resolve(p)));
+  const goneBase = new Set(targets.map((p) => path.basename(p)));
+  // ★ 匹配口径：登记条目 `path` 规范化后等于本次删掉的路径，**或**两者同名（`_uploads/` 是平铺的，
+  //   文件名 = `<token><ext>`，同名即同物）。只按 token 猜不够 —— 登记表才是权威。
+  const drop = (entries) => entries.filter((e) => {
+    if (!e || typeof e !== 'object') return true;                 // 形状怪异的条目**原样保留**（不认识的别动）
+    const p = typeof e.path === 'string' ? path.resolve(e.path) : '';
+    return !(p && (gone.has(p) || goneBase.has(path.basename(p))));
+  });
+
+  const first = readUploadsIndex();
+  if (!first.ok) return { status: 'unreadable', removed: 0, total: null, why: first.why };
+  const after = drop(first.entries);
+  const n = first.entries.length - after.length;
+  if (!n) return { status: 'no-match', removed: 0, total: first.entries.length };
+  if (!apply) return { status: 'would-prune', removed: n, total: first.entries.length };
+
+  const locked = acquireLock();     // ★ 与 lib/dub.mjs 的 registerUpload / unregisterUpload 同一把锁
+  try {
+    // ★ 拿锁之后**重读**（读到的才是「当前」的），以它为准再算一次 —— 别的进程刚登记的那条不能被抹掉。
+    const again = readUploadsIndex();
+    if (!again.ok) return { status: 'unreadable', removed: 0, total: null, why: `${again.why}（拿锁后重读）` };
+    const keep = drop(again.entries);
+    const n2 = again.entries.length - keep.length;
+    if (!n2) return { status: 'no-match', removed: 0, total: again.entries.length };
+    // ★ 原子写：pid 化 tmp + rename（照 `lib/store.mjs` 的 `saveIndex` / `lib/dub.mjs` 的 `saveIndex` 范式）。
+    const tmp = `${UPLOADS_INDEX}.${process.pid}.prune.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(keep, null, 2), 'utf8');
+      fs.renameSync(tmp, UPLOADS_INDEX);
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch { /* 别留半个 tmp */ }
+      return { status: 'write-failed', removed: 0, total: again.entries.length, why: e.message };
+    }
+    return { status: 'pruned', removed: n2, total: again.entries.length, left: keep.length };
+  } finally {
+    if (locked) releaseLock();
+  }
+}
+
+// apply ⇒ 真删掉的那些；dry-run ⇒ 入选的（将要删的那些）。
+const uploadTargets = APPLY ? goneUploadPaths : selected.filter((c) => c.kind === 'upload').map((c) => c.full);
+const uploadsSync = uploadTargets.length ? syncUploadsRegistry(uploadTargets, APPLY) : null;
 
 const ok = blockers.length === 0;
 
@@ -277,6 +374,8 @@ if (JSON_OUT) {
     deleted: APPLY ? deleted : 0,
     deletedBytes: APPLY ? deletedBytes : 0,
     missing,
+    // ★ F7：`_uploads/index.json` 的登记摘除结果（null = 本次没有涉及 `_uploads/` 的文件）。
+    uploadsRegistry: uploadsSync,
     blockers,
     skipped,
     totals: { candidates: candidates.length, candidateBytes: candBytes, selected: selected.length, selectedBytes: selBytes },
@@ -287,7 +386,7 @@ if (JSON_OUT) {
 
 console.log(`[prune-dub] ${APPLY ? '★ 执行模式（--apply）' : '只报告（dry-run）'}｜dubRoot = ${ROOT}`);
 console.log(`  年龄阈值：${olderThanDays === null ? '未给 --older-than ⇒ 不选任何待清理项（绝不删全部）' : `${olderThanDays} 天（mtime 早于 now - ${olderThanDays} 天）`}`);
-if (uploadsWarned) console.log('  ⚠️  已启用 --include-uploads：下面 `_uploads/` 里的条目**是用户上传的素材**（index.json 除外，永远保留）');
+if (uploadsWarned) console.log('  ⚠️  已启用 --include-uploads：下面 `_uploads/` 里的条目**是用户上传的素材**（登记表 index.json 的文件本身除外，永远保留）');
 console.log(`  产物候选：${candidates.length} 个（共 ${fmtBytes(candBytes)}）｜其中超龄入选：${selected.length} 个（共 ${fmtBytes(selBytes)}）`);
 console.log('');
 
@@ -313,9 +412,31 @@ if (skipped.length) {
   for (const s of skipped) console.log(`    · ${s.name} —— ${s.why}`);
 }
 
+// ── F7：登记表与「删掉的文件」对齐（逐态说清，绝不静默）────────────────────────
+if (uploadsSync) {
+  const st = uploadsSync.status;
+  if (st === 'pruned') {
+    console.log(`\n  ℹ 上传登记表（${UPLOADS_INDEX}）：已摘掉 ${uploadsSync.removed} 条指向已删文件的条目`
+      + `（${uploadsSync.total} → ${uploadsSync.left} 条）—— 与「删文件」对称，不留幽灵条目。`);
+  } else if (st === 'would-prune') {
+    console.log(`\n  ℹ 上传登记表（${UPLOADS_INDEX}）：将摘掉 ${uploadsSync.removed} 条指向待删文件的条目`
+      + `（${uploadsSync.total} → ${uploadsSync.total - uploadsSync.removed} 条）—— 加 --apply 才写回。`);
+  } else if (st === 'no-match') {
+    console.log(`\n  ℹ 上传登记表（${UPLOADS_INDEX}）：没有条目指向本次涉及的文件（${uploadsSync.total} 条原样保留）。`);
+  } else if (st === 'unreadable') {
+    console.log(`\n  ⚠️  上传登记表（${UPLOADS_INDEX}）读不出来（${uploadsSync.why}）`
+      + ' ⇒ **一个字节都没改它**：里面可能留下指向已删文件的「幽灵条目」'
+      + '（UI 按文件是否存在过滤 ⇒ 看不见）。请人工处理这个文件后重跑本命令。');
+  } else if (st === 'write-failed') {
+    console.log(`\n  ⚠️  上传登记表（${UPLOADS_INDEX}）写回失败（${uploadsSync.why}）`
+      + ' ⇒ 可能留下指向已删文件的幽灵条目，请人工核对。');
+  }
+}
+
 console.log(`\n[prune-dub] 汇总：候选 ${candidates.length} 个（${fmtBytes(candBytes)}）｜`
   + `超龄入选 ${selected.length} 个（${fmtBytes(selBytes)}）｜`
   + `${APPLY ? `实删 ${deleted} 个（${fmtBytes(deletedBytes)}）` + (missing ? `、已不存在 ${missing} 个` : '') : '未删任何东西'}｜`
-  + `安全闸拦截 ${blockers.length}｜跳过 ${skipped.length}`);
+  + `安全闸拦截 ${blockers.length}｜跳过 ${skipped.length}`
+  + (uploadsSync && uploadsSync.status === 'pruned' ? `｜登记表摘除 ${uploadsSync.removed} 条` : ''));
 if (!APPLY && selected.length) console.log('  ⇒ 确认无误后加 --apply 执行（且必须同时保留 --older-than）。');
 process.exit(ok ? 0 : 1);

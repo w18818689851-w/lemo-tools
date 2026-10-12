@@ -72,17 +72,19 @@ test('A1 `--help` 列出审核回路的 5 个新参数', async () => {
   }
 });
 
-test('A2 默认 dry-run 不含第 10 步（--review 是 opt-in，默认关）', async () => {
+test('A2 默认 dry-run 不含第 12 步（--review 是 opt-in，默认关）', async () => {
   const r = await orch(['ascii-crt', '--skip-sync', '--dry-run']);
   assert.equal(r.code, 0);
-  assert.ok(!r.out.includes('10. 审核回路'), '不传 --review 时不该出现第 10 步');
+  // ★ 编号 = 实时日志里 step() 打的 [N]（第六批 §3-5 起 dry-run 计划表与真实 [N] **同一套**）：
+  //   [10] 交付文档 / [11] web cut / [12] 审核回路 ⇒ 不传 --review 时 [12] 不该出现。
+  assert.ok(!r.out.includes('12. 审核回路'), '不传 --review 时不该出现第 12 步');
   assert.ok(!r.out.includes('sheet.jpg'), '不传 --review 时不该提到 sheet.jpg');
 });
 
-test('A3 `--review --dry-run` 把第 10 步排进计划（含 sheet.jpg 与 blackdetect 参数）', async () => {
+test('A3 `--review --dry-run` 把第 12 步排进计划（含 sheet.jpg 与 blackdetect 参数）', async () => {
   const r = await orch(['ascii-crt', '--skip-sync', '--review', '--dry-run']);
   assert.equal(r.code, 0);
-  assert.ok(r.out.includes('10. 审核回路'), '--review 时应出现第 10 步');
+  assert.ok(r.out.includes('12. 审核回路'), '--review 时应出现第 12 步');
   assert.ok(r.out.includes('sheet.jpg'));
   assert.ok(r.out.includes('blackdetect'));
   // 默认值要在计划里可见（默认 2s / 4 列 / 480px / d=0.5）
@@ -150,15 +152,16 @@ test('B3 blackdetect 在真实成片上检出 ≥1 段（走 `-i <文件>` 真�
   for (const h of hits) assert.ok(h.dur > 0 && h.end > h.start, `黑场区间应合法：${JSON.stringify(h)}`);
 });
 
-// ═══════════════════ C. 端到端：`--review` 真跑一遍（预置成片 ⇒ 只跑第 5 步 + 第 10 步）═══════════════════
+// ═══════════════════ C. 端到端：`--review` 真跑一遍（预置成片 ⇒ 只跑第 7 步 + 第 12 步）═══════════════════
 
 test('C1 `--review` 端到端：预置成片 ⇒ 真产 sheet.jpg 且打印 blackdetect 结果', async (t) => {
   if (!FF) return t.skip('找不到 Windows ffmpeg');
   if (!HAS_LIB) return t.skip(`库仓不可用（缺 ${STILL} 或 ascii-crt demo）`);
   if (!fs.existsSync(SAMPLE)) return t.skip(`样板成片不在：${SAMPLE}`);
 
-  // ★ 预置「本次输出目录」里的成片 ⇒ `--skip-render --skip-audio` 时第 5 步（核验导出）能过，
-  //   而第 6/7/8 步用开关关掉 ⇒ **只跑第 10 步**（这就是对新增代码的真端到端）。
+  // ★ 预置「本次输出目录」里的成片 ⇒ `--skip-render --skip-audio` 时第 7 步（核验导出）能过，
+  //   而第 8/9/10 步（自检 / 交付图 / 交付文档）用开关关掉 ⇒ **只跑第 12 步**（这就是对新增代码的真端到端）。
+  //   ★ 编号口径 = 实时日志里 step() 打的 [N]（第六批 §3-5 起 dry-run 计划表与真实 [N] **同一套**）。
   const outDir = path.join(FX, 'out');
   fs.mkdirSync(outDir, { recursive: true });
   fs.copyFileSync(SAMPLE, path.join(outDir, 'ascii-crt.mp4'));
@@ -183,7 +186,7 @@ test('C1 `--review` 端到端：预置成片 ⇒ 真产 sheet.jpg 且打印 blac
 
 test('C2 `--review` 失败只 warn、不阻断出片（emitReview 里没有 fail）', async (t) => {
   if (!HAS_LIB) return t.skip(`库仓不可用（缺 ${STILL} 或 ascii-crt demo）`);
-  // 预置一个 **0 字节假成片**：第 5 步（核验导出）只看「文件在不在」⇒ 能过；第 10 步的 ffmpeg/ffprobe
+  // 预置一个 **0 字节假成片**：第 7 步（核验导出）只看「文件在不在」⇒ 能过；第 12 步的 ffmpeg/ffprobe
   // 会失败 ⇒ 走 warn 分支。钉「审核回路只报告、不阻断」这条失败语义。
   const outDir = path.join(FX, 'out2');
   fs.mkdirSync(outDir, { recursive: true });

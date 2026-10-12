@@ -8,8 +8,16 @@
 //   实测事故：`server.mjs` 新增一个 API 块后，闸门 `check-llm-call-params` 报「本闸门已失明」
 //   （剥完只剩 19670/127511 字符、抽到 0 次模块调用）。本文件把该缺陷的**最小复现**钉住。
 //
-// ★ 本文件怎么自证「有牙」（判据⑤）：把 `lib/js-scan.mjs` 里的**正则识别**临时去掉（`scanRegex` 恒返回 -1），
-//   写成一个临时模块再 import —— 它**必须**在最小复现上「带偏」。若这一条不变红 ⇒ 说明第 1 条用例没牙。
+// ★ 本文件怎么自证「有牙」（判据⑤/6g）：把 `lib/js-scan.mjs` 里的**正则识别**临时去掉（`scanRegex` 恒返回 -1），
+//   写成一个临时模块再 import —— 它**必须**在最小复现上「带偏」（判据⑤）；同理把**反引号串里的 `${}` 处理**
+//   去掉（`if (false)`），它**必须**在 6a/6c 的形状上「带偏」（判据 6g）。任一条不变红 ⇒ 说明对应用例没牙。
+//
+// ★ 2026-10-12 新增边界：**模板串里的 `${…}` 嵌套**。此前 `state === 'str'` 分支对反引号串不处理 `${}`，
+//   一直吃到下一个反引号 ⇒ 一旦 `${}` 里嵌了反引号（实测 `lib/dub-core.mjs:538`），内层反引号被当成闭合、
+//   状态机提前回到 code 态、其后整段错位：保字符串口径下**注释不再被剥**（噪声 ⇒ 误报），
+//   丢字符串口径下**代码被当字符串丢掉**（实测 `export const ASR_ALIGN_PY` 整段消失 ⇒ 漏报）。
+//   用例 6a–6g 钉住它（含两层/三层嵌套、`${}` 里的注释、`${}` 里的字符串按 keepStrings、行号保留、
+//   以及真实文件 `lib/dub-core.mjs` 的回归）。
 //
 // 用法：node test/js-scan.test.mjs
 // 退出码：全绿 0，有失败 1。
@@ -95,6 +103,19 @@ function dangerCount(src) {
 }
 const hasDanger = (s) => dangerCount(s) > 0;
 
+// ── 「模板串里嵌了东西」的判定（**只看源文本性质**，与剥后结果无关）────────────────
+//   ★ 用途：口径「丢字符串」下，旧实现（4 个变体都不认 `${}`）在**含这个形状**的文件上**本身就会错位**
+//     ⇒ 那些文件**不适用**「新旧子序列」判据（本次修的正是它）。例外**必须**由源性质给出，
+//     绝不允许按「比较结果不同」来事后豁免（那等于把判据架空）。
+const TPL_NESTED_BACKTICK = /\$\{[^}]*`/;   // `${` 之后、下一个 `}` 之前出现反引号（如 `lib/dub-core.mjs:538`）
+
+/** `a` 是否为 `b` 的**子序列**（用于方向性判据：只允许多删 / 多留，不许改动既有内容）。 */
+function isSubseq(a, b) {
+  let j = 0;
+  for (let i = 0; i < b.length && j < a.length; i++) if (b[i] === a[j]) j++;
+  return j === a.length;
+}
+
 const readIf = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
 
 // ── 1. ★ 正则字面量含裸引号 ⇒ 不再带偏（事故最小复现）────────────────────────
@@ -139,26 +160,54 @@ test('★ 正则字面量含反引号 ⇒ 不再带偏（check-cli-docs 的形�
   assert.ok(c.includes('/[\\s*·`]/') || c.includes('·`]'), '正则字面量应原样保留');
 });
 
-// ── 3. 等价性：真实语料上，「安全文件」新旧逐字节相同 ────────────────────────
-test('★ 等价性·安全文件：新实现与旧实现逐字节相同（三种口径）', () => {
+// ── 3. 等价性：真实语料上，「安全文件」新旧一致（**方向性**判据，见每条的理由）────
+//   ★ 2026-10-12 改动说明（**为什么不再是逐字节相等**）：本模块新增了「反引号串里认 `${}`」，
+//     这是**有意**的行为改动 —— 逐字节相等在**含模板插值**的文件上**必然**不再成立，而仓里
+//     56 个安全文件里 52 个含模板插值。⇒ 判据改成**方向性**的（更强地钉住「不许改坏」）：
+//       · 口径「抹注释」：新实现只可能**多抹**（差异处必是空格）—— 绝不许把代码抹掉/改掉；
+//       · 口径「删注释」：新输出必是旧输出的**子序列**（只可能多删）；
+//       · 口径「丢字符串」：旧输出必是新输出的**子序列**（只可能多留 = 保住插值里的代码），
+//         ★ 例外仅限「`${}` 里嵌反引号」的文件（旧实现**本身**在那里就错位，正是本次修的形态），
+//           例外由 `TPL_NESTED_BACKTICK`（源文本性质）判定，并**非空转自证**（见末尾 nested 计数）。
+test('★ 等价性·安全文件：新实现只可能「多抹 / 多删 / 多留」，绝不改动既有内容（三种口径）', () => {
   const corpus = [
     'server.mjs', 'dub.mjs', 'lemo-make.mjs', 'consistency-check.mjs', 'originality-audit.mjs',
     ...fs.readdirSync(path.join(ROOT, 'lib')).filter((f) => f.endsWith('.mjs')).map((f) => path.join('lib', f)),
     ...fs.readdirSync(path.join(ROOT, 'scripts')).filter((f) => f.endsWith('.mjs')).map((f) => path.join('scripts', f)),
   ];
   let checked = 0;
+  let nested = 0;
   for (const rel of corpus) {
     const src = readIf(path.join(ROOT, rel));
     if (src === null) continue;
-    if (hasDanger(src)) continue;                 // 含危险正则 ⇒ 走下面的「更正确」判据
+    if (hasDanger(src)) continue;                 // 含危险正则 ⇒ 走 3b 的「更正确」判据
     checked++;
-    for (let k = 0; k < MODES.length; k++) {
-      const nw = stripComments(src, MODES[k]);
-      const ol = OLD[k](src);
-      assert.equal(nw, ol, `${rel}（口径 ${JSON.stringify(MODES[k])}）新旧不一致 —— 无危险正则的文件不该有差异`);
+
+    // 口径 A（抹注释、保字符串）：长度守恒 ⇒ 差异处**只可能**是新实现多抹出来的空格
+    const nA = stripComments(src, MODES[0]);
+    const oA = OLD[0](src);
+    assert.equal(nA.length, src.length, `${rel}：抹注释口径下新实现长度不守恒（抹注释不该增删字符）`);
+    assert.equal(oA.length, src.length, `${rel}：旧实现抹注释口径长度不守恒 ⇒ 本条前提失效（请更新）`);
+    for (let i = 0; i < nA.length; i++) {
+      if (nA[i] === oA[i]) continue;
+      assert.equal(nA[i], ' ',
+        `${rel} @${i}：抹注释口径下新实现**改动了既有字符**（只允许多抹成空格）\n`
+        + `  新 ${JSON.stringify(nA.slice(Math.max(0, i - 40), i + 40))}\n`
+        + `  旧 ${JSON.stringify(oA.slice(Math.max(0, i - 40), i + 40))}`);
     }
+
+    // 口径 B（删注释、保字符串）：新输出必是旧输出的子序列（只可能多删）
+    assert.ok(isSubseq(stripComments(src, MODES[1]), OLD[1](src)),
+      `${rel}：删注释口径下新实现**多留**了东西（旧实现的结果里找不到它）`);
+
+    // 口径 C（删注释、丢字符串）：旧输出必是新输出的子序列（只可能多留 = 保住插值里的代码）
+    if (TPL_NESTED_BACKTICK.test(src)) { nested++; continue; }   // ★ 旧实现在这种文件上本身错位
+    assert.ok(isSubseq(OLD[2](src), stripComments(src, MODES[2])),
+      `${rel}：丢字符串口径下新实现**少留**了东西（插值里的代码不该被丢）`);
   }
   assert.ok(checked >= 40, `安全文件样本太少（实测 ${checked} 个）⇒ 判据可能失明`);
+  assert.ok(nested >= 1,
+    `★ 非空转：一个「\`\${}\` 里嵌反引号」的安全文件都没命中（实测 ${nested}）⇒ 口径 C 的例外判据失明`);
 });
 
 // ── 3b. 等价性：真实语料上，「含危险正则的文件」新实现更正确 ────────────────
@@ -247,4 +296,198 @@ test('★自证：把共享模块的「正则识别」去掉 ⇒ 最小复现必
   }
   // 还原（未变异）后，与第 1 条同口径的断言逐字节成立
   assert.ok(stripComments(FIXTURE, MODE_DROPSTR).includes('const AFTER = 2;'));
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── 6. ★ 模板串 `${…}` 里的嵌套（2026-10-12 修的边界）──────────────────────────
+//   由来：`state === 'str'` 分支此前对反引号串**不处理 `${}`** —— 它在 `str` 态一直吃到**下一个反引号**。
+//   实测后果（`lib/dub-core.mjs:538` 的 `` `'${String(s).replace(/'/g, `'\\''`)}'` ``，`${}` 里嵌了反引号）：
+//     · 内层反引号被当成闭合 ⇒ 状态机**提前回到 code 态** ⇒ 其后整段错位；
+//     · 口径「抹/删注释、保字符串」⇒ 从该行起其后约 88 行注释**不再被剥**（噪声 ⇒ 判据可能**误报**）；
+//     · 口径「丢字符串」⇒ 其后**代码被当字符串丢掉**（实测 `export const ASR_ALIGN_PY` 整段消失
+//       ⇒ 判据**漏报**，这是危险方向）。
+//   ⇒ 现在：反引号串里遇 `${` ⇒ 进「插值代码态」（`tplStack` 压一层，花括号深度记 0）；该态里
+//     `{` +1 / `}` −1，**归零时回到外层反引号串态**；插值里的代码走同一套状态机 ⇒ **支持任意层嵌套**。
+// ══════════════════════════════════════════════════════════════════════════════
+const DUB_CORE = path.join(ROOT, 'lib', 'dub-core.mjs');
+
+// ── 6a. `${}` 里嵌反引号（照 `lib/dub-core.mjs:538` 的真实形状）────────────────
+test('★ 模板串 ${} 里嵌反引号 ⇒ 状态机不被带偏（lib/dub-core.mjs:538 的真实形状）', () => {
+  const raw = fs.readFileSync(DUB_CORE, 'utf8');
+  const line = raw.split('\n')[537];
+  assert.ok(line.includes('${String(s).replace(') && line.includes('`'),
+    `dub-core.mjs:538 的形状变了（找不到「\`\${}\` 里嵌反引号」那行）⇒ 请更新本条：实得 ${JSON.stringify(line)}`);
+  // ★ 紧跟其后的一句**注释原文**（第七批 F4 当时为躲误报把它改写掉了）——「噪声」的最小载体
+  const src = [line, '//   （/home/lemo/lemo-opuscar/.venv 里已装 1.2.1，HF 缓存有 base / base.en），不另装一套。', 'const AFTER = 1;', ''].join('\n');
+  // ① 口径「抹注释」：该行之后的**注释必须被抹**（= 噪声消失，判据不再可能因注释误报）
+  const b = stripComments(src, MODE_BLANK);
+  assert.ok(!b.includes('/lemo-opuscar/'), '抹注释口径：:538 之后的注释没被抹掉（状态机被内层反引号带偏）');
+  assert.ok(b.includes('const AFTER = 1;'), '抹注释口径：:538 之后的**代码**被吞掉了');
+  assert.equal(b.length, src.length, '抹注释口径：长度必须守恒');
+  assert.equal(b.split('\n').length, src.split('\n').length, '行号必须保留');
+  // ② 口径「删注释」：注释删掉、代码留下
+  const a = stripComments(src, MODE_REMOVE);
+  assert.ok(!a.includes('/lemo-opuscar/'), '删注释口径：:538 之后的注释没被删');
+  assert.ok(a.includes('const AFTER = 1;'), '删注释口径：:538 之后的代码被吞');
+  // ③ 口径「丢字符串」：:538 之后是**代码** ⇒ 必须留下（此前被当字符串整段丢掉）
+  const d = stripComments(src, MODE_DROPSTR);
+  assert.ok(d.includes('const AFTER = 1;'), '丢字符串口径：:538 之后的代码被当字符串丢掉了');
+  assert.ok(d.includes('String(s).replace('), '丢字符串口径：模板插值里的**代码**应保留');
+  // ④ `${` / 闭合它的 `}` 按字符串出口 ⇒ 「保字符串」口径下该行逐字节不变
+  assert.equal(b.split('\n')[0], line, '抹注释口径：这一行应逐字节保留（模板串是字符串）');
+  assert.equal(a.split('\n')[0], line, '删注释口径：这一行应逐字节保留');
+});
+
+// ── 6b. `${}` 里嵌注释 ⇒ 注释必须被剥 ────────────────────────────────────────
+test('★ 模板串 ${} 里的注释必须被剥（${ /* c */ x } / ${ x // c\\n }）', () => {
+  const blk = 'const a = `p${ /* CMT */ x }q`;\nconst b = 2;\n';
+  const bB = stripComments(blk, MODE_BLANK);
+  assert.ok(!bB.includes('CMT'), '抹注释口径：`${}` 里的块注释没被抹');
+  assert.equal(bB.length, blk.length, '抹注释口径：长度必须守恒');
+  assert.ok(bB.includes('const b = 2;'), '抹注释口径：注释之后的代码被吞了');
+  const bR = stripComments(blk, MODE_REMOVE);
+  assert.ok(!bR.includes('CMT'), '删注释口径：`${}` 里的块注释没被删');
+  assert.ok(bR.includes('const b = 2;'), '删注释口径：注释之后的代码被吞了');
+  // 行注释（注释体跨行，`}` 在下一行 ⇒ 注释必须吃在行尾、`}` 仍要闭合插值）
+  const lin = 'const a = `p${ x // CMT2\n }q`;\nconst b = 3;\n';
+  for (const mode of MODES) {
+    const out = stripComments(lin, mode);
+    assert.ok(!out.includes('CMT2'), `口径 ${JSON.stringify(mode)}：\`\${}\` 里的行注释没被剥`);
+    assert.ok(out.includes('const b = 3;'), `口径 ${JSON.stringify(mode)}：行注释之后的代码被吞了`);
+    assert.equal(out.split('\n').length, lin.split('\n').length, `口径 ${JSON.stringify(mode)}：行号漂了`);
+  }
+});
+
+// ── 6c. 两层 / 三层嵌套 ─────────────────────────────────────────────────────
+test('★ 任意层嵌套：`a${`b${c}`}d` / 三层 ⇒ 状态机正确回到外层', () => {
+  // ★ 标记刻意用**可辨识的长词**：这样「丢字符串」口径下能逐段断言「哪一段该留、哪一段该丢」。
+  //   （纯 `a/b/c/d` 单字母的夹具在旧实现上会**碰巧自洽** —— 4 个反引号两两配对，错位区正好被夹住
+  //     ⇒ 那条用例就**没有牙**。用长词后旧实现会漏出 `}dd`（= 模板串内容被当代码输出）⇒ 当场变红。）
+  const NEST2 = 'const r = `aa${`bb${CC}`}dd`;';
+  const src = [NEST2, '// MARK 必须被剥', 'const z = 9;', ''].join('\n');
+  for (const mode of MODES) {
+    const out = stripComments(src, mode);
+    assert.equal(out.split('\n').length, src.split('\n').length, `口径 ${JSON.stringify(mode)}：行号漂了`);
+    assert.ok(!out.includes('MARK'), `口径 ${JSON.stringify(mode)}：两层嵌套之后状态机错位 ⇒ 注释没被剥`);
+    assert.ok(out.includes('const z = 9;'), `口径 ${JSON.stringify(mode)}：两层嵌套之后代码被吞了`);
+  }
+  // 「保字符串」两口径下该行逐字节保留（模板串是字符串 ⇒ 整行原样）
+  assert.equal(stripComments(src, MODE_BLANK).split('\n')[0], NEST2);
+  assert.equal(stripComments(src, MODE_REMOVE).split('\n')[0], NEST2);
+  // ★ 「丢字符串」口径：`CC`（内层插值的**代码**）必须留；`aa`/`bb`/`dd`（模板串内容）必须丢。
+  const d0 = stripComments(src, MODE_DROPSTR).split('\n')[0];
+  assert.ok(d0.includes('CC'), '丢字符串口径：内层插值里的代码 `CC` 被丢了');
+  assert.ok(!d0.includes('aa') && !d0.includes('bb') && !d0.includes('dd'),
+    `丢字符串口径：模板串内容（aa/bb/dd）没被丢 ⇒ 状态机错位，实得 ${JSON.stringify(d0)}`);
+  // 三层（`${` 里再有反引号模板、再有 `${`）
+  const deep = 'const s = `1${`2${`3${x}`}`}`;\n// MARK3 必须被剥\nconst w = 1;\n';
+  for (const mode of MODES) {
+    const out = stripComments(deep, mode);
+    assert.equal(out.split('\n').length, deep.split('\n').length, `口径 ${JSON.stringify(mode)}：三层行号漂了`);
+    assert.ok(!out.includes('MARK3'), `口径 ${JSON.stringify(mode)}：三层嵌套之后错位`);
+    assert.ok(out.includes('const w = 1;'), `口径 ${JSON.stringify(mode)}：三层嵌套之后代码被吞`);
+  }
+  assert.equal(stripComments(deep, MODE_BLANK).split('\n')[0], 'const s = `1${`2${`3${x}`}`}`;');
+  assert.ok(stripComments(deep, MODE_DROPSTR).split('\n')[0].includes('x'),
+    '丢字符串口径：三层嵌套最内层插值的代码 `x` 被丢了');
+});
+
+// ── 6d. `${}` 里的字符串按 keepStrings 处理 ─────────────────────────────────
+test('★ ${} 里的字符串按 keepStrings 处理（丢字符串口径只丢字符串、不丢插值里的代码）', () => {
+  const src = 'const a = `p${ "STR" + v }q`;\n';
+  assert.equal(stripComments(src, MODE_BLANK), src, '抹注释口径：整行应逐字节保留');
+  assert.equal(stripComments(src, MODE_REMOVE), src, '删注释口径：整行应逐字节保留');
+  const drop = stripComments(src, MODE_DROPSTR);
+  assert.ok(!drop.includes('STR'), '丢字符串口径：`${}` 里的字符串内容应被丢掉');
+  assert.ok(drop.includes('+ v'), '丢字符串口径：`${}` 里的**代码**（表达式）必须留下');
+  // 插值里嵌的**模板串**也按 keepStrings：丢口径下它的字符串内容丢、它的插值代码留
+  const src2 = 'const a = `p${ `S${u}` }q`;\n';
+  const d2 = stripComments(src2, MODE_DROPSTR);
+  assert.ok(!d2.includes('S'), '丢字符串口径：插值里嵌的模板串内容应被丢');
+  assert.ok(d2.includes('u'), '丢字符串口径：插值里嵌的模板串**插值代码**应留下');
+  assert.equal(stripComments(src2, MODE_BLANK), src2, '抹注释口径：整行应逐字节保留');
+});
+
+// ── 6e. 行号保留（多行插值 + 跨行注释）──────────────────────────────────────
+test('★ 行号保留：多行模板插值（含跨行注释与嵌套插值）⇒ 输出行数 == 输入行数', () => {
+  const src = [
+    'const a = `x${',
+    '  /* 跨行注释 */',
+    '  y +',
+    '  `${z}`',
+    '}w`;',
+    'const b = 1;',
+    '',
+  ].join('\n');
+  for (const mode of MODES) {
+    const out = stripComments(src, mode);
+    assert.equal(out.split('\n').length, src.split('\n').length, `口径 ${JSON.stringify(mode)}：行号漂了`);
+    assert.ok(out.includes('const b = 1;'), `口径 ${JSON.stringify(mode)}：代码被吞`);
+  }
+  assert.ok(!stripComments(src, MODE_BLANK).includes('跨行注释'), '抹注释口径：跨行注释没被剥');
+});
+
+// ── 6f. ★ 回归：真实文件 `lib/dub-core.mjs` ─────────────────────────────────
+test('★ 回归：lib/dub-core.mjs 剥完后「注释里的词不再算、:538 之后的代码不再被吞」', () => {
+  const src = fs.readFileSync(DUB_CORE, 'utf8');
+  const b = stripComments(src, MODE_BLANK);
+  const d = stripComments(src, MODE_DROPSTR);
+  // ① 行号保留
+  assert.equal(b.split('\n').length, src.split('\n').length, '抹注释口径：行号漂了');
+  assert.equal(d.split('\n').length, src.split('\n').length, '丢字符串口径：行号漂了');
+  // ② ★ 「噪声消失」：`SYN-SENT` **只**出现在 :1288 的注释里（:538 之后）⇒ 剥完必须不再出现
+  assert.ok(src.includes('SYN-SENT'), '语料变了：dub-core.mjs 里已找不到只在注释里出现的标记 SYN-SENT（请更新本条）');
+  assert.ok(!b.includes('SYN-SENT'), '抹注释口径：:538 之后的注释没被抹 ⇒ 噪声仍在（判据可能**误报**）');
+  // ③ ★ 「漏报消失」：:538 之后的**代码**（`export const ASR_ALIGN_PY`，:1292）在丢字符串口径下必须留下
+  assert.ok(src.includes('export const ASR_ALIGN_PY'), '语料变了：找不到 export const ASR_ALIGN_PY（请更新本条）');
+  assert.ok(d.includes('export const ASR_ALIGN_PY'), '丢字符串口径：:538 之后的代码被当字符串吞掉了（判据会**漏报**）');
+  // ④ ★ 与 `test/cases.mjs` 的 F4 BANNED 判据同口径：`[/lemo-films/, /lemo-opuscar/]` 在剥后文本里都不该出现
+  //    （原文里也都没有 ⇒ 本条只作「与 F4 闸门同口径」的说明性核对，不是判据的牙）
+  for (const p of [/lemo-films/, /lemo-opuscar/]) {
+    assert.ok(!p.test(b), `抹注释口径：剥后文本里仍有 ${p}（F4 BANNED 判据会红）`);
+  }
+  // ⑤ ★ 剥后「仍含 `//` 的行」必须**只剩字符串里的**（实测只有 1 行：python 文案里的 `https://hf-mirror.com`）
+  const stillSlash = b.split('\n').filter((L) => L.includes('//'));
+  assert.ok(stillSlash.length <= 2,
+    `抹注释口径：剥后仍有 ${stillSlash.length} 行含 \`//\` ⇒ :538 之后的注释成片没被抹（噪声）\n`
+    + stillSlash.slice(0, 3).map((L) => '  ' + L.slice(0, 100)).join('\n'));
+});
+
+// ── 6g. ★自证：把共享模块的「`${}` 处理」去掉 ⇒ 6a/6c 必须变红 ─────────────────
+test('★自证：把共享模块的「反引号串里认 ${}」去掉 ⇒ 6a/6c 必须变红（本条证明 6a/6c 有牙）', async () => {
+  const modPath = path.join(ROOT, 'lib', 'js-scan.mjs');
+  const src = fs.readFileSync(modPath, 'utf8');
+  const ANCHOR = "if (quote === '`' && c === '$' && src[i + 1] === '{') {";
+  assert.ok(src.includes(ANCHOR), `变异锚点变了：找不到 \`${ANCHOR}\`（请更新本条自证）`);
+  const mutated = src.replace(ANCHOR, "if (false) {   // ★自证：去掉 \${} 处理");
+  assert.notEqual(mutated, src, '变异没生效');
+  fs.mkdirSync(TMP, { recursive: true });
+  const tmpPath = path.join(TMP, `js-scan-mut-tpl-${process.pid}.mjs`);
+  fs.writeFileSync(tmpPath, mutated);
+  // 6a 的形状（照 `lib/dub-core.mjs:538`）与 6c 的形状（两层嵌套）
+  const raw = fs.readFileSync(DUB_CORE, 'utf8');
+  const fix = [raw.split('\n')[537],
+    '//   （/home/lemo/lemo-opuscar/.venv 里已装 1.2.1），不另装一套。', 'const AFTER = 1;', ''].join('\n');
+  const nest = ['const r = `aa${`bb${CC}`}dd`;', '// MARK 必须被剥', 'const z = 9;', ''].join('\n');
+  try {
+    const mut = await import(pathToFileURL(tmpPath).href);
+    // 6a：变异版必须「带偏」⇒ 该行之后的注释不再被抹、代码被当字符串丢掉
+    assert.ok(mut.stripComments(fix, MODE_BLANK).includes('/lemo-opuscar/'),
+      '变异版竟把 :538 之后的注释剥掉了 ⇒ 说明 6a 没有牙（或变异没生效）');
+    assert.ok(!mut.stripComments(fix, MODE_DROPSTR).includes('const AFTER = 1;'),
+      '变异版竟保住了 :538 之后的代码 ⇒ 说明 6a 没有牙');
+    // 6c：两层嵌套 ⇒ 变异版把第 2 个反引号当闭合，之后整段当**代码**输出
+    //     ⇒ 内层模板串内容 `bb` 会当代码漏出来（★ 不能用「注释有没有被剥」判牙：两层嵌套的 4 个反引号
+    //       两两配对，错位区正好被夹住、第 4 个反引号之后两边重新同步 ⇒ 注释照样被剥）。
+    const mutNest = mut.stripComments(nest, MODE_DROPSTR).split('\n')[0];
+    assert.ok(mutNest.includes('bb'),
+      `变异版竟把两层嵌套处理对了（模板串内容 bb 没漏成代码）⇒ 说明 6c 没有牙（或变异没生效）：实得 ${JSON.stringify(mutNest)}`);
+    assert.ok(!stripComments(nest, MODE_DROPSTR).split('\n')[0].includes('bb'),
+      '修复版把内层模板串内容 `bb` 当代码留下了 ⇒ 6c 的判据本身不对');
+  } finally {
+    fs.rmSync(tmpPath, { force: true });
+  }
+  // 还原（未变异）后，6a/6c 同口径的断言成立
+  assert.ok(!stripComments(fix, MODE_BLANK).includes('/lemo-opuscar/'));
+  assert.ok(stripComments(nest, MODE_BLANK).split('\n')[1].trim() === '');
 });

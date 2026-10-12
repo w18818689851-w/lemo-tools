@@ -325,7 +325,7 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     ★ **反向验证**：硬杀（杀在宿主 `.sh` 刚落盘、WSL 侧 `trap` 还没装上的窗口）⇒ 残留 `_lemo-probe-23724-mv4n0x1d.sh`
 //       （118 B）+3s 仍在；紧接一次真编排器 ⇒ `exit 0` + stderr 打出「清扫陈旧残留 `_lemo-probe-23724-mv4n0x1d.sh`」
 //       且文件已消失。并发安全：一实例在飞时启动第二个 ⇒ 后者清扫零输出、前者文件未删。正常路径 `ascii-crt --dry-run` 仍 `exit 0`。
-export const ORCH_MD5 = '9ec6a25f0a0f5d1f11efe4e02772ceeb';
+export const ORCH_MD5 = 'e55e34c5282968b78afa1b85bec6dd34';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;

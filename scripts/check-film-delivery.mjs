@@ -90,7 +90,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn } from 'node:child_process'; import { LOCK_MAX_AGE_MS } from '../lib/lock.mjs';   // ★ 锁过期窗口（6h）的唯一来源 = lib/lock.mjs（原先本文件自持一份字面量；本行 = 合并进已有 import，不新增行）
 
 const DIR = path.resolve(process.env.LEMO_DISTILL_ROOT || 'D:/lemo-tools/lib/style-skills');
 const FF = 'D:/ffmpeg-9.x/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe';
@@ -102,8 +102,8 @@ const BATCH_DIR = path.resolve(process.env.LEMO_BATCH_DIR || 'D:/lemo-tools/_dis
 const LOCK_DIR = path.resolve(process.env.LEMO_LOCK_DIR || 'D:/lemo-films');
 const DEFER_FRESH_MS = 15 * 60 * 1000;    // 「成片很新」窗口
 const DEFER_ACTIVE_MS = 10 * 60 * 1000;   // 「批次在跑」窗口（批次证据的最新 mtime）
-// ★ 锁的「活着」判据**逐字对齐** `lemo-make.mjs:1899-1906`：pid 仍在 **且** 锁龄 < 6h。别自创阈值。
-const LOCK_MAX_AGE_MS = 6 * 3600 * 1000;
+// ★ 锁的「活着」判据 = `lemo-make.mjs:1899-1906` 那条：pid 仍在 **且** 锁龄 < 6h。别自创阈值。
+//   ★ 2026-10-12：6h 收成**单一来源** = `lib/lock.mjs` 的 `LOCK_MAX_AGE_MS`（本文件已 import）——与编排器 / 控制台同一个常量。
 const NOW = Date.now();
 
 // 容差（实测口径的固有波动）
@@ -163,7 +163,7 @@ function batchProbe() {
   return { hits, items };
 }
 
-/** 该 slug 的并发锁是否「活着」—— 判据逐字复用 `lemo-make.mjs:1899-1906`。无锁返回 null（正常态，非失明）。 */
+/** 该 slug 的并发锁是否「活着」—— 判据复用 `lemo-make.mjs:1899-1906`，6h 取自 `lib/lock.mjs`。无锁返回 null（正常态，非失明）。 */
 function lockProbe(slug) {
   const p = path.join(LOCK_DIR, `.${slug}.lock`);
   const m = mtimeOf(p);
