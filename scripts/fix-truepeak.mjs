@@ -275,7 +275,7 @@ for (const slug of slugs) {
     L.truePeakDbtp = Number(best.tp.toFixed(2));
     if (best.lufs !== null && best.lufs !== undefined) L.integratedLufs = Number(best.lufs.toFixed(2));
     if (L.lra !== undefined && best.lra !== null && best.lra !== undefined) L.lra = Number(best.lra.toFixed(1));
-    L.peakTargetMet = L.truePeakDbtp <= -1.2;
+    L.peakTargetMet = L.truePeakDbtp <= TP_SPEC;
     L.peakNote = `★ ${new Date().toISOString().slice(0, 10)} 已修：成片经 \`scripts/fix-truepeak.mjs\` 音频重混（\`-c:v copy\`，视频流逐字节未变），真峰值 ${old} → ${L.truePeakDbtp} dBTP（alimiter 上限 ${best.ceiling}dB）。原值 ${old} 记录为修复前状态。`;
     // ★ 采样峰值必须与真峰值**同一次测量**一起回写 —— 只写真峰值正是历史缺口的成因
     //   （旧值留在 json 里、甚至 > 新真峰值，物理不可能）。见头注释。

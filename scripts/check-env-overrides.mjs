@@ -578,7 +578,13 @@ const OVERRIDES = {
       //   补进来后判据② 会守它 —— 已核「不会误伤」：该文件 `:71` 的 `process.env.LEMO_FILM_DIR = TMP;`
       //   是**真代码**（剥注释/字符串后仍在），判据② 立刻满足；`childActive()` 里 `env:{…LEMO_FILM_DIR:filmDir}`
       //   是**属性名**（不产生 `process.env.LEMO_FILM_DIR`），不影响判定。
-      'scripts/check-llm-global-effect.mjs'],
+      'scripts/check-llm-global-effect.mjs',
+      // ★ 2026-10-12 补：`check-film-aspect.mjs`（成片画幅闸门）**两个名字都认** ——
+      //   `process.env.LEMO_FILM_DIR || process.env.LEMO_FILMS_ROOT || DEFAULT_FILMS_ROOT`
+      //   （主名优先 > 旧名兜底；第七批审计 F8 订正 —— 改前只认旧名 ⇒ 按主名重定向时会静默扫真库）。
+      //   它原先只登记在 `LEMO_FILMS_ROOT.readers` 里 ⇒ 判据③ 只打一条 ℹ「新读者未登记」（实测确认）；
+      //   补进主名清单后判据② 也守它。
+      'scripts/check-film-aspect.mjs'],
     what: '成片根（lib/env.mjs 的 exportDir；★ 曾被硬编码过一段时期，见头注释 ①）',
   },
   // ★ 2026-10-09 追加：测试残留清理工具的**备份目录覆盖点**。
@@ -882,6 +888,14 @@ const EXTERNAL = {
   LEMO_SKIP_STYLE_SCAN: {
     readers: ['dub.mjs'],
     why: 'dub 通路的**跳过风格扫描**开关（`=== "1"`）',
+  },
+  // ★ 2026-10-12 追加：**宿主临时脚本清扫的 dry-run 开关**（`LEMO_SWEEP_DRYRUN=1` ⇒ 只列不删）。
+  //   读者只在 `lemo-make.mjs`（`:3835` 的 `sweepStaleHostScripts({ dryRun: process.env.LEMO_SWEEP_DRYRUN === '1' })`）。
+  //   ★ 它**只切换「删/只列」这一个行为**，**不重定向任何路径或工具**（清扫根 `CFG.tmpDir` 不随它变）
+  //     ⇒ 按头注释 ③ 归 `EXTERNAL`（只登记、不判 FAIL）✓
+  LEMO_SWEEP_DRYRUN: {
+    readers: ['lemo-make.mjs'],
+    why: '宿主临时脚本清扫的 **dry-run 开关**（`=== "1"` ⇒ 只列不删；不重定向任何路径/工具）',
   },
   LEMO_CONSOLE_PORT: {
     readers: ['server.mjs'],

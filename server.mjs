@@ -351,7 +351,7 @@ async function apiRun(req, res) {
   //   而它的 catch 把**任何**写失败都当成「锁被占用」⇒ 打印**假诊断**「接管过期锁（旧 pid NaN，已不在）」
   //   （根本没有锁、pid 也是 NaN），随后**无保护地**再写一次 ⇒ 未捕获抛错 + 原始堆栈代替结构化错误。
   //   实测：300 字符 slug 必现；本机真实 slug 最长 17（45 个风格目录）/ 26（成片目录名）。
-  //   ⇒ 在入参处挡住，与同文件 batchId（≤40）/ 音色名（≤80）同一套「安全 token + 上限」口径。
+  //   ⇒ 在入参处挡住，与同文件 batchId（≤40）/ 音色名（≤40）同一套「安全 token + 上限」口径。★ 订正 2026-10-12（第七批审计 F6）：本行原写「音色名（≤80）」，那是把**已漂的值**当口径写进了注释；音色名上限的唯一来源是 lib/voices.mjs 的 MAX_VOICE_NAME_CHARS / VOICE_NAME_RE。
   if (slug.length > 80) return sendJson(res, 400, { error: `slug 过长：${slug.length} 字符（上限 80）` });
 
   const opts = Array.isArray(body.opts) ? body.opts : [];
@@ -744,6 +744,9 @@ async function apiResourcesScan(req, res, url) {
         //   ★ 同键第二次仍然命中（本缓存的目的），行为不变。
         resScanCache.delete(key);
         resScanCache.set(key, hit);
+        // ★ F4：缓存里若存的是 scanAll 的「绝不抛」兜底结果（带 error），命中时同样必须回 500 ——
+        //   否则「第一次 500、30 秒内第二次 200 + 全 0」这种自相矛盾的响应会漏出去。
+        if (hit.data && hit.data.error) return sendJson(res, 500, { error: `资源扫描失败：${String(hit.data.error)}` });
         return sendJson(res, 200, { ...hit.data, cached: true, cacheAgeMs: Date.now() - hit.at });
       }
       // ★★ F2：过期 ⇒ **真的回收**（改前只判不删 ⇒ 条目连同整份扫描结果永久驻留，实测零回收）。
@@ -762,6 +765,15 @@ async function apiResourcesScan(req, res, url) {
   let data;
   try { data = await p; }
   catch (e) { return sendJson(res, 503, { error: `资源扫描失败：${String((e && e.message) || e)}` }); }
+  // ★★ F4（第六批对抗性审计 · 文案与错误消息诚实性，2026-10-12）：scanAll() 的「绝不抛」兜底分支
+  //   会返回一个**结构合法的空结果 + error 字段**（resources:[]、summary 全 0）。改前这里原样 200 透传
+  //   ⇒ 前端看到 summary 全 0 就说「全部就绪 / 注册表为空」，一个字都不提真因（实测：扫描崩了时
+  //   屏幕上三句话全错）。⇒ 有 error 就**回 500 + 原文**：「空结果」绝不等于「一切正常」。
+  //   ★ 为什么用 **500** 而不是 503（本条刻意与上面那个 catch 分支不同）：503 在本文件里已经承载
+  //     「资源检测**模块**尚未就绪」这一含义（见 resNotReadyMsg），前端按 `status === 503` 选标题。
+  //     这里的事实是「模块在，但它自己崩了」——用 503 会让前端把标题说成「模块尚未就绪」，
+  //     换一个不准的说法。500 = 服务端内部错误，与该事实相符。
+  if (data && data.error) return sendJson(res, 500, { error: `资源扫描失败：${String(data.error)}` });
   sendJson(res, 200, { ...data, cached: false, cacheAgeMs: 0 });
 }
 
@@ -776,9 +788,27 @@ async function apiResourcesDirplan(req, res) {
 }
 
 /**
+ * 资源 id 是否**登记在册**（读模块导出的 RESOURCES —— 编译期冻结常量，见 lib/resources.mjs）。
+ *
+ * ★★ F5（第六批对抗性审计 · 文案与错误消息诚实性，2026-10-12）：scanOne() 把「id 未登记」与
+ *   「扫描崩了」压成**同一个 null**（lib/resources.mjs 的 scanOne 里 catch 直接 return null）
+ *   ⇒ 本层无法只凭 null 分辨。而 RESOURCES 是模块公开导出的常量 ⇒ 用它把两者分开。
+ * ★ 拿不到注册表（模块契约变了 / 导出被删）⇒ 返回 false ⇒ 调用方**退回原判据**（400）。
+ *   绝不因为「分不清」而放宽或收紧口径。
+ */
+function isRegisteredResourceId(mod, id) {
+  try {
+    const rs = mod && mod.RESOURCES;
+    if (!Array.isArray(rs)) return false;
+    return rs.some((e) => e && e.id === id);
+  } catch { return false; }
+}
+
+/**
  * POST /api/resources/import {id, path} —— 手动导入用户自备的包。
  *
  * ★ 未知 id ⇒ 400（契约：scanOne 对不存在的 id 返回 null）。
+ * ★★ F5：**登记在册**的 id 拿到 null ⇒ 那是「扫描失败」而不是「未知 id」⇒ 503（见下面的分支）。
  * ★ 只写 _download/ 与 dirFor()（模块内部保证），本层不碰任何文件。
  */
 async function apiResourcesImport(req, res) {
@@ -800,7 +830,15 @@ async function apiResourcesImport(req, res) {
   let known = null;
   try { known = await loaded.mod.scanOne(id); }
   catch (e) { return sendJson(res, 503, { error: `资源检测失败：${String((e && e.message) || e)}` }); }
-  if (known === null) return sendJson(res, 400, { error: `未知资源 id：${id}` });
+  // ★★ F5：scanOne 对「未登记」与「扫描失败」都返回 null。改前一律 400「未知资源 id」⇒
+  //   用户拿着一个**登记在册**的 id（如 win.ffmpeg）被告知「未知 id」，会去翻文档 / 改拼写 /
+  //   怀疑版本不匹配，而真因（扫描崩了）一个字都没有。⇒ 按注册表分开说。
+  if (known === null) {
+    if (isRegisteredResourceId(loaded.mod, id)) {
+      return sendJson(res, 503, { error: `资源检测失败：扫描没有返回 ${id} 的状态（该资源登记在册，不是「未知资源 id」）` });
+    }
+    return sendJson(res, 400, { error: `未知资源 id：${id}` });
+  }
 
   let r;
   try { r = await loaded.mod.importResource(id, srcPath.trim()); }
@@ -837,6 +875,7 @@ function buildResourceDownloadScript(id) {
  *   这样「取消 / 列表 / 续传」等既有能力**一行不用重写**。
  * ★ 去重：同一资源的下载任务已在跑/在排队 → 直接复用。
  * ★ 未知 id ⇒ 400；模块未就绪 ⇒ 503。
+ * ★★ F5：**登记在册**的 id 却拿不到扫描状态 ⇒ 503（扫描失败），不再谎报「未知资源 id」。
  */
 async function apiResourcesDownload(req, res) {
   let body;
@@ -853,7 +892,14 @@ async function apiResourcesDownload(req, res) {
   let st = null;
   try { st = await loaded.mod.scanOne(id); }
   catch (e) { return sendJson(res, 503, { error: `资源检测失败：${String((e && e.message) || e)}` }); }
-  if (st === null) return sendJson(res, 400, { error: `未知资源 id：${id}` });
+  // ★★ F5：与 apiResourcesImport 同一处判据（见 isRegisteredResourceId 的说明）——
+  //   登记在册却拿到 null ⇒ 扫描失败（503），不是「未知资源 id」（400）。
+  if (st === null) {
+    if (isRegisteredResourceId(loaded.mod, id)) {
+      return sendJson(res, 503, { error: `资源检测失败：扫描没有返回 ${id} 的状态（该资源登记在册，不是「未知资源 id」）` });
+    }
+    return sendJson(res, 400, { error: `未知资源 id：${id}` });
+  }
 
   // ★ 本地优先：已就绪的资源**跳过下载**（幂等，不重下）——与 /api/setup/run 的 skipped 同款语义。
   if (st.state === 'ready') {
@@ -1223,7 +1269,16 @@ function apiConsole(req, res) {
 /**
  * GET /api/films —— 成片库清单：一级目录下的 .mp4，外加 dub 子目录的 film.mp4，按修改时间倒序。
  *
- * ★ 只读扫描（只 stat，不写任何东西）；读不到成片目录时返回空列表 + error 字段（不 500）。
+ * ★ 只读扫描（只 stat，不写任何东西）。
+ * ★★ F1（第六批对抗性审计 · 文案与错误消息诚实性，2026-10-12）：**读不到成片目录 ⇒ 503**。
+ *   · 改前回「200 + { films: [], error }」⇒ 状态码说「成功」，前端只看 films ⇒ 把一次
+ *     文件系统故障（盘没挂 / 目录被删 / 权限被改）**谎报成「还没有成片」**，
+ *     用户第一反应是「我的成片没了」。
+ *   · 判据：**扫描失败与空库是两件事**，状态码必须能分开。同款口径见本文件 apiResourcesScan
+ *     的「资源扫描失败」分支（也是 503 + error 原文）。error 里仍带**服务端原文**（含 ENOENT 与路径）。
+ *   · ★ 响应体里**纯追加** root 字段（= CFG.exportDir 的权威值，与 lib/env.mjs 的唯一口径同源）：
+ *     前端空态/提示要显示「是哪个目录」，改前那是硬编码字面量，设了 LEMO_FILM_DIR 时会指错。
+ *     既有字段（films / count）一个字节没改，成功分支也照旧 200。
  * ★ dub 条目由 dubFilms() 追加（比一级目录深一层），形状与既有条目一致 —— 纯追加。
  */
 function apiFilms(req, res) {
@@ -1233,7 +1288,7 @@ function apiFilms(req, res) {
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
   } catch (e) {
-    return sendJson(res, 200, { films: [], error: `读不到成片目录 ${root}：${String(e.message || e)}` });
+    return sendJson(res, 503, { films: [], count: 0, root, error: `读不到成片目录 ${root}：${String(e.message || e)}` });
   }
   for (const ent of entries) {
     if (!ent.isDirectory() || ent.name.startsWith('_') || ent.name.startsWith('.')) continue;
@@ -1264,7 +1319,7 @@ function apiFilms(req, res) {
   for (const f of jobFilms(root)) films.push(f);
 
   films.sort((a, b) => b.mtime - a.mtime);
-  sendJson(res, 200, { films, count: films.length });
+  sendJson(res, 200, { films, count: films.length, root });
 }
 
 /**
@@ -1694,10 +1749,10 @@ async function apiVoiceTest(req, res) {
 
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return sendJson(res, 400, { error: '缺少 name' });
-  // ★ 音色名会被写进 bash 脚本与产物文件名 —— 只收「安全 token」形状。
-  //   （清单里的名字本来就都是这个形状；限制在这里是为了不把校验责任推给下游。）
-  if (!/^[A-Za-z0-9._-]{1,80}$/.test(name)) {
-    return sendJson(res, 400, { error: `音色名含非法字符（只允许 A-Za-z0-9._- ）：${name}` });
+  // ★ 音色名会被写进 bash 脚本与产物文件名 —— 只收「安全 token」形状（字符白名单 + 长度上限，唯一来源 lib/voices.mjs 的 VOICE_NAME_RE）。
+  //   ★ 第七批审计 F6（2026-10-12）：此处原写死 {1,80}，与 lib 侧的 40 漂了 ⇒ 41~80 字符的名字在 /api/voices/test 过得了校验、随后 resolveVoice() 必 404「不在清单里」，而在 /api/dub/run 得到 400「voice 非法」。
+  if (!voices.VOICE_NAME_RE.test(name)) {
+    return sendJson(res, 400, { error: `音色名含非法字符或超长（只允许 A-Za-z0-9._- ，1~${voices.MAX_VOICE_NAME_CHARS} 字符）：${name}` });
   }
 
   const r = await voices.resolveVoice(name);
@@ -2011,7 +2066,19 @@ async function apiDubPreview(req, res) {
 
 /** GET /api/dub/sources —— 已上传的素材（供 UI 复用上次传的那条；每条带 kind）。 */
 function apiDubSources(req, res) {
-  sendJson(res, 200, dub.uploadsPayload());
+  // ★ 2026-10-12 第七批审计 F2（**服务端这半**）：一并**下发上传口径** —— 前端的 dubLimits() 是
+  //   「有就取、没有就用兜底」的读法（兜底由 test/ui.test.mjs 的 U1 机械守），所以这里多发 5 个字段
+  //   就等于把「前端预检的阈值」从**写死**换成**服务端单源**（值都直接取自 lib/dub.mjs 的 export const）。
+  //   ★ 只**增**键、不动既有键（uploads / dir / disk）—— 已核 test/dub-api.test.mjs 与
+  //     test/ui.test.mjs 都只取 uploads / dir，没有任何断言钉住本响应的键集合。
+  sendJson(res, 200, {
+    ...dub.uploadsPayload(),
+    maxUploadBytes: dub.MAX_UPLOAD_BYTES,
+    videoExts: dub.ALLOWED_EXTS,
+    srtExts: dub.ALLOWED_SRT_EXTS,
+    imageExts: dub.ALLOWED_IMG_EXTS,
+    maxScriptChars: dub.MAX_SCRIPT_CHARS,
+  });
 }
 
 // token → {w,h}。登记过的素材文件不会再变，同一个 token 只探一次。

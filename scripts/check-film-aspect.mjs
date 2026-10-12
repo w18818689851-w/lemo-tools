@@ -67,16 +67,19 @@
  *   16:9 的原生像素即 1920×1080 ⇒ **实际文件不是 1920×1080 ⇒ FAIL**，
  *   报出 **slug + 实际值 + 期望值 + 文件 mtime**。
  *   · 文件路径：取 `_distill.json` 的 `generatedVideo.path` **相对默认根**（`D:/lemo-films`）的相对段，
- *     再挂到**可覆盖**的 `LEMO_FILMS_ROOT` 下（供变异测试指向临时树）；不在默认根下则退化为 `<slug>/<slug>.mp4`。
+ *     再挂到**可覆盖**的成片根下（供变异测试指向临时树）；不在默认根下则退化为 `<slug>/<slug>.mp4`。
+ *     ★ 覆盖点**两个名字都认**（`LEMO_FILM_DIR` 主名优先 > `LEMO_FILMS_ROOT` 别名，见 C 类处的注释；
+ *       2026-10-12 第七批审计 F8 订正 —— 改前只认别名 ⇒ 按主名重定向时会静默扫真库）。
  *   · ★ **文件缺失 ⇒ 单列「缺失」，不判 FAIL**（有些风格可能没出过片）。
- *   · ★ **失明守卫**：`LEMO_FILMS_ROOT` 不存在 / 枚举到 **0 部**成片 / `ffprobe` 不存在
+ *   · ★ **失明守卫**：成片根不存在 / 枚举到 **0 部**成片 / `ffprobe` 不存在
  *     ⇒ **FAIL 并明说「本闸门已失明」**（不许静默放过）。
  *   · 性能：43 次 `ffprobe`（每次 ~0.1s）—— 可接受。
  *
  * ★ ④ 退出码：A 类有违规、B 类有少数派、C 类有样板片画幅被改、或本闸门失明 ⇒ 1；否则 0。
  *
  * 用法：node scripts/check-film-aspect.mjs [--json]
- * 环境变量：`LEMO_FILMS_ROOT`（实际成片文件根，默认 `D:/lemo-films`）—— 供 C 类做**非破坏性**变异验证。
+ * 环境变量：`LEMO_FILM_DIR`（实际成片文件根，默认 `D:/lemo-films`；**主名**）/
+ *   `LEMO_FILMS_ROOT`（**同义别名**，主名不设时生效）—— 供 C 类做**非破坏性**变异验证。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -99,9 +102,21 @@ const STYLES_ROOT = path.resolve(
 const AS_JSON = process.argv.includes('--json');
 
 // ── ★ C 类（2026-10-05 补）：实际成片文件的根 ────────────────────────────────
-// 可覆盖（`LEMO_FILMS_ROOT`）—— 变异测试把数据源整体指向一棵**临时拷贝**，**绝不动真实成片**（见头注释 ⑥）。
+// 可覆盖 —— 变异测试把数据源整体指向一棵**临时拷贝**，**绝不动真实成片**（见头注释 ⑥）。
+// ★★ 2026-10-12（第七批对抗性审计 **F8**）：**两个名字都认，主名优先**。
+//   · **主名 = `LEMO_FILM_DIR`**：`lib/env.mjs:36` 的 `CFG.exportDir` 认它，全套夹具 / 脚本
+//     （`scripts/prune-jobs.mjs:45` / `scripts/clean-test-residue.mjs:69` /
+//      `scripts/check-selfcheck-claims.mjs:172`）也都认它。
+//   · **别名 = `LEMO_FILMS_ROOT`**：`scripts/check-env-overrides.mjs:620-623` 登记为
+//     「与 `LEMO_FILM_DIR` **同义**（留它免得夹具按那个名字重定向时静默仍在读真库）」。
+//   ★ 改前这里**只认别名** ⇒ 夹具按**主名**重定向时本闸门仍扫**真库**，而真库存在
+//     ⇒ 下面 `:144` 的失明守卫**不触发** ⇒ 「通过」是对**真库**的通过（假绿，实测：
+//     `LEMO_FILM_DIR=D:/lemo-tmp/f8-film-root` 时报 `filmsRoot = D:\lemo-films`、43 部、ok=true）。
+//   ★ 写法照 `scripts/check-selfcheck-claims.mjs:172` 的**正解**（它早就两个都认）——
+//     不另发明一套，也不删旧名（删了会让按旧名重定向的夹具反过来踩同一个坑）。
 const DEFAULT_FILMS_ROOT = 'D:/lemo-films';
-const FILMS_ROOT = path.resolve(process.env.LEMO_FILMS_ROOT || DEFAULT_FILMS_ROOT);
+const FILMS_ROOT = path.resolve(
+  process.env.LEMO_FILM_DIR || process.env.LEMO_FILMS_ROOT || DEFAULT_FILMS_ROOT);
 /** 样板片原生像素：16:9 的原生尺寸（`scripts/style-distill.mjs:331` 的 `--ratio 16:9`）。 */
 const NATIVE_W = 1920, NATIVE_H = 1080;
 /** ffprobe（与 `check-film-delivery.mjs:60` 同一套路径约定）。 */

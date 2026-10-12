@@ -539,23 +539,23 @@ const tpDistill = (over = {}) => ({
 });
 
 /**
- * 把 `lib/dub-core.mjs` 及其**传递闭包**拷进夹具根（2026-10-07 补）。
- *   · `dub-core.mjs` → `./env.mjs` → `./styles-root.mjs`（**无环**；核法 `grep -n "^import" lib/dub-core.mjs lib/env.mjs lib/styles-root.mjs`）。
- *   · ★ 只拷 `dub-core.mjs` 会让夹具子进程 `ERR_MODULE_NOT_FOUND` **崩掉** ⇒ 闸门**特有的**文案不出现，
- *     断言就会以「闸门崩在路径上」的形式失败（本项目最忌讳的「匹配判据可被无关代码满足」的同源病：
- *     崩掉的闸门既不报特有文案、也不报判据）。故**按闭包逐个拷 + 断言都到了**，
- *     以后 `env.mjs` 再加依赖时，这里会**当场报错**而不是静默退化。
- *   · `mutate` 形如 `[from, to]` ⇒ 只在 `dub-core.mjs` 上做该替换（`mutateFile`），其余原样拷。
+ * 把 `lib/dub-core.mjs` 及其**传递闭包**拷进夹具根（2026-10-07 补；2026-10-12 起**闭包自动推导**）。
+ *   · ★ 闭包**不再手抄**：`stageGateDeps()`（与闸门同一套**静态解析**）从 `dub-core.mjs` 递归补全 +
+ *     **逐个断言到齐**。旧版这里手抄 `['dub-core.mjs','env.mjs','styles-root.mjs']`，2026-10-11
+ *     `dub-core.mjs` 新增 `import … from './host-scripts.mjs'` 时清单**没跟上** ⇒ 两条「★自证
+ *     check-plate-pixel」（只走本函数 + `wf()`，绕开 `copyGate()` 的补齐）崩在 import 上（2 passed/2 failed）。
+ *   · ★ 只拷 `dub-core.mjs` 会让夹具子进程 `ERR_MODULE_NOT_FOUND` **崩掉** ⇒ 闸门**特有的**文案不出现，断言就会以「闸门崩在路径上」的形式失败（本项目最忌讳的「匹配判据可被无关代码满足」的同源病）。
+ *     ⇒ 以后 `dub-core.mjs` / `env.mjs` 再 import 谁夹具**自动**带上；指向真仓里没有的模块则**当场红**。
+ *   · `mutate` 形如 `[from, to]` ⇒ 只在 `dub-core.mjs` 上做该替换（`mutateFile`），其余按解析结果拷。
  */
-const DUB_CORE_CLOSURE = ['dub-core.mjs', 'env.mjs', 'styles-root.mjs'];
 const copyDubCoreLib = (root, mutate) => {
   mk(path.join(root, 'lib'));
-  for (const f of DUB_CORE_CLOSURE) {
-    const dst = path.join(root, 'lib', f);
-    if (f === 'dub-core.mjs' && mutate) mutateFile(path.join(TOOLS, 'lib', f), dst, mutate[0], mutate[1]);
-    else fs.copyFileSync(path.join(TOOLS, 'lib', f), dst);
-    assert.ok(fs.existsSync(dst), `夹具缺 lib/${f}（dub-core 的传递闭包）⇒ 子进程会 ERR_MODULE_NOT_FOUND`);
-  }
+  const src = path.join(TOOLS, 'lib', 'dub-core.mjs');
+  const dst = path.join(root, 'lib', 'dub-core.mjs');
+  if (mutate) mutateFile(src, dst, mutate[0], mutate[1]);
+  else fs.copyFileSync(src, dst);
+  // ★ 按**变异后**的源码解析闭包（变异本身也可能动 import），并逐个断言夹具树里真的到齐。
+  stageGateDeps(path.join(TOOLS, 'lib'), fs.readFileSync(dst, 'utf8'), dst);
 };
 
 /**
@@ -663,6 +663,9 @@ test('★守卫 gate-blindness：夹具树必须带齐被测闸门的相对 impo
   const REAL_SHA_BEFORE = {
     gate: sha(path.join(SCRIPTS, 'check-visible-hints.mjs')),
     lib: sha(path.join(TOOLS, 'lib', 'js-scan.mjs')),
+    // ★ 2026-10-12 补：本段新增的 **lib 侧闭包**核对（④）也只**读**真实仓 ⇒ 一并在 ④ 钉「逐字节相同」。
+    core: sha(path.join(TOOLS, 'lib', 'dub-core.mjs')),
+    host: sha(path.join(TOOLS, 'lib', 'host-scripts.mjs')),
   };
   try {
     // ── ① 全量核对：本文件里所有「拷闸门进夹具」的调用点（copyGate / patchGate / mutate）涉及的闸门 ──
@@ -731,11 +734,58 @@ test('★守卫 gate-blindness：夹具树必须带齐被测闸门的相对 impo
     assert.equal(fixtureDepsMissing(SCRIPTS, gateSrc, out).length, 0, '还原后依赖应当重新齐全');
     assert.equal(sha(staged), REAL_SHA_BEFORE.lib, '还原后夹具里那份必须与真实 lib/js-scan.mjs 逐字节相同');
 
-    // ── ④ 真实文件**只读**：本用例跑完，真实仓那两个文件必须与开头**逐字节相同** ──
+    // ── ④ ★ **lib 侧同一条守卫**：`lib/dub-core.mjs` 的**传递闭包**（`copyDubCoreLib()` 的夹具）──
+    //   由来（2026-10-12 的真回归，S1 实测）：本批给 `lib/dub-core.mjs` 新增
+    //   `import … from './host-scripts.mjs'`，而夹具闭包当时**是手抄的**
+    //   `['dub-core.mjs','env.mjs','styles-root.mjs']` ⇒ 两条「★自证 check-plate-pixel」
+    //   （只走 `copyDubCoreLib()` + `wf()` 直写闸门，**绕开** `copyGate()` 的自动补齐）
+    //   子进程 `ERR_MODULE_NOT_FOUND` 崩在 import 上（实测 `2 passed / 2 failed`，`run-all-tests` 必红）。
+    //   ★ 修法 = **删掉那份手抄清单**，让 `copyDubCoreLib()` 也走 `stageGateDeps()` **自动推导**；
+    //     本段把「夹具闭包必须到齐」**钉死** —— 谁再把清单抄回去，这里**当场红**
+    //     （不必再等子进程崩在 import 上、把「夹具缺件」误报成「闸门判据失败」）。
+    //   ★ 与 ①②③ 的分工：①②③ 管 `scripts/` 侧（闸门自己 import 的 `../lib/**`），本段管 `lib/` 侧
+    //     （`dub-core.mjs` → `env.mjs` → `host-scripts.mjs` / `styles-root.mjs` 这条链）。
+    const libRoot = path.join(dir, 'libc');
+    copyDubCoreLib(libRoot);
+    const coreSrc = fs.readFileSync(path.join(TOOLS, 'lib', 'dub-core.mjs'), 'utf8');
+    const coreDst = path.join(libRoot, 'lib', 'dub-core.mjs');
+    const coreSpecs = relSpecifiers(coreSrc);
+    // ④(a) 非空转：解析器**真的**在 `dub-core.mjs` 上抽到了相对 import（否则下面两条恒绿）。
+    assert.ok(coreSpecs.length >= 2,
+      `守卫自身失效：lib/dub-core.mjs 只解析出 ${coreSpecs.length} 个相对 import（解析器失效？）`);
+    // ④(b) 闭包必须**到齐** —— 这就是「手抄清单漏一个新 import」会失败的那条断言。
+    assert.equal(fixtureDepsMissing(path.join(TOOLS, 'lib'), coreSrc, coreDst).length, 0,
+      `copyDubCoreLib() 之后夹具树仍缺 [${fixtureDepsMissing(path.join(TOOLS, 'lib'), coreSrc, coreDst).join(', ')}]`
+      + ' ⇒ 夹具子进程会 ERR_MODULE_NOT_FOUND（闸门特有文案不出现 ⇒ 断言会以「崩在路径上」的形式失败）');
+    // ④(c) 非空转：闭包**真的**被拷进来了（`dub-core.mjs` 之外至少还有 `env.mjs` / `host-scripts.mjs`）。
+    const stagedLibs = fs.readdirSync(path.join(libRoot, 'lib')).filter((f) => f.endsWith('.mjs'));
+    assert.ok(stagedLibs.length >= 3,
+      `守卫自身失效：夹具 lib/ 只拷进 ${stagedLibs.length} 个 .mjs（闭包推导失效？）`);
+    // ④(d) ★自证：把夹具里**某个传递依赖**删掉（= 精确复现 S1 那条回归的形态）⇒ 守卫必红、且**只**点名它。
+    const victim = stagedLibs.find((f) => f !== 'dub-core.mjs');
+    const victimPath = path.join(libRoot, 'lib', victim);
+    const victimSha = sha(victimPath);
+    fs.rmSync(victimPath);
+    assert.deepEqual(fixtureDepsMissing(path.join(TOOLS, 'lib'), coreSrc, coreDst), [victim],
+      `删掉夹具里的 lib/${victim} 后，守卫必须**只**点名它`);
+    // ④(e) 还原 = 重走一遍 `copyDubCoreLib()`（自动补齐）⇒ 守卫重新变绿，且**逐字节相同**。
+    copyDubCoreLib(libRoot);
+    assert.equal(fixtureDepsMissing(path.join(TOOLS, 'lib'), coreSrc, coreDst).length, 0,
+      '还原后夹具闭包应当重新到齐');
+    assert.equal(sha(victimPath), victimSha,
+      `还原后夹具里那份 lib/${victim} 必须与真实文件逐字节相同`);
+    log(C.dim(`    ℹ lib 侧闭包自动推导：dub-core.mjs ⇒ ${coreSpecs.join(', ')}`
+      + ` / 夹具 lib/ 实得 ${stagedLibs.length} 个 .mjs（含传递依赖）`));
+
+    // ── ⑤ 真实文件**只读**：本用例跑完，真实仓那 4 个文件必须与开头**逐字节相同** ──
     assert.equal(sha(path.join(SCRIPTS, 'check-visible-hints.mjs')), REAL_SHA_BEFORE.gate,
       '本用例不得改动真实 scripts/**（红线）');
     assert.equal(sha(path.join(TOOLS, 'lib', 'js-scan.mjs')), REAL_SHA_BEFORE.lib,
       '本用例不得改动真实 lib/**（红线）');
+    assert.equal(sha(path.join(TOOLS, 'lib', 'dub-core.mjs')), REAL_SHA_BEFORE.core,
+      '本用例不得改动真实 lib/dub-core.mjs（红线）');
+    assert.equal(sha(path.join(TOOLS, 'lib', 'host-scripts.mjs')), REAL_SHA_BEFORE.host,
+      '本用例不得改动真实 lib/host-scripts.mjs（红线）');
   } finally { rm(dir); }
 });
 
@@ -3286,6 +3336,9 @@ test('★自证 check-plate-pixel：删掉「全部差分 0」计数式守卫后
     const broken = fs.readFileSync(gate, 'utf8');   // 破坏点在源码里，拷过去即可（ROOT 按自身位置推导）
     const g2 = path.join(root, 'scripts', 'check-plate-pixel.mjs');
     wf(g2, broken);
+    // ★ 闸门自己那一层的相对 import 闭包（`../lib/**`）也**自动**补进夹具 —— 本处不走 `copyGate()`，
+    //   故必须显式补齐（否则闸门将来新增一个相对 import，这里又会静默崩在 import 上）。
+    stageGateDeps(SCRIPTS, broken, g2);
     const OS_TMP = path.join(dir, 'os-tmp');   // 非 C 盘（闸门自己用 os.tmpdir() 建中间目录）
     mk(OS_TMP);
     const res = await run(NODE, [g2], { env: { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) } });
@@ -3381,7 +3434,10 @@ test('★自证 check-plate-pixel：把品红标记测试改成恒通过后，�
       subtitle: { plate: 'box', plateColor: '202020' },
     }] });
     const g2 = path.join(root, 'scripts', 'check-plate-pixel.mjs');
-    wf(g2, fs.readFileSync(gate, 'utf8'));
+    const broken = fs.readFileSync(gate, 'utf8');
+    wf(g2, broken);
+    // ★ 同 `mut-pp`：闸门层的相对 import 闭包也**自动**补进夹具（本处不走 `copyGate()`）。
+    stageGateDeps(SCRIPTS, broken, g2);
     const res = await run(NODE, [g2], { env: { TEMP: fwd(OS_TMP), TMP: fwd(OS_TMP) } });
     // ★ 前置钉（2026-10-11，F3）：needle 必须**消失** + 闸门**没崩** + **真变绿 exit 0** ——
     //   否则「闸门崩了（exit≠0 却没命中 needle）」会冒充「变绿」骗过下面的 assert.throws。

@@ -21,8 +21,27 @@
  *      ★ **不**把 `（N 条）` 当万能模式（实测宽形态命中 11 处、**3 处误报**：接口条数 / 「第 4 条硬伤」/「9 条台词」）；
  *        也不判**重述**（如「因为「44 条」是冻结的验收基线」——它与上行同数、无自己的锚点）。
  *        静态数算不准（`cases.mjs` 读不到 / 区域找不到）⇒ **只列不判**，不 FAIL。
- *      ★ **适用边界**：只在顶层 README **真的列了测试入口**（含 `^node test/` 行）时生效；没有该节 ⇒ 跳过（不判失明）。
+ *      ★ **适用边界**：只在顶层 README **真的列了测试入口**（含 `^node test/` 行）时生效。
  *        有该节却一条声称都抽不到 / 某定长锚点命中 ≠ 1 ⇒ **判失明**（形态变了不许静默放行）。
+ *      ★★ **没有该节时：判「失明」还是「合法跳过」**（2026-10-12 收紧 —— 修上一批自己登记的盲区）：
+ *        本仓顶层 README **本来就该有**「测试」节（实测它有，且 `test/README.md` 也有一整份入口清单）
+ *        ⇒ 它**消失**（文档被删 / 被重构）必须**上报失明**，不许静默跳过。
+ *        但**最小合法夹具**（闸门被拷进临时树跑）的合成 `README.md` 本来就没有该节 ⇒ 必须区分。
+ *        **真仓凭据（两层）**：① `test/README.md` 有一份测试入口清单（含 `^node test/` 行）；
+ *        ② 仓里有主入口 `test/smoke.mjs`（顶层 README 的「测试」节第一行就是它）。
+ *        ★ **为什么还非要 ②**（实测，不是想当然）：判据④ 要求最小夹具的 `test/README.md` **至少写 1 条**
+ *        「`node test/…（N 条）`」入口 ⇒ **只凭 ① 必把夹具误判成真仓**（实测：`test/gate-blindness.test.mjs`
+ *        的 `neg` / `build()` 两处夹具的 `test/README.md` 各含 **1** 条入口行）；夹具不提供
+ *        `test/smoke.mjs` ⇒ ② 把夹具滤掉（真仓实测 `test/smoke.mjs` 在）。
+ *        ⇒ 两层都成立、而顶层 README **一条** `^node test/` 行都没有 ⇒ **判失明**；否则**合法跳过**。
+ *        判定并入既有 `countBlind` 桶 ⇒ **失明 ⇒ exit 1**（与本文件既有口径一致，不自创一套）。
+ *      ★★ **② 自身消失也算失明**（2026-10-12 第二档，修上一批自己登记的盲区）：② 是**判据⑤ 自己的
+ *        前置条件**，却能被人**与文档段一并摘掉** —— 实测（临时副本）：同时删「顶层 README 的测试段」
+ *        **+**「`test/smoke.mjs`」⇒ 判据⑤ 回到**静默 exit 0**（只删前者 ⇒ exit 1 点名失明；只删后者 ⇒ 无人管）。
+ *        ⇒ 再加**第三层真仓凭据**：`test/README.md` **自己声称**了主入口（含 `^node test/smoke.mjs` 入口行）
+ *        ⇒ 那是**真仓**（最小夹具只写自己的夹具入口，**从不**写这一行）⇒ 文件**不存在**即**异常** ⇒ 判失明。
+ *        ★ **不能**用「`test/smoke.mjs` 缺失 ⇒ 一律判失明」的宽形态：夹具本来就**不提供**它
+ *        ⇒ 实测误报 **1/1 = 100%**（合法夹具全红）；收窄成「文档声称了才判」后实测误报 **0**。
  *   ★ 只在「新增了脚本却忘了写文档 / 数字没跟」时报错；不检查文字质量。
  *
  * ★★ 2026-10-06 收紧「登记」的判据：由**纯子串**改为**行锚定**（修一个已确认的假绿）。
@@ -320,9 +339,12 @@ if (entryListOnly.length) console.log(`\nℹ 「测试入口条数」只列不�
 //       **重述**、没有自己的锚点（不被上面 4 条命中 ⇒ 既不重复判、也不漏判，因为它与上行同数）。
 //     · 静态数算不准（`cases.mjs` 读不到 / 区域找不到 / 计数为 0）⇒ **只列不判**（不 FAIL），同既有纪律。
 //     · **适用边界（防误伤最小合法夹具）**：只在**顶层 README 真的列了测试入口**（含 `^node test/` 行）时生效；
-//       README 没有测试入口清单 ⇒ 整块跳过（不是失明）。★ 失明守卫：**有** `^node test/` 行、却**一条**
+//       README 没有测试入口清单 ⇒ 整块跳过。★ 失明守卫：**有** `^node test/` 行、却**一条**
 //       声称都解析不到（或某个定长锚点命中 ≠ 1）⇒ 判失明（形态变了不许静默放行）。
-//       ★ 已知盲区（如实登记）：把整段「测试」（含 `node test/` 行）删掉会让本判据**静默停止适用**。
+//       ★★ 2026-10-12 收口（本批）：原「README 没有测试入口清单 ⇒ 整块跳过」是**静默**的 ——
+//       本仓顶层 README 本该有「测试」节，整段被删时会**静默停止适用**（上一批如实登记的盲区）。
+//       现分两档：**真仓**（`test/README.md` 有入口清单 **且** 仓里有 `test/smoke.mjs`）却**没有**该节
+//       ⇒ 判失明；**最小夹具**（缺 `test/smoke.mjs`）⇒ 合法跳过。凭据与理由见文件头「判据⑤ 的边界」段。
 const CASES_MJS = path.join(testDir, 'cases.mjs');
 const casesText = fs.existsSync(CASES_MJS) ? fs.readFileSync(CASES_MJS, 'utf8') : '';
 // `cases.mjs` 里某个 `export const <ARR> = [ … ]` 的**顶层元素数**（现算）：
@@ -356,10 +378,46 @@ let readmeEntryHits = 0;
 let readmeEntryChecked = 0;
 // ★ **判据⑤ 的适用边界（防误伤最小合法夹具）**：只在**顶层 README 真的在文档里列了测试入口**
 //   （含 `^node test/` 命令行）时生效。README **没有**测试入口清单（如 `gate-blindness.test.mjs`
-//   的合成夹具树里的 `README.md`）⇒ **无可核对象** ⇒ 整块跳过（**不是失明**）。
-//   ★ 已知盲区（如实登记）：若有人把顶层 README 的「测试」整段（含 `node test/` 行）删掉，本判据
-//     会**静默停止适用** —— 与 `ENTRY_CLAIM_RE`（判据④）的「派生式声称」同一性质，属**已知边界**。
+//   的合成夹具树里的 `README.md`）⇒ **无可核对象** ⇒ 整块跳过。
+//   ★★ 2026-10-12 收口（修上一批自己登记的盲区）：原「整块跳过」是**静默**的 —— 本仓顶层 README
+//      **本来就该有**「测试」节，整段被删（文档被删/被重构）时会**静默停止适用**。
+//      现分两档，判据 = **真仓凭据（两层）**：
+//        ① `test/README.md` 有一份测试入口清单（含 `^node test/` 行）—— 「本仓本该有顶层测试节」；
+//        ② 仓里有主入口 `test/smoke.mjs`（顶层 README「测试」节的第一行就是它）—— **真仓过滤**。
+//      ★ 为什么非要 ②（实测，不是想当然）：判据④ 要求**最小合法夹具**的 `test/README.md` 也**至少写 1 条**
+//        「`node test/…（N 条）`」入口 ⇒ 只凭 ① 必把夹具误判成真仓（实测 `test/gate-blindness.test.mjs`
+//        的 `neg` / `build()` 两处夹具的 `test/README.md` 各含 **1** 条入口行）；夹具不提供 `test/smoke.mjs`
+//        ⇒ ② 恰好把夹具滤掉（真仓实测 `test/smoke.mjs` 在）。
+//      两层都成立、而顶层 README **一条** `^node test/` 行都没有 ⇒ **判失明**（见下面 `countBlind.push`）；
+//      否则**合法跳过**（夹具）。
+//      ★ **第三层（本批新增）**：`test/README.md` **声称了**主入口（`^node test/smoke.mjs` 入口行）
+//        却**文件不存在** ⇒ ② 自身消失 ⇒ 也判失明（详见下面 `smokeClaimedInReadme` 块）。
 const readmeHasTestSection = /^node\s+test\//m.test(readmeTop);
+const SMOKE_MJS = path.join(testDir, 'smoke.mjs');
+const smokeExists = fs.existsSync(SMOKE_MJS);
+const readmeShouldHaveTestSection = /^node\s+test\//m.test(readme)            // ① 真仓凭据（见上）
+  && smokeExists;                                                             // ② 真仓过滤
+// ★★ 2026-10-12 收口（本批·第二档）：**主入口 `test/smoke.mjs` 缺失本身**判失明 ────────────────
+//   由来（上一批如实登记的盲区，本批复现）：② 是**判据⑤ 自己的前置条件**，却能被人**与文档段一并摘掉**。
+//   实测（临时副本，`LEMO_TOOLS_ROOT` 覆盖）：同时删「顶层 README 的测试段」+「`test/smoke.mjs`」
+//   ⇒ 判据⑤ 回到**静默 exit 0**（只删前者 ⇒ exit 1 点名失明；只删后者 ⇒ **无人管**）。
+//   ★ 全仓**没有第三处**守「主入口存在」：`scripts/run-all-tests.mjs:105` 是
+//     `if (WITH_SMOKE && fs.existsSync(…smoke.mjs)) entries.push('smoke.mjs')` ⇒ 主入口没了连**测试跑批**
+//     也**静默少跑**一项。（那是**跑器**语义、不是闸门 ⇒ 不在本闸门里判，只如实登记在报告里。）
+//   ★★ 难点 = **必须与「最小合法夹具」区分**：夹具本来就**不提供** `test/smoke.mjs`（判据④ 要求夹具的
+//     `test/README.md` 至少写 1 条入口行，但夹具**从不**声称 smoke 是主入口）⇒「缺失」不能一律判失明
+//     （实测宽形态误报 100%：合法夹具全红）。
+//   ★ 判据（**第三层真仓凭据**）：`test/README.md` **自己声称**了主入口（含 `^node test/smoke.mjs` 入口行）
+//     ⇒ 真仓（夹具只写自己的夹具入口）⇒ 文件**不存在**即**异常** ⇒ 判失明。
+//     实测：真仓 `test/README.md:7` = `node test/smoke.mjs              # 全部用例…`（命中 1）；
+//     三份最小夹具（`test/gate-blindness.test.mjs` 的 `neg` / 判据④ 的 `build()` / 本批自建两份）
+//     **0 命中** ⇒ 误报 0。
+//   ★ 为什么不新开一个判据/闸门：本项目铁律「**同一判据只写一处**」，而 ② 本来就是**判据⑤ 的前置条件**
+//     （它消失 = 判据⑤ 停止适用）⇒ 归 ② 的**失明守卫**；新开还会连带改两份文档的登记表与计数。
+const smokeClaimedInReadme = /^node\s+test[\/\\]smoke\.mjs\b/m.test(readme);
+if (smokeClaimedInReadme && !smokeExists) {
+  countBlind.push('`test/README.md` 声称了主入口 `node test/smoke.mjs`，但 `test/smoke.mjs` **不存在** ⇒ 主入口缺失（真仓里它是**异常**，不是「夹具」）⇒ 「顶层 README 测试入口条数」这条**判据已失明**（② 真仓凭据自身消失，2026-10-12 收口）');
+}
 if (readmeTop && readmeHasTestSection) {
   for (const m of readmeTop.matchAll(/^node\s+test\/(\S+\.test\.mjs)\b[^\n]*?（(\d+)\s*条/gm)) {   // ①
     readmeEntryHits++;
@@ -385,6 +443,12 @@ if (readmeTop && readmeHasTestSection) {
 }
 if (readmeTop && readmeHasTestSection && readmeEntryHits === 0) {
   countBlind.push('顶层 `README.md` 的「测试」段里**一个**入口条数声称都解析不到（清单形态变了 / 条数被删？）⇒ 「顶层 README 测试入口条数」这条**判据已失明**');
+}
+// ★★ 2026-10-12 收口：顶层 README **在**、真仓凭据成立、却**没有**测试节（一条 `^node test/` 行都没有）
+//   ⇒ 判失明。这一档此前**静默跳过**（上一批如实登记的盲区），与「README 读不到」那一档不同。
+//   ★ 判定并入既有 `countBlind` 桶 ⇒ 失明 ⇒ exit 1（与本文件既有口径一致，不自创一套）。
+if (readmeTop && !readmeHasTestSection && readmeShouldHaveTestSection) {
+  countBlind.push('顶层 `README.md` 里**一条** `^node test/` 行都没有（整段「测试」被删 / 被重构？），而 `test/README.md` 有测试入口清单、仓里有主入口 `test/smoke.mjs` ⇒ 「顶层 README 测试入口条数」这条**判据已失明**（此前是**静默跳过**，2026-10-12 收口）');
 }
 
 if (readmeEntryListOnly.length) console.log(`\nℹ 顶层 README 的「测试入口条数」只列不判（静态数不准）：${readmeEntryListOnly.join('、')}`);

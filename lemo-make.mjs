@@ -183,9 +183,9 @@ async function runWsl(script, { name = '_lemo-orch', asUser = CFG.wslUser, args 
   // 透传原始分片（Buffer 直写，不重新解码）—— 多字节字符被切在分片边界上也不会变问号。
   // 行切分交给下游（控制台 lib/jobs.mjs 的 feed 本来就按行累积），这里不掺和。
   const tee = (s, d) => { (s === 'stderr' ? process.stderr : process.stdout).write(d); };
-  return run('wsl.exe', ['-d', CFG.wslDistro, '-u', 'root', '--', 'bash', '-c', cmd],
+  try { registerHostScript(hostPath); return await run('wsl.exe', ['-d', CFG.wslDistro, '-u', 'root', '--', 'bash', '-c', cmd],
     { env: { ...process.env, WSL_UTF8: '1' } },
-    stream ? { onChunk: tee } : {});
+    stream ? { onChunk: tee } : {}); } finally { unregisterHostScript(hostPath); try { fs.unlinkSync(hostPath); } catch { /* 已没了 */ } } // ★ 宿主兜底（照抄 lib/env.mjs:runWsl 的 finally）：上面那份宿主 .sh 是 spawn 之前写好的，wsl.exe 起不来 / 被 taskkill 时 WSL 侧 trap 跑不到 ⇒ 宿主这份只能在这里清；run() 在 close/error 两条路径都 resolve ⇒ 本 finally 覆盖「**父进程活着、await 能恢复**」的全部结局（跑完 / 起不来 / 超时）。★ 实测口径（2026-10-12，见文件尾 sweepStaleHostScripts 的注释）：`taskkill /PID <pid> /T /F`（`lib/jobs.mjs` 的 `killTree()` 原样命令）是 TerminateProcess、`process.exit(130)`（:1919 的 SIGINT/SIGTERM 收尾）是同步终止 ⇒ 这两种「硬杀」下本 finally **都不执行**（前者连 process.on('exit') 钩子也不执行）⇒ 硬杀那一类**只能靠下次启动时清扫**兜底，别以为这里「全部结局」都盖住了
 }
 
 /** 找一个可用的 Windows ffmpeg 目录。 */
@@ -3805,3 +3805,31 @@ async function emitStillsOnly({ o, outDir, ffDir, demoRel, demoWin, outSize, qRe
   console.log(C.ok(`\n分镜阶段结束（--stills-only：不渲染、不混流、不产成片）· 耗时 ${el()}`));
   return true;
 }
+
+// ───────────── 宿主临时脚本的清理（三层；2026-10-12 抽成共享模块，本段全部是新增代码）─────────────
+// ★ 判据与实现**全部搬进 `lib/host-scripts.mjs`**：前缀判据 / 文件名解析（`<prefix>-<pid>-<base36>.sh`）/
+//   pid 判活 / mtime 判据 —— 四条**只写那一处**。本段只留两件事：接线（下面那条 import）+ 启动清扫的调用。
+// ★ 为什么要抽（落点理由见该模块头注释）：`lib/env.mjs` 的 `runWsl` 要用**同一套**判据，而它**不能**
+//   被本文件 import（会成环：本文件 ← 该模块 ← env.mjs）⇒ 唯一落点是独立模块。顺带治了本批的**发现 2**：
+//   `_web-probe-*`（`lib/env.mjs` 的 runWsl 产出；对抗式验证报告实测 **47 个**）此前被清扫正则
+//   **故意排除** ⇒ 增长主力一点没治；现纳入同一套前缀判据（`_lemo-*` + `lemo-lib-sync` + `_web-probe`）。
+// ★ 三层各治一类（实测口径）：① `lib/host-scripts.mjs` 的 `process.on('exit')` 钩子（治正常退出 /
+//   `process.exit()`）；② 本段这一句**启动清扫**（**唯一能治硬杀的办法**）；③ `runWsl` 的 `finally`
+//   （治「父进程活着、await 能恢复」的全部结局）。硬杀两种：`taskkill /PID <pid> /T /F`（`lib/jobs.mjs`
+//   的 `killTree()` 原样命令，TerminateProcess、**不可捕获** ⇒ ①③ 都不执行）与 `process.exit(130)`
+//   （`:1919` 的 SIGINT/SIGTERM 收尾 ⇒ ③ 不执行、① 执行）。
+// ★ 本段为什么放在**文件尾**（而不是写进 `main()` 里）：`main()` 在 `:3540` 被调用后先跑完它的**同步前缀**，
+//   再撞上第一个**让出点**才把控制权交回模块求值 —— 实测那个让出点是 `:1687` 的**条件** `await import(...)`
+//   （`core/render/size.mjs` 存在时必触发；不存在则退到 `:1929` 的 `await run(ffmpeg -version)`）。
+//   而 `main()` 的第一个 `runWsl` 在 `:1938` ⇒ **本段求值时任何 runWsl 都还没跑**，
+//   `lib/host-scripts.mjs` 里那个 `START_MS` 就是真正的启动时刻。
+//   ★ **早退路径不触发启动清扫（如实登记）**：`:1587` 的 `--help` / 无 slug、`:1924` 的非 Windows、
+//     `:1928` 的找不到 ffmpeg 都在让出点**之前** `process.exit()` ⇒ 本段这一句**不执行**。代价仅是
+//     「这一次启动没清扫」，下一次正常启动照旧清；且这些路径**一个宿主脚本都没写** ⇒ 不产生新残留。
+//     ★ 但 `process.on('exit')` 钩子**不受影响** —— 它在 `lib/host-scripts.mjs` 里是**首次登记时**才挂
+//       （见该模块的 `hooked`），而登记发生在 `runWsl` 里、早退路径根本走不到 ⇒ 早退路径下**确实没钩子**，
+//       但它也没写过任何宿主脚本 ⇒ 无事可做。
+import { registerHostScript, unregisterHostScript, sweepStaleHostScripts } from './lib/host-scripts.mjs';
+
+// ② 启动清扫：治硬杀那一类残留。★ 必须在**任何 runWsl 之前**跑（见上），且**每次正常启动**都要跑到。
+sweepStaleHostScripts({ dir: CFG.tmpDir, dryRun: process.env.LEMO_SWEEP_DRYRUN === '1' });

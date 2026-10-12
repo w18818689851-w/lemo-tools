@@ -822,7 +822,7 @@ async function main() {
   }
 
   // ── 断句 ──
-  const texts = splitSentences(raw, 40);
+  const texts = splitSentences(raw);   // ★ 不显式传上限：默认值就是唯一来源（第七批审计 F7：原写 splitSentences(raw, 40) ⇒ 改 lib/dub-core.mjs 的默认值一个字都不变，「默认值」形同虚设）。
   if (!texts.length) die('断句后一句都没有');
   const lines = texts.map((t, i) => ({ id: `l${i + 1}`, text: t, voice: o.voice, speed: o.speed, lang: 'cmn' }));
 

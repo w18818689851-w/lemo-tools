@@ -550,13 +550,13 @@ node test/smoke.mjs          # 冒烟测试（44 条，约 15–40 秒，不渲�
 node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒起，共 53 条）
 node test/setup.test.mjs     # 首次运行安装的纯逻辑测试（19 条，约 20 秒，不起服务、不用 WSL）
 node test/setup-api.test.mjs # 「首次运行向导」两个接口的 HTTP 契约测试（13 条，约 5 秒，★ 绝不真安装）
-node test/ui.test.mjs        # Web UI 层测试（115 条 = **静态**数；无头 Edge 渲染 DOM + CDP 真点击。★ 运行时实跑 116 次 —— 有一条参数化用例按素材种类 srt/image 各跑一次，详见 test/README.md）
+node test/ui.test.mjs        # Web UI 层测试（129 条 = **静态**数；无头 Edge 渲染 DOM + CDP 真点击。★ 运行时实跑 130 次 —— 有一条参数化用例按素材种类 srt/image 各跑一次，详见 test/README.md）
 node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条，不起浏览器）
 ```
 
 零依赖（`node:assert` + `node:http` + `node:child_process`），退出码 0 = 全绿。覆盖：
 
-- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `d2209b52db0255e926b20300910056dd`（控制台只是包装层）
+- **编排器 md5 红线** —— `lemo-make.mjs` 必须仍是 `9ec6a25f0a0f5d1f11efe4e02772ceeb`（控制台只是包装层）
 - **行尾规则** —— 源码全 LF、`start-console.bat` CRLF（防 git 静默改写源码）
 - **28 条服务端用例** —— HTTP 接口（含 43 风格 / 9 分类 / 0 未归类、`/api/style` 注入防护、目录穿越、`/api/sizes` 尺寸换算、`/api/langs` 语言版本、`/api/aspects` 构图能力）+ SSE 续传 + 并发锁 + Range
 - **dry-run 任务全链路** —— `POST /api/run` → 轮询到结束 → SSE 日志里出现步骤标记 `[1]`

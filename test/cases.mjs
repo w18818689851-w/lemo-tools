@@ -287,7 +287,45 @@ process.env.LEMO_CONSOLE_NO_ENTRY_FILES = '1';
 //     ★ **零行漂移**：本文件里对 `lemo-make.mjs` 的行号引用（`scripts/check-audio-chain.mjs` 的 2548/2936 等）
 //     **一行都没漂** —— 前段改动一律做成 `-N/+N` 净零（新代码集中在**文件尾**的新函数 `asrArgsSuffix`；
 //     `git diff --numstat` 前段净增删为 0）。这是**有意改编排器**，基线值随之更新（红线本身保留，见 test/README.md 那张表）。
-export const ORCH_MD5 = 'd2209b52db0255e926b20300910056dd';
+//   ★ 2026-10-12 更新（**有意改编排器**）：给 `runWsl` 补**宿主侧兜底** —— 宿主那份 `.sh`（`D:\WSL\_lemo-*.sh`）
+//     是**在 spawn 之前**写好的，而收尾**只有** WSL 脚本内的 `trap` 一条路径 ⇒ 只要 `wsl.exe` 这一跳失败
+//     （不在 PATH / 发行版名不对 / WSL 服务没起 / sed 链中途失败 / 控制台被 taskkill），宿主文件就**没有任何人删**
+//     （实测：旧码把 `PATH` 屏蔽 `wsl.exe` ⇒ 留下 **183 B** 残留；`D:\WSL` 下 `_lemo-probe-*` 已积 **416** 个、
+//     跨 11 天日增）。现照 `lib/env.mjs:runWsl` 的写法包一层 `try/finally`
+//     （`finally { try { fs.unlinkSync(hostPath); } catch {} }`）—— `run()` 在 `'close'` 与 `'error'` **两条**路径上
+//     都会 resolve ⇒ `finally` 覆盖「跑完 / 起不来 / 超时」**全部结局**。
+//     ★ **退出码语义一字未动**：`cmd` 的构造未改、`su` 仍是最后一条命令、脚本内 `trap` 照旧
+//     （那段 ⚠️「不许写 `exit $rc`」的踩坑记录**原样保留**，一字未动）。
+//     ★ **零行漂移**：`git diff --numstat lemo-make.mjs` = `2 2`、**唯一 hunk**；逐行字节比对只有 `:186`/`:188`
+//     两行不同（总行数仍 **3807**）；位置配对法（`D:/lemo-tmp/refdrift.mjs`）实测 **扫到引用 46 处 / 需重映射 0 处**
+//     （与本批改动**前**的基线**逐字相同**：46 / 37 有效 / 0 / 9 无法确定）。
+//   ★ 2026-10-12 第二次更新（**有意改编排器**）：上一段那句「`finally` 覆盖……**全部结局**」被**对抗式验证证伪**
+//     （`D:/lemo-tmp/align-audit/L1-A与B修复的对抗式验证.md` §1 发现 1，**高**）—— `finally` 只在「父进程活着、
+//     `await` 能恢复」时执行，而 `D:\WSL\_lemo-probe-*` 日增的主力是**硬杀**。本机实测两条反例：
+//       · `taskkill /PID <pid> /T /F`（= `lib/jobs.mjs` 的 `killTree()` 原样命令；控制台「取消」与
+//         `scripts/run-all-tests.mjs` 的超时 SIGKILL 都是它）⇒ TerminateProcess **不可捕获**：`finally`
+//         **不执行**，且 `process.on('exit')` 钩子**也不执行**（探针实测 `exitHookRan=false`）；
+//       · `process.exit(130)`（`:1919` 的 SIGINT/SIGTERM 收尾）⇒ 同步终止：`finally` **不执行**，
+//         但 exit 钩子**会执行**（实测 `true`）。
+//     ★ **这一点决定方案必要性**：硬杀时连 exit 钩子都不跑 ⇒「登记进 exit 钩子」**只能治 `process.exit()` 那一类**，
+//       **治不了 `/F` 硬杀**；真正兜住硬杀的只有「**下次启动时清扫**」（按 mtime + pid 存活判定）。故补三层：
+//       ① 模块级 `Set` 登记在飞宿主 `.sh` + `process.on('exit')` **同步** `unlinkSync`（治 `process.exit()` / 正常退出）；
+//       ② **启动时清扫** `CFG.tmpDir` 下**本模块自己的前缀**（`_lemo-*` / `lemo-lib-sync-*`）：文件名里的 pid
+//          **已死** 且 mtime **早于本次启动** ⇒ 删；pid **还活着** ⇒ **绝不动**（并发实例在飞）；逐条打日志（stderr）、
+//          无陈旧文件时零输出；③ 把 `runWsl` 尾部注释改成实测口径。
+//     ★ **安全底线**：只删本模块前缀 —— `lib/env.mjs` 默认名 `_web-probe` 产出的 `D:\WSL\_web-probe-*.sh`
+//       ★ **订正（2026-10-12，实测口径）**：它此前被写成「是别人的证据、**全程未动**」——**已过时**。
+//       清扫前缀后来扩成 `_lemo-*` + `lemo-lib-sync` + **`_web-probe`**（见 `lemo-make.mjs` 文件尾
+//       `sweepStaleHostScripts` 的注释与 `test/README.md` 的第三次登记）⇒ `_web-probe-*.sh` **已被纳入同一套
+//       前缀判据**（pid 已死 + mtime 早于本次启动才删，pid 还活着绝不动）。**只订正这一句表述**；
+//       `D:\WSL\lemo-lib-sync.sh`（持久输入文件）没有 `-<pid>-<b36>` 后缀 ⇒ 天然不匹配、永不会被删。
+//     ★ **零行漂移**：`git diff --numstat lemo-make.mjs` = `81 2`（**前段净零**：`:186`/`:188` 各 `-1/+1`；新增 79 行
+//       **全在文件尾**）；`git diff | grep -c '^@@'` = **2**；位置配对法（`D:/lemo-tmp/refdrift.mjs`）实测
+//       **扫到引用 46 处 / 需重映射 0 处**（与本批改动**前**基线逐字相同：46 / 37 有效 / 0 / 9 无法确定）。
+//     ★ **反向验证**：硬杀（杀在宿主 `.sh` 刚落盘、WSL 侧 `trap` 还没装上的窗口）⇒ 残留 `_lemo-probe-23724-mv4n0x1d.sh`
+//       （118 B）+3s 仍在；紧接一次真编排器 ⇒ `exit 0` + stderr 打出「清扫陈旧残留 `_lemo-probe-23724-mv4n0x1d.sh`」
+//       且文件已消失。并发安全：一实例在飞时启动第二个 ⇒ 后者清扫零输出、前者文件未删。正常路径 `ascii-crt --dry-run` 仍 `exit 0`。
+export const ORCH_MD5 = '9ec6a25f0a0f5d1f11efe4e02772ceeb';
 
 /** /api/demos 的期望规模（来自 styles/README.md 的 9 大类索引）。 */
 export const EXPECT_STYLES = 43;
@@ -578,6 +616,206 @@ export async function checkIndexttsLock(lockPath) {
   return fail(`属主 ${kind}:${pid} 仍在运行`);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ★★ 「环境阻塞」与「判据失败」必须分开（O1 的 F1，2026-10-12）
+// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * 由来（对抗式验证实测，`D:/lemo-tmp/align-audit/O1-N的判据修复的对抗式验证.md` §1 F1）：
+ *   `⑤+++++++` 要**现场跑三次 Index-TTS**（loop/trim/slow 各出一次片），而本机显存会被
+ *   **别的程序**占着（桌面 / 浏览器 / LM Studio 常驻模型）。按题面原样跑 3 次，
+ *   **3 次都在判据之前就红了，且没有一次是判据失败**：
+ *     · run1  `[vram] 显存不足（可用 2269 MiB < 需要 6700 MiB）` ⇒ dub 退出码 1（102.7s）
+ *     · run2  第一轮 loop 就被显存闸门拒（可用 1589 MiB）⇒ 10.1s
+ *     · run3  `INDEXTTS_MIN_FREE_MIB=1200` 放行 ⇒ TTS 在 34~144 MiB 空闲下 67s/step，
+ *             被停滞检测判死 ⇒ `TTS_FAIL rc=1`（457.8s）
+ *   ⇒ 原来报的是「`--fit trim 出片退出码 1（期望 0）`」这种**看不出环境阻塞**的话，
+ *     会被读成「`--fit` 功能坏了」—— 红得与被测行为**毫无关系**。
+ *
+ * ★ 纪律（**这是分开，不是掩盖**）：
+ *   · 只改**失败信息与归因**，**绝不**把失败改成通过 —— 仍然 `assert.fail`、仍计入 failed、
+ *     退出码仍是 1（仓里没有 skip 机制，也不为这一条用例新造一个）。
+ *   · **只有**在输出里命中**可复现的环境签名**（`ENV_BLOCK_SIGNATURES`）时才归因成环境阻塞；
+ *     真缺陷（slow 剖面回落 13 灰度 / MAE 97 / 帧数 ≠ total×30 / 几何不对）**不含**这些签名
+ *     ⇒ 照旧走判据自己的失败文案，一个字都不变。
+ *   · 环境阻塞的文案**必须**写明「本次**未跑到判据**」+ 实测读数 + 放行开关，
+ *     且**不许**被读成「判据通过了」。
+ *   · 显存预检本身**不许**成为新的失败点（与 `lib/vram.mjs` 同一条纪律）：拿不到读数
+ *     （没有 nvidia-smi）⇒ 不阻断，只在备注里如实登记「护栏未生效」。
+ */
+
+/**
+ * 环境阻塞签名 —— 只收**判定性**的（拿它与 `lib/vram.mjs` / `dub.mjs` /
+ * `core/tts/tts_indextts.py` 的既有输出逐字对齐，**不凭猜测**）。
+ *
+ * ★ 故意**不**收的几条（收了就会**掩盖真失败**）：
+ *   · 裸 `/\[vram\]/` —— `lib/vram.mjs` 在**成功路径**上也会打这个前缀
+ *     （`[vram] 腾挪后可用 … MiB，继续…` / `LEMO_VRAM_DEBUG=1` 时的读数行），
+ *     而 `[vram] 显存不足（可用 …）→ 尝试自动腾挪` 之后**腾挪成功就继续跑**了
+ *     ⇒ 拿它当签名会把「后面真出问题」误判成环境阻塞。
+ *   · 「配音内层卡住了」—— O1 的 run3 引文里有这句，但**全仓 grep 不到这个字面量**
+ *     （`lib/**` / `dub.mjs` / `core/**` 都没有）⇒ 不凭猜测写签名。该场景由
+ *     `TTS_FAIL rc=` 兜住（O1 的 run3 输出末尾正是 `TTS_FAIL rc=1`）。
+ */
+const ENV_BLOCK_SIGNATURES = [
+  /显存不足，拒绝继续/,             // lib/vram.mjs vramShortfallMessage() 首行（dub.mjs 的 TTS 前硬拦，放弃腾挪后）
+  /显存不足，拒绝加载 Index-TTS/,    // core/tts/tts_indextts.py precheck_vram() 的硬拦
+  /TTS_FAIL rc=\d+/,                // dub.mjs 的 TTS 子进程失败标记（含「放行后真挂死」被看门狗判死）
+];
+
+/** 在 `runNode` 的 stdout+stderr 里找环境签名；返回命中的签名列表（空 = 没命中 ⇒ 按真失败处理）。 */
+function envBlockSignatures(r) {
+  const text = `${(r && r.stdout) || ''}\n${(r && r.stderr) || ''}`;
+  return ENV_BLOCK_SIGNATURES.filter((re) => re.test(text)).map((re) => re.source);
+}
+
+/**
+ * 环境阻塞的**失败文案**（★ 是失败，不是通过；只是把归因说清楚）。
+ * @param {string} why 本次命中的实测证据（读数 / 签名 / 末尾输出）
+ */
+function envBlockMessage(why) {
+  return [
+    '⛔ 环境阻塞 —— 本次**未跑到判据**（既不是「判据通过」，也不是「被测代码坏了」）',
+    '',
+    why,
+    '',
+    '★ 为什么这不是判据失败：本用例要跑**三次现场 Index-TTS**（loop/trim/slow 各出一次片），',
+    '  而上面这些输出全部发生在**出片阶段**（dub.mjs 的显存闸门 / TTS 子进程）——',
+    '  「逐帧亮度剖面单调」这条判据**一行都还没执行到**。',
+    '★ 实测（2026-10-12 对抗式验证）：按题面原样跑 3 次，**3 次都红在判据之前**、没有一次是判据失败 ——',
+    '  run1 可用 2269 MiB 被拒（102.7s）／run2 1589 MiB 被拒（10.1s）／',
+    '  run3 `INDEXTTS_MIN_FREE_MIB=1200` 放行后 TTS 在 34~144 MiB 空闲下 67s/step 被停滞检测判死（457.8s）。',
+    '★ 出路（二选一）：',
+    '  ① 腾显存（推荐）：关掉正在用这张卡的程序（浏览器 / 控制台页面 / LM Studio 常驻模型），',
+    '     用 `nvidia-smi` 确认可用显存上来了再重跑；',
+    '  ② 自担风险放行：设 `INDEXTTS_MIN_FREE_MIB=<当前可用-300>` 后重跑 —— 放行后若显存真的不够，',
+    '     Index-TTS 会**静默挂死**（正是这道检查要防的事）。',
+    '★ 判据**没有被放宽**：真缺陷（slow 剖面回落 13 灰度 / MAE 97 / 帧数 ≠ total×30 / 几何不对）',
+    '  不含上面任何一个环境签名 ⇒ 照旧走判据自己的失败文案。',
+  ].join('\n');
+}
+
+/**
+ * ★ 出片前的显存预检 —— **与 dub.mjs 的 TTS 前守卫同一接口、同一默认阈值、同一「放行」开关**
+ *   （`ensureVramFree(INDEXTTS_MIN_FREE_MIB ?? 6700, …)`，见 `lib/vram.mjs` 与 `dub.mjs` 的 TTS 前守卫）。
+ * ★ 为什么在**出片之前**先问一遍（而不是等 dub 自己拦）：三次出片要几分钟到十几分钟，
+ *   第一轮就被闸门拒（O1 的 run2 = 10.1s）虽然快，但 run1 那种「loop 出片成功、trim 才被拒」
+ *   要白等 100s 以上；而且**报错文案是 dub 的**，看不出「这条用例根本没跑到判据」。
+ * ★ 放行开关与 dub **同一个变量** ⇒ 用户设了 `INDEXTTS_MIN_FREE_MIB` 时，这里与 dub 口径天然一致。
+ * ★ 不通过 ⇒ `assert.fail(envBlockMessage(...))`（环境阻塞文案）；通过 ⇒ 返回一句实测读数备注。
+ * @param {string} label 文案里的用途名
+ * @returns {Promise<string>} 备注行（调用方 `ctx.note(...)`）
+ */
+async function assertVramReadyForTts(label) {
+  const { ensureVramFree } = await import('../lib/vram.mjs');
+  const need = Number(process.env.INDEXTTS_MIN_FREE_MIB ?? 6700);
+  const res = await ensureVramFree(need, { label, relaxEnv: 'INDEXTTS_MIN_FREE_MIB' });
+  if (res.ok) {
+    // ★ 拿不到读数（没有 nvidia-smi）⇒ 不阻断，但**如实登记「护栏未生效」**（跳过 ≠ 通过）
+    if (res.skipped) return `★ 显存护栏**未生效**：${res.guardInactiveReason}`;
+    return `显存预检通过：可用 ${res.freeMiB} MiB ≥ 需要 ${res.needMiB} MiB`
+      + (res.freedMiB > 0 ? `（自动腾挪腾出 ${res.freedMiB} MiB）` : '');
+  }
+  assert.fail(envBlockMessage(
+    `出片前的显存预检不通过：需要 ≥${res.needMiB} MiB 空闲显存，实测可用 ${res.freeMiB} MiB`
+    + `${res.freedMiB > 0 ? `（已自动腾挪腾出 ${res.freedMiB} MiB）` : ''}\n`
+    + `${res.message || ''}`));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ★★ ⑤+++++++ 的「夹具风格不画叠加层」守卫 —— **机械派生 + 可被独立探针复核**（O1 的 F3）
+// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * 机械派生「该风格在**声明上**会画哪些叠加层」—— ★ **不手抄字段清单**。
+ * 权威源 = `styleSpec()` 的**返回值本身**：`overlay` 下的**每一个键** + **顶层** `showRole`。
+ * ⇒ 将来 `styleSpec` 新增一个叠加层字段，调用方（守卫）**自动**覆盖它，不需要有人记得改清单。
+ *
+ * ★ 为什么导出：O1 的 F3 要求「机械列出该风格的全部叠加层字段，别手抄」——
+ *   导出后可以用**独立探针**（`D:/lemo-tmp/o1-guards-probe.mjs`）对**真仓**与**变异副本**
+ *   各跑一遍，证明这条守卫**有区分力**（不是恒真断言）。守卫本体仍是本文件里那句 `assert`。
+ *
+ * @param {string} styleId 风格 slug（如 'plain-dark' / 'engraving'）
+ * @param {{W:number,H:number}} dims 出片像素（`styleSpec` 按它折算字号/边距）
+ * @returns {Promise<{fields:Record<string,boolean>, painted:string[]}>}
+ *   `fields` = 机械派生的全部叠加层字段（键名即清单，**不手抄**）；`painted` = 其中为 true 的（期望空）。
+ */
+export async function fitStyleOverlayFields(styleId, dims) {
+  const { resolveStyle, styleSpec } = await import('../lib/dub-core.mjs');
+  const sp = styleSpec(resolveStyle(styleId), dims);
+  const fields = { ...sp.overlay, showRole: sp.showRole };
+  return { fields, painted: Object.entries(fields).filter(([, v]) => !!v).map(([k]) => k) };
+}
+
+/**
+ * ★★ Title 探针：用**真 `buildAss`**（同一份源码、同一组参数）数出 `Title` 样式的 **Dialogue 事件**条数。
+ *
+ * ★ 为什么 Title 必须单独钉（O1 的 F3）：它是**唯一**不受 `styleSpec` / `plain` 管辖的叠加层 ——
+ *   · `lib/dub-core.mjs` 的 `buildAss`：`if (title && titleDur > 0.2) { …Title… }` —— 只看这两个入参；
+ *   · `dub.mjs`：`titleDur = o.title ? … : 0` ⇒ **只有传了 `--title` 才画**。
+ *   ⇒ `plain-dark` 对它**无效**（实测真跑 ASS 里 `Style: Title,…` 照旧输出）。
+ * ★ 判据是 **Dialogue 事件**而不是 `Style: Title` 那一行：`Style: Title` 在 `buildAss` 里是**无条件**
+ *   写进 `[V4+ Styles]` 的（`head` 数组固定第三行）⇒ 拿它当判据会**恒真**、等于没写。
+ */
+export async function fitTitleEventCount(styleId, dims, { title = '', titleDur = 0 } = {}) {
+  const { resolveStyle, buildAss } = await import('../lib/dub-core.mjs');
+  const ass = buildAss([{ text: '探针', sub0: 0, sub1: 1 }],
+    { ...dims, style: resolveStyle(styleId), total: 1, segments: null, title, titleDur });
+  return (String(ass).match(/^Dialogue:[^\n]*?,Title,/gm) || []).length;
+}
+
+/**
+ * ★★ ⑤+++++++ 的「夹具前置条件」守卫**本体**（O1 的 F3）—— 纯函数、不依赖 GPU / TTS、可被独立探针复核。
+ *
+ * 判据（四条，全部不通过就抛 `assert`）：
+ *   ①-a `styleId` 的**机械派生叠加层字段全 false**（清单来自 `styleSpec()` 的返回值，不手抄）；
+ *   ①-b 用**本用例的真实出片参数**（`titleArg`）跑真 `buildAss` ⇒ **不得有 Title 事件**
+ *        （★ Title 是唯一不受 `styleSpec`/`plain` 管辖的叠加层，`overlay` 那条守卫结构上盖不到它）；
+ *   ②  反向对照一：同一个风格下**传了 title** ⇒ 必须**有** Title 事件（证明 ①-b 不是恒真）；
+ *   ③  反向对照二：换成 `otherStyleId`（声明了叠加层的那个）⇒ 机械派生清单必须**非空**
+ *        （证明 ①-a 不是恒真）。
+ *
+ * ★ 为什么导出：O1 的 F3 要求「机械列出该风格的全部叠加层字段 + 覆盖 Title」，并要求能给出
+ *   **副本变异必红**的证据。守卫本体抽出来之后，独立探针可以对**真仓**与**变异副本**跑**同一段代码**
+ *   （见 `D:/lemo-tmp/o1-guards-probe.mjs`），不必靠人读注释相信它。
+ *
+ * @param {string} styleId 夹具风格 slug（期望零叠加层）
+ * @param {{W:number,H:number}} dims 出片像素
+ * @param {{titleArg?:string, otherStyleId?:string|null}} [opts]
+ *   `titleArg` = 本用例**真实**传给 dub 的 `--title` 值（从出片参数里派生，不写死）；
+ *   `otherStyleId` = 反向对照用的「有叠加层」风格。
+ * @returns {Promise<{overlayFields:string[], painted:string[], nTitle:number}>}
+ */
+export async function assertFitCleanPremise(styleId, dims, { titleArg = '', otherStyleId = null } = {}) {
+  // ①-a 机械派生全部叠加层字段（`overlay` 全部键 + 顶层 `showRole`），要求全 false
+  const { fields, painted } = await fitStyleOverlayFields(styleId, dims);
+  assert.deepStrictEqual(painted, [],
+    `夹具风格 ${styleId} 画了叠加层：${painted.join(' / ')}`
+    + `（机械派生的全部字段：${Object.keys(fields).join(' / ')}）`
+    + ' —— 叠加层是「与 --fit 无关的亮度源」，会在逐帧亮度剖面里注入一个台阶，'
+    + '「slow 剖面单调不减」就变成在测叠加层而不是在测 --fit（engraving 的全屏章节卡实测 13 灰度，'
+    + '见 FIT_CLEAN_STYLE 的注释）。★ 字段清单**机械派生**自 styleSpec() 的返回值，不是手抄的：'
+    + '将来 styleSpec 新增叠加层字段，这条守卫自动覆盖。');
+  // ①-b 用**本用例的真实参数**跑真 buildAss ⇒ 不得有 Title 事件
+  //     ★ 时长取 1.5s（> `buildAss` 的 0.2s 门槛）—— 只要 `titleArg` 非空，dub 就会给出一个 >0.2s 的窗。
+  const nTitle = await fitTitleEventCount(styleId, dims, { title: titleArg, titleDur: titleArg ? 1.5 : 0 });
+  assert.strictEqual(nTitle, 0,
+    `夹具风格 ${styleId} + 本用例的出片参数（--title=${JSON.stringify(titleArg)}）下，buildAss 吐出了 `
+    + `${nTitle} 条 Title 事件 —— Title 不受 styleSpec/plain 管辖（lib/dub-core.mjs 的 buildAss 只看 `
+    + '`title && titleDur > 0.2`），而它画在**被测的 crop 区**（上沿居中、`MarginV = round(H*0.13)`），'
+    + '淡出会造出与 --fit 无关的回落 ⇒ 假红。');
+  // ② 反向对照：同一个风格、只把 title 打开 ⇒ 必须出现 Title 事件（否则 ①-b 是恒真断言）
+  const nTitleOn = await fitTitleEventCount(styleId, dims, { title: '标题', titleDur: 1.5 });
+  assert.ok(nTitleOn > 0,
+    '反向对照失败：同一个风格下传了 title/titleDur 却没吐出 Title 事件 ⇒ ①-b 那条「无 Title」'
+    + '是恒真断言（不具区分力），守卫等于没写。');
+  // ③ 反向对照：换成声明了叠加层的那个风格 ⇒ 机械派生清单必须非空（否则 ①-a 是恒真断言）
+  if (otherStyleId) {
+    const { painted: other } = await fitStyleOverlayFields(otherStyleId, dims);
+    assert.ok(other.length > 0,
+      `反向对照失败：${otherStyleId} 的机械派生叠加层清单是空的 ⇒ ①-a 那条守卫不具区分力（恒真）。`);
+  }
+  return { overlayFields: Object.keys(fields), painted, nTitle };
+}
+
 /**
  * 清理测试产物。**只动登记过的东西**。
  *
@@ -865,14 +1103,14 @@ export const STATIC_CASES = [
       //    （style-distill / unblock-placeholder-audio / fix-truepeak / patch-style-mux /
       //      style-skill-check）里**不许再有**这两条根的独立字面量 ——
       //    只许经 CFG.exportDir / CFG.winLib / resolveStylesRoot 取。（注释行不算。）
-      const stripComments = (src) => src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .split('\n')
-        .filter((l) => !/^\s*(\/\/|\*)/.test(l))
-        .map((l) => l.replace(/\/\/.*$/, ''))
-        .join('\n');
+      // ★ 2026-10-12（第七批 F4）：原先这里是**自写的粗剥注释器**（正则删块注释 + 丢注释行 +
+      //   删行尾注释）—— 它把 lib/dub-core.mjs 第 21 行注释里的「斜杠 + 星号」当成块注释起点、
+      //   一路吃到第 68 行，把整个 `CFG` 字面量块（23~31 行）**当注释吞掉** ⇒ 下面的 BANNED
+      //   对该文件**彻底失明**（实测：剥后 `/lemo-opuscar/` 判 false，原文里明明是 true；
+      //   该粗剥器实测吃掉该文件 387 行、server.mjs 1313 行）。改用仓里现成的共享剥注释器。
+      const { stripComments } = await import('../lib/js-scan.mjs');
       const BANNED = {
-        'lib/dub-core.mjs': [/lemo-films/],
+        'lib/dub-core.mjs': [/lemo-films/, /lemo-opuscar/],   // ★ 第七批 F4：补 /lemo-opuscar/（原先只列 /lemo-films/ ⇒ 即使不吞也会漏掉 F1 的库根字面量）
         'server.mjs': [/winLib,\s*['"]styles['"]/],
         'consistency-check.mjs': [/lemo-films/],
         'scripts/style-distill.mjs': [/lemo-films/, /lemo-opuscar/],
@@ -2633,6 +2871,35 @@ const FIT_TEXT = '这是一次形态B与配音时长适配的真实出片测试�
 // ★ 必须挑一个 style-dna 的 `targetLufs ≠ 通用默认`（−16）的风格，否则「响度 −14±1」这条
 //   判据与走默认无法区分（与 `⑤++` 同口径）。engraving 的 mix_rules 写「整体 −14 LUFS」。
 const FIT_STYLE = 'engraving';
+// ★★ ⑤+++++++ 专用：画面链上**只有素材 + 字幕**的风格（不画任何叠加层）。
+//
+//   为什么不能沿用 FIT_STYLE（engraving）——这是 2026-10-12 首跑 `--full` 那条红（回落 13 灰度）的根因：
+//     · `engraving` 声明了 `overlay.chapterCards: true` + `motion.chapterTransition: 'cut'`
+//       ⇒ `buildAss` 会在**每个新角色段的开头**画一张 `rect(0,0,W,H,cBg,'E0')`
+//       —— **全屏、硬切、无淡入淡出**、12.2% 不透明的底块（外加角色名与摘要两行字）。
+//     · 本用例的判据「成片逐帧亮度剖面应当单调不减」隐含假设：**画面里唯一的亮度源是素材斜坡**。
+//       章节卡把这个假设打破：卡片**切出**的那一帧，整帧均值会跳变 `0.122×(卡底色亮度 − 当前亮度)`。
+//     · ★ 实测（`D:/lemo-tmp/diag-fit-slow.mjs`：真 `buildAss` + 真 ffmpeg 画面链，无 GPU、无 TTS）：
+//         同一条素材、同一条 `--fit slow` 链，
+//           · 带 `subtitles` 滤镜（含章节卡）⇒ 剖面最大回落 **13** 灰度，位置正好是卡片切出那一帧
+//             （卡片窗 = [第二句 sub0 − 0.25, +1.3]，本夹具在 total≈8.35s 下就是 ≈4.07s 处）；
+//           · 去掉 `subtitles` 滤镜           ⇒ 剖面最大回落 **0**（素材是严格单调的亮度斜坡）。
+//       ⇒ 这条判据此前测的**不是**「素材被放慢」，而是「画面上没有别的非单调亮度源」。
+//       而卡片窗的位置随 TTS 时长抖动 ⇒ 台阶大小在 1~13 之间漂移 ⇒ 同一份代码**有时红有时绿**
+//       （2026-10-12 定向复跑实测：pass 一次 / fail 一次，见 `test/README.md` 的登记）。
+//     · 选 `plain-dark` 的理由：① `styleSpec` 对 `plain` 风格**结构性**关掉全部叠加层
+//       （chapterCards / lowerThird / accentRule / progressBar / showRole 全 false）；
+//       ② 实测同夹具下剖面最大回落 **0~2**（最坏情形 d1≈1.8s）。
+//   ★ 覆盖力的交代：engraving + 形态 B 的覆盖由 ⑤++++++（`--fit loop`）保留；本用例只测 `--fit` 的画面语义，
+//     风格是**附带**选择（它此前是跟着 ⑤++ 的响度口径一起选的，而本用例不判响度）。
+//   ★ 导出：供独立探针（`D:/lemo-tmp/o1-guards-probe.mjs`）对**真仓**与**变异副本**各跑一遍，
+//     证明下面的前置守卫有区分力（O1 的 F3 要求「副本变异必红」）。
+export const FIT_CLEAN_STYLE = 'plain-dark';
+// ★ 逐帧剖面**只取画面上部 50%**：把底部烧进的字幕整块排除（字幕是第二个非单调亮度源，
+//   到 `sub1` 会硬切消失；`plain-dark` 的 `subtitleFadeIn=0` ⇒ 没有淡出可缓冲）。
+//   素材是**空间均匀**的亮度斜坡 ⇒ 取上部与取全帧是同一个值，剖面不会因此变形。
+//   实测（同一份诊断脚本）：全帧 0~2 灰度 → 取上部 50% **0** 灰度。
+const FIT_PROFILE_CROP = 0.5;
 
 /**
  * 造「亮度爬升 + 15 kHz 纯音」的极小假口播素材到 hostPath（Windows 路径）。
@@ -2681,11 +2948,18 @@ const FITB_DUR = 1.0, FITB_TONE_ONSET = 0.6;
  *   一次抽完既没有 seek 误差、也只需一次 ffmpeg 调用。
  * ★ 为什么走**文件**而不是 stdout：二进制过 WSL stdout 会被损坏（`lib/env.mjs` 的同类注释）。
  *   临时文件写在 `scratchDir`（用例的 `_smoke-` 输出目录）里 ⇒ 随该目录一起被 `cleanupArtifacts` 收掉。
+ * ★ `cropTop`（可选，0<x≤1）：只取画面**上部**那一条再降到 1x1。
+ *   为什么需要它：烧进成片的**字幕**坐在底部安全区（`marginV` ≈ 157/1080），它本身是一个
+ *   **非单调**的亮度源（每条字幕到 `sub1` 会硬切消失，`subtitleFadeIn=0` 时没有淡出）。
+ *   对「剖面应当单调」这类判据来说它是纯干扰 ⇒ 取上部 50%（实测字幕块顶边 ≥ y=601/1080，
+ *   即 ≤ 0.56H）就把它整块排除掉，而**素材在空间上是均匀的**（`geq=lum='255*T/2.0'` 全画面同值），
+ *   取哪一块都等于同一个斜坡值 ⇒ 剖面不变，只是干净了。
  */
-async function frameProfile(hostPath, scratchDir) {
+async function frameProfile(hostPath, scratchDir, { cropTop = 0 } = {}) {
   const rawHost = path.join(scratchDir, `_prof-${Math.random().toString(36).slice(2)}.raw`);
+  const crop = cropTop > 0 ? `crop=iw:ih*${cropTop}:0:0,` : '';
   const r = await wsl('ffmpeg -v error -nostdin -y -i '
-    + `"${toWsl(hostPath)}" -vf "scale=1:1,format=gray" -f rawvideo -pix_fmt gray "${toWsl(rawHost)}"`,
+    + `"${toWsl(hostPath)}" -vf "${crop}scale=1:1,format=gray" -f rawvideo -pix_fmt gray "${toWsl(rawHost)}"`,
   { timeoutMs: 180000 });
   if (!r.ok) return null;
   try { return Array.from(fs.readFileSync(rawHost)); } catch { return null; }
@@ -2745,6 +3019,26 @@ const fitMaxFallback = (O) => {
   for (let i = 1; i < O.length; i++) m = Math.max(m, O[i - 1] - O[i]);
   return m;
 };
+/** 最大回落发生在第几帧（-1 = 剖面单调不减）。用于把「回落 13 灰度」定位到具体时刻。 */
+const fitMaxFallbackAt = (O) => {
+  let m = 0, at = -1;
+  for (let i = 1; i < O.length; i++) { const d = O[i - 1] - O[i]; if (d > m) { m = d; at = i; } }
+  return at;
+};
+/**
+ * 从 `dub.mjs` 打印的时间轴里取每条字幕窗（`sub0→sub1`）与文本。
+ * ★ 为什么从 stdout 抓而不是读 `timeline.json`：后者**只**存 t0/t1（`dub.mjs` 第 3 步写的字段），
+ *   而字幕窗（sub0/sub1）只出现在 stdout 的那张表里。诊断要的是「回落时刻落在哪条字幕窗附近」。
+ */
+function parseTimelineLines(stdout) {
+  const out = [];
+  for (const l of String(stdout).split(/\r?\n/)) {
+    //   ★ `id` 形如 `l1`（不是纯数字）—— 正则别写成 `\d+`，否则永远抓不到（实测踩过）。
+    const m = /^\s*(\S+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)→([\d.]+)\s+(.*)$/.exec(l);
+    if (m) out.push({ id: m[1], t0: +m[2], t1: +m[3], dur: +m[4], sub0: +m[5], sub1: +m[6], text: m[7].trim() });
+  }
+  return out;
+}
 /** 末 frac 段的最小亮度（trim 冻结在素材最高亮度 ⇒ 很大；slow 还没爬到顶 ⇒ 明显更小）。 */
 const fitTailMin = (O, frac) => Math.min(...O.slice(Math.floor(O.length * (1 - frac))));
 /** 第 frac 比例处的亮度。 */
@@ -3495,6 +3789,14 @@ export const FULL_CASES = [
       if (!lockGate.ok) assert.fail(lockGate.message);
       if (lockGate.takeover) console.log(`ℹ ${lockGate.note}`);
 
+      // ── ★★ 前置守卫 0：**显存**（与配音锁同一层级的环境前提）──
+      //   O1 的 F1：本环境（桌面程序占卡）里，这条用例**跑到判据之前就红**，而旧文案
+      //   （「--fit trim 出片退出码 1（期望 0）」）会被读成「--fit 功能坏了」。
+      //   这里在**三次出片之前**先问一句（与 dub.mjs 的 TTS 前守卫同一接口、同一阈值、同一放行开关）；
+      //   不满足 ⇒ 环境阻塞文案（★ 仍是失败，只是把归因说清楚；见 assertVramReadyForTts）。
+      //   ★ 通过 / 跳过都会把实测读数登记进备注（跳过 = 护栏未生效，跳过 ≠ 通过）。
+      ctx.note(`⑤+++++++ 显存前置守卫：${await assertVramReadyForTts('⑤+++++++ 的现场 TTS（三次出片）')}`);
+
       fs.mkdirSync(CFG.exportDir, { recursive: true });
       const baseDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}fitd-${process.pid}-${Date.now().toString(36)}`);
       fs.mkdirSync(baseDir, { recursive: true });
@@ -3507,13 +3809,73 @@ export const FULL_CASES = [
       const scriptFile = path.join(baseDir, '_script.txt');
       fs.writeFileSync(scriptFile, `${FIT_TEXT}\n`, 'utf8');
 
+      // ── 夹具前置条件守卫（判据「剖面单调不减」成立的前提，见 FIT_CLEAN_STYLE 的注释）──
+      //   ① 所选风格**不得画任何叠加层**：叠加层是「与 --fit 无关的亮度源」，会在剖面里注入一个
+      //      台阶（engraving 的全屏章节卡实测 13 灰度，正好把 slow 的单调判据打红）；
+      //   ② 素材剖面本身必须**单调不减**：素材一旦有起伏，「放慢后应当单调」这个前提就不成立。
+      //   ★ 这两条不是恒真断言：谁把风格换回 engraving、或把素材改成有起伏的画面，它们当场响。
+      const FIT_DIM = { W: FIT_OUT_W, H: FIT_OUT_H };
+      //   ★★ 出片参数**只在这里拼一次**，三次出片与下面的 Title 守卫**共用同一份**。
+      //     为什么必须共用：Title 是唯一不受 styleSpec/plain 管辖的叠加层，而它**只看 `--title`** ——
+      //     守卫若把「本用例不传 --title」写死成字面事实，那「有人给本用例加了 --title」这个变异
+      //     就**测不出来**（守卫会照旧通过）。⇒ 守卫读的就是下面这份**真实参数**。
+      const dubArgs = (fit, runDir) => [DUB_ENTRY, '--script', scriptFile, '--video', srcFile,
+        '--fit', fit, '--ratio', FIT_RATIO, '--style', FIT_CLEAN_STYLE, '--out', runDir];
+      const probeArgs = dubArgs('loop', path.join(baseDir, `${TEST_DIR_PREFIX}fit-probe`));
+      const ti = probeArgs.indexOf('--title');
+      const titleArg = ti >= 0 ? String(probeArgs[ti + 1] ?? '') : '';   // ★ 从**真实参数**派生，不写死
+      //   ★★ ①-a **机械派生全部叠加层字段，不手抄**（O1 的 F3 前半；照抄本项目「单一权威源派生」的既有做法）：
+      //     叠加层的权威来源就是 `styleSpec()` 的**返回值本身** ⇒ `overlay` 下的**每一个键**
+      //     （现为 chapterCards / lowerThird / accentRule / progressBar）逐个断言 false，
+      //     再加**顶层**的 `showRole`（角色小标签，`buildAss` 读的是 `sp.showRole`，**不在** `overlay` 下）。
+      //     5/5 全部覆盖。★ 将来 `styleSpec` 新增一个叠加层字段，这条守卫**自动**覆盖它
+      //     （手抄清单必漏 —— 这正是本条修的那个缺陷：旧守卫只手抄了 chapterCards + lowerThird 两个）。
+      //   ★ **如实交代「每个字段画在哪」**（绘制点逐个核对 `lib/dub-core.mjs` 的 `buildAss`），
+      //     以及它落不落在**本用例的剖面口径**（`FIT_PROFILE_CROP` = 画面上部 50%）之内：
+      //       · `chapterCards`  `rect(0,0,W,H,…)` 全屏硬切半透明块        → **落在口径内**（13 灰度台阶的来源）
+      //       · `showRole`      `\pos(marginL, H*0.10)` 上沿左侧            → **落在口径内**
+      //       · `accentRule`    `y = H − marginV − subBlock − H*0.018`      → 落**口径外**（下半屏）
+      //       · `lowerThird`    同 accentRule 一带（字幕块正上方）           → 落**口径外**
+      //       · `progressBar`   `y = H − barH`（画面最底那一条）             → 落**口径外**
+      //     ★ 「画在被裁掉区域」的 3 个字段**照样纳入**这条守卫，理由是如实的：本守卫钉的是
+      //       「夹具风格在**声明上**没有任何叠加层」这个**前提**，而不是「剖面里看不到叠加层」这个**结果**。
+      //       口径（`FIT_PROFILE_CROP`）只是判据的**实现细节** —— 谁把它调回全帧、或调成一个把下半屏
+      //       也框进来的值，那 3 个字段**立刻**进入检测域，此时若它们是 true 就会假红。
+      //       ⇒ 两条腿分开：**前提**按「全部 5 个叠加层字段」钉死，**检测域**由 `FIT_PROFILE_CROP` 单独交代。
+      //   ★★ 守卫**本体**抽成导出的纯函数 `assertFitCleanPremise()`（不依赖 GPU / TTS）：
+      //     这样独立探针（`D:/lemo-tmp/o1-guards-probe.mjs`）能对**真仓**与**变异副本**跑**同一段代码**，
+      //     拿出「副本变异必红」的证据（O1 的 F3 要求），而不是靠人读注释相信它。
+      const premise = await assertFitCleanPremise(FIT_CLEAN_STYLE, FIT_DIM,
+        { titleArg, otherStyleId: FIT_STYLE });
+      ctx.note(`⑤+++++++ 夹具前提：${FIT_CLEAN_STYLE} 的叠加层字段 ${premise.overlayFields.join(' / ')} 全 false；`
+        + `本用例参数（--title=${JSON.stringify(titleArg)}）下 Title 事件 ${premise.nTitle} 条`);
+
+      //   ★★ ①-b **Title 必须单独钉**（O1 的 F3 后半）—— 它是**唯一**「不受 `styleSpec` / `plain` 管辖」
+      //     的叠加层，所以上面那条 `overlayFields` 守卫**结构上盖不到它**：
+      //       · `lib/dub-core.mjs` 的 `buildAss`：`if (title && titleDur > 0.2) { …Title… }` —— 只看这两个入参；
+      //       · `dub.mjs`：`titleDur = o.title ? … : 0` ⇒ **只有传了 `--title` 才画**。
+      //     `plain-dark` 对它**无效**（实测真跑 ASS 里 Title 样式照旧输出）。
+      //     Title 的 Style 是 `MarginV = round(H*0.13)` / `align=8` ⇒ **上沿居中、落在被测的 crop 区**，
+      //     它的 `\fad` 淡出会造出与 `--fit` 无关的回落 ⇒ 一旦有人给本用例加个 `--title`，就假红。
+      //     ⇒ 不靠「今天恰好没传 `--title`」这句话，而是**用真 `buildAss` 跑一遍**（同一份源码、同一组参数）
+      //       看它到底吐不吐 Title 事件；并配一条**反向对照**证明这条检查有区分力、不是恒真。
+      //     ★ 判据是 **Dialogue 事件**条数，不是 `Style: Title` 那一行 —— 后者是 buildAss **无条件**
+      //       写进 `[V4+ Styles]` 的，拿它当判据会恒真。
+      //     ★ 上面那三句断言（①-a 全 false / ①-b 无 Title / 两条反向对照）都在
+      //       `assertFitCleanPremise()` 里，本处只负责把**真实参数**（`titleArg`）与**对照风格**
+      //       （`FIT_STYLE`）交给它 —— 参数从 `dubArgs()` 派生，所以「有人给本用例加 --title」会被抓到。
+
       // ── 夹具自检：素材必须「比配音短」，否则三条 fit 分支一条都不会被走到 ──
       const srcP = await probeMedia(srcFile);
       assert.ok(srcP && srcP.v, `ffprobe 读不出素材的视频流：${JSON.stringify(srcP)}`);
       assert.ok(Math.abs(Number(srcP.dur) - FIT_DUR) < 0.05,
         `夹具素材时长 ${srcP.dur}s ≠ ${FIT_DUR}s`);
-      const M = await frameProfile(srcFile, baseDir);
+      const M = await frameProfile(srcFile, baseDir, { cropTop: FIT_PROFILE_CROP });
       assert.ok(M && M.length >= 30, `素材逐帧剖面读不到或太短：${M && M.length}`);
+      const mFall = fitMaxFallback(M);
+      assert.ok(mFall <= 2,
+        `夹具素材的亮度剖面不单调（最大回落 ${mFall} 灰度）—— 素材是 0→255 的亮度斜坡，`
+        + '应当严格单调；素材一旦有起伏，「放慢后剖面应当单调不减」这条判据的前提就不成立。');
       //   ★ 夹具的**区分力守卫**：素材若退化成纯色（或亮度不随时间变），三种模型的剖面会塌成同一条，
       //     那本用例就变成「三者都一样」的恒真断言。这里先算三种模型两两的平均差，必须足够大。
       const sep = fitModelSeparation(M, Math.round(8.4 * 30));
@@ -3529,9 +3891,21 @@ export const FULL_CASES = [
         const runDir = path.join(baseDir, `${TEST_DIR_PREFIX}${fit}`);
         fs.mkdirSync(runDir, { recursive: true });
         ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(runDir)));
-        const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
-          '--fit', fit, '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', runDir],
-        { cwd: ctx.root, timeoutMs: 900000 });
+        // ★ 入口必须走 `DUB_ENTRY`（= `LEMO_TEST_DUB` 环境变量，默认 `'dub.mjs'`），**不许写字面量**：
+        //   写死 `'dub.mjs'` 就不认仓里文档化的变异注入钩子（见本文件 `DUB_ENTRY` 处的注释与
+        //   `LEMO_TEST_DUB=_mut-dub.mjs node test/smoke.mjs --full --filter …` 的既有用法），
+        //   这条用例就**无法用仓内标准手法自证**（默认值不变 ⇒ 默认行为逐字节不变）。
+        const r = await runNode(dubArgs(fit, runDir), { cwd: ctx.root, timeoutMs: 900000 });
+        // ── ★★ O1 的 F1：出片阶段的失败**先分辨「环境阻塞」还是「真失败」** ──
+        //   ★ 只有命中环境签名（显存硬拦 / Index-TTS 预检硬拦 / `TTS_FAIL rc=`）才走环境文案；
+        //     其它任何退出码 ≠ 0 一律照旧走下面那句**判据自己的**失败文案（★ 绝不掩盖真失败）。
+        //   ★ 环境阻塞时判据**一行都还没执行到** ⇒ 文案里必须写明这一点（见 envBlockMessage）。
+        const envHit = envBlockSignatures(r);
+        if (r.code !== 0 && envHit.length) {
+          assert.fail(envBlockMessage(
+            `--fit ${fit} 在**出片阶段**就失败了（dub 退出码 ${r.code}），输出命中环境签名：${envHit.join(' / ')}\n`
+            + `--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`));
+        }
         assert.strictEqual(r.code, 0,
           `--fit ${fit} 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
 
@@ -3549,7 +3923,7 @@ export const FULL_CASES = [
         assert.strictEqual(`${filmP.v.width}x${filmP.v.height}`, `${FIT_OUT_W}x${FIT_OUT_H}`,
           `--fit ${fit}：成片尺寸 ${filmP.v.width}x${filmP.v.height} ≠ ${FIT_OUT_W}x${FIT_OUT_H}（--fit 不该改几何）`);
 
-        const O = await frameProfile(filmPath, runDir);
+        const O = await frameProfile(filmPath, runDir, { cropTop: FIT_PROFILE_CROP });
         assert.ok(O && O.length >= 30, `--fit ${fit}：成片逐帧剖面读不到或太短：${O && O.length}`);
         //   ★ 帧数 = total×30（三种 fit **都一样**）—— 如实钉住「时长不是判据」这条事实。
         assert.ok(Math.abs(O.length - total * 30) <= 2,
@@ -3591,15 +3965,34 @@ export const FULL_CASES = [
             + ' trim 应当把素材放完后**冻结在末帧**，末段亮度应贴住素材最高值。');
         }
         if (fit === 'slow') {
-          assert.ok(fitMaxFallback(O) <= 12,
-            `--fit slow：剖面最大回落 ${fitMaxFallback(O)} 灰度 —— 放慢播放应当单调不减。`);
+          //   ★ 阈值 4（原来是 12）：夹具有了**干净的前置条件**（无全屏叠加层 + 剖面只取画面上部
+          //     避开字幕）之后，这条判据才真的是「素材被单调放慢」。实测：
+          //       · 素材剖面本身最大回落 **0**（前置守卫里另有一条断言钉住）；
+          //       · 干净成片实测最大回落 **0**（全帧口径下最坏 0~2）；
+          //       · 一旦 slow 退化成 loop，循环边界是 **>150** 灰度的骤降（另有 dEdges 判据）。
+          //     取 4 = 干净口径下实测值（0）留 4 倍余量，同时仍是「真实回退」量级的 1/37 ⇒ 没放宽。
+          const fb = fitMaxFallback(O);
+          if (fb > 4) {
+            const at = fitMaxFallbackAt(O);
+            const tl = parseTimelineLines(r.stdout);
+            assert.fail(
+              `--fit slow：剖面最大回落 ${fb} 灰度（第 ${at} 帧 ≈ ${(at / 30).toFixed(3)}s，`
+              + `亮度 ${O[at - 1]} → ${O[at]}）—— 放慢播放应当单调不减。\n`
+              + `  回落点邻域 O[${Math.max(0, at - 8)}..${Math.min(O.length, at + 9) - 1}] = `
+              + `${O.slice(Math.max(0, at - 8), Math.min(O.length, at + 9)).join(',')}\n`
+              + `  成片帧数 ${O.length} / total ${total.toFixed(3)}s / 剖面口径 = 画面上部 ${FIT_PROFILE_CROP * 100}%\n`
+              + `  字幕窗（dub 打印的时间轴）：`
+              + (tl.length ? tl.map((x) => `#${x.id} ${x.sub0.toFixed(2)}→${x.sub1.toFixed(2)}`).join(' / ') : '(没抓到)')
+              + '\n  ★ 排查顺序：先看 `fitMaxFallback(M)`（夹具素材本身是否单调，前置守卫已断言 ≤2），'
+              + '再看所选风格是否画了**全屏叠加层**（章节卡 = 全屏硬切半透明块，实测能造出 13 灰度的台阶）。');
+          }
           const want70 = M[Math.min(M.length - 1, Math.floor(0.70 * M.length))];
           const got70 = fitAt(O, 0.70);
           assert.ok(Math.abs(got70 - want70) <= 25,
             `--fit slow：成片 70% 处的亮度 ${got70}，而「素材放慢到 total」的模型给出 ${want70}（差 ${Math.abs(got70 - want70)}）——`
             + ' slow 应当把素材整体拉长，70% 处仍远未到素材最高亮度。');
         }
-        runs[fit] = { total, frames: O.length, maes, dEdges, tailMin };
+        runs[fit] = { total, frames: O.length, maes, dEdges, tailMin, maxFallback: fitMaxFallback(O) };
       }
 
       // ── 三者**彼此不同**（结构性判据两两互相排斥）──
@@ -3609,7 +4002,7 @@ export const FULL_CASES = [
         `trim 与 slow 没被末段亮度分开：trim 末 30% 最小 ${runs.trim.tailMin} / slow ${runs.slow.tailMin}`
         + '（trim 应冻结在素材最高亮度，slow 应还没爬到顶）');
 
-      const fmt = (k) => `${k}: total ${runs[k].total.toFixed(3)}s / 帧数 ${runs[k].frames} / 剖面平均差 loop ${runs[k].maes.loop.toFixed(1)} trim ${runs[k].maes.trim.toFixed(1)} slow ${runs[k].maes.slow.toFixed(1)} / 下降沿 ${runs[k].dEdges} / 末30%最小 ${runs[k].tailMin}`;
+      const fmt = (k) => `${k}: total ${runs[k].total.toFixed(3)}s / 帧数 ${runs[k].frames} / 剖面平均差 loop ${runs[k].maes.loop.toFixed(1)} trim ${runs[k].maes.trim.toFixed(1)} slow ${runs[k].maes.slow.toFixed(1)} / 下降沿 ${runs[k].dEdges} / 末30%最小 ${runs[k].tailMin} / 最大回落 ${runs[k].maxFallback}`;
       ctx.note('⑤+++++++ --fit 三值实测（★ 帧数都 = total×30，时长/帧数**不是**判据；差别在画面）：\n    '
         + ['loop', 'trim', 'slow'].map(fmt).join('\n    '));
     },

@@ -14,6 +14,15 @@ const state = {
   styles: [],
   categories: [],    // 服务端解析出的 9 大类；空数组 = 解析失败 → 退回扁平列表
   films: [],
+  // ★★ F1（第六批对抗性审计 · 文案与错误消息诚实性）：成片库**读不到目录**时的真实原因。
+  //   null = 上一次读取成功（或还没读过）；非 null = 服务端原文（如 ENOENT 的完整路径）。
+  //   ★ 为什么必须单独一个字段：`films: []` 有两种完全不同的含义 ——「确实没有成片」与
+  //     「我读不到目录」。改前前端把后者当**前者**渲染（「还没有成片」），用户会以为作品丢了。
+  filmsErr: null,
+  // ★ 成片根的**权威值**（服务端 /api/films 回的 root 字段 = lib/env.mjs 的 CFG.exportDir）。
+  //   改前前端 4 处用户可见文案硬编码了字面量 D:\lemo-films —— 设了 LEMO_FILM_DIR（测试 / 换盘 /
+  //   多实例）时会指到一个不存在的目录。null = 还没拿到 ⇒ 文案退回「不写具体路径」的写法。
+  filmsRoot: null,
   jobs: [],
   env: null,
   setup: null,       // 首次运行向导的安装计划（来自 /api/setup/actions）
@@ -213,25 +222,81 @@ async function api(path, opts) {
 // （仍然先做一次去 ANSI，纯属防御：万一将来后端改成推原文，这里照样能匹配。）
 //
 // ★ 关于 M（总步数）：
-//   - 实测 lemo-make.mjs 里 step() 静态调用点共 11 个；默认路径（不带 content= / --lines）执行 7 步
-//     （含最后的 `[7] 核验导出`），带 `--q content=…` / `--lines` 时 :2635 额外触发 ⇒ 执行 8 步。且**跳过的步骤照样调 step()**
-//     （只把标题换成短名 + 一句「（--skip-xxx）」），所以正常情况下 N 是连续 1..7（默认路径），不会跳号。★ 2026-10-08 复核订正：原记「step() 共有 7 个调用点」；实测静态 11 个、默认路径 7 步、带 content= 8 步（无 `--content` flag，content 经 `--q content=` 传入）。
-//   - 但三种模式会提前结束：--dry-run 在 [1] 之后 exit(0)；--audio-only / --render-only
-//     在并行段之后 return。于是按 opts 推出一个「预期总步数」当起点。
+//   - ★★ 2026-10-12 订正（第六批对抗性审计 F6，并按 Q1-3 的复核**逐 opts 分档**重数）：原记
+//     「step() 静态 11 个 / 默认路径 7 步」停留在 2026-10-10 新增 [8] 阅读时长自检 / [9] 静帧交付图 /
+//     [10] 交付文档 **之前**。实测当前 lemo-make.mjs（读代码逐条核 step() 调用点）：
+//     **静态调用点 19 个**，而**默认路径实际执行 10 个**（跳过的步骤**照样调 step()**，
+//     只把标题换成短名 + 一句「（--skip-xxx）」）：
+//       [1] 环境自检 / [2] 同步两份库 / [3] 导出事件与字幕 / [4] 音频链路 / [5] 渲染 /
+//       [6] 混流 / [7] 核验导出 / [8] 阅读时长自检 / [9] 静帧交付图 /
+//       [10] 交付文档（emitDeliverables 里的那一次 step，默认路径在 main 末尾调它）
+//   - ★★ 分母**必须按 opts 分档**（Q1-3 的原始发现：只写死一个 10 会在下面三处算错）——
+//     有三处 step() 是**条件触发**的，逐条对着 lemo-make.mjs 的守卫核过：
+//       ㈠ `--q`（或 `--q-events`）里含 `content=`，**或**有 `--lines`，且**没**跳过音频
+//          ⇒ **多两个**（默认 10 ⇒ **12**、partial 6 ⇒ **8**），不是多一个：
+//            · 一个是 `if (!o.skipAudio && textMayChange)` 里的「音频链路 · 配音前置」
+//              （textMayChange 的定义见 `:2432-2433`）；
+//            · 另一个是**「导出事件与字幕」被调第二次** —— `exportEventsAndSubs()` 的第一句就是
+//              `step('导出事件与字幕…')`，而它在配音前置跑完后又 `await exportEventsAndSubs()`
+//              一次（`:3018`，为了按 dur.json 的真实时长重排时间窗）⇒ 屏上会看到
+//              `[3] 导出事件与字幕…` 与 `[5] 导出事件与字幕…` **同名的两步**。
+//              ★ 这一条是**实证**的（不是读码推的）：把编排器副本的三处重活（run / runLive / runWsl）
+//                打桩成成功、`fail()` 改成不退出，逐 opts 组合真跑，`--q content=coffee` 打出
+//                **12** 行 step 标记（[3] 与 [5] 标题相同）。Q1 报告里的「11」漏了第二次调用。
+//       ㈡ `--web-cut` ⇒ 末尾多一个「720p web cut」⇒ 默认路径 **11** 步；
+//       ㈢ `--review` ⇒ 末尾多一个「审核回路」⇒ 默认路径 **11** 步（与 ㈡ 叠加 ⇒ **12**）。
+//       ★ `--audio-only` / `--render-only` 是 partial：在并行段之后、**混流之前**就 return
+//         （return 之前仍会调一次 emitDeliverables ⇒ 也打一个「交付文档」）⇒ 基准 **6** 步，
+//         而 ㈡/㈢ 在 partial 路径上**不可达**（代码在 return 之后）。
+//   - 两种模式会提前结束：--dry-run 在 [1] 之后 exit(0)（**1** 步）；--stills-only 在 [3] 分镜之后
+//     exit(0)（**3** 步，真跑日志见 test/stills-only.test.mjs）。
+//   - ★ 为什么分母错了也必须修：noteStep 有 `total = max(total, maxN)` 自校正 ⇒ **跑成功的**任务
+//     跑到第 8 步时会从 /7 跳到 /10，只是短暂难看；但**失败 / 提前结束**的任务**永远不会自校正**
+//     —— 它永久停在「4/7 失败」，而真实计划是 10 步（实测）。
 //   - 再与「本次实际见到的最大 N」取 max，任何推导失准都会**自动向上校正**，不会溢出。
+//   - ★ 上面这张分档表由 **test/ui.test.mjs 的 T1** 钉住（逐 opts 组合断言 expectedSteps()，
+//     并同时断言 lemo-make.mjs 里那三条守卫仍然存在）—— 改编排器的步序 ⇒ T1 会红，逼人重新数。
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 const STEP_RE = /^\[(\d+)\]\s+(\S.*)$/;
-const KNOWN_STEPS = 7;
+const KNOWN_STEPS = 10;   // 默认路径（不带任何条件触发的开关）的真实步数
 
 const prog = { curN: 0, maxN: 0, total: KNOWN_STEPS };
+
+/**
+ * `--q` 串里的 `content=` 值。★ 口径**必须与编排器逐字一致**：lemo-make.mjs 的
+ * `contentOf()` = `/(?:^|&)content=([^&]+)/`。前端是浏览器脚本、拿不到那个模块 ⇒ 只能复制这一条正则；
+ * 它一变、下面 expectedSteps() 的分母就会错 ⇒ 由 T1 同时钉住两边（一边断言这里的结果、
+ * 一边断言 lemo-make.mjs 里那条正则仍是这个样子）。
+ */
+function contentOfQ(q) {
+  const m = /(?:^|&)content=([^&]+)/.exec(q || '');
+  return m ? m[1] : null;
+}
 
 function expectedSteps(opts) {
   const o = opts || [];
   if (o.includes('--dry-run')) return 1;                                      // [1] 之后 exit(0)
   // --stills-only：实测只跑 [1] 环境自检 + [2] 同步两份库 + [3] 分镜，然后 exit(0)（真跑日志见 test/stills-only.test.mjs）。
   if (o.includes('--stills-only')) return 3;
-  if (o.includes('--audio-only') || o.includes('--render-only')) return 5;    // 并行段之后 return
-  return KNOWN_STEPS;
+  // ★ F6：partial 模式不是 5 而是 **6** —— return 之前还会调一次 emitDeliverables ⇒ 多一个「交付文档」。
+  const partial = o.includes('--audio-only') || o.includes('--render-only');
+  // ★ 跳过音频的两条路：显式 `--skip-audio`，或 `--render-only`（lemo-make.mjs 的 `:894`
+  //   `o.renderOnly = true; o.skipAudio = true;` —— 而前端**只**传 `--render-only`，不另传 --skip-audio）。
+  const skipAudio = o.includes('--skip-audio') || o.includes('--render-only');
+  // 配音前置的触发条件（与 lemo-make.mjs 的 textMayChange 同义）：--q / --q-events 里含 content=，或有 --lines。
+  const qVals = [];
+  for (let i = 0; i < o.length; i++) if (o[i] === '--q' || o[i] === '--q-events') qVals.push(o[i + 1] || '');
+  const textMayChange = qVals.some((q) => contentOfQ(q) !== null) || o.includes('--lines');
+  let n = partial ? 6 : KNOWN_STEPS;
+  // ㈠ ★ **+2**（不是 +1）：配音前置本身，**加上**「导出事件与字幕」被调第二次
+  //   （lemo-make.mjs 的 `await exportEventsAndSubs();` 在 `:2417` 与 `:3018` 各一次，
+  //    而该函数第一句就是 `step('导出事件与字幕…')`）—— 实测见上面注释段 ㈠ 的实证说明。
+  if (!skipAudio && textMayChange) n += 2;
+  if (!partial) {                            // ㈡/㈢ 只在非 partial 路径可达（partial 在混流之前就 return 了）
+    if (o.includes('--web-cut')) n += 1;
+    if (o.includes('--review')) n += 1;
+  }
+  return n;
 }
 
 function resetProgress(opts) {
@@ -595,6 +660,14 @@ async function installAllAuto() {
   const btn = $('btnSetupAuto');
   btn.disabled = true;
   let first = null;
+  // ★★ F2（第六批对抗性审计 · 文案与错误消息诚实性，2026-10-12）：改前**无条件** toast
+  //   「已入队 N 个」—— 而服务端对「已就绪」的动作回 {ok:true,skipped:true}（**不入队**），
+  //   对失败回 400。实测：3 个动作里 2 个真入队、第 3 个 400 ⇒ 屏幕上仍是「已入队 3 个」，
+  //   而且那句失败 toast 会被循环之后那句成功 toast **当场顶掉**（toast 是单例 + 4.2s 定时器，
+  //   后写覆盖先写）⇒ 用户一个失败都看不见，以为装完了，然后在出片时因缺依赖炸掉。
+  //   ⇒ 照抄同文件 runBatch 的聚合写法：逐项**分类计数**，最后**一次性**如实汇报（失败一并列出）。
+  const fails = [];
+  let queued = 0, skipped = 0, reused = 0;
   try {
     for (const a of autos) {
       try {
@@ -602,14 +675,24 @@ async function installAllAuto() {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ actionId: a.id }),
         });
+        if (r.skipped) skipped++;              // 已就绪 ⇒ 服务端幂等跳过，**没有入队**
+        else if (r.reused) reused++;           // 已在队列里 ⇒ 复用，**没有新入队**
+        else queued++;                         // 真的新建了一个任务
         if (r.job && !first) first = r.job.id;
       } catch (e) {
-        toast(`${a.title} 入队失败：${e.message}`, true);
+        fails.push(`${a.title}（${e.message}）`);
       }
     }
-    toast(`已入队 ${autos.length} 个安装任务（串行执行，看「实时日志」）`);
     await loadJobs();
     if (first) attachLog(first, []);
+    const parts = [];
+    if (queued) parts.push(`已入队 ${queued} 个`);
+    if (reused) parts.push(`已在队列 ${reused} 个`);
+    if (skipped) parts.push(`已就绪跳过 ${skipped} 个`);
+    if (fails.length) parts.push(`失败 ${fails.length} 个：${fails.join('、')}`);
+    const head = parts.length ? parts.join('；') : '没有任何动作需要处理';
+    const tail = (queued || reused) ? '（串行执行，看「实时日志」）' : '';
+    toast(`${head}${tail}`, fails.length > 0);
   } finally {
     btn.disabled = false;
   }
@@ -733,6 +816,27 @@ function renderResources(data) {
   state.resources = data;
   const list = $('resList');
   list.textContent = '';
+
+  // ★★ F4（第六批对抗性审计 · 文案与错误消息诚实性，2026-10-12）：服务端在**扫描崩了**时会带一个
+  //   error 字段（scanAll 的「绝不抛」兜底分支返回 resources:[] + error）。改前本函数**从不读它**
+  //   ⇒ summary 全 0 被渲染成「全部就绪」+「没有可检测的资源（注册表为空）」—— 实测三句话全错，
+  //   而真因（异常原文）一个字都没出现。
+  //   ⇒ 有 error 就**只摆真因**：不渲染任何总结、不渲染任何条目、绝不说「全部就绪」。
+  //   ★ 服务端已改成回 500（见 server.mjs apiResourcesScan）；这里兜住**任何**仍带 error 的响应
+  //     （老服务端 / 夹具 / 缓存）—— 两条路都能把真因说出来。
+  if (data && data.error) {
+    $('resCount').textContent = '';
+    $('resSum').textContent = '';
+    $('resSum').className = 'res-sum';
+    $('resIntro').textContent = '';
+    const box = el('div', 'res-empty');
+    box.appendChild(el('div', 'res-empty-title', '资源扫描失败'));
+    box.appendChild(el('div', 'res-empty-note', String(data.error)));
+    box.appendChild(el('div', 'res-empty-note', '这是扫描失败（清单根本没拿到），不是「这台机器全部就绪」。'));
+    list.appendChild(box);
+    return;
+  }
+
   const rs = (data && data.resources) || [];
   const sum = (data && data.summary) || {};
 
@@ -1654,6 +1758,31 @@ function flashVoice(name) {
   state.voiceFlashTimer = setTimeout(() => { state.voiceFlash = ''; renderVoices(); }, 6000);
 }
 
+// ── 异步任务的**轮询口径**（试合成 / 导入音色 / 文案出片三张卡片共用）──────────
+//
+// ★★ 2026-10-12（第七批对抗性审计 **F9**）：此前**三处**裸写轮询间隔（`}, 2000)`）、
+//   **三个** tick 上限（750 / 750 / 1900）、**三处**用户文案各写一份分钟数（「等了 25 分钟」×2、
+//   「等了 63 分钟」×1）—— 改 tick 预算或改间隔时，注释与**用户看到的话**会静默说谎，且全仓零守卫
+//   （`grep -rn 'MAX_TICKS' test/` 改前零命中）。现在**只在这里各写一次**，「等了 N 分钟」由
+//   `pollMinutes()` 从 tick 预算**算出来**（不再手写分钟数）。
+//
+// ★★ **跨侧无法单源（如实登记，不是省事）**：下面两个 tick 预算**镜像**服务端的**单步超时**——
+//   · `VT_MAX_TICKS` / `VI_MAX_TICKS` ← `server.mjs:1784` 的 `timeoutMs: 20 * 60 * 1000`
+//     （`enqueueSetup` 的试听步骤；音色导入走 `server.mjs:1831` 的 10 分钟，更短 ⇒ 同一个前端预算够用）；
+//   · `DUB_MAX_TICKS` ← `server.mjs:2329` 的 `timeoutMs: 60 * 60 * 1000`（文案出片那一步）。
+//   ★ 这两个值**不经 API 下发**：`/api/jobs` 的 summary 里**没有** `steps` / `timeoutMs`
+//     （`lib/jobs.mjs` 的 `summary()`，`:657`），前端**读不到** ⇒ 只能镜像。
+//     ⇒ 改服务端那两处超时，**要同时改这里**（这是注释同步，不是机制同步；要机制化得先让
+//     `/api/jobs` 的 `summary()` 带上 `timeoutMs` —— 那要改服务端，不在本次改动范围内）。
+//   ★ 前端预算**故意大于**服务端超时（25 > 20、63 > 60 分钟）：让**服务端先超时**并如实报错，
+//     前端别抢在服务端前面放弃（那会让用户以为「任务挂了」，而它其实还在跑）。
+const POLL_MS = 2000;              // 轮询间隔（三处轮询共用）
+const VT_MAX_TICKS = 750;          // 试听：POLL_MS × 750 ≈ 25 分钟（镜像 server.mjs:1784 的 20 分钟）
+const VI_MAX_TICKS = 750;          // 导入音色：同上（服务端那一步更短，见上）
+const DUB_MAX_TICKS = 1900;        // 文案出片：POLL_MS × 1900 ≈ 63 分钟（镜像 server.mjs:2329 的 60 分钟）
+/** 「等了 N 分钟」的**唯一**算法 —— 别在文案里手写分钟数（改 tick 预算时它会跟着变）。 */
+const pollMinutes = (ticks) => Math.round((ticks * POLL_MS) / 60000);
+
 // ── 试合成一句（POST /api/voices/test）──────────────────────
 //
 // ★ 为什么必须异步：单条合成约 30 秒、首次加载模型 1~2 分钟 —— 请求挂着等必被掐断。
@@ -1661,7 +1790,6 @@ function flashVoice(name) {
 //   产物 URL 喂给 <audio>（**done 之前那个 URL 是 404**，提前塞进去只会报错）。
 // ★ 每次提交都会生成**新的** URL（文件名带时间戳），所以绝不按音色名缓存 URL。
 // ★ 这条任务也会出现在「任务列表」里（kind=setup），界面上要说明，免得被当成出片任务。
-const VT_MAX_TICKS = 750;          // 2 秒一次 × 750 ≈ 25 分钟（服务端单步超时 20 分钟）
 
 /** 当前音色的兜底：没选过就用内容文件的，再没有就用服务端默认。 */
 function voiceTestDefault() {
@@ -1737,7 +1865,7 @@ function pollVoiceTest() {
     if (++state.vt.ticks > VT_MAX_TICKS) {
       const id = state.vt.jobId;
       state.vt.jobId = '';
-      state.vt.error = `任务 ${id} 等了 25 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
+      state.vt.error = `任务 ${id} 等了 ${pollMinutes(VT_MAX_TICKS)} 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
       renderVoiceTest();
       return;
     }
@@ -1792,7 +1920,7 @@ function pollVoiceTest() {
       renderVoiceTest();
       pollVoiceTest();
     }
-  }, 2000);
+  }, POLL_MS);
 }
 
 // ── 导入新音色（GET /api/voices/sources → POST /api/voices/import）──
@@ -1804,7 +1932,6 @@ function pollVoiceTest() {
 // ★ 异步：单条约 10~30 秒，和「试合成」走**同一套**后台任务队列（GPU 只有一块，串行排队）。
 //   所以这里也是「提交拿 job.id → 轮询 /api/jobs → done 后刷新列表」，不另发明一套。
 // ★ 折叠区默认收起，源目录清单**首次展开时才拉** —— 不导入的人不必为一个折叠区多打一次接口。
-const VI_MAX_TICKS = 750;          // 2 秒一次 × 750 ≈ 25 分钟
 
 /** 折叠区里的说明：源目录 + 为什么要降电平。路径来自服务端，全程 textContent。 */
 function renderVoiceImportIntro() {
@@ -1985,7 +2112,7 @@ function pollVoiceImport() {
     if (++state.vImport.ticks > VI_MAX_TICKS) {
       const id = state.vImport.jobId;
       state.vImport.jobId = '';
-      state.vImport.error = `任务 ${id} 等了 25 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
+      state.vImport.error = `任务 ${id} 等了 ${pollMinutes(VI_MAX_TICKS)} 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
       renderVoiceImport();
       return;
     }
@@ -2037,7 +2164,7 @@ function pollVoiceImport() {
       renderVoiceImport();
       pollVoiceImport();
     }
-  }, 2000);
+  }, POLL_MS);
 }
 
 // ── 文案出片（/api/dub*）────────────────────────────────────
@@ -2053,14 +2180,48 @@ function pollVoiceImport() {
 //   覆盖只存在本卡片的 state 里，不回写 localStorage —— 用户在这里试一个音色，
 //   不该悄悄改掉「声音」版块的全局选择。
 // ★ 错误一律原样显示（服务端的 error 字符串），不吞、不假装成功；404 / 503 单独提示「未就绪」。
-const DUB_MAX_BYTES = 200 * 1024 * 1024;
-const DUB_EXTS = ['.mp4', '.mov', '.m4v', '.webm'];
-// 形态 2 的可选字幕时间轴（与视频走同一条上传通道，服务端按扩展名判 kind）
-const DUB_SRT_EXTS = ['.srt'];
-// 形态 1 的可选背景图（与视频/字幕走同一条上传通道，服务端按扩展名判 kind='image'）。
-// ★ 只收静态图：dub.mjs 侧是 `-loop 1 -i <图>`（见 lib/dub.mjs 的 ALLOWED_IMG_EXTS）。
-const DUB_IMG_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
-const DUB_MAX_TICKS = 1900;            // 2 秒一次 × 1900 ≈ 63 分钟（服务端单步超时 60 分钟）
+// ── 上传口径 + 文案上限（★ 权威在服务端；前端**不再手抄**）────────────────────
+//
+// ★★ 2026-10-12（第七批对抗性审计 **F2**）：此前这 4 个上传口径 + 1 个文案上限是**手抄**
+//   服务端 `lib/dub.mjs:49/51/57/64/68` 的一份（值相同、语义相同），改任一侧都不会被任何断言拦住
+//   （改前 `grep -rn 'DUB_MAX_BYTES' test/ scripts/` 零命中）⇒ 表现为「前端说能传 → 服务端 413」
+//   或「前端误拒了服务端本可接受的文件」。现在分两层：
+//     ① **优先取服务端下发的值**（`GET /api/dub/sources` 的 `maxUploadBytes` / `videoExts` /
+//        `srtExts` / `imageExts` / `maxScriptChars`，见 `dubLimits()`）—— 服务端一改，前端**跟着变**；
+//     ② 读不到（老服务端 / 还没加载完 / 接口失败）才用下面的兜底，而**兜底由闸门守**：
+//        `test/ui.test.mjs` 的 **U1** 机械从 `lib/dub.mjs` 抽 `export const` 的**值**与这里逐项比对
+//        （漂了当场红）—— 把「靠注释同步」换成「靠机制同步」。
+//   ★ 为什么保留兜底、而不是「读不到就不拦」：下面 `uploadDubAsset()` 的前端预检是**故意的**
+//     （别让用户传完 200MB 才被告知格式不对）。「读不到就不拦」= 静默丢掉这个能力 ⇒ 行为回归，不做。
+const DUB_LIMITS_FALLBACK = {
+  maxUploadBytes: 200 * 1024 * 1024,                   // ← lib/dub.mjs 的 MAX_UPLOAD_BYTES
+  videoExts: ['.mp4', '.mov', '.m4v', '.webm'],        // ← ALLOWED_EXTS
+  srtExts: ['.srt'],                                   // ← ALLOWED_SRT_EXTS（形态 2 的可选字幕时间轴）
+  // ← ALLOWED_IMG_EXTS（形态 1 的可选背景图）。
+  // ★ 只收静态图：dub.mjs 侧是 `-loop 1 -i <图>` ⇒ 给的是**一张静止画面**，故有意不收 `.gif`。
+  imageExts: ['.jpg', '.jpeg', '.png', '.webp'],
+  maxScriptChars: 20000,                               // ← MAX_SCRIPT_CHARS
+};
+
+/**
+ * 当前生效的上传口径：**服务端下发的（有就用）> 兜底**（`DUB_LIMITS_FALLBACK`，由 U1 闸门守）。
+ * ★ 只在 `/api/dub/sources` 成功（`ok === true`）时取下发值；形状不对（非数 / 空清单）一律退回兜底
+ *   —— 绝不因为服务端漏发一个字段就**放行一切**（那比误拒更糟）。
+ */
+function dubLimits() {
+  const d = (state.dubUploads && state.dubUploads.ok === true) ? state.dubUploads : null;
+  const f = DUB_LIMITS_FALLBACK;
+  const num = (v, fb) => (Number.isFinite(v) && v > 0 ? v : fb);
+  const arr = (v, fb) => (Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string') ? v : fb);
+  return {
+    maxUploadBytes: num(d && d.maxUploadBytes, f.maxUploadBytes),
+    videoExts: arr(d && d.videoExts, f.videoExts),
+    srtExts: arr(d && d.srtExts, f.srtExts),
+    imageExts: arr(d && d.imageExts, f.imageExts),
+    maxScriptChars: num(d && d.maxScriptChars, f.maxScriptChars),
+  };
+}
+
 // ★ 尺寸**不做前端兜底表**：比例清单与「比例 → 像素」换算的唯一来源是库侧 core/render/size.mjs
 //   （控制台侧 lib/sizes.mjs 代理），经 GET /api/sizes 给出来 —— 见下面的 fillDubRatios()。
 //   读不到清单就禁用下拉并如实说明（服务端仍会按默认 9:16 出片），绝不另抄一份比例表。
@@ -2097,7 +2258,9 @@ function renderDubScriptHint() {
   if (!box || !ta) return;
   const n = ta.value.length;
   const parts = [`${n} 字`];
-  if (n > 20000) parts.push('⚠️ 超过 20000 字上限，接口会拒');
+  // ★ 上限来自服务端（`dubLimits()`：下发值 > 兜底）—— 不再手写 20000（第七批审计 F2）
+  const maxChars = dubLimits().maxScriptChars;
+  if (n > maxChars) parts.push(`⚠️ 超过 ${maxChars} 字上限，接口会拒`);
   parts.push('空行 = 强制断句；不空行则按 。！？； 切，单句超过 40 字再按 ， 二次切（最终以「断句预览」为准）');
   box.textContent = parts.join('　·　');
 }
@@ -2798,6 +2961,56 @@ function fillDubSourceSelect(sel, kind, noneLabel) {
   return { none, list };
 }
 
+// ★★ F7（第六批对抗性审计 · **Q1-2 补修**）：把**服务端给的权威路径**填进 `web/index.html` 里
+//   那几个只能静态写在 HTML 上的用户可见提示（`#btnRefreshBriefs` 的 title / 两处 `.dub-drop-sub`）。
+//   ★ 为什么必须有这一步：HTML 是静态的，拿不到 CFG —— 写死 `D:\lemo-films\…` 时，设了
+//     `LEMO_FILM_DIR`（测试 / 换盘 / 多实例）就会把用户指到一个**不存在的目录**；而且它与本文件里
+//     已改成「取服务端权威值」的那几处**同屏显示** ⇒ 自相矛盾（Q1-2 的原始发现）。
+//   ★ 拿不到权威值 ⇒ 保持 HTML 里那句**不写具体路径**的措辞（绝不编一个路径）。
+//   ★ `#fOut` 的 placeholder **不在这里填**：它说的是**编排器** `--out` 的默认值，而编排器
+//     `lemo-make.mjs` 的 `exportDir` 是硬编码字面量、**不认** `LEMO_FILM_DIR`（仓里已登记的边界）
+//     ⇒ 控制台口径的成片根**不等于**编排器的默认输出目录，拿它去填反而会说错（见 index.html 的注释）。
+//     这里只负责那两个**确实属于控制台**的目录：工单目录（`<成片根>\.briefs`，lib/briefs.mjs）
+//     与上传目录（`/api/dub/sources` 的 dir，lib/dub.mjs）。
+function applyRootPaths() {
+  const root = state.filmsRoot || null;
+  const rf = $('btnRefreshBriefs');
+  if (rf) {
+    rf.title = root
+      ? `重新读工单目录（${root}\\.briefs）`
+      : '重新读工单目录（成片根下的 .briefs）';
+  }
+  const upDir = (state.dubUploads && state.dubUploads.dir) || null;
+  // ★★ 2026-10-12（第七批对抗性审计 **F2**）：这三句里的「支持哪些格式 / 单个上限多大」
+  //   **不再手抄** —— 格式清单与上限都取 `dubLimits()`（服务端 `lib/dub.mjs` 的 `ALLOWED_*` /
+  //   `MAX_UPLOAD_BYTES` 经 `GET /api/dub/sources` 下发；读不到才用兜底，兜底由 U1 闸门守）。
+  //   目录仍取 `dubUploads.dir`（Q1-2 的口径，不变）。
+  //   ★ 单位写法照 `server.mjs:1919`（`bytes / 1048576` + `MB`，**不加空格**）⇒ 默认 200MB 下
+  //     与改前那句**逐字节相同**（用 `fmtSize()` 会多一个空格、变成 `200 MB`，那就是行为变更）。
+  //   ★ 三张卡的措辞本来各不同（口播素材 / 背景图说「支持…」、SRT 说「只收…」）⇒ 逐条写明，
+  //     不硬套一个模板（SRT 那句原来**没有任何 JS 填过**，是 index.html 的静态文案）。
+  const lim = dubLimits();
+  const mb = `${lim.maxUploadBytes / 1048576}MB`;
+  const where = upDir ? `存在 ${upDir}` : '存到服务端上传目录';
+  const subs = [
+    ['dubDrop', `支持 ${lim.videoExts.join(' / ')}，单个上限 ${mb}（${where}）`],
+    ['dubBgDrop', `支持 ${lim.imageExts.join(' / ')}，单个上限 ${mb}（${where}）`],
+    ['dubSrtDrop', `只收 ${lim.srtExts.join(' / ')}，单个上限 ${mb}`],
+  ];
+  for (const [boxId, text] of subs) {
+    const box = $(boxId);
+    const sub = box && box.querySelector('.dub-drop-sub');
+    if (sub) sub.textContent = text;
+  }
+  // ★ 文案上限同理（F2）：`maxlength` 是**功能性的**（超了根本输不进去）⇒ 必须跟着服务端走。
+  //   placeholder 只把「最多 N 字」那个数字换掉 —— 示例文案仍以 index.html 为唯一来源，不在 JS 里再抄一份。
+  const ta = $('dubScript');
+  if (ta) {
+    ta.maxLength = lim.maxScriptChars;
+    ta.placeholder = String(ta.placeholder).replace(/最多\s*\d+\s*字/, `最多 ${lim.maxScriptChars} 字`);
+  }
+}
+
 function renderDubSources() {
   // ★ 「清单为空」有两种含义，不能混为一谈：
   //   ① 清单**已读到**、里面确实没有这条 token → 素材真被删了，该清 token 并告知；
@@ -2849,6 +3062,7 @@ function renderDubSources() {
   renderDubSrtHint();
   renderDubBgHint();
   syncDubCropWarn();       // 素材清单变了（选中项可能被清掉）→ 重核提示
+  applyRootPaths();        // ★ Q1-2：上传目录的权威值就在 dubUploads.dir 里 ⇒ 顺手把 HTML 里那句填上
 }
 
 function renderDubVideoHint() {
@@ -2908,7 +3122,13 @@ function renderDubUpload() {
   fill.style.width = `${u.pct}%`;
   track.appendChild(fill);
   box.appendChild(track);
-  box.appendChild(el('div', 'dub-up-note', '素材存在 D:\\lemo-films\\dub\\_uploads —— 传完就能在下面「用已上传的」里复用'));
+  // ★ F7：目录名取服务端权威值（/api/dub/sources 的 dir = lib/dub.mjs 的 UPLOAD_DIR）。
+  //   改前这里硬编码 D:\lemo-films\dub\_uploads —— 设了 LEMO_FILM_DIR 时会指错。
+  //   清单还没加载到 ⇒ **不写具体路径**（绝不编一个）。
+  const upDir = (state.dubUploads && state.dubUploads.dir) || null;
+  box.appendChild(el('div', 'dub-up-note', upDir
+    ? `素材存在 ${upDir} —— 传完就能在下面「用已上传的」里复用`
+    : '素材已存到服务端上传目录 —— 传完就能在下面「用已上传的」里复用'));
 }
 
 function renderDubSrtUpload() {
@@ -3107,10 +3327,13 @@ async function previewDub() {
 //   不另开一条接口：清洗、限额、防穿越、token 登记表只有一处，才不会有一处漏了防护。
 // ★ 前端这一层也做一次扩展名/大小预检：不是安全边界（服务端才是），纯粹是**别让用户
 //   传完 200MB 才被告知格式不对**。
+// ★★ 口径**不再手抄**：`dubUploadExtsOf()` / 大小上限都走 `dubLimits()`（服务端下发值 > 兜底，
+//   见上面那段注释；第七批审计 F2）。
 function dubUploadExtsOf(kind) {
-  if (kind === 'srt') return DUB_SRT_EXTS;
-  if (kind === 'image') return DUB_IMG_EXTS;
-  return DUB_EXTS;
+  const lim = dubLimits();
+  if (kind === 'srt') return lim.srtExts;
+  if (kind === 'image') return lim.imageExts;
+  return lim.videoExts;
 }
 
 function uploadDubAsset(file, kind) {
@@ -3122,8 +3345,9 @@ function uploadDubAsset(file, kind) {
     toast(`不支持的${label}格式「${ext || '（无扩展名）'}」—— 只收 ${exts.join(' / ')}`, true);
     return;
   }
-  if (file.size > DUB_MAX_BYTES) {
-    toast(`${label}过大：${fmtSize(file.size)}（上限 ${fmtSize(DUB_MAX_BYTES)}）`, true);
+  const maxBytes = dubLimits().maxUploadBytes;
+  if (file.size > maxBytes) {
+    toast(`${label}过大：${fmtSize(file.size)}（上限 ${fmtSize(maxBytes)}）`, true);
     return;
   }
 
@@ -3415,7 +3639,7 @@ function pollDub() {
     if (++state.dub.ticks > DUB_MAX_TICKS) {
       const id = state.dub.jobId;
       state.dub.jobId = '';
-      state.dub.error = `任务 ${id} 等了 63 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
+      state.dub.error = `任务 ${id} 等了 ${pollMinutes(DUB_MAX_TICKS)} 分钟还没结束，不再等（去「任务列表」看它到底怎么了）`;
       renderDubState();
       return;
     }
@@ -3467,7 +3691,7 @@ function pollDub() {
       }
       if (job.status === 'ended') {
         // ★ 'ended' = 控制台重启时这条任务还开着（lib/jobs.mjs 的 loadHistory 标定），已经不在跑了。
-        //   原来它落进「非终态」分支 → 会一直轮询到 63 分钟上限才罢休（白等一场）；现在立刻收尾。
+        //   原来它落进「非终态」分支 → 会一直轮询到 DUB_MAX_TICKS 上限才罢休（白等一场）；现在立刻收尾。
         state.dub.jobId = '';
         state.dub.error = '';
         state.dub.note = '任务已结束 —— 控制台重启时它还没跑完，已经不在了（不会产出成片）。';
@@ -3482,7 +3706,7 @@ function pollDub() {
       renderDubState();
       pollDub();
     }
-  }, 2000);
+  }, POLL_MS);
 }
 
 // ── 启动表单 ────────────────────────────────────────────────
@@ -4122,9 +4346,14 @@ function renderJobs() {
     }
     if (j.restored) {
       const h = el('span', 'jhist', '历史');
+      // ★ F7：落盘目录取服务端权威值（成片根 + \.console，与 lib/store.mjs 的 ROOT 同源）。
+      //   改前硬编码 D:\lemo-films\.console；拿不到成片根 ⇒ 不写具体路径。
+      const consoleDir = state.filmsRoot ? `${state.filmsRoot}\\.console` : null;
       h.title = j.interrupted
         ? '这条记录来自上一次控制台会话，且当时没跑完（控制台被关/被杀）。'
-        : '这条记录来自上一次控制台会话，已从磁盘恢复（D:\\lemo-films\\.console）。';
+        : (consoleDir
+          ? `这条记录来自上一次控制台会话，已从磁盘恢复（${consoleDir}）。`
+          : '这条记录来自上一次控制台会话，已从磁盘恢复。');
       row.appendChild(h);
     }
     if (isSetup) {
@@ -4879,8 +5108,24 @@ function renderFilms() {
     ? `${shown.length}/${state.films.length}`
     : '';
 
+  // ★★ F1（第六批对抗性审计）：扫描失败 **≠** 空库。服务端已回 503 + 原文（见 server.mjs 的
+  //   apiFilms），这里先把真因摆出来 —— 绝不落进下面那句「还没有成片」（那是谎报）。
+  //   ★ 复用既有的 .empty / .empty-sub（renderJobs 同款），不新增 CSS 类。
+  if (state.filmsErr) {
+    const e = el('div', 'empty');
+    e.appendChild(el('div', null, '读不到成片目录 —— 这是扫描失败，不是空库。'));
+    e.appendChild(el('div', 'empty-sub', String(state.filmsErr)));
+    e.appendChild(el('div', 'empty-sub', '成片可能还在盘上（盘没挂 / 目录被删 / 权限被改都可能）。修好后点「刷新」重试。'));
+    box.appendChild(e);
+    return;
+  }
+
   if (!state.films.length) {
-    box.appendChild(el('div', 'empty', '还没有成片（D:\\lemo-films 下没有 mp4）。'));
+    // ★ F7：目录名取服务端给的权威值（/api/films 的 root）—— 改前这里硬编码了 D:\lemo-films，
+    //   设了 LEMO_FILM_DIR 时会指到一个不存在的目录。拿不到 root ⇒ **不写具体路径**（绝不编一个）。
+    box.appendChild(el('div', 'empty', state.filmsRoot
+      ? `还没有成片（${state.filmsRoot} 下没有 mp4）。`
+      : '还没有成片（成片根下没有 mp4）。'));
     return;
   }
   if (!shown.length) {
@@ -4918,15 +5163,21 @@ function renderFilms() {
       acts.appendChild(regen);
 
       if (job) {
-        // ★ 控制台出片的落盘目录是 `_jobs\<任务id>`，与风格样板目录 `D:\lemo-films\<slug>` **不是一回事**。
+        // ★ 控制台出片的落盘目录是 `_jobs\<任务id>`，与风格样板目录 `<成片根>\<slug>` **不是一回事**。
         //   这里不摆「打开目录」（它按 slug 开，会开到样板目录，误导）—— 改为如实标出真实位置。
+        //   ★ F7：路径取服务端权威值（state.filmsRoot，来自 /api/films 的 root）；拿不到 ⇒ 只说目录名。
+        const rootWin = state.filmsRoot || null;
         const note = el('span', 'film-note', `控制台出片 · 任务 ${f.jobId}`);
-        note.title = `这条片子由控制台出片任务 ${f.jobId} 产出，落在 D:\\lemo-films\\_jobs\\${f.jobId}`
-          + '（与风格样板目录 D:\\lemo-films\\<风格> 不是一回事）。';
+        note.title = `这条片子由控制台出片任务 ${f.jobId} 产出，落在 `
+          + (rootWin ? `${rootWin}\\_jobs\\${f.jobId}` : `成片根下的 _jobs\\${f.jobId}`)
+          + '（与风格样板目录不是一回事）。';
         acts.appendChild(note);
       } else {
         const open = el('button', 'btn ghost small', '打开目录');
-        open.title = `在资源管理器里打开 D:\\lemo-films\\${f.slug}`;
+        // ★ F7：同上，取服务端权威值；拿不到成片根 ⇒ 不编路径。
+        open.title = state.filmsRoot
+          ? `在资源管理器里打开 ${state.filmsRoot}\\${f.slug}`
+          : `在资源管理器里打开「${f.slug}」的目录`;
         open.addEventListener('click', (e) => { e.stopPropagation(); revealDir(f.slug); });
         acts.appendChild(open);
       }
@@ -4951,7 +5202,11 @@ function regenFilm(slug) {
   if (last && Array.isArray(last.opts) && last.opts.length) {
     const r = applyOptsToForm(last.opts);
     note = `已预填上次任务的参数（${r.applied.length} 项）`;
-    if (r.skipped.length) note += `；表单不支持、已忽略：${r.skipped.join(' ')}`;
+    // ★★ 2026-10-12（第五批审计 J1-1）：原文案是「表单不支持、已忽略」—— 那是**假话**：
+    //   进了 skipped 的 flag 有两种来源（① 表单确实没有对应控件；② 控件在，但这次的值不在选项里），
+    //   两种都**不是**「表单不支持」（`--ratio` / `--size` / `--color` / `--web-cut` … 表单全都支持）。
+    //   ⇒ 改成**不撒谎**的措辞：只说「没回填」+ 说清是哪两种情形之一。
+    if (r.skipped.length) note += `；未回填（表单没有对应控件，或该值不在选项里）：${r.skipped.join(' ')}`;
   }
   syncPreview();
   markActiveStyle();
@@ -4966,11 +5221,109 @@ function regenFilm(slug) {
   toast(`${slug}：${note}。确认后点「开始生成」（不会自动启动）`);
 }
 
+// ── 启动表单的「复位」（「重新生成」的前半句）──────────────────
+//
+// ★★ 为什么这份清单**机械派生**、绝不手抄（这正是 J1-1 那条 P2 缺陷的成因）：
+//   上一版给「重新生成」补回填时，复位是**手抄**的 3 个复选框（`#fWebCut`/`#fStillsOnly`/`#fNoPreflight`），
+//   而 `buildOpts()` 读的控件有二十多个 ⇒ 剩下那些（`#fQ` / `#fGrain` / `#fOut` / `#fFilm` /
+//   `#fLines` / `#fColor` / `#fFps` / `#fWorkers` / `#fVenc` / `#fAsr*` / `#runRatio` /
+//   `#runSizeW`·`#runSizeH`）的**残留**照样能让「重新生成」产出**另一条命令**：
+//   用户上次在表单里手改过某个字段、而这次那条任务（job.opts）里没有它 ⇒ 旧值留着
+//   ⇒ 点「开始生成」出的片与上次**不同**，界面却只说「已预填上次任务的参数（N 项）」。
+//   ⇒ 本清单从 `buildOpts()` 的**真实实现**里机械派生（见 `runFormControlIds()`）：
+//     将来 buildOpts 读一个新控件，复位**自动**跟上，不会再漂移。
+//
+// ★ 复位到哪去 = **页面初始态**。默认值同样**不手抄** —— 由 `boot()` 在 `fillRunRatios()`
+//   （它从服务端 `GET /api/sizes` 取比例清单并选中 `defaultRatio`）**之后**抓一份快照；
+//   手抄默认值迟早会和 `web/index.html` 的 `value=` / 服务端给的比例清单漂移。
+
+/**
+ * 复位时**故意不动**的控件 —— 必须显式列出 + 写明理由（否则就是「悄悄漏掉」，正是本缺陷的形状）。
+ * ★ 判据 = **`applyOptsToForm()` 能不能把它带回来**：
+ *   带不回来的控件一旦被复位就是**永久丢失**（比「残留」更糟）⇒ 只有这种才准进白名单。
+ */
+const RUN_RESET_EXEMPT = new Map([
+  ['fSlug', '风格选择器：`regenFilm()` 已经用 `selectStyle(slug)` 把它设好了；复位它会把刚选中的风格清空'],
+  ['fAngle', '★ 不是 CLI 参数（环境变量 LEMO_ANGLE，随请求体单独回传，见 buildOpts 里那段注释）'
+    + ' ⇒ **永远**不出现在 opts 里 ⇒ applyOptsToForm 无从回填 ⇒ 复位它 = 永久丢掉用户填的值'],
+]);
+
+/**
+ * `buildOpts()` 真正读取的启动表单控件 id（**机械派生**，不手抄）。
+ *
+ * ★ 派生方式：把 `buildOpts` 及它调用的两个「读表单」函数（`currentRunSizeChoice` /
+ *   `checkRunCustomSize`）转成源码文本，抽出里面所有 `$('…')` 的 id，再按
+ *   `document.getElementById(id)` 过滤出**真实存在**的控件。
+ *   · 只收「喂进 opts 的路径」上的函数 —— **不**顺手把 `syncRunSizeUI` 这类**只改界面**的函数也收进来
+ *     （它读的 `#runRatioHint` / `#runSizeField` 不是 buildOpts 的输入，复位它们没有意义）。
+ *   · `String(fn)` 取源码：本仓前端**零依赖、无构建/压缩步骤**（浏览器直接跑源码）⇒ 函数体逐字可得。
+ *   · 派生的是**候选集**；要不要复位由 `RUN_RESET_EXEMPT` 逐条裁决（见那里）。
+ */
+function runFormControlIds() {
+  const src = [buildOpts, currentRunSizeChoice, checkRunCustomSize].map((f) => String(f)).join('\n');
+  const ids = new Set();
+  for (const m of src.matchAll(/\$\('([A-Za-z][\w-]*)'\)/g)) ids.add(m[1]);
+  return [...ids].filter((id) => document.getElementById(id));
+}
+
+/** 启动表单「会进 opts 的控件」的**页面初始态**快照（`boot()` 抓一次；见 `captureRunFormDefaults()`）。 */
+let RUN_FORM_DEFAULTS = null;
+
+/**
+ * 抓「页面初始态」快照（`boot()` 里紧跟 `fillRunRatios()` 调一次）。
+ * ★ 必须**在 `fillRunRatios()` 之后**：`#runRatio` 的选项是**服务端**给的（`GET /api/sizes`），
+ *   在它之前抓只会抓到空字符串 —— 那样「默认比例」会被记成空，比不抓更糟。
+ * ★ 也必须**尽早**（不等 boot 里那一大堆加载都完成）：窗口越短，越不可能把用户已经改过的值当默认值。
+ */
+function captureRunFormDefaults() {
+  const d = new Map();
+  for (const id of runFormControlIds()) {
+    const el = document.getElementById(id);
+    d.set(id, (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value);
+  }
+  RUN_FORM_DEFAULTS = d;
+  return d;
+}
+
+/**
+ * 把「会进 opts 的控件」复位到**页面初始态**（机械遍历，见 `runFormControlIds()`）。
+ *
+ * ★ 它是「重新生成 = 复现上次那条命令」的**前半句**：不复位，上次手改过、而这次 job.opts 里没有的
+ *   字段就会**残留** ⇒ 点「开始生成」产出的命令与上次不同（而界面只说「已预填 N 项」）。
+ * ★ `RUN_RESET_EXEMPT` 里的控件**不动**，理由逐条写在那张表里。
+ * ★ 复位完**不**自己重拼命令预览：调用方 `regenFilm()` 紧接着就 `syncPreview()`（单一出口，别两处拼）。
+ *   只有 `#fQ` 例外 —— 它旁边有一排开关 chips（`#qSwitches`）要跟着对齐，走既有链路派发 `input`
+ *   （`bind()` 里挂的 `syncQChips`；与 `qSetContent` / `qToggleSwitch` 同一做法，见那两个函数的注释）。
+ */
+function resetRunForm() {
+  // ★ 兜底：万一在 boot 抓快照之前就被调用（正常不会），就地抓一次当前态 —— 至少比不复位强。
+  if (!RUN_FORM_DEFAULTS) captureRunFormDefaults();
+  for (const [id, def] of RUN_FORM_DEFAULTS) {
+    if (RUN_RESET_EXEMPT.has(id)) continue;
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.type === 'checkbox' || el.type === 'radio') el.checked = !!def;
+    else el.value = def;
+  }
+  // 尺寸控件的**联动 state** 也回初始态 —— 与 `bind()` 里 runRatio / runSizeW / runSizeH 的监听
+  //   写的是同一份 state（不这么做，界面与 state 会打架：例如 state 还记着「自定义」而下拉已回默认）。
+  if ($('runRatio')) state.runRatio = $('runRatio').value;
+  if ($('runSizeW')) state.runSizeW = $('runSizeW').value.trim();
+  if ($('runSizeH')) state.runSizeH = $('runSizeH').value.trim();
+  // `#fQ` 的 chips 选中态对齐（只切 class、不写回输入框；见 syncQChips 的说明）。
+  if ($('fQ')) $('fQ').dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 /** 把一串 CLI 选项映射回表单；映射不了的**如实返回**，不静默丢弃。 */
 function applyOptsToForm(opts) {
   const applied = [];
   const skipped = [];
-  for (const id of CHK_IDS) $(id).checked = false;
+  // ★★ 2026-10-12（J1-1 补修 · K1 对抗式验证的 F1）：复位改成**机械遍历 buildOpts 读的控件**。
+  //   原来这里手抄了 `CHK_IDS` + 3 个复选框（`#fWebCut`/`#fStillsOnly`/`#fNoPreflight`）= 只覆盖 8/25，
+  //   其余控件的残留照样让「重新生成」产出另一条命令 —— 同一个原则只落实了一部分。
+  //   现在清单与默认值的来源都是机械的（`runFormControlIds()` / `captureRunFormDefaults()`），
+  //   白名单（`RUN_RESET_EXEMPT`）逐条写了理由。详见上面那一段注释。
+  resetRunForm();
 
   for (let i = 0; i < opts.length; i++) {
     const o = opts[i];
@@ -5005,6 +5358,56 @@ function applyOptsToForm(opts) {
       renderVoiceCurrent();
       applied.push(o + ' ' + val()); i++;
     }
+    // ══ ★★ 2026-10-12（第五批审计 J1-1）：补齐**表单明明有控件**的 8 个 flag ══════════════════
+    //   根因：本函数是一张**不全的映射表** —— 这 8 个一个分支都没有 ⇒ ① 被逐字打成「表单不支持、
+    //   已忽略」（假话）；② ★ **静默丢参数**：重新出片的结果与上次**不同**（上次 16:9 ⇒ 这次按 9:16
+    //   出竖屏；上次勾了 720p 网页版 ⇒ 这次不出；上次 `--stills-only` ⇒ 这次变成完整长渲染）。
+    //   ★ 可达性：`--ratio` 在非自定义尺寸时**每次出片都在 opts 里**（见 buildOpts 的
+    //     `currentRunSizeChoice()`：非自定义路径返回 `{ratio: v || state.defaultRatio}`，恒为真值）
+    //     ⇒ 成片库里**任何一条**片子点「重新生成」都必现，不是边缘情况。
+    //   ★ 作者此前已为 `--asr-*` 与 `--voice`/`--speed` 修过两次同类问题（见上面两处注释），
+    //     漏了这 8 个 ⇒ 本批是**补全**，不是重新发明。
+    //   纪律（与既有分支一致）：映射不了（表单没控件 / 值不在选项里）⇒ 走 skipped，**绝不假装成功**。
+    else if (o === '--ratio') {
+      // 下拉里**真有**这个 option 才设（服务端的比例清单变了 ⇒ 别把 value 设成不存在的值）
+      const sel = $('runRatio');
+      const v = val();
+      if (sel && sel.options && v && [...sel.options].some((op) => op.value === v)) {
+        sel.value = v;
+        syncRunSizeUI();          // 比例变了 ⇒ 同步「自定义框显隐 + #runRatioHint」
+        applied.push(o + ' ' + v);
+      } else skipped.push(v ? o + ' ' + v : o);
+      i++;
+    }
+    else if (o === '--size') {
+      // `--size WxH` ⇒ 切到「自定义尺寸…」+ 填 #runSizeW / #runSizeH
+      //   （与 buildOpts 的「--size 优先级高于 --ratio」同一语义）
+      const v = String(val() || '');
+      const m = /^(\d+)x(\d+)$/.exec(v);
+      const sel = $('runRatio');
+      const hasCustom = !!(sel && sel.options && [...sel.options].some((op) => op.value === CUSTOM_RATIO));
+      if (m && hasCustom && $('runSizeW') && $('runSizeH')) {
+        sel.value = CUSTOM_RATIO;
+        $('runSizeW').value = m[1];
+        $('runSizeH').value = m[2];
+        syncRunSizeUI();          // 切到自定义 ⇒ 显示宽高框 + 即时校验提示
+        applied.push(o + ' ' + v);
+      } else skipped.push(v ? o + ' ' + v : o);
+      i++;
+    }
+    else if (o === '--color' && $('fColor')) {
+      // #fColor 是下拉 ⇒ **存在该 option** 才设（库里将来换了档位 ⇒ 如实进 skipped）
+      const sel = $('fColor');
+      const v = val();
+      if (v && sel.options && [...sel.options].some((op) => op.value === v)) { sel.value = v; applied.push(o + ' ' + v); }
+      else skipped.push(v ? o + ' ' + v : o);
+      i++;
+    }
+    else if (o === '--film' && $('fFilm')) { $('fFilm').value = val() || ''; applied.push(o + ' ' + val()); i++; }
+    else if (o === '--lines' && $('fLines')) { $('fLines').value = val() || ''; applied.push(o + ' ' + val()); i++; }
+    else if (o === '--web-cut' && $('fWebCut')) { $('fWebCut').checked = true; applied.push(o); }
+    else if (o === '--stills-only' && $('fStillsOnly')) { $('fStillsOnly').checked = true; applied.push(o); }
+    else if (o === '--no-preflight' && $('fNoPreflight')) { $('fNoPreflight').checked = true; applied.push(o); }
     else skipped.push(o);
   }
   return { applied, skipped };
@@ -5031,13 +5434,26 @@ async function loadFilms() {
   try {
     const d = await api('/api/films');
     if (seq !== loadFilmsSeq) return;   // 期间又发起了新的刷新，丢弃这次结果（旧响应不得覆盖新状态）
-    state.films = d.films || [];
+    if (d && d.root) state.filmsRoot = d.root;   // ★ F7：成片根的权威值（服务端给，前端不猜）
+    applyRootPaths();                            // ★ Q1-2：成片根到手 ⇒ 把 HTML 里那几处提示填成真路径
+    // ★★ F1：判据钉在「响应里有没有 error 字段」上，**不**只钉状态码 ——
+    //   服务端现在回 503（见 server.mjs 的 apiFilms）⇒ 走下面的 catch；但**只要带 error 就一律当失败**
+    //   （老服务端 / 缓存 / 夹具都可能回 200 + error）。两条路都堵住，才叫真的不再谎报。
+    state.filmsErr = (d && d.error) ? String(d.error) : null;
+    state.films = state.filmsErr ? [] : ((d && d.films) || []);
     renderFilms();
     renderStyles($('search').value);
   } catch (e) {
     if (seq !== loadFilmsSeq) return;   // 同上：旧的失败信息也不得盖掉新状态
-    $('films').textContent = '';
-    $('films').appendChild(el('div', 'empty', '读取成片失败：' + e.message));
+    // ★★ F1：读不到成片目录 **不是**「还没有成片」。服务端（/api/films 回 503）已经把真实原因
+    //   算出来了（ENOENT / EACCES / 盘没挂 …），这里必须**如实摆出来**，不能再谎报空库。
+    //   ★ 同时把 films 清空：扫描失败时我们**并不知道**盘上有什么，留着上一次的列表等于
+    //     继续声称一份读不到的数据是当前的 —— 但清空会连带让风格列表上的「已有成片」徽标消失，
+    //     所以必须由 renderFilms 把「这是扫描失败」摆在成片库里，让徽标消失有个可见的解释。
+    state.films = [];
+    state.filmsErr = (e && e.message) || String(e);
+    renderFilms();
+    renderStyles($('search').value);
   }
 }
 
@@ -6482,7 +6898,11 @@ async function boot() {
   renderDubState();        // 出片区初始收起
   await Promise.all([
     loadEnv(false), loadSetup(), loadStylesBadges(), loadFilms(), loadJobs(),
-    loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(), fillRunRatios(),
+    loadBriefs(), loadVoices(), loadDubSources(), loadDubStyles(), fillDubRatios(),
+    // ★ 主表单比例下拉：它一填好就**立刻**抓「页面初始态」快照（「重新生成」的复位要用，见
+    //   `captureRunFormDefaults()`）—— 不能等 Promise.all 全部完成：`#runRatio` 的默认值此时已定，
+    //   再等下去只会把窗口拉长，万一用户在窗口里改过表单，快照就把「脏值」记成默认值。
+    fillRunRatios().then(() => captureRunFormDefaults()),
     loadLlm(), loadResources(false),
   ]);
   // 任务状态轮询（SSE 只推日志，列表用轮询保持简单）

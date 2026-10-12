@@ -71,8 +71,10 @@ const DEFAULT_TEST_TEXT = voices.DEFAULT_TEST_TEXT;
 const DEFAULT_TEST_SPEED = voices.DEFAULT_TEST_SPEED;
 const ENTRY_FILES = [path.join(ROOT, '.console-port'), path.join(ROOT, '打开控制台.url')];
 
-// ★ 契约常量（写在 server.mjs 的 apiVoiceTest 里，无导出）—— 这里作为**契约**硬编码：
-const NAME_RE = /^[A-Za-z0-9._-]{1,80}$/;   // 音色名白名单
+// ★ 契约常量 —— 音色名白名单**直接取实现侧的唯一定义**（lib/voices.mjs 的 `VOICE_NAME_RE`）：
+//   server.mjs 的 apiVoiceTest 也读它 ⇒ 本文件不再本地硬编码长度，免得与实现再次漂开
+//   （第七批审计 F6：曾漂成「实现 40 / 本文件 80」）。TEXT_MAX 仍由 server.mjs:apiVoiceTest 写死、无导出。
+const NAME_RE = voices.VOICE_NAME_RE;        // 音色名白名单（唯一来源 lib/voices.mjs）
 const TEXT_MAX = 300;                        // 试听文本上限
 
 // ── 命令行 ──────────────────────────────────────────────────
@@ -347,8 +349,8 @@ async function main() {
       await testExpect(P, { name: '   ' }, 400, 'name 全空白');
       await testExpect(P, { name: 123 }, 400, 'name 非字符串');
 
-      // 非法字符 / 超 80 字 —— 都命中白名单正则
-      const badNames = ['../x', 'a b', '中文', 'a/b', 'x'.repeat(81)];
+      // 非法字符 / 超 40 字 —— 都命中白名单正则
+      const badNames = ['../x', 'a b', '中文', 'a/b', 'x'.repeat(41)];
       for (const bad of badNames) {
         const r = await testExpect(P, { name: bad }, 400, `非法 name ${JSON.stringify(bad.slice(0, 12))}`);
         need(/非法字符/.test(r.json.error || ''), `400 理由没说清「非法字符」：${r.text.slice(0, 160)}`);

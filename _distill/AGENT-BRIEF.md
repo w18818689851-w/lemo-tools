@@ -904,6 +904,15 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
      逐字比对实测差异有**三条**（① 编码器；② nvenc `-cq` 取 **23** vs 上游 **29**；③ `-maxrate/-bufsize` **无条件加**、
      上游只在 `libx264` 分支加）。★ **行为一字未改**（②③ 都是有意照 `mux.sh`），**错的是结论句** ⇒ 订正注释。
      ★ 红线 md5 `d8d75f806b5524d7495f9ae0ed87c25e` → **`d2209b52db0255e926b20300910056dd`**（三处同步、**零行漂移**）。
+   ★ **2026-10-12 有意改编排器（宿主临时脚本清理 · 同日三处）**：`lemo-make.mjs` 的 `runWsl`
+     （★ 按引用纪律第 12 条用**符号锚**、不写行号）先给**宿主那份** `D:\WSL\_lemo-*.sh` 补 `try/finally` 兜底
+     （`wsl.exe` 这一跳失败就没人删它；实测旧码留 **183 B** 残留、`_lemo-probe-*` 已积 **416** 个）——由 `d2209b52…` → `8a219ecf…`；
+     再补**三层清扫**（模块级 `Set` 登记在飞的宿主 `.sh` + `process.on('exit')` 同步 `unlinkSync` + **下次启动时清扫**陈旧残留
+     —— 治 `taskkill /T /F` 硬杀那种**连 exit 钩子都不跑**的残留）；最后把清扫**抽成共享模块** `lib/host-scripts.mjs`
+     （前缀判据 / 文件名解析 `<prefix>-<pid>-<base36>.sh` / pid 判活 / mtime 判据**只写一处**；顺带治 Windows pid 复用与 `_web-probe-*` 这个增长主力）。
+     ★ 三处都是**零行漂移**（新增全在文件尾、前段净零；位置配对法实测「扫到引用 46 处 / 需重映射 0 处」，与改动前基线逐字相同）。
+     ★ 红线 md5 `8a219ecf…` → `61d6456d…` → **`9ec6a25f0a0f5d1f11efe4e02772ceeb`**（三处同步：`test/cases.mjs` 的 `ORCH_MD5`、
+     `test/README.md` 的验收判据表、`README.md` 的差异清单 —— **逐字一致**）。
    ★★ **教训**：「**闸门/测试全绿**」仍然**不等于**「没有缺陷」—— 这三处都是**闸门与测试都覆盖不到**的
      （F1 是「两个功能各自正确、**组合起来**才错」；F2/F3 是「注释与实现不符」）。⇒ **对抗性审计要单独做**，
      且必须**给最小复现**、**不重复已知清单**。
@@ -964,7 +973,7 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
    · `win.platform`/`win.gpu`/`wsl.alive`/`win.ffmpeg`/`wsl.ffmpeg`/`tool.sync` 这 6 条 env↔resources **近重复**：
      复核结论 = **设计如此**（env 侧 = 检测项**修复建议**、resources 侧 = 台账**说明**，用途不同、本就该不同；统一必改输出文本）
      ⇒ 从「待收口」**降级**，两侧写「有意不同」注释，`test/resources.test.mjs` 的反向断言**钉住**它。
-   · 计数收口：`test/README.md` 注明「ui **静态 115** = 闸门判的数、**运行时 116** 因为有一条参数化用例」；
+   · 计数收口：`test/README.md` 注明「ui **静态 126** = 闸门判的数、**运行时 127** 因为有一条参数化用例」（★ 2026-10-12 复核：S 组 +6 后由 115/116 更新为 121/122；★★ 同日 **J1-1 补修**再加 S7/S8 两条 ⇒ 123/124；★★★ 同日 **S 组 + G14/G15/T1** 后 ⇒ 现为 **静态 126 / 运行时 127**，三处文档同改）；
      并修了顶层 `README.md` 的 5 处陈旧计数（smoke 41→44、`--full` 50→53、ui 59→115、服务端用例 27→28 等）。
      ★ 如实登记：`check-doc-coverage` 的入口条数判据**只扫 `test/README.md`**，顶层 `README.md` 的计数**无闸门守**。
    ★★ **2026-10-11（同日再一批）· 第三批对抗性审计（维度：质量基础设施的「假绿」）找到 3 条，已修**：
@@ -1025,6 +1034,94 @@ md5sum /mnt/d/lemo-opuscar/core/render/mux.sh /home/lemo/lemo-opuscar/core/rende
      `wsl` 起不来就**永久残留**（`D:/WSL` 实测 **42 个 `_web-probe-*.sh`，跨 11 天日增**）。修法：照抄那处的兜底写进 `finally`。
      ★ 如实登记：**`lemo-make.mjs` 的 `runWsl` 同样缺这段兜底**（红线文件，未改）⇒ 「同一判据三处实现」现为 **2 处有 / 1 处没有**。
    ★ 另：审计还**逐个列出「造了真违反、它抓住了」的 8 个闸门** —— ★ **「查了没找到」同样是结论**，要写进报告。
+   ★★ **2026-10-12 · 第五批对抗性审计（维度：产出物口径 + 前后端契约）2 条，均已处理**：
+   · **J1-1（P2 · 用户可见 + 每次点必现 + 静默改变产出物）已修**：`web/app.js` 的 `applyOptsToForm()` 是**不全的映射表**
+     —— 认 `--skip-sync` / `--asr-*` / `--voice` / `--speed`，却**不认** `--ratio` / `--size` / `--color` / `--film` /
+     `--lines` / `--web-cut` / `--stills-only` / `--no-preflight` 这 8 个（它们在 `web/index.html` 里**都有控件**）。
+     后果两层：① 「成片库 → 重新生成」的 toast **谎报**「表单不支持、已忽略」；② ★ **静默丢参数** ⇒ 重出片与上次**不同**
+     （上次 16:9 ⇒ 这次竖屏、上次勾了 720p 网页版 ⇒ 这次不出、上次 `--stills-only` ⇒ 这次变成完整长渲染）。
+     ★ **可达性**：`buildOpts()` 的 `currentRunSizeChoice()` 在非自定义路径**恒返回真值** ⇒ `--ratio` **每次出片都在 opts 里**
+     ⇒ 成片库**任何一条**片子点「重新生成」都必现（不是边缘情况）。修法 = 补齐 8 个分支 + 谎报文案改
+     「未回填（表单没有对应控件，或该值不在选项里）」。
+     ★★ **防再犯**：`test/ui.test.mjs` **S 组 8 条**，其中 **S6 是「清单漂移」机械闸门** —— 静态解析 `web/app.js` 的
+     **真函数体**（`lib/js-scan.mjs` 的 `stripComments` + 花括号配平），断言「凡能喂进 `applyOptsToForm()` 的每个 `--flag`，
+     它**要么**有回填分支**要么**在显式白名单里」，差集非空即 FAIL，并**自带 4 条变异自证**（删分支 / 前端加新 flag /
+     briefs 通路加新 flag / 把 flag 改名 ⇒ 必红）。★ 产出侧**不只扫前端**：还并进 `server.mjs:apiBriefRun` 与
+     `lib/briefs.mjs:NEEDS_VALUE`（工单出片通路，`--lang` 的产出点就在这里）⇒ 产出侧 **24 → 27**，
+     `--lang` / `--q-events` / `--manifest` 进**显式白名单 + 逐条理由**。
+     ★★ **2026-10-12 J1-1 补修（K1 对抗式验证的 F1/F2/F3/M5，报告 `D:/lemo-tmp/align-audit/K1-J1-1修复的对抗式验证.md`）**：
+     · **F1（P2 · 必修）复位只做了 3/18**：上一版复位是**手抄**的 3 个复选框，而 `buildOpts()` 读 **25** 个控件
+       ⇒ 其余控件的**残留**照样让「重新生成」产出另一条命令（实测旧版：弄脏 25 个控件后回填 `['--ratio','9:16']`，
+       `buildOpts()` 仍产出 `--q zzz-dirty-fQ --grain … --out … --film … --lines … --asr-model …`）。
+       修法 = `web/app.js` 新增 `runFormControlIds()`（**从 `buildOpts()` 的真实实现机械派生**控件 id：`String(fn)`
+       取源码 + `$('…')` 正则 + `document.getElementById` 过滤）/ `captureRunFormDefaults()`（boot 里紧跟 `fillRunRatios()`
+       抓「页面初始态」快照，默认值也不手抄）/ `resetRunForm()`；白名单 `RUN_RESET_EXEMPT` 只留 `#fSlug`（由 `selectStyle()` 负责）
+       与 `#fAngle`（**不是** CLI 参数、opts 里永远没有它 ⇒ 复位 = 永久丢失），理由逐条写在代码注释里。
+     · **F2（P2）S6 产出侧漏 briefs 通路**：原来只扫前端两个函数 ⇒ `--lang` 永远在闸门之外（差集恒 0）。见上。
+     · **F3（诊断质量）失明守卫别钉具体 flag**：原来钉 `produced.has('--skip-sync')` ⇒ 这个 flag **自己**真漂移时被误报成
+       「抽法失效」、把真缺陷的 FAIL 文案盖掉。改成结构性证据（抽法形态 + 计数下限 `>= 10`），并把 flag 名正则
+       从 `[a-z-]` 放宽到 `[a-z0-9-]`（否则 `--skip-sync-v2` 这种改名**切都切不出来**、闸门假绿），加变异自证④ 钉住。
+       ★ **边界如实登记**：本判据是**单向**的（只抓「产出侧有、回填侧没有」）；「某个 flag 整个从产出侧删掉」不报。
+     · **M5（判据脆性）换引号不再假红**：回填侧正则 + 两处变异自证锚点同时认**单双引号**（仓里没有引号约定闸门）。
+     · **S7 整数组往返**（K1 的建议）：`buildOpts(applyOptsToForm(o1)) ≡ o1`（**逐元素**，不是按下标取一项）——
+       S1~S5 原来只用 `b.indexOf('--x')` / `b[i+1]===`，多出来的 flag 天然看不见（这正是本缺陷的洞）。
+       覆盖：3 组规范配置恒等 + `--size`/`--ratio` 同给按 last-wins 收敛 + 值不在下拉里（**不**报恒等，非空转自证）
+       + 「上次手改过字段 ⇒ 回填后不复现旧值」。**S8 复位完整性**：清单**静态派生** + 弄脏每个控件 + 与页面内派生对账
+       + 白名单未被误动。★ 改前必红证据（旧 `web/app.js` md5 `5bc99d64…`）：S7 报「多出来的 17 个 token 就是残留」、
+       S8 报「多出来的 13 个 token 就是残留」；改后 S1~S8 全绿。
+     · 实测（S6）：产出侧 **27** / 回填侧 **24** / 白名单 **3** / 差集 **0**。
+     ★ **为什么不做成 `scripts/check-*.mjs` 新闸门**（已实测）：加一个 `check-*.mjs` 会让闸门数 52→53，而
+     `scripts/check-llm-api.mjs:6` 的「本仓现共 **52** 个 `check-*.mjs`」会被 `check-header-counts.mjs` 判据③ **逐字判 FAIL**
+     （实测：临时树加一个 `check-zzz-probe.mjs` ⇒ `exit 1` 并点名 `check-llm-api.mjs`），而该文件在本批**禁改清单**里
+     ⇒ 落点选 `test/ui.test.mjs` 用例（它同样由 `run-all-tests.mjs` 例行全跑，条数还受 `check-doc-coverage` 守）。
+   · **J1-2（P3 · 库仓注释口径错误）已改 —— 只改注释/文档，零命令改动**：`core/render/mux.sh:24` 与 `core/README.md:90`
+     原称「默认保持 `yuvj420p` **全范围**」，实测默认分支做的是 **pc→tv 范围转换 + 改标 `tv`**
+     （src `yuvj420p`/`pc`/`bt470bg` Y=**214** → out `yuv420p`/`tv`/`bt470bg` Y=**200** = `16+214×219/255`；
+     WSL ffmpeg 6.1.1 跑**真实** `mux.sh` 复现）；`LEMO_COLOR=bt709` 只换三个色彩标签（Y **199**，差 1 码值）。
+     ★ **WIN + WSL 双副本同步**（WSL 侧 `tr -d "\r"`，两侧 md5 一致）；`check-dual-copy-sync` / `check-mux-parity` 均 exit 0。
+     ★ **只改 1 行注释 + 1 行表格**（`git diff --stat` = 2 文件 / 2 增 2 删），**行号未漂移**
+     （`mux.sh:36` / `:173` / `:277` 与 `core/README.md` 的表行都在原位 ⇒ `check-ref-lines` 仍 exit 0）。
+   ★★ **2026-10-12 · 第六批对抗性审计（维度：文案 / 错误消息 / 声称的诚实性 —— 「系统对用户 / 对自己说的那句话，是否与真实情况相符」）找到 7 条 F1~F7：6 修 1 登记**（报告 `D:/lemo-tmp/align-audit/M1-第六批审计-文案与错误消息诚实性.md`）：
+   · **F1（P1 · 已修）成片库把「读不到目录」谎报成「还没有成片」**：`server.mjs` 的 `apiFilms` 在 `readdirSync` 失败时回
+     `200 + { films: [], error: '读不到成片目录 …：ENOENT …' }`，而前端 `loadFilms` **整条丢掉 `payload.error`** ⇒ 屏幕上
+     显示「还没有成片（`D:\lemo-films` 下没有 mp4）。」⇒ 把一次**文件系统故障**（盘没挂 / 目录被删 / 权限）说成「你一部片都没出过」，
+     还**静默清掉**风格列表上所有「已有成片」徽标。修法：读不到目录时回 **503 + `root`**，前端读 `payload.error` 走错误渲染。
+     ★ 回归用例 **G14**（真端到端：另起隔离实例 + 删掉成片根 + 无头 Edge 读 `#films` 真文本）。
+   · **F7（P3 · 已修）10 处用户可见文案硬编码 `D:\lemo-films`**（`web/app.js` 6 处 + `web/index.html` 4 处；另 1 处是注释）：
+     服务端**早就**把权威路径给了前端（`/api/films` 的 `root` / `/api/dub/sources` 的 `dir` / `/api/console` 的 `store.root`），
+     前端却写死字面量 ⇒ `LEMO_FILM_DIR` 生效时全指向不存在的目录。修法：新增 `applyRootPaths()` 统一取服务端权威值。
+     ★ 独立牙 **G15**（Q1-2/Q1-5）：HTML 静态提示由 JS 填成真目录，它**单独立**断言 ⇒ 把前端修复整段撤掉时它**必红**
+     （G14 是**合取型**用例，撤掉前端那一半仍可能绿 —— 这正是 Q1-5 的原始发现）。
+   · **F6（P3 · 已修）进度分母过期**：`web/app.js` 的 `KNOWN_STEPS = 7` / `expectedSteps()` 停在三个版本之前
+     （真实默认路径 **10** 步；`--audio-only` 真实 **6** 步而前端按 5 起步）⇒ **失败 / 提前结束的任务永久停在错的分母上**
+     （`noteStep` 的 `max(total, maxN)` 自校正只救得了进行中的任务）。修法：更新到实测值 + 订正那行注释。
+     ★ 回归用例 **T1**（对 **20 组 opts** 逐条比对真值 + 钉住 `lemo-make.mjs` 里决定步数的守卫）。
+   · **F4（P2 · 已修）资源检测面板把「扫描崩了」说成「全部就绪 / 注册表为空」**：`scanAll()` 的「绝不抛」兜底回 `200 + error`，
+     而 `renderResources` **全函数不出现 `data.error`** ⇒ 三句话全错。修法：`renderResources` 有 `data.error` 就摆服务端原文；
+     `server.mjs` 侧改 **500**（不是 503 —— 503 在本文件已承载「模块尚未就绪」，会让前端把标题说错），且**缓存命中带 error 也回 500**
+     （否则「第一次 500、30 秒内第二次 200 + 全 0」这种自相矛盾的响应会漏出去）。
+   · **F2（P2 · 已修）「一键安装可自动项」无条件谎报「已入队 N 个」**：服务端对「已就绪」回 `{ok:true,skipped:true}`（**不入队**）、
+     对失败回 400，而前端**无条件** toast 成功句 ⇒ 用户以为装完了、实际只排了 2 项甚至 0 项，**且那句失败 toast 会被
+     循环后的成功 toast 当场顶掉**（toast 是单例 + 4.2s 定时器，后写覆盖先写）。修法：照抄同文件 `runBatch` 的聚合写法
+     （`queued` / `reused` / `skipped` / `fails` 分类计数、失败一并列出）。
+   · **F5（P3 · 已修）「扫描崩了」在导入 / 下载两条路上被说成「未知资源 id」**：`scanOne()` 把「未登记」与「扫描失败」
+     压成同一个 `null` ⇒ 用户拿着**登记在册**的 id（如 `win.ffmpeg`）被告知「未知 id」。修法：新增 `isRegisteredResourceId()`
+     （读模块导出的 `RESOURCES` 常量）把两者分开 ⇒ 登记在册却拿 null ⇒ **503「资源检测失败」**，真未登记 ⇒ 400「未知资源 id」。
+   · **F3（P2 · ★ 只登记未修）`--dry-run` 把混流产物写成了库仓路径（死变量 `finalWin`）**：`lemo-make.mjs` 的
+     `finalWin = CFG.winLib/styles/<slug>/<slug>.mp4` 是**从不参与写盘的死变量**（`grep` 只有定义与 dry-run 打印两处），
+     而 mux 的真实输出是 `outDir`（`OUT=${exportWsl}`）⇒ dry-run 第 4 行与第 5 行**同屏自相矛盾**，用户还会误以为
+     「这次混流会覆盖库里的样板片」。★ **本批有意未改**（红线文件、且属纯文案；改法已在报告里给全）。
+   ★ **同批还横向发现 2 处「口径分叉」**（如实登记，**未**计入 F 类）：① `ffmpeg` 目录「存在」vs「能跑」—— `lemo-make.mjs` 报 ✓
+     而 `lib/env.mjs` 报 fail（`CFG.ffmpegDirs` 无覆盖点 ⇒ 无法在不改仓的前提下构造，故只登记）；② dry-run 的计划编号
+     与真实日志的 `[N]` 编号**错位**（`[1] 环境自检` / `[3] 导出事件与字幕` 在 dry-run 里根本没出现）。
+   ★ **「查了没找到」也写进报告**：`server.mjs` 119 条错误文案（30+ 条 `curl` 实测畸形输入）**没找到**状态码与原因错配；
+     演练模式 / 日志裁剪 / SSE 续传这些容易藏谎的地方都**真的把真相摆出来了**。⇒ 洞集中在**「服务端已把真相算出来、前端在半路上把它扔掉」**这一类（F1 与 F4 同病）。
+   ★★ **M1 修复的对抗式验证（Q1，报告 `D:/lemo-tmp/align-audit/Q1-M1修复的对抗式验证.md`）又补出 4 条**：
+     Q1-2（`web/index.html` 4 处硬编码）、Q1-3（步数分档：`--q content=` 真实 **12** 不是 11）、
+     Q1-4（`web/app.js` 引用了一个**不存在**的回归测试名）、Q1-5（G14 是**合取型**、撤掉前端修复仍可能绿）
+     ⇒ 分别落到 **G15**（独立牙）与 **T1**（真值表）。
+   ★★ **教训**：**「闸门全绿」不等于「没有缺陷」** —— F1~F7 全是闸门与测试覆盖不到的
+     （「服务端算了、前端扔了」/「注释与实现不符」/「文案与事实不符」）⇒ 对抗性审计要**单独做**、给最小复现、不重复已知清单。
    ★ **2026-10-11** 控制台侧新增 **`GET /api/style-switches`**（`--q` 开关助手的数据源）：从库仓
    `styles/<slug>/demo/**` **机械派生**该风格的页面开关（**不维护任何会漂的名单**）。判据经一轮修正：
    ★★ **首版只认 `.get('x')` 与 `location.search.includes('x')`，漏掉 `.has()` 形态** ——
@@ -1293,3 +1390,37 @@ grep -n "demo/<rel>" D:/lemo-tools/lib/style-fingerprints.json
 ★ **2026-10-07 基线**（供回归对比）：**733 条 ⇒ 活 683 / 已声明入口 45 / 自述入口 5 / 孤儿 0**。
 完整清单见 `_distill/孤儿脚本清单-2026-10-07.md` + 同名 `.tsv`（机器可核对）。
 ★ 重跑前**先比对** `lib/dub-visual.json` / `lib/style-fingerprints.json` 的 md5 —— 这两份会被别的作业改（清单里记了快照 md5）。
+
+   ★★ **2026-10-12 · 第七批对抗性审计（维度：硬编码常量/阈值/路径/集合的「单一来源」）9 条，已处理 6 条**：
+   · **F4（高 · 假绿 · 已修）**：`test/cases.mjs` 的 ③+ 用例**自带一个粗剥注释器**，它把 `lib/dub-core.mjs:21` 行注释里的
+     「斜杠+星号」当成**块注释起点**、一路吃到 `:68`，把整个 `CFG` 块当注释吞掉（实测吞该文件 **387 行** / `server.mjs` **1313 行**）
+     ⇒ ★ **BANNED 判据对该文件彻底失明，闸门却绿**。修法：改用仓里现成的 **`lib/js-scan.mjs` 的 `stripComments`**
+     （★ 用**动态** `await import` —— 静态 import 会新增 1 行、把 `test/cases.mjs` 被 `scripts/clean-test-residue.mjs`
+     反引号引用的行号整体推后 ⇒ `check-ref-lines` 会红）；并把 `BANNED['lib/dub-core.mjs']` 由 `[/lemo-films/]`
+     **扩成** `[/lemo-films/, /lemo-opuscar/]`（★ 先量误报率：另 7 个被检文件 **0 命中**；唯一误报是该文件 `:1286` 的注释，已改写消掉）。
+   · **F1（高 · 已修）**：`lib/dub-core.mjs` **自写** `winLib`/`wslLib` 字面量、**不认** `LEMO_LIB_WIN`/`LEMO_LIB_WSL`
+     （而 `lib/env.mjs` / `lemo-make.mjs` 认）⇒ ★ **用覆盖点做隔离测试时其实没隔离**（`dub.mjs` 静默读真库）。
+     修法：改成 `ENV_CFG.wslLib`/`ENV_CFG.winLib`（★ 不成环：`lib/env.mjs` 不 import dub-core；`lib/` 另外 6 个模块早就是这形态）。
+     ★ **F4 正是 F1 长期存活的原因** —— 修好 F4 后该文件**当场变红**，把「无人守的静默缺陷」变成显式待办。
+   · **F6（中 · 已修）**：音色名上限 **40 vs 80**（`lib/voices.mjs` / `lib/dub.mjs` 用 40；`server.mjs` 用 80，
+     而 `test/voices-api.test.mjs` 把 80 当契约）⇒ ★ **判定 40 才对**（本机 36 个音色名最长 **14 字符**；
+     `suggestName`/`prepareVoiceImport` 本来就按 40 收口；80 无依据）⇒ 统一到 `lib/voices.mjs` 的 `MAX_VOICE_NAME_CHARS = 40` + `VOICE_NAME_RE`。
+     ★ 唯一行为变更（且是**订正谎报**）：41~80 字名从「404 不在清单里」变成「400 音色名含非法字符或超长（…1~40 字符）」。
+   · **F7（中 · 已修）**：单句 40 字 —— `dub.mjs:825` **显式传 40** ⇒ **改默认值不生效（默认值是死代码）**。
+     修法：删掉显式传参、吃 `splitSentences(text, maxLen = 40)` 的默认值。★ 实测：改前把默认改成 30 ⇒ 仍 40/40/20（不生效）；
+     改后 ⇒ 30/30/30/10（生效）；真实树默认路径**逐字节不变**。
+   · **F5（中 · 已修）**：`scripts/fix-truepeak.mjs` **同文件两写**（`:78` 常量 vs `:278` 裸 `-1.2`）⇒ 照兄弟脚本收成常量（301 点穷举零行为变更）。
+   · **F2（高 · 已修）**：`web/app.js` **手抄** 4 个上传口径 + 文案上限（服务端那份在 `lib/dub.mjs`，**不经 API 下发、零守卫**）
+     ⇒ 前端改成 `dubLimits()`（**服务端下发值 > 兜底**，漏发/空清单一律退回兜底），并让 `server.mjs` 的 `apiDubSources`
+     下发 `maxUploadBytes`/`videoExts`/`srtExts`/`imageExts`/`maxScriptChars`（★ 实测**无断言钉住该接口的键集合** ⇒ 加字段不撞测试）。
+   · **F8（中低 · 已修）**：`scripts/check-film-aspect.mjs` 只认别名 `LEMO_FILMS_ROOT` ⇒ 按主名 `LEMO_FILM_DIR` 重定向时**仍扫真库且失明守卫不触发**；
+     修成 `LEMO_FILM_DIR || LEMO_FILMS_ROOT || 默认`（主名优先、旧名兼容）。★ 并把它补进 `check-env-overrides` 的 `LEMO_FILM_DIR.readers`。
+   · **F9（低 · 已修）**：前端 tick 预算/轮询间隔多处裸写 ⇒ 收成 `POLL_MS`/`*_MAX_TICKS`/`pollMinutes()` 一处；
+     ★ 如实登记：**跨侧无法单源**（服务端那两个超时**不经 API 下发** ⇒ 只能镜像 + 注释写明镜像谁）。
+   · **F3（高 · 只登记）**：锁过期 **6h** 在 `lemo-make.mjs:1906` / `lib/jobs.mjs:45` / `lib/host-scripts.mjs:101` /
+     `check-film-delivery.mjs:106` **四处各写一份**，三处注释自称「一致」—— **同步机制 = 注释**。★ 未修（涉及红线）。
+   ★★ **本批最重要的教训**：**「同一判据只写一处」不是风格问题，是**能不能被发现**的问题 ——
+     F4 让 BANNED 判据对一整个文件失明，于是 F1 在里面活了很久；而 F1/F3/F6 都是「值各写一份 ⇒ 必然漂」。
+     ★★ 另一个可复用口径：**「有闸门」≠「闸门在看你这个文件」** —— 剥注释器这类**前置设施**一旦错，
+     后面所有判据**静默失效**；★ 且**共享剥注释器（`lib/js-scan.mjs`）自己也有边界**（**不处理模板串 `${}` 嵌套** ⇒
+     从 `lib/dub-core.mjs:538` 起卡在字符串态、其后 88 行注释不被抹 ⇒ 该文件判据实际是「连注释一起看」⇒ 只可能**多报**、**不可能漏报**）。

@@ -5,11 +5,12 @@
  * 为什么单独一个入口：`test/README.md` 里如实写着「Web UI 交互：一条都没测」——
  * 现有 42 条全是服务端的（smoke 30 + setup 12），只保证「服务端发给前端的数据是对的」，
  *   ★ 2026-10-08 复核：服务端侧现为 smoke **41** + setup **12** = **53** 条（「42 = 30 + 12」是写本文件时的快照）；
- *     本文件（UI 层）现为 **94** 条（★ 2026-10-10：J 组 +6 / K 组 +4 后 75；★ P4 把 I 组 I2/I3/I4 换锚点 + 新增 I7~I11 ⇒ 80；★ 再补 I12 ⇒ 82；★ 2026-10-11：L 组 +7 ⇒ 89、M 组 +4 ⇒ 93、M5 ⇒ **94**）。
+ *     本文件（UI 层）现为 **124** 条（★ 2026-10-10：J 组 +6 / K 组 +4 后 75；★ P4 把 I 组 I2/I3/I4 换锚点 + 新增 I7~I11 ⇒ 80；★ 再补 I12 ⇒ 82；★ 2026-10-11：L 组 +7 ⇒ 89、M 组 +4 ⇒ 93、M5 ⇒ **94**；★ N/O/P/Q/R 各组陆续补 ⇒ **115**；★ 2026-10-12：S 组 +6（「重新生成」的 8 个 flag 回填 + `buildOpts` ↔ `applyOptsToForm` 清单漂移闸门）⇒ **121**；★ 2026-10-12（J1-1 **补修**，K1 对抗式验证的 F1）：S 组再 +2 —— S7 **整数组往返**（`buildOpts(applyOptsToForm(o1)) ≡ o1`）+ S8 **复位完整性**（弄脏每个控件后一条最小 opts 回填，零残留）⇒ **123**；★ 2026-10-12（第六批对抗性审计 **F1** 回归）：G 组 +1 —— **G14 成片根不可读 ⇒ `/api/films` 不再回 200 + 前端显示真实原因（不是「还没有成片」）** ⇒ **124**。★ 2026-10-12（**Q1 对抗式验证**的 Q1-2/Q1-5 补修）：G 组 +1 —— **G15 前端文案取服务端权威值**（成片库 `200 + error` 显示真因 + HTML 静态提示由 JS 填成真目录）、T 组 +1 —— **T1 进度分母回归**（`expectedSteps()` 逐 opts 组合对真值，并钉住 `lemo-make.mjs` 里决定步数的守卫）⇒ **126**。★ 2026-10-12（第七批对抗性审计 **F2 + F9** 回归）：U 组 +3 —— **U1 上传口径漂移闸门**（`web/app.js` 的兜底 ≡ `lib/dub.mjs` 的 5 个导出，逐项 + 旧手抄副本已删 + **3 条变异自证**）、**U2 上传口径取服务端下发值**（桩 `GET /api/dub/sources` 换一套口径 ⇒ 前端预检与三张卡文案**跟着变**；默认路径与改前**逐字节相同**）、**U3 轮询口径单源化**（间隔/tick 预算各只一处 + 用户文案由 `pollMinutes()` 算；**端到端真把 tick 跑到上限**、把三句话读回来比对）⇒ **129**。★ 本数是**静态条数**（runCase 调用点）；跑起来的「N passed」还会 +1（收尾那条「无残留」守卫用例，口径见 `scripts/check-doc-coverage.mjs`）—— 实测 129 条 ⇒ **130 passed**）。
  * 不保证「前端渲染出来是对的」。这个文件补的就是这一段。
  *
  * 批次：A/B/C/D（前四批）+ E（第五批：文案出片面板）+ F（第六批：补三处 UI 盲区）
- *   + **G（第七批：补剩余可点击路径 + 一个刚新增的功能开关）** + **I（第八批：LLM API 配置面板）**。
+ *   + **G（第七批：补剩余可点击路径 + 一个刚新增的功能开关）** + **I（第八批：LLM API 配置面板）** + **T（第九批：进度分母 `expectedSteps()` 的真值回归 —— 逐 opts 组合对真值 + 钉住编排器的步序守卫）**
+ *   + **U（第十批：前端口径的单一来源 —— 第七批对抗性审计 F2 上传口径 / F9 轮询口径）**。
  *   E 补的是「文案出片」这张卡片的**用户点击路径** —— 形态切换、断句逐字一致、分析、风格下拉、
  *   出片请求体契约（形态 1 / 形态 2）、以及三条**纯前端拦截**（空文案 / 形态 2 无素材 / 尺寸非法）。
  *   这三条拦截服务端测不到（前端先拦，请求根本不发出去），只有 UI 层能钉住。
@@ -37,6 +38,18 @@
  *   `openai-compatible` 下 `#llmCustomRows`（`llmPath`/`llmExtract`）**可见**、清空 `api_key_env` ⇒ 请求体恰含
  *   `clearExtra:["api_key_env"]` 且 `extra` 仍保留另两项、`anthropic` 下隐藏且**不**带 `clearExtra`，
  *   全部用页面内 `window.fetch` 桩驱动，并带**反空转**断言（点前 0 条、点后 1 条）。
+ *   U 补的是**前端口径的单一来源**（第七批对抗性审计 F2 上传口径 / F9 轮询口径）—— 此前
+ *   `web/app.js` **手抄**了 4 个上传口径 + 1 个文案上限（服务端那份在 `lib/dub.mjs`，零守卫），
+ *   又把服务端的两处单步超时**镜像**成 3 个 tick 预算、轮询间隔 3 处裸 `2000`、用户文案 3 处
+ *   手写「等了 25/63 分钟」。U 组把这件事变成**机制**：① **U1** 是漂移闸门（机械从 `lib/dub.mjs`
+ *   抽 5 个 `export const` 的**值**，与 `web/app.js` 的兜底逐项比对；并断言旧的手抄常量已删、
+ *   五个口径的字面量各只剩一处、四个消费点都走 `dubLimits()`；**自带 3 条变异自证**：改兜底上限 /
+ *   改兜底扩展名 / 改**服务端**那份 ⇒ 都必须被点名）；② **U2** 是端到端（桩 `/api/dub/sources`
+ *   换一套口径 ⇒ 前端预检、三张卡的格式/上限提示、`maxlength`、超限提示**全部跟着变**；
+ *   撤桩后回到兜底；★ 默认路径下这些**用户可见文案**与改前**逐字节相同**）；③ **U3** 是轮询口径
+ *   单源化（静态：裸 `2000` 归零、`POLL_MS` 恰 1 处定义 + 3 处使用、三处「等了 N 分钟」不再手写；
+ *   运行时：常量与改前一致 + **真的把 tick 跑到上限**、把三句超时文案读回来逐字比对）。
+ *   ★ 三条用例都**不真出片 / 不真上传**（U2 的两条预检都是早退路径）。
  *
  * 用法：
  *   node test/ui.test.mjs                 全部用例
@@ -80,6 +93,9 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 import { CFG } from '../lib/env.mjs';      // 只借常量（tmpDir / exportDir）；顶层无副作用
+// ★ 2026-10-12（S6 清单漂移闸门）：借 `stripComments` 剥注释后**静态解析** `web/app.js` 的真函数体
+//   —— 本仓 9 份同族剥注释实现已抽成这一份（认正则字面量，见该文件头）；纯函数、顶层无副作用。
+import { stripComments } from '../lib/js-scan.mjs';
 // ★ 2026-10-09 移除 `import * as dub`（第 9 轮隔离审计）：★ **静态 import 会在任何 env 设置之前求值**
 //   ⇒ 它借来的 `dub.UPLOAD_DIR` **冻在真实成片根**上（本进程的 CFG 早于 LEMO_FILM_DIR 生效）⇒
 //   ★ E7 的「备份/还原上传登记表」会**白写用户的真实盘**（服务端本身已隔离，只有这一处打错目标）✓
@@ -2768,6 +2784,175 @@ async function main() {
         return !!b && document.body.contains(b); })()`);
       need(still, '#btnCopyCmd 点后从 DOM 里消失了');
       notes.push(`G13 点「复制」→ 不抛错；按钮文案「${txt}」（无头环境剪贴板可能被拒，只断言点了不报错）`);
+    });
+
+    // ══ G14（第六批对抗性审计 F1 的**端到端回归**）═══════════════════════════════
+    //
+    // 缺陷：`/api/films` 在**读不到成片目录**时回 `200 + { films: [], error: '读不到成片目录 …：ENOENT …' }`，
+    //   而前端 `loadFilms` **丢掉 payload.error** ⇒ 屏幕上显示「还没有成片（D:\lemo-films 下没有 mp4）。」
+    //   ⇒ 用户第一反应是「我的成片没了 / 我根本没出过片」，而真相是**文件系统层面失败了**
+    //     （盘没挂 / 目录被删 / 权限被改）。
+    //
+    // 手法（★ 真端到端，不是源码级判据）：**另起一个隔离实例**，成片根指到一个临时目录 ⇒
+    //   **把该目录删掉**（服务启动时自己建过它）⇒ ① 打 `GET /api/films`；
+    //   ② 让无头 Edge 打开**那个实例**的首页，读 `#films` 的真实文本。
+    //   ★ 两条断言都**有牙**：改前后端回 200（①红）、前端文本里是「还没有成片」（②红）。
+    //   ★ 全程只读真实盘：临时根在 CFG.tmpDir（非 C 盘）下，跑完递归删。
+    await runCase('G14 ★ 成片根不可读：/api/films 不再回 200，且前端显示**真实原因**（不是「还没有成片」）', async () => {
+      const brokenRoot = path.join(CFG.tmpDir, `b4-ui-f1-${process.pid}-${Date.now().toString(36)}`);
+      fs.mkdirSync(brokenRoot, { recursive: true });
+      TMP_ROOTS.add(brokenRoot);
+      let broken = null;
+      try {
+        broken = await startServer(2, { LEMO_FILM_DIR: brokenRoot, LEMO_LOCK_DIR: brokenRoot });
+        const bBase = `http://127.0.0.1:${broken.port}`;
+
+        // ── 前置（防空转）：目录**可读**时确实回 200 + films 数组 —— 否则下面「删掉之后变非 200」
+        //    可能只是「这个实例本来就起不来」，本用例就白跑了。
+        const before = await httpRequest(broken.port, 'GET', '/api/films');
+        need(before.status === 200 && before.json && Array.isArray(before.json.films),
+          `前置失败：成片根可读时 /api/films 应回 200 + films 数组，实测 ${before.status} ${String(before.text).slice(0, 160)}`);
+        // ★ 再打一次 /api/jobs：把 lib/store.mjs 的 `ready` 置位（它只在第一次 loadIndex 时 mkdir
+        //   `<成片根>\.console`）⇒ 下面删掉成片根之后，**不会**被某个请求顺手重建出来（否则本用例假红）。
+        await httpRequest(broken.port, 'GET', '/api/jobs');
+
+        // ── 制造事故：删掉成片根（模拟盘没挂 / 目录被改名 / 权限被改 / 网络盘掉线）──
+        fs.rmSync(brokenRoot, { recursive: true, force: true });
+        need(!fs.existsSync(brokenRoot), `前置失败：${brokenRoot} 没被删掉`);
+
+        // ── ① 前端（先跑这一半：它才是**用户看到的那句话**）──
+        //    显示服务端原文，且**不许**出现「还没有成片」。
+        await cdp.goto(bBase + '/', 4000);
+        // ★ 就绪判据刻意**不**等「修复后才有的文本」：等的是「#films 已经渲染过一次」
+        //   （renderFilms 两种结局都会塞至少一个子节点）—— 否则改前会先在这里超时，
+        //   失败信息就变成「等待超时」而不是「它真的谎报了空库」，用例的牙就钝了。
+        await waitFor(cdp.evalJs,
+          `(() => { const b = document.getElementById('films'); return !!b && b.children.length > 0; })()`,
+          { timeoutMs: 30000 });
+        const txt = await cdp.evalJs(`(document.getElementById('films') || {}).textContent || ''`);
+        need(txt.indexOf('还没有成片') < 0,
+          `成片根不可读时前端仍显示「还没有成片」—— 把一次文件系统故障谎报成空库。实测 #films 文本：${txt}`);
+        need(txt.includes(brokenRoot),
+          `前端没把服务端给的**真实目录**摆出来（用户无从知道是哪个盘/目录出问题）：${txt}`);
+        need(/ENOENT|EACCES|EPERM|ENOTDIR|no such file|permission/i.test(txt),
+          `前端没把服务端原文里的**系统错误码**摆出来：${txt}`);
+
+        // ── ② 后端：扫描失败**绝不许**再报 200（200 是「成功」，会把故障说成空库）──
+        const r = await httpRequest(broken.port, 'GET', '/api/films');
+        need(r.status !== 200,
+          `成片根不可读时 GET /api/films 仍回 ${r.status} —— 「扫描失败」被当成「空库」上报了。响应：${String(r.text).slice(0, 200)}`);
+        need(!!(r.json && r.json.error), `GET /api/films 的响应里没有 error 字段：${String(r.text).slice(0, 200)}`);
+        need(String(r.json.error).includes(brokenRoot),
+          `error 里没说清是**哪个目录**读不到（前端要把它摆给用户）：${r.json.error}`);
+
+        notes.push(`G14 成片根被删 ⇒ GET /api/films 回 ${r.status}（非 200）+ error「${String(r.json.error).slice(0, 90)}…」；`
+          + `#films 显示「${txt.replace(/\s+/g, ' ').trim().slice(0, 110)}…」（不含「还没有成片」）`);
+      } finally {
+        await stopServer(broken && broken.child);
+        // ★ 必须把页面**带回主测试服务**：下一个用例组（H）要用 base 上的页面。
+        await cdp.goto(base + '/', 4000);
+        await waitFor(cdp.evalJs,
+          `!!document.getElementById('filmCount') && document.querySelectorAll('.style-item').length > 0`,
+          { timeoutMs: 30000 });
+        try { fs.rmSync(brokenRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+    });
+
+    // ══ G15（对抗式验证 Q1-5 + Q1-2 的**独立牙**）═════════════════════════════════════
+    //
+    // ★ Q1-5 的原始发现：G14 是**合取型**用例 —— 它同时断言「后端不再回 200」与「前端显示真因」，
+    //   而只打真服务端那条 503 时，**改前**的 catch 也把 `e.message`（= 服务端 error 原文，含完整
+    //   路径与 ENOENT）打出来 ⇒ G14 的三条前端断言**全满足** ⇒ **把前端修复整段撤掉，G14 照样绿**。
+    //
+    // ★ 本节补两条**只有修好之后才成立**的路：
+    //   ① 成片库：**后端回 `200 + error`**（老服务端 / 缓存 / 夹具的形状）。改前
+    //      `state.films = d.films || []` ⇒ `[]` ⇒ 渲染成「还没有成片（…）」= 把一次文件系统故障
+    //      **谎报成空库**；修好后把 `d.error` 当失败（`state.filmsErr`）⇒ 摆真因。
+    //      ⇒ 用**页面内 `window.fetch` 桩**造这个形状（不碰真服务端、不改任何仓文件）。
+    //   ② HTML 里那几处**静态**提示（Q1-2）：`web/index.html` 不能再写死 `D:\lemo-films\…`，
+    //      必须由 `web/app.js` 的 `applyRootPaths()` 用**服务端给的权威值**填。
+    //      ⇒ 断言 `#btnRefreshBriefs` 的 title 与两处 `.dub-drop-sub` 的正文里是**本次实例的真目录**
+    //        （改前它们是静态硬编码字面量 ⇒ 这两条必红）。
+    //   ★ 两条都**不依赖**「本实例的目录恰好等于 D:\lemo-films」—— 断言的是「等于服务端说的那个」。
+    await runCase('G15 ★ 前端文案取服务端权威值：成片库 200+error 显示真因（不是「还没有成片」）+ HTML 静态提示被 JS 填成真目录（Q1-2/Q1-5 的独立牙）', async () => {
+      // ── 先取本实例的**权威值**（判据的真值来源 = 服务端，不是本文件写死的字符串）──
+      const filmsRes = await get('/api/films');
+      need(filmsRes.status === 200 && filmsRes.json && typeof filmsRes.json.root === 'string' && filmsRes.json.root,
+        `前置失败：GET /api/films 应回 200 + root 字符串，实测 ${filmsRes.status} ${String(filmsRes.text).slice(0, 160)}`);
+      const realRoot = filmsRes.json.root;
+      const dubRes = await get('/api/dub/sources');
+      need(dubRes.status === 200 && dubRes.json && typeof dubRes.json.dir === 'string' && dubRes.json.dir,
+        `前置失败：GET /api/dub/sources 应回 200 + dir 字符串，实测 ${dubRes.status} ${String(dubRes.text).slice(0, 160)}`);
+      const realDubDir = dubRes.json.dir;
+
+      await cdp.goto(base + '/', 4000);
+      await waitFor(cdp.evalJs,
+        `!!document.getElementById('filmCount') && document.querySelectorAll('.style-item').length > 0`,
+        { timeoutMs: 30000 });
+
+      // ── ① Q1-2：HTML 里那几处静态提示必须被 JS 填成**服务端给的真目录** ──
+      const title = await cdp.evalJs(`(document.getElementById('btnRefreshBriefs') || {}).title || ''`);
+      need(title.includes(realRoot),
+        `#btnRefreshBriefs 的 title 没被填成服务端给的成片根（Q1-2：HTML 里还写死着路径？）`
+        + `—— 期望含 ${realRoot}，实测 ${JSON.stringify(title)}`);
+      const subs = await cdp.evalJs(`[...document.querySelectorAll('#dubDrop .dub-drop-sub, #dubBgDrop .dub-drop-sub')].map(e => e.textContent)`);
+      need(Array.isArray(subs) && subs.length === 2,
+        `应能取到 2 处 .dub-drop-sub（口播素材 + 背景图），实测 ${JSON.stringify(subs)}`);
+      for (const s of subs) {
+        need(s.includes(realDubDir),
+          `.dub-drop-sub 没被填成服务端给的上传目录（Q1-2）—— 期望含 ${realDubDir}，实测 ${JSON.stringify(s)}`);
+        need(s.indexOf('D:\\lemo-films') < 0,
+          `.dub-drop-sub 里仍残留写死的 D:\\lemo-films（Q1-2）—— 实测 ${JSON.stringify(s)}`);
+      }
+
+      // ── ② Q1-5：后端回 `200 + error`（老服务端形状）⇒ 前端必须摆真因，不得说「还没有成片」──
+      const FAKE_ROOT = path.join(CFG.tmpDir, 'q2-fake-film-root');   // 只是个**不存在的**目录名，不落盘
+      const FAKE_ERR = `读不到成片目录 ${FAKE_ROOT}：ENOENT: no such file or directory, scandir '${FAKE_ROOT}'`;
+      const fakeBody = JSON.stringify({ films: [], count: 0, root: FAKE_ROOT, error: FAKE_ERR });
+      // ★ 桩只在**新文档**里生效（addScriptToEvaluateOnNewDocument）⇒ 装完必须重新导航；
+      //   只在 url 恰好是 /api/films 时短路，其余（含 /api/films/<slug>/<file> 的播放源）原样透传。
+      const STUB = [
+        '(function () {',
+        '  var real = window.fetch.bind(window);',
+        `  var BODY = ${JSON.stringify(fakeBody)};`,
+        '  window.fetch = function (input, init) {',
+        '    var url = (typeof input === "string") ? input : ((input && input.url) || "");',
+        '    if (url === "/api/films" || url.indexOf("/api/films?") === 0) {',
+        '      return Promise.resolve(new Response(BODY, { status: 200, headers: { "Content-Type": "application/json" } }));',
+        '    }',
+        '    return real(input, init);',
+        '  };',
+        '})();',
+      ].join('\n');
+
+      let injected = null;
+      try {
+        injected = await cdp.cmd('Page.addScriptToEvaluateOnNewDocument', { source: STUB });
+        await cdp.goto(base + '/', 4000);
+        await waitFor(cdp.evalJs,
+          `(() => { const b = document.getElementById('films'); return !!b && b.children.length > 0; })()`,
+          { timeoutMs: 30000 });
+        const txt = await cdp.evalJs(`(document.getElementById('films') || {}).textContent || ''`);
+        // ★ 这条同时是**反空转**证明：桩没生效的话，文本里不可能出现这个假目录（真服务端不知道它）。
+        need(txt.includes(FAKE_ROOT),
+          `前端没把「200 + error」里的**真实目录**摆出来（Q1-5）—— 桩可能没生效，或前端丢掉了 d.error。实测 #films：${txt}`);
+        need(txt.indexOf('还没有成片') < 0,
+          `后端回 200 + error 时前端仍显示「还没有成片」—— 把一次文件系统故障谎报成空库（Q1-5）。实测 #films：${txt}`);
+        need(/ENOENT/.test(txt), `前端没把服务端原文里的**系统错误码**摆出来（Q1-5）：${txt}`);
+
+        notes.push(`G15 权威值：#btnRefreshBriefs 的 title 含真成片根 ${realRoot}；两处 .dub-drop-sub 含真上传目录 ${realDubDir}；`
+          + `200+error（假根 ${FAKE_ROOT}）⇒ #films 显示「${txt.replace(/\s+/g, ' ').trim().slice(0, 100)}…」（不含「还没有成片」）`);
+      } finally {
+        // ★ 卸桩 + 把页面带回**没有桩**的主测试服务（后面的用例组还要用 base 上的页面）。
+        if (injected && injected.identifier) {
+          try { await cdp.cmd('Page.removeScriptToEvaluateOnNewDocument', { identifier: injected.identifier }); }
+          catch (e) { log(C.bad(`  ⚠️ G15 卸 fetch 桩失败：${e.message}`)); }
+        }
+        await cdp.goto(base + '/', 4000);
+        await waitFor(cdp.evalJs,
+          `!!document.getElementById('filmCount') && document.querySelectorAll('.style-item').length > 0`,
+          { timeoutMs: 30000 });
+      }
     });
 
     // ══ H. 主题出片的画幅警告「一键修复」（警告从被动文本 → 可操作）══
@@ -5459,6 +5644,1060 @@ async function main() {
 
         await rSetVal('fQ', '');   // 复位
         notes.push(`R3 手写「${k1}=1 ${k2}=1」（空格）⇒ 切分认空白（两 chip 均 .on）；点 ${k1} 两下后规范化成 #fQ「${p.v}」（无空白、含 &）`);
+      });
+    }
+
+    // ══ S. 「重新生成」的参数回填 + `buildOpts` ↔ `applyOptsToForm` **两张清单漂移**闸门 ══════════
+    //
+    // 缺陷（第五批对抗性审计 J1-1，P2 · **用户可见 + 每次点必现 + 静默改变产出物**）：
+    //   `applyOptsToForm()`（`web/app.js`，符号锚）是一张**不全的映射表** —— 它认 `--skip-sync` /
+    //   `--asr-*` / `--voice` / `--speed`，却**不认** `--ratio` / `--size` / `--color` / `--film` /
+    //   `--lines` / `--web-cut` / `--stills-only` / `--no-preflight` 这 8 个，而这 8 个在
+    //   `web/index.html` 里**都有控件**（`#runRatio` / `#runSizeW`+`#runSizeH` / `#fColor` / `#fFilm` /
+    //   `#fLines` / `#fWebCut` / `#fStillsOnly` / `#fNoPreflight`，各 1 处）。后果两层：
+    //     ① 「成片库 → 重新生成」的 toast **谎报**「表单不支持、已忽略」（那些 flag 表单是支持的）；
+    //     ② ★ **静默丢参数** ⇒ 重出片与上次**不同**（上次 16:9 ⇒ 这次竖屏；上次勾了 720p 网页版 ⇒ 这次不出；
+    //        上次 `--stills-only` ⇒ 这次变成完整长渲染），而 toast 却说「已预填上次任务的参数」。
+    //   ★ 可达性（不是边缘情况）：`buildOpts()` 的 `currentRunSizeChoice()` 在非自定义尺寸路径上
+    //     **恒返回真值**（`{ ratio: v || state.defaultRatio }`）⇒ `--ratio` **每次出片都在 opts 里**
+    //     ⇒ 成片库**任何一条**片子点「重新生成」都必现。
+    //   ★ 作者此前已为 `--asr-*`（`app.js:4990` 注释）与 `--voice`/`--speed`（`:4994` 注释）修过两次
+    //     同类问题 —— 本组钉的是**剩下那 8 个**，外加一道**防再犯**的清单漂移闸门（S6）。
+    //
+    // ★ 本组钉六件事（每条都带**反向/端到端**的第二半，确保「有牙」）：
+    //   ① 回填后**表单真的变了**（不是停在默认）—— 并用 `buildOpts()` 走**真提交路径**复核；
+    //   ② 回填后 toast 文案**不含**「表单不支持」（不撒谎）；
+    //   ③ 值不在选项里 / 形状不对 ⇒ **如实进 skipped**，不假装成功、也不把控件设成非法值；
+    //   ④ ★★ S6 = 机械闸门：凡能喂进 `applyOptsToForm()` 的**每个** flag，它**要么**有回填分支
+    //      **要么**在显式白名单里；差集非空 ⇒ FAIL。判据**读源码里的真实 flag 集合**（不手抄清单）。
+    //   ⑤ ★★ S7 = **整数组往返**：`buildOpts(applyOptsToForm(o1)) ≡ o1`（逐元素）—— S1~S5 只用
+    //      `b.indexOf('--x')` / `b[i+1]===` **按下标取一项**，多出来的 flag 天然看不见（这正是 J1-1 的洞）。
+    //   ⑥ ★★ S8 = **复位完整性**：把 `buildOpts()` 读的**每个**控件都弄脏 ⇒ 一条最小 opts 回填后
+    //      一个残留都不许有。清单**静态派生**（不手抄），并与页面内的派生对账。
+    //
+    // ★★ 2026-10-12（J1-1 **补修** —— K1 对抗式验证证伪了上一版修复的三处）：
+    //   · **F1（P2 · 必修）**：上一版把「复位」**手抄**成 3 个复选框（`#fWebCut`/`#fStillsOnly`/`#fNoPreflight`）
+    //     ⇒ 只覆盖 3/18 —— 其余控件（`#fQ`/`#fGrain`/`#fOut`/`#fFilm`/`#fLines`/`#fColor`/`#fFps`/
+    //     `#fWorkers`/`#fVenc`/`#fAsr*`/`#runRatio`/`#runSizeW`·`#runSizeH`）的**残留**照样让
+    //     「重新生成」产出**另一条命令**。⇒ 改成**从 `buildOpts()` 的真实实现里机械派生**控件清单
+    //     （`web/app.js:runFormControlIds()`，默认值也取自 boot 后抓的页面初始态快照），
+    //     白名单 `RUN_RESET_EXEMPT` 只留 `#fSlug`/`#fAngle` 两个并**逐条写明理由**。S7(d)/S8 钉它。
+    //   · **F2（P2）**：S6 的产出侧只扫前端两个函数 ⇒ `server.mjs` briefs 通路的 `--lang` 落在闸门**之外**
+    //     （差集恒为 0）。⇒ 产出侧扩到 `server.mjs:apiBriefRun` 与 `lib/briefs.mjs:NEEDS_VALUE`
+    //     （产出侧 24 → **27** 个 flag），`--lang`/`--q-events`/`--manifest` 进**显式白名单 + 理由**。
+    //   · **F3 + M5（诊断质量 / 判据脆性）**：失明守卫原来钉 `produced.has('--skip-sync')` ⇒ 这个 flag
+    //     **自己**真漂移时会被误报成「抽法失效」（把真缺陷的 FAIL 文案盖掉）⇒ 改成钉**结构性**证据
+    //     （抽法形态 + 计数下限）；回填侧正则与两处变异自证的锚点同时认**单双引号**（换引号是纯格式改动，
+    //     仓里没有引号约定闸门 ⇒ 原来会**假红**）。
+    //
+    // ★ 铁律沿用本套件：只读 DOM / 只调纯读的 `buildOpts()` / 只调 `applyOptsToForm()`（纯表单写入）/
+    //   **绝不真出片**（本组一个请求都不发，全在页面内跑）。
+    log('');
+    log(C.b('  S. 「重新生成」的参数回填 + buildOpts ↔ applyOptsToForm 清单漂移 / 往返 / 复位完整性闸门'));
+
+    const S_NAMES = ['S1 「重新生成」回填 --ratio', 'S2 「重新生成」回填三个复选框', 'S3 「重新生成」回填 --size',
+      'S4 「重新生成」回填 --color', 'S5 没控件的 flag', 'S6 ★ 清单漂移闸门',
+      'S7 ★ 整数组往返', 'S8 ★ 复位完整性'];
+    const sWillRun = !OPT.filter || S_NAMES.some((n) => n.includes(OPT.filter));
+    if (sWillRun) {
+      // ★ 先导航到干净文档（R 组在页面里点过 chip，别把残留带进来）。
+      await cdp.goto(base + '/', 4000);
+      const sReady = `!!document.getElementById('runRatio') && document.querySelectorAll('#runRatio option').length > 0
+        && !!document.getElementById('fWebCut') && !!document.getElementById('fStillsOnly')
+        && !!document.getElementById('fNoPreflight') && !!document.getElementById('fColor')
+        && !!document.getElementById('fFilm') && !!document.getElementById('fLines')
+        && !!document.getElementById('runSizeW') && !!document.getElementById('runSizeH')`;
+      await waitFor(cdp.evalJs, sReady, { timeoutMs: 30000 });
+
+      // ── 服务端权威：比例清单（不硬编码 9:16，也不硬编码「自定义尺寸…」的哨兵值）──
+      const sSizes = await get('/api/sizes');
+      need(sSizes.status === 200 && sSizes.json && Array.isArray(sSizes.json.ratios) && sSizes.json.ratios.length > 0,
+        `GET /api/sizes → ${sSizes.status}（拿不到 ratios，S 组测不了）`);
+      const sRatios = sSizes.json.ratios.map((r) => r.id).filter(Boolean);
+      const sDefault = sSizes.json.defaultRatio;
+      // ★ 挑一个**非默认**比例当样本：这样「根本没回填、停在默认」会被抓住（有牙）。
+      const sPick = sRatios.find((r) => r !== sDefault) || sDefault;
+      const sCustomVal = await cdp.evalJs(`(() => { const s = document.getElementById('runRatio');
+        const known = ${JSON.stringify(sRatios)};
+        const o = [...s.options].find((x) => !known.includes(x.value));
+        return o ? o.value : null; })()`);
+      need(sCustomVal, `#runRatio 里找不到「自定义尺寸…」选项（实际选项=${JSON.stringify(sRatios)}）`);
+
+      /** 把尺寸控件 + 三个复选框 + 色彩下拉 + 两个文本框复位到「页面初始态」—— 这样「有没有真的被回填」看得出来。 */
+      const sReset = () => cdp.evalJs(`(() => {
+        const s = document.getElementById('runRatio');
+        if ([...s.options].some((o) => o.value === ${JSON.stringify(sDefault)})) {
+          s.value = ${JSON.stringify(sDefault)}; s.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        for (const id of ['runSizeW', 'runSizeH', 'fFilm', 'fLines']) document.getElementById(id).value = '';
+        for (const id of ['fWebCut', 'fStillsOnly', 'fNoPreflight']) document.getElementById(id).checked = false;
+        const c = document.getElementById('fColor');
+        if ([...c.options].some((o) => o.value === 'default')) c.value = 'default';
+        return s.value; })()`);
+
+      /**
+       * ★ 直接调**页面里的真函数** `applyOptsToForm`（`regenFilm()` 调的就是它），
+       *   返回 `applied` / `skipped` + **回填后表单的实测值**（不是「函数返回了什么」，是「表单变成了什么」）。
+       */
+      const sApply = (opts) => cdp.evalJs(`(() => {
+        const r = applyOptsToForm(${JSON.stringify(opts)});
+        const val = (id) => document.getElementById(id).value;
+        const chk = (id) => document.getElementById(id).checked;
+        return { applied: r.applied, skipped: r.skipped,
+          ratio: document.getElementById('runRatio').value, custom: ${JSON.stringify(sCustomVal)},
+          w: val('runSizeW'), h: val('runSizeH'), color: val('fColor'),
+          film: val('fFilm'), lines: val('fLines'),
+          webCut: chk('fWebCut'), stillsOnly: chk('fStillsOnly'), noPreflight: chk('fNoPreflight'),
+          hint: document.getElementById('runRatioHint').textContent };
+      })()`);
+      /** 走**真提交路径**：`startRun()` 提交前调的就是 `buildOpts()`。 */
+      const sBuild = () => cdp.evalJs('buildOpts().opts');
+
+      // ① --ratio（★ 每次出片都会带它 ⇒ 这条是「点一次必现」的那条）
+      await runCase('S1 「重新生成」回填 --ratio：opts 带 --ratio <非默认比例> ⇒ #runRatio 真的切过去（不是停在默认）', async () => {
+        await sReset();
+        const r = await sApply(['--ratio', sPick, '--skip-sync']);
+        need(r.applied.includes(`--ratio ${sPick}`),
+          `--ratio ${sPick} 没被回填（applied=${JSON.stringify(r.applied)}、skipped=${JSON.stringify(r.skipped)}）`);
+        need(r.skipped.length === 0, `有 flag 被丢掉（skipped=${JSON.stringify(r.skipped)}）`);
+        need(r.ratio === sPick,
+          `★ #runRatio 停在 ${JSON.stringify(r.ratio)}、期望 ${JSON.stringify(sPick)} —— 参数被静默丢了（重新出片会是另一个比例）`);
+        need(r.hint.includes(`--ratio ${sPick}`), `#runRatioHint 没跟着更新（实测「${r.hint}」）`);
+        // 有牙（第二半）：回填之后走真提交路径 ⇒ 提交的 opts 里就是 --ratio <sPick>
+        const b = await sBuild();
+        const i = b.indexOf('--ratio');
+        need(i >= 0 && b[i + 1] === sPick, `回填后 buildOpts() 没产出 --ratio ${sPick}：${JSON.stringify(b)}`);
+        await sReset();
+        notes.push(`S1 回填 --ratio ${sPick}（默认 ${sDefault}）⇒ applied=${JSON.stringify(r.applied)}、#runRatio=${r.ratio}、buildOpts().opts=${JSON.stringify(b)}`);
+      });
+
+      // ② 三个复选框（--web-cut / --stills-only / --no-preflight）
+      await runCase('S2 「重新生成」回填三个复选框：--web-cut / --stills-only / --no-preflight ⇒ 真的勾上（上次没勾的会被清掉）', async () => {
+        await sReset();
+        // 反向半：先**手动勾上**三个，再回填一条**不含**它们的 opts ⇒ 必须被清掉（否则是「残留」，
+        //   同样会让重出片与上次不同）。
+        await cdp.evalJs(`(() => { for (const id of ['fWebCut', 'fStillsOnly', 'fNoPreflight'])
+          document.getElementById(id).checked = true; return true; })()`);
+        const off = await sApply(['--skip-sync']);
+        need(off.webCut === false && off.stillsOnly === false && off.noPreflight === false,
+          `★ 上次没勾的复选框仍留着勾选态（残留）：web-cut=${off.webCut} stills-only=${off.stillsOnly} no-preflight=${off.noPreflight}`);
+        // 正向半
+        const r = await sApply(['--web-cut', '--stills-only', '--no-preflight', '--skip-sync']);
+        for (const f of ['--web-cut', '--stills-only', '--no-preflight']) {
+          need(r.applied.includes(f), `${f} 没被回填（applied=${JSON.stringify(r.applied)}）`);
+        }
+        need(r.webCut === true && r.stillsOnly === true && r.noPreflight === true,
+          `★ 复选框没真的被勾上：web-cut=${r.webCut} stills-only=${r.stillsOnly} no-preflight=${r.noPreflight}`);
+        // 有牙（第二半）：走真提交路径 ⇒ 三个 flag 真的在提交的 opts 里（否则「上次只出分镜 ⇒ 这次长渲染」）
+        const b = await sBuild();
+        for (const f of ['--web-cut', '--stills-only', '--no-preflight']) {
+          need(b.includes(f), `回填后 buildOpts() 的 opts 里没有 ${f}：${JSON.stringify(b)}`);
+        }
+        await sReset();
+        notes.push(`S2 手动勾上三个后再回填「不含它们」的 opts ⇒ 三个都被清掉；回填含它们 ⇒ 三个都勾上且 buildOpts().opts=${JSON.stringify(b)}`);
+      });
+
+      // ③ --size
+      await runCase('S3 「重新生成」回填 --size：opts 带 --size 1080x1920 ⇒ 切到「自定义尺寸…」并填宽高（且真提交路径产出同一条）', async () => {
+        await sReset();
+        const r = await sApply(['--size', '1080x1920', '--skip-sync']);
+        need(r.applied.includes('--size 1080x1920'),
+          `--size 1080x1920 没被回填（applied=${JSON.stringify(r.applied)}、skipped=${JSON.stringify(r.skipped)}）`);
+        need(r.ratio === r.custom,
+          `★ #runRatio 没切到「自定义尺寸…」（实测 ${JSON.stringify(r.ratio)}、期望 ${JSON.stringify(r.custom)}）`);
+        need(r.w === '1080' && r.h === '1920',
+          `★ 自定义宽高没被填：w=${JSON.stringify(r.w)} h=${JSON.stringify(r.h)}（期望 "1080" / "1920"）`);
+        // 有牙（第二半）：走真提交路径 ⇒ buildOpts() 产出的就是 --size 1080x1920（回填**真的**还原了上次那条命令）
+        const b = await sBuild();
+        const i = b.indexOf('--size');
+        need(i >= 0 && b[i + 1] === '1080x1920', `回填后 buildOpts() 没产出 --size 1080x1920：${JSON.stringify(b)}`);
+        // 有牙（反向）：形状不对的 --size ⇒ 进 skipped、且**不动**表单（不假装成功）
+        await sReset();
+        const bad = await sApply(['--size', '1080', '--skip-sync']);
+        need(bad.skipped.includes('--size 1080'), `形状不对的 --size 1080 没进 skipped：${JSON.stringify(bad.skipped)}`);
+        need(bad.ratio === sDefault, `形状不对的 --size 把 #runRatio 改了（实测 ${JSON.stringify(bad.ratio)}）`);
+        await sReset();
+        notes.push(`S3 --size 1080x1920 ⇒ #runRatio=${r.ratio}、w/h=${r.w}/${r.h}、buildOpts().opts=${JSON.stringify(b)}；形状不对的 --size 1080 ⇒ skipped=${JSON.stringify(bad.skipped)}`);
+      });
+
+      // ④ --color / --film / --lines
+      await runCase('S4 「重新生成」回填 --color / --film / --lines：下拉与文本框真的被设上；值不在选项里 ⇒ 如实进 skipped', async () => {
+        await sReset();
+        const r = await sApply(['--color', 'bt709', '--film', 'my-film', '--lines', 'lines.json', '--skip-sync']);
+        need(r.color === 'bt709', `★ #fColor 没被回填（实测 ${JSON.stringify(r.color)}、期望 "bt709"）`);
+        need(r.film === 'my-film', `★ #fFilm 没被回填（实测 ${JSON.stringify(r.film)}）`);
+        need(r.lines === 'lines.json', `★ #fLines 没被回填（实测 ${JSON.stringify(r.lines)}）`);
+        const b = await sBuild();
+        for (const pair of [['--color', 'bt709'], ['--film', 'my-film'], ['--lines', 'lines.json']]) {
+          const i = b.indexOf(pair[0]);
+          need(i >= 0 && b[i + 1] === pair[1], `回填后 buildOpts() 的 ${pair[0]} 不是 ${pair[1]}：${JSON.stringify(b)}`);
+        }
+        // 有牙（反向）：值**不在选项里** ⇒ 进 skipped（**不撒谎**，也不把下拉设成非法值）
+        await sReset();
+        const bad = await sApply(['--color', 'zzz-not-an-option', '--skip-sync']);
+        need(bad.skipped.includes('--color zzz-not-an-option'),
+          `值不在选项里的 --color 没进 skipped：${JSON.stringify(bad.skipped)}`);
+        need(bad.color === 'default', `值不在选项里时 #fColor 被设成了非法值：${JSON.stringify(bad.color)}`);
+        await sReset();
+        notes.push(`S4 --color bt709 / --film my-film / --lines lines.json 全部回填（buildOpts().opts=${JSON.stringify(b)}）；--color zzz-not-an-option ⇒ skipped=${JSON.stringify(bad.skipped)}、#fColor 保持 default`);
+      });
+
+      // ⑤ 确实没有控件的 flag ⇒ 仍进 skipped，且文案**不撒谎**
+      await runCase('S5 确实没有控件的 flag：仍进 skipped，且 toast 文案不含「表单不支持」而说清是「未回填」', async () => {
+        await sReset();
+        const r = await sApply(['--no-such-flag', '--skip-sync']);
+        need(r.skipped.includes('--no-such-flag'), `没控件的 flag 没进 skipped：${JSON.stringify(r.skipped)}`);
+        need(r.applied.includes('--skip-sync'), `同一串里认识的 flag 反而被丢了：${JSON.stringify(r.applied)}`);
+        // ★ toast 原文：驱动**真路径** `regenFilm()`（往 state.jobs 里注入一条，跑完立刻逐项还原）
+        const msg = await cdp.evalJs(`(() => {
+          const jobs = state.jobs;
+          const backup = jobs.slice();
+          jobs.unshift({ slug: ${JSON.stringify(state.slugA)}, opts: ['--no-such-flag', '--skip-sync'] });
+          try { regenFilm(${JSON.stringify(state.slugA)}); }
+          finally { jobs.length = 0; for (const j of backup) jobs.push(j); }
+          return document.getElementById('toast').textContent;
+        })()`);
+        need(msg.includes('--no-such-flag'), `toast 里没列出被丢下的 flag：「${msg}」`);
+        need(!msg.includes('表单不支持'),
+          `★ toast 仍在**谎报**「表单不支持」（那些 flag 表单是支持的）：「${msg}」`);
+        need(msg.includes('未回填'), `toast 没说清是「未回填」：「${msg}」`);
+        await sReset();
+        notes.push(`S5 applyOptsToForm(['--no-such-flag','--skip-sync']) ⇒ skipped=${JSON.stringify(r.skipped)}；regenFilm 的 toast：「${msg}」（不含「表单不支持」）`);
+      });
+
+      // ⑥ ★★ 清单漂移闸门（本组的重点：把「两张清单漂移」这类缺陷**永久钉住**）
+      await runCase('S6 ★ 清单漂移闸门：凡能喂进 applyOptsToForm 的每个 --flag，它要么有回填分支、要么在显式白名单里（差集非空 ⇒ FAIL）', async () => {
+        // ★ 判据读**源码里的真实 flag 集合**（不手抄清单）：花括号配平抽真函数体 + `lib/js-scan.mjs` 剥注释。
+        const appSrc = stripComments(fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8'));
+        // ★★ 2026-10-12（J1-1 补修 · K1 对抗式验证的 F2）：产出侧**不能只扫前端那两个函数** ——
+        //   服务端 briefs 通路（「主题出片」工单 / 中文版 `--lang`）也会把 opts 喂进 `applyOptsToForm`
+        //   （`server.mjs:apiBriefRun` 拼 opts → `enqueueRender` → `/api/jobs` 的 summary 带 `opts`
+        //     → 成片库「重新生成」→ `regenFilm()` 取 `state.jobs` 里那条 job.opts）。
+        //   ⇒ 只扫前端的话 `--lang` **永远**落在闸门之外（差集恒为 0，闸门看着全绿），
+        //     而对一条中文版工单成片点「重新生成」会**丢掉 `--lang zh`**。实测：加上这两处来源后
+        //     产出侧 24 → **27** 个 flag，多出来的正是 `--lang` / `--q-events` / `--manifest`。
+        const srvSrc = stripComments(fs.readFileSync(path.join(ROOT, 'server.mjs'), 'utf8'));
+        const briefsSrc = stripComments(fs.readFileSync(path.join(ROOT, 'lib', 'briefs.mjs'), 'utf8'));
+        const bodyOf = (text, name) => {
+          const st = text.indexOf(`function ${name}(`);
+          need(st >= 0, `app.js 里找不到 function ${name}(`);
+          let d = 0, e = -1;
+          for (let k = text.indexOf('{', st); k < text.length; k++) {
+            if (text[k] === '{') d++;
+            else if (text[k] === '}') { d--; if (d === 0) { e = k + 1; break; } }
+          }
+          need(e > 0, `app.js 里 ${name} 的函数体没有正常闭合`);
+          return text.slice(st, e);
+        };
+        // ★ flag 名允许**数字**（`[a-z0-9-]`，不只是 `[a-z-]`）：本仓现有 flag 一个数字都没有，但
+        //   「把某个 flag 改名成 `--xxx-v2`」是最自然的漂移形状 —— 只认 `[a-z-]` 会让它**切不出来**
+        //   ⇒ 产出侧悄悄少一个、多出来的那个还看不见 ⇒ 闸门**假绿**（K1 的 F3 变异实测过这个形状）。
+        const FLAG_RE = /['"](--[a-z][a-z0-9-]*)['"]/g;
+        const flagsIn = (t) => { const s = new Set(); for (const m of t.matchAll(FLAG_RE)) s.add(m[1]); return s; };
+        /**
+         * ★ 白名单：**确实没有 UI 控件**的 flag —— 逐条写明理由。
+         * ★ 这三条都来自**服务端 briefs 通路**（见上面 F2 那段）：主表单里没有它们的控件，
+         *   所以「重新生成」时它们**必然**进 `skipped`（toast 会如实列出）。
+         * ★ 之所以**显式登记**而不是让扫描范围悄悄漏掉：K1 的 F2 指出「被扫描范围漏掉」正是本缺陷的形状 ——
+         *   取舍要摆在明面上。真要支持 `--lang`，得先给启动表单加语言控件（另开一条任务）。
+         */
+        const NO_UI_FLAGS = [
+          { flag: '--lang', why: '启动表单**没有**语言控件 —— 语言只在「主题出片」卡片的 `#briefLang` 里选，'
+            + '它进的是**工单**（`server.mjs:apiBriefRun` 按 `b.lang` 拼 `--lang`，en=DEFAULT_LANG 不拼）。'
+            + '★ 后果（如实登记）：对一条中文版工单成片点「重新生成」⇒ `--lang zh` 进 skipped，'
+            + '再点「开始生成」会按默认英文出片（该风格没有 content.en.json 时编排器直接报找不到文件）。' },
+          { flag: '--q-events', why: 'CLI 有（`lemo-make.mjs` 的 `--q-events`：页面参数，**只**透传给事件导出）、'
+            + '启动表单没有对应控件；工单的 runOpts 里可以带它（`lib/briefs.mjs:NEEDS_VALUE` 认它）⇒ 走 skipped。' },
+          { flag: '--manifest', why: 'CLI 有（`lemo-make.mjs` 的 `--manifest`：起飞前检查读的 demo 链路声明，'
+            + '默认取 CFG.manifestPath）、启动表单没有对应控件；工单的 runOpts 里可以带它（NEEDS_VALUE 认它）⇒ 走 skipped。' },
+        ];
+        const diffFrom = (app, srv, brf) => {
+          // ① 前端产出侧：buildOpts() 的**真实函数体**（它 `o.push('--xxx', …)`）+ voiceCliOpts()
+          //    （buildOpts 末尾 `o.push(...v.opts)` 把它的 --voice / --speed 也产出来）。
+          const produced = new Set();
+          for (const n of ['buildOpts', 'voiceCliOpts']) {
+            for (const m of bodyOf(app, n).matchAll(FLAG_RE)) produced.add(m[1]);
+          }
+          // ② 服务端产出侧（F2 补）：`server.mjs:apiBriefRun` 里 `opts.push('--…')` 的那几行 ——
+          //    `--lang` 的唯一产出点就在这里（`if (b.lang && b.lang !== langs.DEFAULT_LANG) opts.push('--lang', b.lang);`）。
+          const briefsSrv = flagsIn(bodyOf(srv, 'apiBriefRun'));
+          for (const f of briefsSrv) produced.add(f);
+          // ③ 库侧产出侧（F2 补）：`lib/briefs.mjs:NEEDS_VALUE` —— 它是「工单 runOpts 允许带值的 flag」清单，
+          //    而 runOpts 是**原样**拼进 opts 的（`const opts = ['--skip-sync', ...b.runOpts]`）
+          //    ⇒ 这里面每一个都可能出现在 job.opts 里。
+          const nvM = /export const NEEDS_VALUE = \[([\s\S]*?)\]/.exec(brf);
+          need(nvM, 'lib/briefs.mjs 里找不到「export const NEEDS_VALUE = [...]」⇒ 抽法失效（本判据空转）');
+          const briefsNeeds = flagsIn(nvM[1]);
+          for (const f of briefsNeeds) produced.add(f);
+          // ④ 回填侧：applyOptsToForm() 里 `o === '--xxx'` 分支的**真实**集合。
+          //    ★ 单双引号都认（K1 的 M5）：换引号是**纯格式**改动，仓里**没有**引号约定闸门
+          //      ⇒ 只认单引号会让一次格式化把闸门弄成**假红**；产出侧本来就已经同时认了 `['"]`，两侧口径也统一了。
+          const recognized = new Set();
+          for (const m of bodyOf(app, 'applyOptsToForm').matchAll(/o\s*===\s*['"](--[a-z][a-z0-9-]*)['"]/g)) recognized.add(m[1]);
+          const noUi = new Map(NO_UI_FLAGS.map((x) => [x.flag, x.why]));
+          const missing = [...produced].filter((f) => !recognized.has(f) && !noUi.has(f)).sort();
+          return { produced, recognized, missing, briefsSrv, briefsNeeds };
+        };
+        for (const e of NO_UI_FLAGS) {
+          need(typeof e.flag === 'string' && typeof e.why === 'string' && e.why.trim().length > 0,
+            `白名单条目必须带 flag + 理由（why）：${JSON.stringify(e)}`);
+        }
+        const real = diffFrom(appSrc, srvSrc, briefsSrc);
+        // ★ 失明守卫（防空转绿灯）：抽不到真函数体 / 抽不到 flag / 找不到分支写法 ⇒ 判据没在测东西。
+        //   ★★ 只钉**结构性**证据（抽法形态 + 计数下限），**绝不钉任何具体 flag**：
+        //     钉 `produced.has('--skip-sync')` 会把这个 flag **自己**的真漂移（`--skip-sync` → `--skip-sync-v2`）
+        //     报成「抽法失效」，把真缺陷的 FAIL 文案**盖掉**（K1 的 F3 实测踩到过：仍红，但差集为空、一个字都没点名）。
+        //     ⇒ 缺席的 flag 交给下面的**真判据**去点名（它会进 missing）。
+        need(/o\.push\(/.test(bodyOf(appSrc, 'buildOpts')), 'buildOpts 的函数体里没有 o.push( ⇒ 抽到的不是真函数体');
+        need(/o\s*===\s*['"]--/.test(bodyOf(appSrc, 'applyOptsToForm')),
+          "applyOptsToForm 的函数体里找不到「o === '--…'」分支写法 ⇒ 抽法失效（本判据空转）");
+        const MIN_FLAGS = 10;   // 实测：产出侧 27 / 回填侧 24。取 10 是「抽法崩了」（会掉到个位数/0）与「真漂移」之间的分界
+        need(real.produced.size >= MIN_FLAGS,
+          `产出侧只抽到 ${real.produced.size} 个 flag（下限 ${MIN_FLAGS}）⇒ 抽法失效（本判据空转）`);
+        need(real.recognized.size >= MIN_FLAGS,
+          `回填侧只抽到 ${real.recognized.size} 个 flag（下限 ${MIN_FLAGS}）⇒ 抽法失效（本判据空转）`);
+        need(real.briefsSrv.size > 0, 'server.mjs 的 apiBriefRun 里一个 --flag 都抽不到 ⇒ briefs 通路的抽法失效（F2 的补丁空转）');
+        need(real.briefsNeeds.size > 0, 'lib/briefs.mjs 的 NEEDS_VALUE 里一个 flag 都抽不到 ⇒ briefs 通路的抽法失效（F2 的补丁空转）');
+        // ★★ 真判据（**先判**，让真缺陷的 FAIL 文案不被自证的前置断言盖掉）
+        //   ★ 取舍的**边界**（如实登记）：本判据是**单向**的 —— 只抓「产出侧有、回填侧没有」。
+        //     ① 某个 flag **整个从产出侧删掉**（`o.push('--x')` 那行没了）⇒ 没有名字可点，本判据不报
+        //        （那种改动会被别的闸门/人工评审抓，不在本判据的射程内）；
+        //     ② 改名的形状（`--skip-sync` → `--skip-sync-v2`）**能**抓 —— 但前提是 flag 名正则会切出
+        //        新名字（所以上面把 `[a-z-]` 放宽成 `[a-z0-9-]`，并由变异自证④钉住这一点）。
+        need(real.missing.length === 0,
+          `★ 清单漂移：能喂进 applyOptsToForm()、但它既不认、也不在白名单里的 flag：`
+          + `${real.missing.join(' ')}（${real.missing.length} 个）—— 「重新生成」会**静默丢掉**它们（重出片与上次不同）`);
+        // ★★ 变异自证（**有牙**，在**源码副本**上做，绝不写文件；判据绿了也要证明它**不是摆设**）：
+        //   ① 把回填侧的 `--ratio` 分支从副本里删掉 ⇒ 同一套判据必须点名它；
+        //      ★ 锚点写成**正则**（单双引号都认）：换引号是纯格式改动，不该让自证前置失败变成**假红**（K1 的 M5）。
+        const m1 = appSrc.replace(/(\bo\s*===\s*)(['"])--ratio\2/, (_s, p, q) => `${p}${q}--ratio-DISABLED${q}`);
+        need(m1 !== appSrc, "自证前置失败①：applyOptsToForm 里找不到「o === '--ratio'」分支（写法变了，自证空转）");
+        const r1 = diffFrom(m1, srvSrc, briefsSrc);
+        need(r1.missing.includes('--ratio'),
+          `★ 自证失败①：把 --ratio 分支从源码副本里删掉后判据仍绿（missing=${JSON.stringify(r1.missing)}）⇒ 判据没在承重`);
+        //   ② 给**前端产出侧**的副本**新增**一个没人认领的 flag ⇒ 必须点名它。
+        //      ★ 锚点同样放宽：只要 `o.push(<引号>--out<引号>, out);` 这一句还在（不再钉 `if (out) ` 前缀与单引号）。
+        const m2 = appSrc.replace(/(o\.push\(\s*['"]--out['"]\s*,\s*out\s*\)\s*;)/, (_s, hit) => `${hit}\n  o.push('--zzz-probe');`);
+        need(m2 !== appSrc, "自证前置失败②：buildOpts 里找不到 `o.push('--out', out);`（写法变了，自证空转）");
+        const r2 = diffFrom(m2, srvSrc, briefsSrc);
+        need(r2.missing.includes('--zzz-probe'),
+          `★ 自证失败②：给 buildOpts 副本新增一个没人认领的 flag 后判据没点名（missing=${JSON.stringify(r2.missing)}）`);
+        //   ③ ★ 新增（F2 的有牙证据）：给 **briefs 通路**的副本新增一个 flag ⇒ 必须点名它
+        //      —— 证明「产出侧扩到服务端」这一步**真的在承重**，不是把三处来源写进去凑数。
+        const m3 = srvSrc.replace(/(opts\.push\(\s*['"]--lang['"][^;]*\);)/, (_s, hit) => `${hit}\n  opts.push('--zzz-brief-probe');`);
+        need(m3 !== srvSrc, "自证前置失败③：server.mjs 的 apiBriefRun 里找不到 `opts.push('--lang', …)`（写法变了，自证空转）");
+        const r3 = diffFrom(appSrc, m3, briefsSrc);
+        need(r3.missing.includes('--zzz-brief-probe'),
+          `★ 自证失败③：给 briefs 通路的副本新增一个 flag 后判据没点名（missing=${JSON.stringify(r3.missing)}）⇒ 产出侧扩到服务端这一步没在承重`);
+        //   ④ ★ 新增（F3 的有牙证据）：把前端产出侧的一个 flag **改名**（`--skip-sync` → `--skip-sync-v2`）
+        //      ⇒ 必须点名**新名字**。★ 这条同时钉住「flag 名允许数字」这个取舍：只认 `[a-z-]` 时
+        //      `--skip-sync-v2` 根本切不出来 ⇒ 这里会失败（而不是静默假绿）；
+        //      也钉住「守卫不抢话」：旧守卫 `produced.has('--skip-sync')` 会把它报成「抽法失效」。
+        const m4 = appSrc.replace(/(o\.push\(\s*['"])--skip-sync(['"]\s*\))/, (_s, p, q) => `${p}--skip-sync-v2${q}`);
+        need(m4 !== appSrc, "自证前置失败④：buildOpts 里找不到 `o.push('--skip-sync')`（写法变了，自证空转）");
+        const r4 = diffFrom(m4, srvSrc, briefsSrc);
+        need(r4.missing.includes('--skip-sync-v2'),
+          `★ 自证失败④：把前端产出侧的 --skip-sync **改名**成 --skip-sync-v2 后判据没点名（missing=${JSON.stringify(r4.missing)}）`
+          + ` ⇒ 要么守卫把真漂移盖成了「抽法失效」，要么 flag 正则切不出带数字的名字（本判据在 F3 这一维失明）`);
+        notes.push(`S6 产出侧 ${real.produced.size} 个 flag（前端 24 + briefs 通路新增 ${[...real.briefsSrv].filter((f) => !real.recognized.has(f)).length} 个）/`
+          + ` 回填侧 ${real.recognized.size} 个 / 白名单 ${NO_UI_FLAGS.length} 条（${NO_UI_FLAGS.map((x) => x.flag).join(' ')}）/ 差集 ${real.missing.length}`
+          + `（变异自证 ①删 --ratio 分支 ⇒ 点名 --ratio、②前端新增 --zzz-probe ⇒ 点名 --zzz-probe、`
+          + `③briefs 通路新增 --zzz-brief-probe ⇒ 点名 --zzz-brief-probe、④前端把 --skip-sync 改名为 --skip-sync-v2 ⇒ 点名 --skip-sync-v2）`);
+      });
+
+      // ⑦ ★★ 整数组往返（K1 对抗式验证的建议：S 组此前只用 `b.indexOf('--x')` / `b[i+1]===` **按下标取一项**，
+      //    从没对 `buildOpts().opts` 做过**整数组相等**断言 ⇒ 多出来的 flag 天然看不见）
+      await runCase('S7 ★ 整数组往返：buildOpts(applyOptsToForm(o1)) ≡ o1（逐元素；含 --size/--ratio 同给的 last-wins、值不在下拉里、以及「手改过字段 ⇒ 回填后不复现旧值」）', async () => {
+        /**
+         * ★ 判据 = `buildOpts(applyOptsToForm(o1))` 与 `o1` **逐元素相等**（不是「按下标取一项」）。
+         *   做法：先把表单归到初始态 → 设成目标配置 → `o1 = buildOpts().opts`（= 该配置下**真正会提交**
+         *   的那条命令）→ `applyOptsToForm(o1)` → `o2 = buildOpts().opts` ⇒ 断言 `o2 ≡ o1`。
+         */
+        const sRT = (setup) => cdp.evalJs(`(() => {
+          applyOptsToForm([]);
+          (() => { ${setup} })();
+          const o1 = buildOpts().opts;
+          const r = applyOptsToForm(o1);
+          const o2 = buildOpts().opts;
+          return { o1, o2, applied: r.applied, skipped: r.skipped };
+        })()`);
+        const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+        // (d) ★★ 核心（F1 的判据，**放最前**：改前的代码在这里必红，FAIL 文案直接点出残留的那几个字段）：
+        //     上次**手改过**的字段、而这次 job.opts 里**没有**它们 ⇒ 回填后**不复现旧值**
+        //     （否则「重新生成」产出的命令与上次不同，界面却只说「已预填 N 项」）。
+        const d = await cdp.evalJs(`(() => {
+          applyOptsToForm([]);
+          // 模拟「用户手动改过这些字段，但**没有**提交」
+          document.getElementById('fQ').value = 'nosub=1';
+          document.getElementById('fGrain').value = '5';
+          document.getElementById('fOut').value = 'myout';
+          document.getElementById('fFps').value = '30';
+          document.getElementById('fWorkers').value = '4';
+          document.getElementById('fVenc').value = 'libx264';
+          document.getElementById('fFilm').value = 'film_x.js';
+          document.getElementById('fLines').value = 'lines.json';
+          document.getElementById('fColor').value = 'bt709';
+          document.getElementById('fAsrLang').value = 'zh';
+          document.getElementById('fAsrModel').value = 'base';
+          document.getElementById('fAsrThreshold').value = '0.8';
+          document.getElementById('runRatio').value = ${JSON.stringify(sCustomVal)};
+          document.getElementById('runSizeW').value = '1000';
+          document.getElementById('runSizeH').value = '2000';
+          for (const id of ['fWebCut','fStillsOnly','fNoPreflight','fSkipSync','fSkipRender','fAudioOnly','fRenderOnly','fDryRun']) {
+            document.getElementById(id).checked = true;
+          }
+          const dirty = buildOpts().opts;                        // 弄脏后若不点「重新生成」，会提交这些东西
+          const o1 = ['--ratio', ${JSON.stringify(sDefault)}];   // 上次那条 job 的 opts（**不带**上面任何一个）
+          const r = applyOptsToForm(o1);
+          return { dirty, o1, o2: buildOpts().opts, applied: r.applied, skipped: r.skipped };
+        })()`);
+        need(d.dirty.length >= 20, `弄脏后 buildOpts() 只产出 ${d.dirty.length} 个 token ⇒ 夹具没生效（本判据空转）`);
+        need(eq(d.o2, d.o1),
+          `★ 残留：上次手改过的字段在「重新生成」后**没有复位** ⇒ 这次会提交 ${JSON.stringify(d.o2)}，`
+          + `而上次那条命令是 ${JSON.stringify(d.o1)}`
+          + `（多出来的 ${JSON.stringify(d.o2.filter((x) => !d.o1.includes(x)))} 就是残留 ⇒ 出的片与上次不同）`);
+        await cdp.evalJs(`(() => { document.getElementById('runRatio').value = ${JSON.stringify(sDefault)}; return true; })()`);
+        await sReset();
+
+        // (a1) 默认态（只会有 --ratio <服务端默认比例>）
+        const a1 = await sRT('');
+        need(eq(a1.o2, a1.o1),
+          `★ 往返不恒等（默认态）：o1=${JSON.stringify(a1.o1)} ⇒ 回填后 o2=${JSON.stringify(a1.o2)}`);
+        need(eq(a1.o1, ['--ratio', sDefault]),
+          `默认态下 buildOpts() 应产出 ['--ratio','${sDefault}']，实测 ${JSON.stringify(a1.o1)}`);
+
+        // (a2) 全字段态：把「高级选项」里每个控件都设上（含 ASR 三参数 + 5 个复选框 + 3 个新复选框）
+        const cfgFull = `
+          document.getElementById('fFps').value = '30';
+          document.getElementById('fWorkers').value = '4';
+          document.getElementById('fVenc').value = 'libx264';
+          document.getElementById('fQ').value = 'nosub=1';
+          document.getElementById('fGrain').value = '0.08';
+          document.getElementById('fOut').value = 'myout';
+          document.getElementById('fFilm').value = 'film_x.js';
+          document.getElementById('fLines').value = 'lines.json';
+          document.getElementById('fColor').value = 'bt709';
+          document.getElementById('fAsrLang').value = 'zh';
+          document.getElementById('fAsrModel').value = 'base';
+          document.getElementById('fAsrThreshold').value = '0.8';
+          for (const id of ['fWebCut','fStillsOnly','fNoPreflight','fSkipSync','fDryRun']) {
+            document.getElementById(id).checked = true;
+          }
+        `;
+        const a2 = await sRT(cfgFull);
+        need(a2.o1.length >= 20, `全字段态的 o1 只有 ${a2.o1.length} 个 token ⇒ 夹具没生效（本判据空转）：${JSON.stringify(a2.o1)}`);
+        need(eq(a2.o2, a2.o1),
+          `★ 往返不恒等（全字段态）：o1=${JSON.stringify(a2.o1)} ⇒ 回填后 o2=${JSON.stringify(a2.o2)}`
+          + `（差集 = 少了 ${JSON.stringify(a2.o1.filter((x) => !a2.o2.includes(x)))}、多了 ${JSON.stringify(a2.o2.filter((x) => !a2.o1.includes(x)))}）`);
+
+        // (a3) 自定义尺寸态（--size 路径）
+        const a3 = await sRT(`
+          document.getElementById('runRatio').value = ${JSON.stringify(sCustomVal)};
+          document.getElementById('runSizeW').value = '1000';
+          document.getElementById('runSizeH').value = '2000';
+        `);
+        need(eq(a3.o1, ['--size', '1000x2000']),
+          `自定义尺寸态下 buildOpts() 应产出 ['--size','1000x2000']，实测 ${JSON.stringify(a3.o1)}`);
+        need(eq(a3.o2, a3.o1), `★ 往返不恒等（自定义尺寸态）：o1=${JSON.stringify(a3.o1)} ⇒ o2=${JSON.stringify(a3.o2)}`);
+
+        // (b) `--size` 与 `--ratio` **同时给**（两种顺序）⇒ 按编排器的 last-wins 语义收敛成**一条**
+        //     （`lemo-make.mjs` 对重复的 --ratio/--size 是后者胜；buildOpts 只可能产出其中一个）
+        const b1 = await sApply(['--size', '1080x1920', '--ratio', sPick]);
+        const b1b = await sBuild();
+        need(eq(b1b, ['--ratio', sPick]),
+          `--size 在前、--ratio 在后 ⇒ 应收敛成 ['--ratio','${sPick}']（后者胜），实测 ${JSON.stringify(b1b)}`);
+        need(b1.skipped.length === 0,
+          `两个 flag 都该被认下来（skipped=${JSON.stringify(b1.skipped)}）`);
+        const b2 = await sApply(['--ratio', sPick, '--size', '1080x1920']);
+        const b2b = await sBuild();
+        need(eq(b2b, ['--size', '1080x1920']),
+          `--ratio 在前、--size 在后 ⇒ 应收敛成 ['--size','1080x1920']（后者胜），实测 ${JSON.stringify(b2b)}`);
+        need(b2.applied.length === 2 && b2.skipped.length === 0,
+          `两个 flag 都该被认下来（applied=${JSON.stringify(b2.applied)}、skipped=${JSON.stringify(b2.skipped)}）`);
+
+        // (c) ★ 非空转自证：值**不在下拉里**（`7:5`）⇒ 如实进 skipped、且**不假装**往返恒等
+        //     （否则「往返断言」就成了「怎么写都通过」的摆设）
+        const c1 = await cdp.evalJs(`(() => {
+          applyOptsToForm([]);
+          const o1 = ['--ratio', '7:5'];
+          const r = applyOptsToForm(o1);
+          return { o1, o2: buildOpts().opts, skipped: r.skipped };
+        })()`);
+        need(c1.skipped.length === 1 && c1.skipped[0].includes('7:5'),
+          `不在下拉里的 --ratio 7:5 应如实进 skipped，实测 skipped=${JSON.stringify(c1.skipped)}`);
+        need(!eq(c1.o2, c1.o1),
+          `★ 非空转自证失败：值不在下拉里却仍报「往返恒等」（o2=${JSON.stringify(c1.o2)}）⇒ 这条断言没有牙`);
+
+        notes.push(`S7 往返恒等 3/3（默认 ${JSON.stringify(a1.o1)}、全字段 ${a2.o1.length} token、自定义尺寸 ${JSON.stringify(a3.o1)}）；`
+          + `--size/--ratio 同给按 last-wins 收敛（${JSON.stringify(b1b)} / ${JSON.stringify(b2b)}）；`
+          + `值不在下拉里 ⇒ skipped=${JSON.stringify(c1.skipped)} 且**不**报恒等；`
+          + `弄脏 ${d.dirty.length} token 后回填 ${JSON.stringify(d.o1)} ⇒ 产出 ${JSON.stringify(d.o2)}（零残留）`);
+      });
+
+      // ⑧ ★★ 复位完整性（机械闸门）：清单**静态派生**（不手抄），逐个控件复核
+      await runCase('S8 ★ 复位完整性：把 buildOpts() 读的**每个**控件都弄脏 ⇒ 一条最小 opts 回填后一个残留都不许有（静态派生 + 与页面内派生对账 + 白名单未被误动）', async () => {
+        // ① 清单**静态派生**（Node 侧读源码；抽法与 `web/app.js` 里 `runFormControlIds()` 同一套）
+        const appText = stripComments(fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8'));
+        const sBodyOf = (name) => {
+          const st = appText.indexOf(`function ${name}(`);
+          need(st >= 0, `web/app.js 里找不到 function ${name}(`);
+          let d = 0, e = -1;
+          for (let k = appText.indexOf('{', st); k < appText.length; k++) {
+            if (appText[k] === '{') d++;
+            else if (appText[k] === '}') { d--; if (d === 0) { e = k + 1; break; } }
+          }
+          need(e > 0, `web/app.js 里 ${name} 的函数体没有正常闭合`);
+          return appText.slice(st, e);
+        };
+        const derived = new Set();
+        for (const n of ['buildOpts', 'currentRunSizeChoice', 'checkRunCustomSize']) {
+          for (const m of sBodyOf(n).matchAll(/\$\('([A-Za-z][\w-]*)'\)/g)) derived.add(m[1]);
+        }
+        need(derived.size >= 10, `静态只派生出 ${derived.size} 个控件 id ⇒ 抽法失效（本判据空转）`);
+
+        // ② 运行时：把**每一个**真实存在的控件都设成脏值（同时记下脏值，供 ③ 复核白名单）
+        const dirty = await cdp.evalJs(`(() => {
+          const ids = ${JSON.stringify([...derived])};
+          const before = {}; const absent = []; const same = []; let ok = 0;
+          for (const id of ids) {
+            const el = document.getElementById(id);
+            if (!el) { absent.push(id); continue; }
+            before[id] = (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value;
+            if (el.type === 'checkbox' || el.type === 'radio') el.checked = true;
+            else if (el.tagName === 'SELECT') {
+              const o = [...el.options].find((x) => x.value !== el.value);
+              if (o) el.value = o.value;
+            } else if (el.type === 'number') {
+              // ★ number 输入框会**拒收**非数字（写进去就变空串）⇒ 给一个「合法且与当前不同」的数，
+              //   否则「脏值 == 默认值」，这个控件的复位有没有生效就测不出来了。
+              const cur = Number(el.value);
+              const min = el.min === '' ? 0 : Number(el.min);
+              const max = el.max === '' ? Infinity : Number(el.max);
+              let v = (el.value !== '' && Number.isFinite(cur)) ? cur + 1 : min + 1;
+              if (v > max) v = (el.value !== '' && Number.isFinite(cur)) ? cur - 1 : min;
+              if (v < min) v = min;
+              el.value = String(v);
+              if (el.value === before[id]) el.value = String(Number(el.value) + 1);
+            } else el.value = 'zzz-dirty-' + id;
+            if (el.value === before[id]) same.push(id);
+            ok++;
+          }
+          return { before, ok, absent, same, dirtyOpts: buildOpts().opts };
+        })()`);
+        need(dirty.ok >= 10, `只弄脏了 ${dirty.ok} 个控件 ⇒ 夹具没生效（本判据空转）`);
+        need(dirty.absent.length === 0,
+          `静态派生出的这些 id 在页面里**不存在**：${JSON.stringify(dirty.absent)} ⇒ 抽法/清单有问题（本判据空转）`);
+        need(dirty.same.length === 0,
+          `这些控件的「脏值」与页面初始值**相同** ⇒ 它们没被弄脏，复位有没有生效测不出来：${JSON.stringify(dirty.same)}`);
+        need(dirty.dirtyOpts.length >= 10,
+          `弄脏后 buildOpts() 只产出 ${dirty.dirtyOpts.length} 个 token ⇒ 脏值没进 opts（夹具空转）`);
+
+        // ③ ★ 真判据：回填一条**最小** opts（只有 --ratio）⇒ 除了它自己，一个残留都不许有
+        const after = await cdp.evalJs(`(() => {
+          const o1 = ['--ratio', ${JSON.stringify(sDefault)}];
+          const r = applyOptsToForm(o1);
+          return { o1, o2: buildOpts().opts, applied: r.applied, skipped: r.skipped,
+            fSlug: document.getElementById('fSlug').value, fAngle: document.getElementById('fAngle').value };
+        })()`);
+        need(JSON.stringify(after.o2) === JSON.stringify(after.o1),
+          `★ 复位不完整：弄脏 ${dirty.ok} 个控件后回填一条只有 --ratio 的 opts，buildOpts() 仍产出 `
+          + `${JSON.stringify(after.o2)}（期望 ${JSON.stringify(after.o1)}）`
+          + ` ⇒ 多出来的 ${JSON.stringify(after.o2.filter((x) => !after.o1.includes(x)))} 就是**残留**`
+          + `（「重新生成」会拿它们出片，与上次那条命令不同）`);
+        // ★ 白名单里的两个控件**必须没被动**（复位它们 = 永久丢失：applyOptsToForm 无从回填）
+        need(after.fSlug === 'zzz-dirty-fSlug',
+          `白名单里的 #fSlug 被复位了（实测 ${JSON.stringify(after.fSlug)}）—— 它由 selectStyle(slug) 负责，复位会清空刚选中的风格`);
+        need(after.fAngle === 'zzz-dirty-fAngle',
+          `白名单里的 #fAngle 被复位了（实测 ${JSON.stringify(after.fAngle)}）—— 它不是 CLI 参数、opts 里永远没有它，复位等于永久丢失用户填的值`);
+
+        // ④ 与**页面内**的机械派生对账：两边必须同源（否则 app.js 里那份派生悄悄改了，这道闸门看不出来）
+        const inPage = await cdp.evalJs(`(() => {
+          const ids = ${JSON.stringify([...derived])};
+          return { derived: runFormControlIds().slice().sort(),
+            exist: ids.filter((id) => !!document.getElementById(id)).sort() };
+        })()`);
+        need(JSON.stringify(inPage.derived) === JSON.stringify(inPage.exist),
+          `★ app.js 的 runFormControlIds() 与判据的静态派生**不同源**：`
+          + `页面派生=${JSON.stringify(inPage.derived)}、静态派生（页面真实存在的）=${JSON.stringify(inPage.exist)}`);
+
+        // ★ 收尾：白名单那两个控件没人替我们复位，手工还原（S 组之后不再有别的用例，这里只是卫生）
+        await cdp.evalJs(`(() => { document.getElementById('fSlug').value = ${JSON.stringify(state.slugA)};
+          document.getElementById('fAngle').value = ''; return true; })()`);
+        await sReset();
+        notes.push(`S8 静态派生 ${derived.size} 个控件 id（页面真实存在 ${dirty.ok} 个、缺 ${JSON.stringify(dirty.absent)}、`
+          + `脏值与原值相同的 ${JSON.stringify(dirty.same)}）；`
+          + `弄脏后 buildOpts() 产出 ${dirty.dirtyOpts.length} 个 token；回填 ${JSON.stringify(after.o1)} 后产出 ${JSON.stringify(after.o2)}；`
+          + `白名单 #fSlug/#fAngle 未被复位；页面内 runFormControlIds() 与静态派生逐元素相同`);
+      });
+
+    }
+
+    // ★ T 组（进度分母）与 S 组**不是同一件事**，所以有自己的开关：`--filter T1` 时不必把 S 组也跑一遍。
+    const T_NAMES = ['T1 ★ 进度分母回归'];
+    const tWillRun = !OPT.filter || T_NAMES.some((n) => n.includes(OPT.filter));
+    if (tWillRun) {
+      // ══ T. 进度分母（expectedSteps）的**真值回归** ═══════════════════════════════════
+      //
+      // 为什么必须有这一节（第六批对抗性审计 F6 + 对抗式验证 Q1-3 / Q1-4 的原始发现）：
+      //   · F6 把 `KNOWN_STEPS` 从 7 改成 10、partial 从 5 改成 6 —— 但**一条用例都没有**，
+      //     而 `web/app.js` 的注释当时**引用了一个并不存在的回归测试名**（Q1-4 实测：在 `test/`
+      //     里按那个名字搜，**0 命中**；本文件里的 F6 是「顶栏『演练』」，与步数毫无关系）——
+      //     后人读到那句会以为有钉子，从而不敢复核；而这正是本批审计的维度（系统对自己说的话是否属实）。
+      //   · Q1-3 实测：只写死一个分母，对 `--q content=…` / `--lines` / `--web-cut` **仍然是错的**。
+      //     ★ 而 Q1 报告里那个「真实 11 步」**也不准**：下面这张表是**实证**出来的 ——
+      //       把编排器**副本**的三处重活（run / runLive / runWsl）打桩成成功、`fail()` 改成不退出，
+      //       逐 opts 组合真跑一遍，数它打出多少行 step 标记。`content=` 实际是 **12** 步：
+      //       「导出事件与字幕」会被调用**两次**（`[3]` 与 `[5]` 同名），Q1 漏了第二次。
+      //   ⇒ 本节两件事一起做（缺一不可）：
+      //     ① **断言真值**：把页面里那个**真的** `expectedSteps()`（app.js 是 classic script，
+      //        顶层 function 就是全局）对**每一种 opts 组合**跑一遍，逐个比对；
+      //     ② **断言锚点**：同时断言 `lemo-make.mjs` 里那几条**决定步数的守卫**仍在原位
+      //        （配音前置的守卫与 textMayChange 的定义、--audio-only/--render-only 的隐含跳过、
+      //          partial 在混流之前 return、web cut / 审核回路在混流之后）。
+      //        ⇒ 编排器的步序一变，本节就会红（数字再也不会像这次一样悄悄过期）。
+      //   ★ 判据的**真值来源**：`lemo-make.mjs` 的实现（不是本文件抄的一张表）—— 表里的期望值
+      //     是逐条对着 step() 调用点与守卫数出来的，锚点断言负责保证「数它的前提」没变。
+      await runCase('T1 ★ 进度分母回归：expectedSteps() 逐 opts 组合对真值（含 content= / --lines / --web-cut / partial），且编排器里决定步数的守卫仍在', async () => {
+        const appSrc = stripComments(fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8'));
+        const orchSrc = stripComments(fs.readFileSync(path.join(ROOT, 'lemo-make.mjs'), 'utf8'));
+
+        // ── ② 编排器侧的锚点（先查，免得下面「页面函数答对了」是建立在一张过期的表上）──
+        //   ★ 全是**代码**子串（已剥注释），所以注释里写什么都不会让它们假绿。
+        const ANCHORS = [
+          ['contentOf() 的判据（前端那份正则要与之同口径）', 'const m = /(?:^|&)content=([^&]+)/.exec(q || \'\');'],
+          ['swapContent 的定义（--q 与 --q-events 都算）', 'const swapContent = contentOf(qRender) || contentOf(qEvents);'],
+          ['textMayChange 的定义（含 --lines）', 'const textMayChange = swapContent !== null || o.lines !== null;'],
+          ['★ 配音前置的守卫（多一个 step 的唯一入口）', 'if (!o.skipAudio && textMayChange) {'],
+          ['--audio-only 隐含跳过渲染', 'o.audioOnly = true; o.skipRender = true;'],
+          ['★ --render-only 隐含跳过音频（前端只传 --render-only）', 'o.renderOnly = true; o.skipAudio = true;'],
+          ['★ partial 在混流之前 return（所以 web cut / 审核回路在 partial 上不可达）', 'if (o.audioOnly || o.renderOnly) {'],
+          ['web cut 的调用点（多一个 step）', 'if (o.webCut) await emitWebCut('],
+          ['审核回路的调用点（多一个 step）', 'if (o.review) await emitReview('],
+        ];
+        for (const [why, sub] of ANCHORS) {
+          need(orchSrc.includes(sub), `lemo-make.mjs 里找不到锚点「${why}」：${JSON.stringify(sub)}`
+            + ' —— 编排器的步序/守卫变了，本用例的那张真值表必须重新数（这正是它存在的意义）。');
+        }
+        // 顺序断言（上面那几条锚点「谁在前谁在后」才是步数的来源）：
+        const muxAt = orchSrc.indexOf('step(`混流（WSL mux.sh');
+        need(muxAt > 0, 'lemo-make.mjs 里找不到混流那一步（`step(`混流（WSL mux.sh`）');
+        need(orchSrc.indexOf('if (o.audioOnly || o.renderOnly) {') < muxAt,
+          'partial 的 return 竟然排在混流之后 —— 那样 partial 路径上 web cut / 审核回路就可达了，分母要重数');
+        need(orchSrc.indexOf('if (o.webCut) await emitWebCut(') > muxAt,
+          'web cut 的调用点竟然排在混流之前 —— 分母要重数');
+        need(orchSrc.indexOf('音频链路 · 配音前置') > orchSrc.indexOf('await exportEventsAndSubs();'),
+          '配音前置竟然排在「导出事件与字幕」之前 —— 步序变了，分母要重数');
+        // step() 的调用点数（= 分母的「原料」）：20 次出现 = 1 处定义 + **19** 处调用点。
+        const stepHits = (orchSrc.match(/(?<![\w$.])step\(/g) || []).length;
+        need(stepHits === 20,
+          `lemo-make.mjs 里 step( 出现 ${stepHits} 次，期望 20（1 处定义 + 19 处调用点）—— 新增/删除了步骤，分母要重数`);
+        // ★★ 「换内容多**两个** step」的第二个来源：exportEventsAndSubs() 被调用**两次**，
+        //   而它的第一句就是 step() ⇒ 屏上会出现两步**同名**的「导出事件与字幕」。
+        //   ★ 这条是 Q1-3 复核时**实测**出来的（把编排器副本的三处重活打桩后真跑：
+        //     `--q content=coffee` 打出 12 行 step 标记，其中 [3] 与 [5] 标题相同）
+        //     —— Q1 报告里写的「11」漏了这一次调用。
+        const exportCalls = (orchSrc.match(/await exportEventsAndSubs\(\);/g) || []).length;
+        need(exportCalls === 2,
+          `lemo-make.mjs 里 await exportEventsAndSubs(); 出现 ${exportCalls} 次，期望 2（首次 + 配音前置后重排）`
+          + ' —— 这个数变了，㈠ 的「+2」就要重数（它正是多出来的那个 step 的来源）');
+        const expFnAt = orchSrc.indexOf('const exportEventsAndSubs = async () => {');
+        need(expFnAt > 0, 'lemo-make.mjs 里找不到 exportEventsAndSubs 的定义');
+        need(/^const exportEventsAndSubs = async \(\) => \{\s*\n\s*step\(/.test(orchSrc.slice(expFnAt, expFnAt + 200)),
+          'exportEventsAndSubs 的第一句竟然不是 step() —— 「调用两次 ⇒ 多两个 step」不成立，分母要重数');
+
+        // ── ① 页面里**真的** expectedSteps()（防空转：先确认它确实是全局函数）──
+        const kind = await cdp.evalJs('typeof expectedSteps');
+        need(kind === 'function',
+          `页面里取不到 expectedSteps（typeof = ${kind}）—— web/app.js 不再是 classic script，或该函数被改名/包裹；本用例会变成空转`);
+
+        // ── 真值表（逐条对着 lemo-make.mjs 的 step() 调用点与守卫数出来的）──
+        const TABLE = [
+          { opts: ['--ratio', '9:16'], want: 10, why: '默认路径（不带任何条件触发的开关）' },
+          { opts: ['--ratio', '9:16', '--skip-sync', '--no-preflight'], want: 10, why: '跳同步 / 不预检都不改步数' },
+          { opts: ['--ratio', '9:16', '--skip-render'], want: 10, why: '--skip-render 照样打「渲染」那一步（只换标题）' },
+          { opts: ['--ratio', '9:16', '--q', 'noev=1'], want: 10, why: '--q 里**没有** content= ⇒ 不多配音前置' },
+          { opts: ['--ratio', '9:16', '--q', 'content=coffee'], want: 12, why: '换内容 ⇒ +2：配音前置 + 「导出事件与字幕」被调第二次' },
+          { opts: ['--ratio', '9:16', '--q-events', 'content=x'], want: 12, why: '--q-events 里的 content= 同样触发（swapContent 两路都认）' },
+          { opts: ['--ratio', '9:16', '--lines', 'lines.json'], want: 12, why: '--lines ⇒ textMayChange 为真 ⇒ 同样 +2' },
+          { opts: ['--ratio', '9:16', '--skip-audio', '--q', 'content=x'], want: 10, why: '跳过音频 ⇒ 配音前置与那次重排都不跑' },
+          { opts: ['--ratio', '9:16', '--web-cut'], want: 11, why: '--web-cut ⇒ 末尾多一个「720p web cut」' },
+          { opts: ['--ratio', '9:16', '--review'], want: 11, why: '--review ⇒ 末尾多一个「审核回路」（10 + 1）' },
+          { opts: ['--ratio', '9:16', '--web-cut', '--review'], want: 12, why: '两者叠加：10 + 1 + 1' },
+          { opts: ['--ratio', '9:16', '--q', 'content=x', '--web-cut'], want: 13, why: '配音前置 + 重排（+2）+ web cut（+1）' },
+          { opts: ['--audio-only'], want: 6, why: 'partial 基准（return 前仍会打一次「交付文档」）' },
+          { opts: ['--audio-only', '--q', 'content=coffee'], want: 8, why: 'partial + 配音前置 + 重排（+2）' },
+          { opts: ['--render-only', '--q', 'content=coffee'], want: 6, why: '--render-only 隐含跳过音频 ⇒ 配音前置不跑' },
+          { opts: ['--render-only', '--web-cut', '--review'], want: 6, why: 'partial 在混流之前就 return ⇒ web cut / 审核回路都不可达' },
+          { opts: ['--stills-only'], want: 3, why: '--stills-only 在 [3] 分镜之后 exit(0)' },
+          { opts: ['--stills-only', '--q', 'content=x'], want: 3, why: '同上：它比「导出事件与字幕」还早退出' },
+          { opts: ['--dry-run'], want: 1, why: '--dry-run 在 [1] 之后 exit(0)' },
+          { opts: ['--dry-run', '--stills-only'], want: 1, why: '--dry-run 先判（两者都在 [1] 之后退出）' },
+        ];
+        const got = await cdp.evalJs(`(${JSON.stringify(TABLE.map((c) => c.opts))}).map((o) => expectedSteps(o))`);
+        need(Array.isArray(got) && got.length === TABLE.length,
+          `页面里 expectedSteps() 的返回值形状不对：${JSON.stringify(got)}`);
+        const bad = TABLE.map((c, i) => ({ ...c, got: got[i] })).filter((x) => x.got !== x.want);
+        need(bad.length === 0, 'expectedSteps() 与真值不符：\n'
+          + bad.map((x) => `        ${JSON.stringify(x.opts)} ⇒ 页面 ${x.got}、真值 ${x.want}（${x.why}）`).join('\n'));
+
+        // ── 反向（有牙）：把已知的「条件触发」逐个撤掉，页面**必须**跟着变 ──
+        //   ★ 若哪天有人把 expectedSteps() 改回「恒返回 KNOWN_STEPS」，下面这几条会立刻红。
+        const base = await cdp.evalJs('expectedSteps(["--ratio","9:16"])');
+        const withQ = await cdp.evalJs('expectedSteps(["--ratio","9:16","--q","content=x"])');
+        need(withQ === base + 2, `撤掉/加上 content= 时分母没有 +2（${base} → ${withQ}）—— expectedSteps() 已经不看 opts 了`);
+        const partialBase = await cdp.evalJs('expectedSteps(["--audio-only"])');
+        need(partialBase !== base, `partial 与默认路径的分母竟然相同（都是 ${base}）—— 分档逻辑失效`);
+
+        notes.push(`T1 进度分母：${TABLE.length} 组 opts 全部与真值一致（默认 ${base} / +content= ${withQ} / partial ${partialBase}）；`
+          + `编排器锚点 ${ANCHORS.length} 条 + 顺序 4 条 + step( 计数 ${stepHits} + exportEventsAndSubs 调用 ${exportCalls} 次 全部命中`
+          + `（★ 期望值是**实证**的：编排器副本打桩后真跑，数 step 标记行）`);
+      });
+    }
+
+    // ★ U 组（第七批对抗性审计 **F2 + F9**）：**前端口径的单一来源**。
+    //   F2：`web/app.js` 曾手抄 4 个上传口径 + 1 个文案上限（服务端那份在 `lib/dub.mjs`），
+    //       改任一侧都没有断言会响 ⇒ 「前端说能传 → 服务端 413」或反向误拒。
+    //   F9：轮询间隔 3 处裸 `2000`、tick 预算 3 个、用户文案 3 处手写分钟数（25/25/63）。
+    //   ★★ 本组**自带「默认路径逐字节同改前」的回归**：把改前实测的**用户可见文案**逐字钉进来
+    //     （三张上传卡的格式/上限提示、超限提示、三处「等了 N 分钟」），所以「收成常量」这件事
+    //     不会顺手改掉用户看到的话；U3 还真的把 tick 跑到上限、把那一句话读回来比对。
+    const U_NAMES = ['U1 ', 'U2 ', 'U3 '];
+    const uWillRun = !OPT.filter || U_NAMES.some((n) => n.includes(OPT.filter));
+    if (uWillRun) {
+      // ══ U. 前端口径的单一来源（F2 上传口径 / F9 轮询口径）═════════════════════════════
+      /** 从源码文本里抽一个函数的**真函数体**（花括号配平）—— 与 S6 同一套做法。 */
+      const bodyOf = (text, name) => {
+        const st = text.indexOf(`function ${name}(`);
+        need(st >= 0, `web/app.js 里找不到 function ${name}(`);
+        let d = 0, e = -1;
+        for (let k = text.indexOf('{', st); k < text.length; k++) {
+          if (text[k] === '{') d++;
+          else if (text[k] === '}') { d--; if (d === 0) { e = k + 1; break; } }
+        }
+        need(e > 0, `web/app.js 里 ${name} 的函数体没有正常闭合`);
+        return text.slice(st, e);
+      };
+      /** 求值一段**源码里**的字面量表达式（本仓既有做法：`test/asr-cli.test.mjs` 用 `new Function` 重建源码片段）。 */
+      const evalLiteral = (expr, why) => {
+        try { return new Function(`return (${expr});`)(); }
+        catch (e) { throw new Error(`求值「${why}」失败（${expr}）：${e.message}`); }
+      };
+      /** 从 `lib/dub.mjs` 抽 `export const NAME = <expr>;` 的**真值**（求值，不手抄）。 */
+      const dubConst = (src, name) => {
+        const m = new RegExp(`export const ${name}\\s*=\\s*([^;]+);`).exec(src);
+        need(m, `lib/dub.mjs 里抽不到 \`export const ${name} = …;\` ⇒ U1 的抽法失效（本判据空转）`);
+        return evalLiteral(m[1], `lib/dub.mjs 的 ${name}`);
+      };
+      /** 从 app.js 抽 `DUB_LIMITS_FALLBACK` 的对象字面量并求值（花括号配平，绝不手抄那五个值）。 */
+      const fallbackOf = (app) => {
+        const st = app.indexOf('const DUB_LIMITS_FALLBACK = {');
+        need(st >= 0, 'web/app.js 里找不到 `const DUB_LIMITS_FALLBACK = {` ⇒ U1 的抽法失效（本判据空转）');
+        let d = 0, e = -1;
+        for (let k = app.indexOf('{', st); k < app.length; k++) {
+          if (app[k] === '{') d++;
+          else if (app[k] === '}') { d--; if (d === 0) { e = k + 1; break; } }
+        }
+        need(e > 0, 'web/app.js 的 DUB_LIMITS_FALLBACK 对象字面量没有正常闭合 ⇒ 抽法失效');
+        return evalLiteral(app.slice(app.indexOf('{', st), e), 'web/app.js 的 DUB_LIMITS_FALLBACK');
+      };
+      // 前端兜底 ↔ 服务端权威导出的**逐项对照表**（语义相同的一对一，别加不相干的项）。
+      const DIFF_KEYS = [
+        ['maxUploadBytes', 'MAX_UPLOAD_BYTES'],
+        ['videoExts', 'ALLOWED_EXTS'],
+        ['srtExts', 'ALLOWED_SRT_EXTS'],
+        ['imageExts', 'ALLOWED_IMG_EXTS'],
+        ['maxScriptChars', 'MAX_SCRIPT_CHARS'],
+      ];
+      /** 漂移判定（返回**人话**清单）：空数组 = 一致。 */
+      const driftOf = (app, dub) => {
+        const fb = fallbackOf(app);
+        const bad = [];
+        for (const [k, srvName] of DIFF_KEYS) {
+          const want = dubConst(dub, srvName);
+          if (JSON.stringify(fb[k]) !== JSON.stringify(want)) {
+            bad.push(`${k}=${JSON.stringify(fb[k])} 而 lib/dub.mjs 的 ${srvName}=${JSON.stringify(want)}`);
+          }
+        }
+        return bad;
+      };
+
+      /**
+       * 口径**取值**在 app.js 里的「另一份写法」清单（同一个值的各种写法都算一份）。
+       * ★ 为什么要按**值**数、而不是按某一种字面量文本数：改前那两处副本**写法不同** ——
+       *   常量写 `200 * 1024 * 1024`，`applyRootPaths()` 的提示文案写 `200MB`；
+       *   扩展名常量写 `['.mp4', '.mov', …]`，文案写 `.mp4 / .mov / …`。
+       *   只数一种写法 ⇒ 改前也「恰好 1 次」⇒ 判据**无牙**。
+       * ★ 改前（本批开工时的工作区版本）逐项实测：单次上传上限 **2**（常量 + 提示文案）、
+       *   视频扩展名 **2**、背景图扩展名 **2**、文案上限 **2**（`if (n > 20000)` + 那句提示）、
+       *   字幕扩展名 **1**（那句只在 `web/index.html` 里，app.js 里没有第二份）⇒ 前四项都有牙。
+       */
+      const VALUE_FORMS = [
+        ['单次上传上限', [/200 \* 1024 \* 1024/g, /\b200MB\b/g]],
+        ['视频扩展名', [/\['\.mp4', '\.mov', '\.m4v', '\.webm'\]/g, /\.mp4 \/ \.mov \/ \.m4v \/ \.webm/g]],
+        ['背景图扩展名', [/\['\.jpg', '\.jpeg', '\.png', '\.webp'\]/g, /\.jpg \/ \.jpeg \/ \.png \/ \.webp/g]],
+        ['字幕扩展名', [/\['\.srt'\]/g, /只收 \.srt/g]],
+        ['文案上限', [/\b20000\b/g]],
+      ];
+      /** 返回**人话**清单：某个口径的取值在 app.js 里出现了 ≠1 次（1 次 = 只有兜底那一份）。 */
+      const copiesOf = (app) => {
+        const out = [];
+        for (const [why, pats] of VALUE_FORMS) {
+          const n = pats.reduce((s, re) => s + (app.match(re) || []).length, 0);
+          if (n !== 1) out.push(`${why}：取值在 web/app.js 里出现 ${n} 次（期望 1 次 = 只有 DUB_LIMITS_FALLBACK 那一份）`);
+        }
+        return out;
+      };
+
+      await runCase('U1 ★ 上传口径漂移闸门：web/app.js 的兜底 ≡ lib/dub.mjs 的权威导出（逐项 + 旧手抄副本已删 + 变异自证）', async () => {
+        const appSrc = stripComments(fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8'));
+        const dubSrc = stripComments(fs.readFileSync(path.join(ROOT, 'lib', 'dub.mjs'), 'utf8'));
+
+        // ── ① 真判据（**先判**，别被下面的前置断言盖掉）──
+        const real = driftOf(appSrc, dubSrc);
+        need(real.length === 0, '★ 上传口径漂移（`web/app.js` 的 `DUB_LIMITS_FALLBACK` vs `lib/dub.mjs`）：\n'
+          + real.map((x) => `        ${x}`).join('\n')
+          + '\n  ⇒ 前端预检与服务端会给出两种结论（「前端说能传 → 服务端 413」或反向误拒）。'
+          + '兜底只是**镜像**：改了服务端那份就要同步改它，或让它改取 `/api/dub/sources` 的下发值。');
+
+        // ── ② 旧的手抄副本必须**已删**（剥注释后按标识符找；注释里提到不算）──
+        const OLD = ['DUB_MAX_BYTES', 'DUB_EXTS', 'DUB_SRT_EXTS', 'DUB_IMG_EXTS'];
+        const aliveOld = OLD.filter((n) => appSrc.includes(n));
+        need(aliveOld.length === 0,
+          `web/app.js 里仍有旧的手抄常量 ${aliveOld.join(' ')} —— 它们应与兜底合并成**一处**（F2 的修法就是「不再手抄」）`);
+
+        // ── ③ 五个口径的**取值**在 app.js 里各只出现一次（= 只有 DUB_LIMITS_FALLBACK 那一份）──
+        //   ★ 这一条是「不再手抄」的**机械**判据（按**值**数，各种写法都算，见 VALUE_FORMS 的注释）：
+        //     改前每个口径都有**两处**（常量 + `applyRootPaths()` 的提示文案），且两处写法不同。
+        const dup = copiesOf(appSrc);
+        need(dup.length === 0, '★ 前端仍**手抄**了上传口径（同一个取值在 web/app.js 里出现不止一处）：\n'
+          + dup.map((x) => `        ${x}`).join('\n')
+          + '\n  ⇒ 这些副本改一处不会带动另一处（F2 的形状：前端说能传 → 服务端 413，或反向误拒）。');
+
+        // ── ④ 四个消费点都经 `dubLimits()`（而不是各自读兜底/自己再写一遍）──
+        for (const [fn, why] of [['dubUploadExtsOf', '扩展名预检'], ['uploadDubAsset', '大小预检'],
+          ['renderDubScriptHint', '文案上限提示'], ['applyRootPaths', '三张上传卡的格式/上限提示']]) {
+          need(bodyOf(appSrc, fn).includes('dubLimits()'),
+            `${why}（${fn}）没有走 dubLimits() —— 口径没有单源（它还在自己写一份）`);
+        }
+
+        // ── ⑤ 失明守卫（防空转）：抽到的兜底必须**结构完整**、权威侧必须**抽得到** ──
+        const fb = fallbackOf(appSrc);
+        need(Object.keys(fb).length === DIFF_KEYS.length,
+          `DUB_LIMITS_FALLBACK 的键数 ${Object.keys(fb).length} ≠ 对照表 ${DIFF_KEYS.length} ⇒ 抽法/结构变了（本判据空转）`);
+        need(Array.isArray(fb.videoExts) && fb.videoExts.length >= 2, '兜底的视频扩展名清单为空/过短 ⇒ 抽法失效');
+        need(typeof fb.maxUploadBytes === 'number' && fb.maxUploadBytes > 0, '兜底的上传上限不是正数 ⇒ 抽法失效');
+        for (const [, srvName] of DIFF_KEYS) dubConst(dubSrc, srvName);   // 抽不到会抛（失明即 FAIL）
+
+        // ── ⑥ 变异自证（**有牙**，在源码副本上做，绝不写文件）──
+        const m1 = appSrc.replace('maxUploadBytes: 200 * 1024 * 1024', 'maxUploadBytes: 100 * 1024 * 1024');
+        need(m1 !== appSrc, '自证前置失败①：app.js 里找不到 `maxUploadBytes: 200 * 1024 * 1024`（写法变了，自证空转）');
+        const d1 = driftOf(m1, dubSrc);
+        need(d1.some((x) => x.startsWith('maxUploadBytes=')),
+          `★ 自证失败①：把兜底的上传上限改成 100MB 后闸门仍绿（${JSON.stringify(d1)}）⇒ 判据没在承重`);
+        const m2 = appSrc.replace("videoExts: ['.mp4', '.mov', '.m4v', '.webm']",
+          "videoExts: ['.mp4', '.mov', '.m4v', '.webm', '.mkv']");
+        need(m2 !== appSrc, '自证前置失败②：app.js 里找不到 videoExts 那一行（写法变了，自证空转）');
+        const d2 = driftOf(m2, dubSrc);
+        need(d2.some((x) => x.startsWith('videoExts=')),
+          `★ 自证失败②：给兜底的视频扩展名加一个 .mkv 后闸门仍没点名（${JSON.stringify(d2)}）`);
+        // ★ 反向（**服务端**那份变了、前端没跟）：这才是本闸门真正要抓的方向
+        const m3 = dubSrc.replace('MAX_SCRIPT_CHARS = 20000', 'MAX_SCRIPT_CHARS = 30000');
+        need(m3 !== dubSrc, '自证前置失败③：lib/dub.mjs 里找不到 `MAX_SCRIPT_CHARS = 20000`（写法变了，自证空转）');
+        const d3 = driftOf(appSrc, m3);
+        need(d3.some((x) => x.startsWith('maxScriptChars=')),
+          `★ 自证失败③：把**服务端**的文案上限改成 30000、前端没跟，闸门仍没点名（${JSON.stringify(d3)}）`
+          + ' ⇒ 本判据抓不到「服务端改了、前端手抄副本没跟」这个方向（那正是 F2 的形状）');
+        //   ④ ★ 判据③（「取值只许有一处」）的有牙证据：把**一个消费点**改回**手抄**那个值
+        //      （`applyRootPaths()` 里原来就是 `单个上限 200MB` 这种写法）⇒ 必须点名「单次上传上限」。
+        const m4 = appSrc.replace('const mb = `${lim.maxUploadBytes / 1048576}MB`;', "const mb = '200MB';");
+        need(m4 !== appSrc, '自证前置失败④：app.js 里找不到 `const mb = `${lim.maxUploadBytes / 1048576}MB`;`（写法变了，自证空转）');
+        const d4 = copiesOf(m4);
+        need(d4.some((x) => x.startsWith('单次上传上限')),
+          '★ 自证失败④：把 applyRootPaths() 改回手抄「200MB」后判据③仍绿（' + JSON.stringify(d4) + '）'
+          + ' ⇒ 「取值只许一处」这条没在承重（那样它就证明不了「不再手抄」）');
+        //   ⑤ 同上，但换成**另一个写法形状**（改前那种 `.mp4 / .mov / …` 斜杠清单）——
+        //      证明判据③ 认的是**值**，不是某一种字面量写法。
+        const PRE = "['dubDrop', `支持 .mp4 / .mov / .m4v / .webm，单个上限 ${mb}（${where}）`]";
+        const m5 = appSrc.replace(
+          "['dubDrop', `支持 ${lim.videoExts.join(' / ')}，单个上限 ${mb}（${where}）`]", PRE);
+        need(m5 !== appSrc, '自证前置失败⑤：app.js 里找不到 dubDrop 那一行（写法变了，自证空转）');
+        const d5 = copiesOf(m5);
+        need(d5.some((x) => x.startsWith('视频扩展名')),
+          '★ 自证失败⑤：把 dubDrop 那句改回手抄「.mp4 / .mov / .m4v / .webm」后判据③仍绿（'
+          + JSON.stringify(d5) + '）⇒ 判据③ 只认某一种写法，抓不到改前那种斜杠清单形状');
+
+        notes.push(`U1 上传口径：兜底 ${Object.keys(fb).length} 项与 lib/dub.mjs 的 `
+          + `${DIFF_KEYS.map((x) => x[1]).join(' / ')} 逐项一致；`
+          + `五个口径的**取值**在 app.js 里各恰 1 处（按值数、各种写法都算）；四个消费点都走 dubLimits()；`
+          + `变异自证 5 条（改兜底上限 / 改兜底扩展名 / 改**服务端**文案上限 / 消费点改回手抄 200MB / 消费点改回手抄斜杠清单）全部被点名`);
+      });
+
+      await runCase('U2 ★ 上传口径取服务端下发值：桩 /api/dub/sources 换一套口径 ⇒ 前端预检与文案跟着变；默认路径与改前逐字节相同', async () => {
+        await ensureDubPage();
+        // ★ 改前（第七批审计 F2）的三句话 + 两个属性值 —— 下面逐字钉住（这是「零行为变更」的判据）。
+        const s0 = await state.get('/api/dub/sources');
+        need(s0.status === 200 && s0.json && typeof s0.json.dir === 'string',
+          `前置失败：GET /api/dub/sources → ${s0.status} / dir=${JSON.stringify(s0.json && s0.json.dir)}`);
+        const realDir = s0.json.dir;
+        const WANT_SUBS = [
+          `支持 .mp4 / .mov / .m4v / .webm，单个上限 200MB（存在 ${realDir}）`,
+          `支持 .jpg / .jpeg / .png / .webp，单个上限 200MB（存在 ${realDir}）`,
+          `只收 .srt，单个上限 200MB`,
+        ];
+        const readPage = (scriptValue) => cdp.evalJs(`(() => {
+          const ta = document.getElementById('dubScript');
+          ta.value = ${JSON.stringify(scriptValue)};
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+          return {
+            lim: dubLimits(),
+            exts: { video: dubUploadExtsOf('video'), srt: dubUploadExtsOf('srt'), image: dubUploadExtsOf('image') },
+            hint: document.getElementById('dubScriptHint').textContent,
+            maxLen: ta.maxLength, ph: ta.placeholder,
+            subs: [...document.querySelectorAll('#dubDrop .dub-drop-sub, #dubBgDrop .dub-drop-sub, #dubSrtDrop .dub-drop-sub')].map((e) => e.textContent),
+          };
+        })()`);
+
+        // ── ① 默认路径：服务端**没**下发口径字段 ⇒ 退回兜底 ⇒ 页面上的话必须与改前逐字节相同 ──
+        const before = await readPage('x'.repeat(20001));
+        need(before.subs.length === 3,
+          `三张上传卡的 .dub-drop-sub 应都能取到（口播素材 / 背景图 / SRT），实测 ${before.subs.length} 处`);
+        need(JSON.stringify(before.subs) === JSON.stringify(WANT_SUBS),
+          '三张卡的「支持格式 + 单个上限」提示与改前**不再逐字节相同**：\n'
+          + `        实测 ${JSON.stringify(before.subs)}\n        改前 ${JSON.stringify(WANT_SUBS)}`);
+        need(before.maxLen === 20000, `#dubScript 的 maxLength 被改了：${before.maxLen}（改前 20000）`);
+        need(String(before.ph).includes('最多 20000 字'), `#dubScript 的 placeholder 不再说「最多 20000 字」：「${before.ph}」`);
+        need(String(before.hint).includes('⚠️ 超过 20000 字上限，接口会拒'),
+          `#dubScriptHint 的超限提示与改前不同：「${before.hint}」`);
+        need(before.lim.maxUploadBytes === 200 * 1024 * 1024
+          && JSON.stringify(before.lim.videoExts) === JSON.stringify(['.mp4', '.mov', '.m4v', '.webm'])
+          && before.lim.maxScriptChars === 20000,
+          `服务端没下发口径时 dubLimits() 没退回兜底：${JSON.stringify(before.lim)}`);
+
+        // ── ② 换一套**服务端下发**的口径（桩 /api/dub/sources）⇒ 前端必须跟着变 ──
+        const STUB = {
+          ok: true, uploads: [], dir: 'X:/u2-stub/_uploads',
+          maxUploadBytes: 1024 * 1024, videoExts: ['.mkv'], srtExts: ['.vtt'], imageExts: ['.gif'], maxScriptChars: 7,
+        };
+        await cdp.evalJs(`(() => {
+          if (!window.__u2Fetch) window.__u2Fetch = window.fetch;
+          const of = window.__u2Fetch;
+          window.fetch = function (u) {
+            if (String(u).indexOf('/api/dub/sources') >= 0) {
+              return Promise.resolve({ ok: true, status: 200, text: async () => ${JSON.stringify(JSON.stringify(STUB))} });
+            }
+            return of.apply(this, arguments);
+          };
+          return true;
+        })()`);
+        await cdp.evalJs('loadDubSources()', { awaitPromise: true });
+        const after = await readPage('x'.repeat(8));
+        need(JSON.stringify(after.exts) === JSON.stringify({ video: ['.mkv'], srt: ['.vtt'], image: ['.gif'] }),
+          `下发了新扩展名后前端预检没跟着变：${JSON.stringify(after.exts)}（期望 .mkv / .vtt / .gif）`);
+        need(after.lim.maxUploadBytes === 1024 * 1024 && after.lim.maxScriptChars === 7,
+          `下发了新上限后 dubLimits() 没跟着变：${JSON.stringify(after.lim)}`);
+        need(after.maxLen === 7, `下发了新文案上限后 #dubScript 的 maxLength 没跟着变：${after.maxLen}（期望 7）`);
+        need(String(after.hint).includes('⚠️ 超过 7 字上限，接口会拒'),
+          `下发了新文案上限后超限提示没跟着变：「${after.hint}」`);
+        need(JSON.stringify(after.subs) === JSON.stringify([
+          '支持 .mkv，单个上限 1MB（存在 X:/u2-stub/_uploads）',
+          '支持 .gif，单个上限 1MB（存在 X:/u2-stub/_uploads）',
+          '只收 .vtt，单个上限 1MB',
+        ]), `下发了新口径后三张卡的提示没跟着变：${JSON.stringify(after.subs)}`);
+        // ★ 反空转：①与②必须**真的不同**（否则「跟着变」这句话没被测到）
+        need(JSON.stringify(before.exts) !== JSON.stringify(after.exts), '①与②抽到的扩展名竟然相同 ⇒ 桩没生效，本用例在空转');
+
+        // ── ③ 前端预检真的按下发值判（两条都是**早退**路径，绝不真发上传请求）──
+        const toasts = await cdp.evalJs(`(() => {
+          const mk = (name, bytes) => new File([new Uint8Array(bytes)], name);
+          const out = [];
+          uploadDubAsset(mk('a.mp4', 10), 'video');                 // 扩展名不在下发清单里 ⇒ 拒
+          out.push(document.getElementById('toast').textContent);
+          uploadDubAsset(mk('b.mkv', 2 * 1024 * 1024), 'video');    // 超过下发上限 1MB ⇒ 拒
+          out.push(document.getElementById('toast').textContent);
+          return out;
+        })()`);
+        need(/不支持的视频格式「\.mp4」—— 只收 \.mkv/.test(toasts[0]),
+          `前端预检没按下发的扩展名判：toast=「${toasts[0]}」`);
+        need(/^视频过大：/.test(toasts[1]) && toasts[1].includes('1.0 MB'),
+          `前端预检没按下发的上限判（1MB）：toast=「${toasts[1]}」`);
+
+        // ── ④ 还原：撤掉桩、重拉一次 ⇒ 回到真实服务端的口径（兜底）──
+        await cdp.evalJs('(() => { window.fetch = window.__u2Fetch; return true; })()');
+        await cdp.evalJs('loadDubSources()', { awaitPromise: true });
+        const back = await readPage('');
+        need(JSON.stringify(back.subs) === JSON.stringify(WANT_SUBS) && back.maxLen === 20000
+          && JSON.stringify(back.exts.video) === JSON.stringify(['.mp4', '.mov', '.m4v', '.webm']),
+          `撤掉桩之后没有回到真实口径：${JSON.stringify({ subs: back.subs, maxLen: back.maxLen, exts: back.exts })}`);
+
+        notes.push(`U2 上传口径：默认路径三张卡提示 + maxLength/placeholder + 超限提示与改前**逐字节相同**；`
+          + `桩下发 ['.mkv']/1MB/7 字 ⇒ 预检与三张卡提示全部跟着变（toast「${toasts[0]}」/「${toasts[1]}」）；`
+          + `撤桩后回到兜底`);
+      });
+
+      await runCase('U3 ★ 轮询口径单源化：间隔/tick 预算各只一处、用户文案由 tick 算出来 —— 默认路径逐字节同改前', async () => {
+        const appSrc = stripComments(fs.readFileSync(path.join(ROOT, 'web', 'app.js'), 'utf8'));
+        // ── ① 静态：裸 `2000` 零处、POLL_MS 恰 1 处定义 + 3 处轮询 ──
+        const bare = (appSrc.match(/\}\s*,\s*2000\s*\)/g) || []).length;
+        need(bare === 0, `web/app.js 里仍有 ${bare} 处裸 \`}, 2000)\` 轮询间隔（应全部改成 POLL_MS）`);
+        const defs = (appSrc.match(/const POLL_MS = 2000;/g) || []).length;
+        need(defs === 1, `POLL_MS 的定义应恰好 1 处，实测 ${defs} 处`);
+        const uses = (appSrc.match(/\}, POLL_MS\);/g) || []).length;
+        need(uses === 3, `应有 3 处轮询用 POLL_MS（试听 / 导入 / 出片），实测 ${uses} 处`);
+        // ── ② 静态：用户文案里不许再手写分钟数（三处都走 pollMinutes()）──
+        const hardMin = (appSrc.match(/等了 \d+ 分钟/g) || []).length;
+        need(hardMin === 0, `web/app.js 里仍有 ${hardMin} 处手写的「等了 N 分钟」文案（应由 pollMinutes() 算出来）`);
+        const pmDefs = (appSrc.match(/const pollMinutes = \(ticks\) =>/g) || []).length;
+        need(pmDefs === 1, `pollMinutes 的定义应恰好 1 处（\`const pollMinutes = (ticks) =>\`），实测 ${pmDefs} 处`);
+        const pm = (appSrc.match(/pollMinutes\(/g) || []).length;
+        need(pm === 3, `pollMinutes 应被调用 3 次（试听 / 导入 / 出片各一处文案），实测 ${pm} 次`);
+        for (const name of ['VT_MAX_TICKS', 'VI_MAX_TICKS', 'DUB_MAX_TICKS']) {
+          const c = (appSrc.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
+          need(c === 3, `${name} 应出现 3 次（1 处定义 + 1 处比较 + 1 处文案），实测 ${c} 次 —— 说明它又在别处被写了一遍`);
+        }
+
+        // ── ③ 运行时：常量值与**改前**逐字节相同（改前：间隔 2000 / tick 750 / 750 / 1900）──
+        const vals = await cdp.evalJs('({ poll: POLL_MS, vt: VT_MAX_TICKS, vi: VI_MAX_TICKS, dub: DUB_MAX_TICKS,'
+          + ' min: [pollMinutes(VT_MAX_TICKS), pollMinutes(VI_MAX_TICKS), pollMinutes(DUB_MAX_TICKS)] })');
+        need(vals.poll === 2000 && vals.vt === 750 && vals.vi === 750 && vals.dub === 1900,
+          `轮询口径被改了：${JSON.stringify(vals)}（改前：间隔 2000 / tick 750 / 750 / 1900）`);
+        need(JSON.stringify(vals.min) === JSON.stringify([25, 25, 63]),
+          `由 tick 算出的分钟数与改前文案不符：${JSON.stringify(vals.min)}（改前用户看到的是 25 / 25 / 63 分钟）`);
+
+        // ── ④ 端到端：真把 tick 跑到上限 ⇒ 读回**用户看到的那句话**，与改前逐字节相同 ──
+        //   ★ 做法：把三处 ticks 预置成上限 ⇒ 下一个 tick（POLL_MS 之后）必然越界 ⇒ 走超时分支。
+        //     三处都不需要等 25 / 63 分钟，也**不会**去打 /api/jobs（越界分支在 fetch 之前 return）。
+        const msgs = await cdp.evalJs(`(async () => {
+          state.vt = { jobId: 'U3-VT', url: '', status: 'running', note: '', error: '', ticks: VT_MAX_TICKS };
+          state.vImport = { file: '', name: '', jobId: 'U3-VI', status: 'running', note: '', error: '', ticks: VI_MAX_TICKS };
+          state.dub = Object.assign({}, state.dub, { jobId: 'U3-DUB', ticks: DUB_MAX_TICKS, error: '', note: '' });
+          pollVoiceTest(); pollVoiceImport(); pollDub();
+          await new Promise((r) => setTimeout(r, POLL_MS + 900));
+          return { vt: state.vt.error, vi: state.vImport.error, dub: state.dub.error,
+            still: [state.vt.jobId, state.vImport.jobId, state.dub.jobId] };
+        })()`, { awaitPromise: true });
+        const WANT25 = '任务 U3-VT 等了 25 分钟还没结束，不再等（去「任务列表」看它到底怎么了）';
+        const WANT63 = '任务 U3-DUB 等了 63 分钟还没结束，不再等（去「任务列表」看它到底怎么了）';
+        need(msgs.vt === WANT25,
+          `试听超时文案与改前不同：\n        实测 ${JSON.stringify(msgs.vt)}\n        改前 ${JSON.stringify(WANT25)}`);
+        need(msgs.vi === WANT25.replace('U3-VT', 'U3-VI'),
+          `导入音色超时文案与改前不同：\n        实测 ${JSON.stringify(msgs.vi)}\n        改前 ${JSON.stringify(WANT25.replace('U3-VT', 'U3-VI'))}`);
+        need(msgs.dub === WANT63,
+          `文案出片超时文案与改前不同：\n        实测 ${JSON.stringify(msgs.dub)}\n        改前 ${JSON.stringify(WANT63)}`);
+        need(JSON.stringify(msgs.still) === JSON.stringify(['', '', '']),
+          `三处超时后 jobId 都应清空，实测 ${JSON.stringify(msgs.still)}`);
+
+        // ── 收尾：把三处状态复位（U 组之后没有别的用例，这里只是卫生）──
+        await cdp.evalJs(`(() => {
+          state.vt = { jobId: '', url: '', status: '', note: '', error: '', ticks: 0 }; renderVoiceTest();
+          state.vImport = { file: '', name: '', jobId: '', status: '', note: '', error: '', ticks: 0 }; renderVoiceImport();
+          state.dub = Object.assign({}, state.dub, { jobId: '', ticks: 0, error: '', note: '' }); renderDubState();
+          return true;
+        })()`);
+
+        notes.push(`U3 轮询口径：POLL_MS 定义 1 处 + 3 处轮询用它、裸 2000 归零、三处「等了 N 分钟」改由 pollMinutes() 算；`
+          + `运行时常量 2000/750/750/1900 与改前一致（算出的分钟 25/25/63）；`
+          + `端到端真跑到上限，三句话与改前**逐字节相同**`);
       });
     }
 
