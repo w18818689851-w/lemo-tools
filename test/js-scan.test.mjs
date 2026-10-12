@@ -13,7 +13,9 @@
 //   去掉（`if (false)`），它**必须**在 6a/6c 的形状上「带偏」（判据 6g）。任一条不变红 ⇒ 说明对应用例没牙。
 //
 // ★ 2026-10-12 新增边界：**模板串里的 `${…}` 嵌套**。此前 `state === 'str'` 分支对反引号串不处理 `${}`，
-//   一直吃到下一个反引号 ⇒ 一旦 `${}` 里嵌了反引号（实测 `lib/dub-core.mjs:538`），内层反引号被当成闭合、
+//   一直吃到下一个反引号 ⇒ 一旦 `${}` 里嵌了反引号（实测 `lib/dub-core.mjs` 的 `shq()` —— ★ **不写行号**：
+//   本批实测该形状已随「上方插 10 行」从第 538 行漂到第 548 行，**内容逐字未变** ⇒ 裸行号引用是结构性隐患，
+//   本文件一律用符号锚/内容锚定位），内层反引号被当成闭合、
 //   状态机提前回到 code 态、其后整段错位：保字符串口径下**注释不再被剥**（噪声 ⇒ 误报），
 //   丢字符串口径下**代码被当字符串丢掉**（实测 `export const ASR_ALIGN_PY` 整段消失 ⇒ 漏报）。
 //   用例 6a–6g 钉住它（含两层/三层嵌套、`${}` 里的注释、`${}` 里的字符串按 keepStrings、行号保留、
@@ -107,7 +109,7 @@ const hasDanger = (s) => dangerCount(s) > 0;
 //   ★ 用途：口径「丢字符串」下，旧实现（4 个变体都不认 `${}`）在**含这个形状**的文件上**本身就会错位**
 //     ⇒ 那些文件**不适用**「新旧子序列」判据（本次修的正是它）。例外**必须**由源性质给出，
 //     绝不允许按「比较结果不同」来事后豁免（那等于把判据架空）。
-const TPL_NESTED_BACKTICK = /\$\{[^}]*`/;   // `${` 之后、下一个 `}` 之前出现反引号（如 `lib/dub-core.mjs:538`）
+const TPL_NESTED_BACKTICK = /\$\{[^}]*`/;   // `${` 之后、下一个 `}` 之前出现反引号（如 `lib/dub-core.mjs` 的 `shq()`）
 
 /** `a` 是否为 `b` 的**子序列**（用于方向性判据：只允许多删 / 多留，不许改动既有内容）。 */
 function isSubseq(a, b) {
@@ -301,7 +303,7 @@ test('★自证：把共享模块的「正则识别」去掉 ⇒ 最小复现必
 // ══════════════════════════════════════════════════════════════════════════════
 // ── 6. ★ 模板串 `${…}` 里的嵌套（2026-10-12 修的边界）──────────────────────────
 //   由来：`state === 'str'` 分支此前对反引号串**不处理 `${}`** —— 它在 `str` 态一直吃到**下一个反引号**。
-//   实测后果（`lib/dub-core.mjs:538` 的 `` `'${String(s).replace(/'/g, `'\\''`)}'` ``，`${}` 里嵌了反引号）：
+//   实测后果（`lib/dub-core.mjs` 的 `shq()` 里那行 `` `'${String(s).replace(/'/g, `'\\''`)}'` ``，`${}` 里嵌了反引号）：
 //     · 内层反引号被当成闭合 ⇒ 状态机**提前回到 code 态** ⇒ 其后整段错位；
 //     · 口径「抹/删注释、保字符串」⇒ 从该行起其后约 88 行注释**不再被剥**（噪声 ⇒ 判据可能**误报**）；
 //     · 口径「丢字符串」⇒ 其后**代码被当字符串丢掉**（实测 `export const ASR_ALIGN_PY` 整段消失
@@ -311,27 +313,56 @@ test('★自证：把共享模块的「正则识别」去掉 ⇒ 最小复现必
 // ══════════════════════════════════════════════════════════════════════════════
 const DUB_CORE = path.join(ROOT, 'lib', 'dub-core.mjs');
 
-// ── 6a. `${}` 里嵌反引号（照 `lib/dub-core.mjs:538` 的真实形状）────────────────
-test('★ 模板串 ${} 里嵌反引号 ⇒ 状态机不被带偏（lib/dub-core.mjs:538 的真实形状）', () => {
+// ── ★★ 夹具定位：**按内容 / 符号锚找，绝不按行号取**（2026-10-12 修）────────────────
+//   ★ 由来：本文件原先把该形状**硬编码成 `raw.split('\n')[537]`**（= 第 538 行）。而另一个智能体
+//     在 `lib/dub-core.mjs` 的 `runWsl` 一带（原 `:495` 附近）**插了 10 行**（F2 的分片解码修复）
+//     ⇒ 该形状**从第 538 行漂到第 548 行**，**内容逐字未变**，本条却因此变红（12 passed / 2 failed）。
+//   ★ 结论（本项目铁律）：**裸行号引用是结构性隐患** —— 只要有人在被引文件**上方**插删行，
+//     引用就**静默失效**（同 `scripts/check-ref-lines.mjs` 头注释记的那次「连撞三次」）。
+//     ⇒ 这里一律用**符号锚**（下面的特征串 + 函数名）定位。
+//   ★ 判据**没有放宽**（三条都在）：
+//     ① 该形状必须**仍然存在**（命中 0 处 ⇒ 下面 `assert.equal` 必红）；
+//     ② 该形状必须**唯一**（多处 ⇒ 同样必红 —— 锚点不唯一即形态变了，宁可红也不猜）；
+//     ③ 它必须**仍落在 `shq()` 里**（`SHQ_ANCHOR`）—— 保证取到的是那条真实实现，不是别处碰巧同形。
+//     ★ 本条用例真正的牙（三种口径下 `stripComments` 的行为断言）**逐字未动**。
+const NESTED_TPL_MARK = '${String(s).replace(';   // ★ `${}` 里嵌反引号那行的**特征串**（`lib/dub-core.mjs` 的 `shq()` 体内）
+const SHQ_ANCHOR = 'export function shq(';             // ★ 符号锚：该形状必须落在这个函数里（函数名是稳定符号）
+
+/**
+ * ★ 按**内容**取 `lib/dub-core.mjs` 里「`${}` 里嵌反引号」的那一行 —— **不按行号**（见上）。
+ *   命中 0 处 / 多处 ⇒ 断言变红，并把「实得几处、实得什么」写进消息（便于下一个人定位）。
+ */
+function nestedTplFixtureLine(src) {
+  const hits = src.split('\n').filter((L) => L.includes(NESTED_TPL_MARK) && L.includes('`'));
+  assert.equal(hits.length, 1,
+    `dub-core.mjs 里「\`\${}\` 里嵌反引号」的形状命中 **${hits.length}** 处（应为 1）⇒ 请更新本条：`
+    + `特征串 \`${NESTED_TPL_MARK}\`、符号锚 \`${SHQ_ANCHOR}\``
+    + (hits.length ? `\n  实得：${hits.map((L) => JSON.stringify(L.slice(0, 120))).join('\n        ')}` : ''));
+  assert.ok(src.includes(SHQ_ANCHOR),
+    `符号锚 \`${SHQ_ANCHOR}\` 不见了（\`shq()\` 被改名 / 被删？）⇒ 请更新本条：实得 ${JSON.stringify(src.includes(SHQ_ANCHOR))}`);
+  return hits[0];
+}
+
+// ── 6a. `${}` 里嵌反引号（照 `lib/dub-core.mjs` 的 `shq()` 的真实形状）────────────
+//   ★ **不写行号**：该形状本批实测已从第 538 行漂到第 548 行（插了 10 行、内容逐字未变）。
+test('★ 模板串 ${} 里嵌反引号 ⇒ 状态机不被带偏（lib/dub-core.mjs 的 shq() 真实形状）', () => {
   const raw = fs.readFileSync(DUB_CORE, 'utf8');
-  const line = raw.split('\n')[537];
-  assert.ok(line.includes('${String(s).replace(') && line.includes('`'),
-    `dub-core.mjs:538 的形状变了（找不到「\`\${}\` 里嵌反引号」那行）⇒ 请更新本条：实得 ${JSON.stringify(line)}`);
+  const line = nestedTplFixtureLine(raw);
   // ★ 紧跟其后的一句**注释原文**（第七批 F4 当时为躲误报把它改写掉了）——「噪声」的最小载体
   const src = [line, '//   （/home/lemo/lemo-opuscar/.venv 里已装 1.2.1，HF 缓存有 base / base.en），不另装一套。', 'const AFTER = 1;', ''].join('\n');
   // ① 口径「抹注释」：该行之后的**注释必须被抹**（= 噪声消失，判据不再可能因注释误报）
   const b = stripComments(src, MODE_BLANK);
-  assert.ok(!b.includes('/lemo-opuscar/'), '抹注释口径：:538 之后的注释没被抹掉（状态机被内层反引号带偏）');
-  assert.ok(b.includes('const AFTER = 1;'), '抹注释口径：:538 之后的**代码**被吞掉了');
+  assert.ok(!b.includes('/lemo-opuscar/'), '抹注释口径：该形状之后的注释没被抹掉（状态机被内层反引号带偏）');
+  assert.ok(b.includes('const AFTER = 1;'), '抹注释口径：该形状之后的**代码**被吞掉了');
   assert.equal(b.length, src.length, '抹注释口径：长度必须守恒');
   assert.equal(b.split('\n').length, src.split('\n').length, '行号必须保留');
   // ② 口径「删注释」：注释删掉、代码留下
   const a = stripComments(src, MODE_REMOVE);
-  assert.ok(!a.includes('/lemo-opuscar/'), '删注释口径：:538 之后的注释没被删');
-  assert.ok(a.includes('const AFTER = 1;'), '删注释口径：:538 之后的代码被吞');
-  // ③ 口径「丢字符串」：:538 之后是**代码** ⇒ 必须留下（此前被当字符串整段丢掉）
+  assert.ok(!a.includes('/lemo-opuscar/'), '删注释口径：该形状之后的注释没被删');
+  assert.ok(a.includes('const AFTER = 1;'), '删注释口径：该形状之后的代码被吞');
+  // ③ 口径「丢字符串」：该形状之后是**代码** ⇒ 必须留下（此前被当字符串整段丢掉）
   const d = stripComments(src, MODE_DROPSTR);
-  assert.ok(d.includes('const AFTER = 1;'), '丢字符串口径：:538 之后的代码被当字符串丢掉了');
+  assert.ok(d.includes('const AFTER = 1;'), '丢字符串口径：该形状之后的代码被当字符串丢掉了');
   assert.ok(d.includes('String(s).replace('), '丢字符串口径：模板插值里的**代码**应保留');
   // ④ `${` / 闭合它的 `}` 按字符串出口 ⇒ 「保字符串」口径下该行逐字节不变
   assert.equal(b.split('\n')[0], line, '抹注释口径：这一行应逐字节保留（模板串是字符串）');
@@ -428,19 +459,19 @@ test('★ 行号保留：多行模板插值（含跨行注释与嵌套插值）�
 });
 
 // ── 6f. ★ 回归：真实文件 `lib/dub-core.mjs` ─────────────────────────────────
-test('★ 回归：lib/dub-core.mjs 剥完后「注释里的词不再算、:538 之后的代码不再被吞」', () => {
+test('★ 回归：lib/dub-core.mjs 剥完后「注释里的词不再算、shq() 之后的代码不再被吞」', () => {
   const src = fs.readFileSync(DUB_CORE, 'utf8');
   const b = stripComments(src, MODE_BLANK);
   const d = stripComments(src, MODE_DROPSTR);
   // ① 行号保留
   assert.equal(b.split('\n').length, src.split('\n').length, '抹注释口径：行号漂了');
   assert.equal(d.split('\n').length, src.split('\n').length, '丢字符串口径：行号漂了');
-  // ② ★ 「噪声消失」：`SYN-SENT` **只**出现在 :1288 的注释里（:538 之后）⇒ 剥完必须不再出现
+  // ② ★ 「噪声消失」：`SYN-SENT` **只**出现在该形状之后的注释里 ⇒ 剥完必须不再出现
   assert.ok(src.includes('SYN-SENT'), '语料变了：dub-core.mjs 里已找不到只在注释里出现的标记 SYN-SENT（请更新本条）');
-  assert.ok(!b.includes('SYN-SENT'), '抹注释口径：:538 之后的注释没被抹 ⇒ 噪声仍在（判据可能**误报**）');
-  // ③ ★ 「漏报消失」：:538 之后的**代码**（`export const ASR_ALIGN_PY`，:1292）在丢字符串口径下必须留下
+  assert.ok(!b.includes('SYN-SENT'), '抹注释口径：该形状之后的注释没被抹 ⇒ 噪声仍在（判据可能**误报**）');
+  // ③ ★ 「漏报消失」：该形状之后的**代码**（`export const ASR_ALIGN_PY`）在丢字符串口径下必须留下
   assert.ok(src.includes('export const ASR_ALIGN_PY'), '语料变了：找不到 export const ASR_ALIGN_PY（请更新本条）');
-  assert.ok(d.includes('export const ASR_ALIGN_PY'), '丢字符串口径：:538 之后的代码被当字符串吞掉了（判据会**漏报**）');
+  assert.ok(d.includes('export const ASR_ALIGN_PY'), '丢字符串口径：该形状之后的代码被当字符串吞掉了（判据会**漏报**）');
   // ④ ★ 与 `test/cases.mjs` 的 F4 BANNED 判据同口径：`[/lemo-films/, /lemo-opuscar/]` 在剥后文本里都不该出现
   //    （原文里也都没有 ⇒ 本条只作「与 F4 闸门同口径」的说明性核对，不是判据的牙）
   for (const p of [/lemo-films/, /lemo-opuscar/]) {
@@ -449,7 +480,7 @@ test('★ 回归：lib/dub-core.mjs 剥完后「注释里的词不再算、:538 
   // ⑤ ★ 剥后「仍含 `//` 的行」必须**只剩字符串里的**（实测只有 1 行：python 文案里的 `https://hf-mirror.com`）
   const stillSlash = b.split('\n').filter((L) => L.includes('//'));
   assert.ok(stillSlash.length <= 2,
-    `抹注释口径：剥后仍有 ${stillSlash.length} 行含 \`//\` ⇒ :538 之后的注释成片没被抹（噪声）\n`
+    `抹注释口径：剥后仍有 ${stillSlash.length} 行含 \`//\` ⇒ 该形状之后的注释成片没被抹（噪声）\n`
     + stillSlash.slice(0, 3).map((L) => '  ' + L.slice(0, 100)).join('\n'));
 });
 
@@ -464,18 +495,18 @@ test('★自证：把共享模块的「反引号串里认 ${}」去掉 ⇒ 6a/6c
   fs.mkdirSync(TMP, { recursive: true });
   const tmpPath = path.join(TMP, `js-scan-mut-tpl-${process.pid}.mjs`);
   fs.writeFileSync(tmpPath, mutated);
-  // 6a 的形状（照 `lib/dub-core.mjs:538`）与 6c 的形状（两层嵌套）
+  // 6a 的形状（照 `lib/dub-core.mjs` 的 `shq()`，**按内容取、不按行号**）与 6c 的形状（两层嵌套）
   const raw = fs.readFileSync(DUB_CORE, 'utf8');
-  const fix = [raw.split('\n')[537],
+  const fix = [nestedTplFixtureLine(raw),
     '//   （/home/lemo/lemo-opuscar/.venv 里已装 1.2.1），不另装一套。', 'const AFTER = 1;', ''].join('\n');
   const nest = ['const r = `aa${`bb${CC}`}dd`;', '// MARK 必须被剥', 'const z = 9;', ''].join('\n');
   try {
     const mut = await import(pathToFileURL(tmpPath).href);
-    // 6a：变异版必须「带偏」⇒ 该行之后的注释不再被抹、代码被当字符串丢掉
+    // 6a：变异版必须「带偏」⇒ 该形状之后的注释不再被抹、代码被当字符串丢掉
     assert.ok(mut.stripComments(fix, MODE_BLANK).includes('/lemo-opuscar/'),
-      '变异版竟把 :538 之后的注释剥掉了 ⇒ 说明 6a 没有牙（或变异没生效）');
+      '变异版竟把该形状之后的注释剥掉了 ⇒ 说明 6a 没有牙（或变异没生效）');
     assert.ok(!mut.stripComments(fix, MODE_DROPSTR).includes('const AFTER = 1;'),
-      '变异版竟保住了 :538 之后的代码 ⇒ 说明 6a 没有牙');
+      '变异版竟保住了该形状之后的代码 ⇒ 说明 6a 没有牙');
     // 6c：两层嵌套 ⇒ 变异版把第 2 个反引号当闭合，之后整段当**代码**输出
     //     ⇒ 内层模板串内容 `bb` 会当代码漏出来（★ 不能用「注释有没有被剥」判牙：两层嵌套的 4 个反引号
     //       两两配对，错位区正好被夹住、第 4 个反引号之后两边重新同步 ⇒ 注释照样被剥）。

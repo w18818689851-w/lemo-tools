@@ -29,7 +29,7 @@ import {
   splitSentences, buildTimeline, buildSrt, buildAss, probe, measure, judgeTruePeak,
   TARGET_PEAK_PCM, TARGET_LUFS, HARD_PEAK_LIMIT,
   PLAIN_DARK, loadStyleRegistry, resolveStyle, listStyles, styleSpec, bgSource, bgFilters,
-  parseSrt, alignCuesToSentences, buildItemsFromSpans, distributeByProportion, detectSpeech,
+  parseSrt, alignCuesToSentences, buildItemsFromSpans, distributeByProportion, detectSpeech, readUserTextFile,
   alignByAsr, styleIdsFromRegistry, STYLES_FILE, loadSemantic, charsPerLine,
 } from './lib/dub-core.mjs';
 // ★ 风格特质档案（style-dna）—— 出片链路此前**零消费者**，这里把它接进来（可选增强）。
@@ -301,12 +301,12 @@ async function runKeepOriginal(ctx) {
   if (o.srt) {
     const sp = path.resolve(o.srt);
     if (!fs.existsSync(sp)) die(`--srt 文件不存在: ${sp}`);
-    const cues = parseSrt(fs.readFileSync(sp, 'utf8'));
+    const dec = readUserTextFile(sp, '字幕'), cues = parseSrt(dec.text); if (dec.note) warn(dec.note);   // ★ 第九批审计 F3：**不许按 UTF-8 硬读**（GBK 字幕按 UTF-8 读会静默变问号 ⇒ 时间轴照样解得出、文本匹配率却归零 ⇒ 用户手写的时间轴被「按字数比例猜」换掉，而工具报 srt 成功）。★ 本注释写在行尾 = 本块**行数不变**（理由见 `lib/dub-core.mjs` 的 `readUserTextFile` 头注释）
     if (!cues.length) warn('SRT 解析出 0 条，退到下一路');
     else {
       const a = alignCuesToSentences(cues, texts);
-      spans = a.spans; alignMode = 'srt';
-      alignNote = `SRT ${cues.length} 条 vs 文案 ${texts.length} 句 · 文本匹配率 ${(a.hitRate * 100).toFixed(1)}%`;
+      spans = a.spans; alignMode = a.hitRate > 0 ? 'srt' : 'srt(比例分配)';
+      alignNote = `SRT ${cues.length} 条 vs 文案 ${texts.length} 句 · 文本匹配率 ${(a.hitRate * 100).toFixed(1)}%${alignMode === 'srt' ? '' : '（★ 你的时间轴没被采用：按各句字数比例重排）'}`;
     }
   }
   if (!spans) {
@@ -603,11 +603,11 @@ async function main() {
 
   // 文案
   let raw;
-  if (o.script === '-') { try { raw = fs.readFileSync(0, 'utf8'); } catch (e) { die(`读 stdin 失败: ${e.message}`); } }
+  if (o.script === '-') { try { const d = readUserTextFile(0, 'stdin 文案'); if (d.note) warn(d.note); raw = d.text; } catch (e) { die(`读 stdin 失败: ${e.message}`); } }
   else {
     const p = path.resolve(o.script);
     if (!fs.existsSync(p)) die(`文案文件不存在: ${p}`);
-    raw = fs.readFileSync(p, 'utf8');
+    const d = readUserTextFile(p, '文案'); if (d.note) warn(d.note); raw = d.text;
   }
   if (!raw.trim()) die('文案是空的');
   if (o.keepOriginal && !o.video) die('--keep-original 必须配 --video（要保留的就是那段口播素材）');
@@ -665,7 +665,7 @@ async function main() {
   if (o.analysis) {
     const ap = path.resolve(o.analysis);
     if (!fs.existsSync(ap)) die(`--analysis 文件不存在: ${ap}`);
-    try { analysis = JSON.parse(fs.readFileSync(ap, 'utf8')); }
+    try { const d = readUserTextFile(ap, '--analysis'); if (d.note) warn(d.note); analysis = JSON.parse(d.text); }
     catch (e) { die(`--analysis 不是合法 JSON（${ap}）：${e.message}`); }
   }
 

@@ -277,7 +277,7 @@ lemo-make.bat --help
 | `tools/words.py` | **成片内容** | dataviz / swiss-motion | ★ **已修（2026-10-07）**：编排器**现在会跑它**（`asr_check.py` 之后、`VOICE_DONE` 之前；产物 `voices/words_rel.json` 由页面 `main.js` 直读驱动逐词高亮）。原先漏跑 ⇒ 逐词时间轴陈旧 5~6 天 |
 | `tools/video_png.mjs` | **成片内容** | risograph | ★ **已修（2026-10-07）**：编排器**现在会用它**。它是**换渲染器**（PNG 无损中间片）而非追加一步 —— 上一轮判「不接」是因为它**不接受 `--size`**、接上会静默丢画幅；本轮先给它补上 `--size`（照 `core/render/page.mjs` 的 `takeSize` 同源），再在编排器渲染段做**候选探测**（`demoRenderRel`，不写死 slug）。**为什么必须修**：网点色在 JPEG 4:2:0 里会被吃掉 ⇒ 用 `core/render/video.mjs` 出的 risograph 成片视觉上是**降级**的。列在此处只为标记「这一类缺口确实存在过」 |
 | `models/gen_volt.mjs` + `models/gen_kite.mjs` | 已核实**无差异** | hologram-hud | 生成 volt / kite 素材。2026-10-07 实测重跑产物与入库版**逐字节相同**（md5 volt `b25a8e24…` / kite `9f1badb7…`）⇒ 确定性生成物，**不跑与跑无差异**，故不为它改编排器 |
-| `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变）。2026-10-07 已量化（见下）。★ **2026-10-10 部分已修**：编排器新增第 7 步「静帧交付图」，**现在会用它出 `poster.jpg`**（时间点照 demo 自己的 build.sh 那条 poster 行取，见 `--poster-t`）；**`stills/*.jpg` / `styleframe.jpg` 仍不出** ⇒ 那几类交付图照旧会陈旧 |
+| `core/render/still.mjs` | 只影响交付图 | **27 个**风格（含 art-deco） | 出静帧 → `stills/*.jpg`、`poster.jpg`、`styleframe.jpg` 会**陈旧**（成片本身不变）。2026-10-07 已量化（见下）。★ **2026-10-10 部分已修**：编排器新增**「静帧交付图」那一步**（现 `[9]`），**现在会用它出 `poster.jpg`**（时间点照 demo 自己的 build.sh 那条 poster 行取，见 `--poster-t`）；**`stills/*.jpg` / `styleframe.jpg` 仍不出** ⇒ 那几类交付图照旧会陈旧 |
 | `tools/still.mjs` | 只影响交付图 | rubber-hose（另有 cel-anime-80s 有此文件但无 build.sh） | demo **自带**的静帧脚本，出的是 2880×1620 的**设定表 / 模型表**（rubber-hose 的 `poster.jpg` / `styleframe.jpg` 是 `core/render/still.mjs` 出的）—— 编排器**不出**这一类 |
 | `tools/cuecheck.py` | 纯自检 | 12 个：art-deco / dark-keynote / dataviz / engraving / hologram-hud / iso-infographic / microgame / midcentury-toon / silent-film / silkscreen-poster / whiteboard / woodcut | 配乐卡点 ↔ 画面时间网格自检 |
 | `tools/final_asr.py` | 纯自检 | **8 个**：dark-keynote / **dataviz** / hologram-hud / iso-infographic / microgame / rubber-hose / **stained-glass** / woodcut | 成片终检（ASR 比对） |
@@ -309,11 +309,11 @@ lemo-make.bat --help
 | 参数 | 默认 | 落点 |
 |---|---|---|
 | `--render-slots <n>` | `2`（`0` = 不限，即**不设** `RENDER_SLOTS`） | 渲染子进程 env（`core/render/video.mjs` 自己向 `core/render/slot.mjs` 申请整机槽位）。**只注入 env，不包一层 slot.mjs** |
-| `--no-readcheck` | 关（默认**跑**，只报告不阻断） | 第 6 步「阅读时长自检」：`node core/render/readcheck.mjs <demo> --size WxH [--q …]`，退出码 **0/1/2 分开报**（2 = 无从检查，**不算通过也不算不达标**） |
+| `--no-readcheck` | 关（默认**跑**，只报告不阻断） | **「阅读时长自检」那一步**（现 `[8]`）：`node core/render/readcheck.mjs <demo> --size WxH [--q …]`，退出码 **0/1/2 分开报**（2 = 无从检查，**不算通过也不算不达标**） |
 | `--readcheck-strict` | 关（默认只报告） | 同上；打开后不达标 ⇒ `fail()`（退出码 1） |
-| `--no-poster` | 关（默认出） | 第 7 步「静帧交付图」：`node core/render/still.mjs <demo> <t> --size WxH --out <demo>/out/poster --prefix poster_` → 拷成**输出目录**的 `poster.jpg` |
+| `--no-poster` | 关（默认出） | **「静帧交付图」那一步**（现 `[9]`）：`node core/render/still.mjs <demo> <t> --size WxH --out <demo>/out/poster --prefix poster_` → 拷成**输出目录**的 `poster.jpg` |
 | `--poster-t <秒>` | 按 demo 的 `build.sh` 里那条 poster 静帧行取；无该行退 `style.json` 的 `frame_sec`；再没有用 `0` | 同上 |
-| `--no-deliverables` | 关（默认出） | 第 8 步「交付文档」：在**输出目录**产 `TREATMENT.md` + `CREDITS`（与 `poster.jpg` 同级）。`TREATMENT.md` 由编排器基于已有信息生成、如实标注来源（不编造剧情）；`CREDITS` 逐字附上该风格上游自带的 `demo/CREDITS`（实测 43/43 均有） |
+| `--no-deliverables` | 关（默认出） | **「交付文档」那一步**（现 `[10]`）：在**输出目录**产 `TREATMENT.md` + `CREDITS`（与 `poster.jpg` 同级）。`TREATMENT.md` 由编排器基于已有信息生成、如实标注来源（不编造剧情）；`CREDITS` 逐字附上该风格上游自带的 `demo/CREDITS`（实测 43/43 均有） |
 | `--color <default\|bt709>` | `default`（**不设** `LEMO_COLOR`） | **写进 WSL mux 脚本的 `export`**（`core/render/mux.sh` 在 `sh mux.sh` 这个进程的环境里读它；`runWsl` 用 `su -`，**会重置环境** ⇒ 靠 `wsl.exe` 透传无效） |
 
 ★ 阅读时长自检带一道**廉价预判**：先在本 demo 的页面源码里找 `TEXTS` 的痕迹，找不到就**跳过并打印理由**
@@ -321,13 +321,13 @@ lemo-make.bat --help
 40 s 片约 1000 次渲染 ⇒ 白跑很贵）。★ 实测：全库 `styles/<slug>/demo/` 下**一个 `TEXTS` 都没有** ⇒
 现状下这一步**总是走「跳过」分支**（成本 ≈ 0）；一旦某个风格真的实现了 `window.TEXTS`，它就会自动开始真跑。
 
-★★ **正式归档（2026-10-11）：第 6 步在真实出片里「恒走跳过」是**已解释的既定事实，不是缺口**。**
-三条事实（都实测过）：① 编排器第 6 步查的是页面**自报**的 `window.TEXTS(t)`（`core/render/readcheck.mjs`
+★★ **正式归档（2026-10-11）：阅读时长自检那一步（现 `[8]`）在真实出片里「恒走跳过」是**已解释的既定事实，不是缺口**。**
+三条事实（都实测过）：① 编排器**「阅读时长自检」那一步**（现 `[8]`）查的是页面**自报**的 `window.TEXTS(t)`（`core/render/readcheck.mjs`
 的页面约定）；② 全库 **43** 个「有 demo 的风格」实测 **0** 个实现它（`grep -rl "TEXTS" styles/*/demo/`
 命中 **0**）；③ 因此那道廉价预判**必然跳过**、成本 ≈ 0（**不会**真跑那约 1000 次 `window.render(t)`）。
 ⇒ 阅读时长自检在本仓**当前不产出任何读数**，原因是**页面侧没实现该接口**（上游 43 个风格全都如此），
 **不是**编排器漏接、**也不是**闸门漏判 —— 别再把它当缺口登记。★ 上一批已判定 `lemo-make.mjs` 里这段的
-注释（`demoHasTexts()` 预判 + 第 6 步的跳过分支）**已足够** ⇒ **红线文件未动**。★ 将来某个风格真的实现了
+注释（`demoHasTexts()` 预判 + 阅读时长自检那一步（现 `[8]`）的跳过分支）**已足够** ⇒ **红线文件未动**。★ 将来某个风格真的实现了
 `window.TEXTS` ⇒ 预判自动放行、这一步自动开始真跑，**无需改编排器**。
 ★ `--render-slots` 的默认 2 有代价（如实写）：`slot.mjs` 的 `acquire()` **没有超时**，槽位被别人占着时
 它只每 60 s 打印一行 `waiting for a render slot` 并**继续等**（不报错、不退出）—— 想完全不参与整机限流就设 `0`。
@@ -434,7 +434,7 @@ const renderVArgs = [renderScriptRel, demoRel, '--fps', … ];   // 其余参数
 ★ **干净名单**：按 `build.sh` 逐条抽取核对，37 个带 `build.sh` 的风格里**绝大多数至少漏跑一步**，
 本表核出的「没有上述任何一步」的是 **crayon-book / impasto / paper-lantern**；另有 **lowpoly-island**
 （只差 `music/check.py` 一个自检）与 **scifi-toon**（只差 `asr.py` / `srt.mjs` —— 后者是编排器**有意**不跑的
-Node 字幕脚本，见「第 6 步混流」里的说明）。
+Node 字幕脚本，见「**混流那一步**（现 `[6]`）」里的说明）。
 
 ## 四批新功能：语言版本 / 配音引擎 / 输出尺寸 / 音色选择
 
@@ -547,7 +547,7 @@ python core/tts/tts_indextts.py --list-voices          :: 看有哪些可选（�
 
 ```bash
 node test/smoke.mjs          # 冒烟测试（44 条，约 15–40 秒，不渲染；WSL 冷启动会到 1–2 分钟）
-node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（约 80 秒起，共 53 条）
+node test/smoke.mjs --full   # 额外跑一次完整 ascii-crt 回归（★ 2026-10-12 订正「约 80 秒起」为实测口径：本轮 **628.7s**、单独复跑 **533.0s**，差值来自本机负载；共 53 条。★ 超时口径 = 「**无进展**」而非「总时长」：主判据 `idleMs` 默认 **900000**（连续 15 分钟零 stdout/stderr 输出才判「卡住」；只要还在打进度行就永不判超时），兜底 `timeoutMs` 默认 **1800000**（只防「一直刷输出却永不结束」的活锁）；覆盖点 `LEMO_TEST_RENDER_IDLE_MS` / `LEMO_TEST_RENDER_HARD_MS`）
 node test/setup.test.mjs     # 首次运行安装的纯逻辑测试（19 条，约 20 秒，不起服务、不用 WSL）
 node test/setup-api.test.mjs # 「首次运行向导」两个接口的 HTTP 契约测试（13 条，约 5 秒，★ 绝不真安装）
 node test/ui.test.mjs        # Web UI 层测试（129 条 = **静态**数；无头 Edge 渲染 DOM + CDP 真点击。★ 运行时实跑 130 次 —— 有一条参数化用例按素材种类 srt/image 各跑一次，详见 test/README.md）
@@ -571,7 +571,7 @@ node test/consistency.test.mjs  # 一致性校验门的纯逻辑测试（17 条�
 测试自己用**随机空闲端口**起一个临时服务、跑完自己停，**不碰**你正在用的控制台实例
 （启动时会覆写 `.console-port` / `打开控制台.url`，测试跑前备份、跑后按字节还原）。
 详见 `test/README.md`（含「不覆盖什么」与副作用说明）。
-★ **改动后必跑**：`node scripts/run-all-tests.mjs` —— 一次**串行**跑完全部 35 个测试入口（本机两次实测 **429.1s / 600.8s ≈ 7–10 分钟**，那两次跑的是 32 入口时代的清单，本批新增的 3 个入口实测共 ≈6.5s）；「52/52 闸门绿」≠「全部测试绿」（闸门与测试入口是**两层**防线，见 `test/README.md` §「★ 改动后必跑」）。
+★ **改动后必跑**：`node scripts/run-all-tests.mjs` —— 一次**串行**跑完全部 36 个测试入口（本机两次实测 **429.1s / 600.8s ≈ 7–10 分钟**，那两次跑的是 32 入口时代的清单，本批新增的 3 个入口实测共 ≈6.5s，第九批审计又加 1 个 `test/dub-encoding.test.mjs`（13 条、秒级））；「52/52 闸门绿」≠「全部测试绿」（闸门与测试入口是**两层**防线，见 `test/README.md` §「★ 改动后必跑」）。
 
 ## 文件
 

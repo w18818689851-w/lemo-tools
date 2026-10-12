@@ -1563,3 +1563,41 @@ grep -n "demo/<rel>" D:/lemo-tools/lib/style-fingerprints.json
      `f66f43524da3ebb90556f9bfdce0022a`，内容 = 锁过期 6h 收成单一来源 + dry-run 诚实化）的箭头**此前只记在 `test/README.md`**
      （该文件「第四次」段第 5 条），本简报未记 ⇒ 本次只把**本次的真实前后值**接上；上文最近一处箭头是「宿主临时脚本清理」段的
      `9ec6a25f0a0f5d1f11efe4e02772ceeb`（本段之前那一个）。
+
+   ★★ **2026-10-12 · 本批另修（第七/八批遗留 + 数据完整性）**：
+   · **F6 索引版本**：`lib/store.mjs` 的 `INDEX_VERSION` 原先**写而不读** ⇒ 现改四态 gate
+     （`missing`/`ok`/`legacy`/`bad-json` ⇒ **可写**；`read-error`/`bad-shape`/`bad-version`/`newer` ⇒ **拒绝覆盖写**）
+     + 旧版本**迁移打日志** + 未知版本**明确告警**。★ 边界：**「读得出来但读不懂」拒绝覆盖；
+     「根本读不出来（连 JSON 都不是）」才降级重建**（文件头「启动加载必须能降级」那条）。
+   · **`smoke --full` 超时根治**：8 处真出片调用由「总时长」改成「**无进展**」判据
+     （`idleMs` 默认 900s + 兜底 `timeoutMs` 1800s + env 覆盖点）。
+   · **散文「第 N 步」旧编号**：22 处**描述当前口径**的改成「**符号锚 + `（现 [N]）`**」双轨；
+     ★ 6 处**带日期的历史叙述一律未改**（改了就是改写历史）；1 处拿不准**只登记**。
+   · **陈旧计数/引用**：`scripts/run-all-tests.mjs` 的「32 个测试入口」→ **35**（2 处；★ 那处**历史实测记录**未改）；
+     `test/README.md` 的 **6 处裸行号引用漂移**已改成符号锚或去行号（★ `check-ref-lines` 判据 (d) 只判「行非空」、**抓不到这类错**）。
+
+   ★★ **2026-10-12 · 第九批对抗性审计（维度：编码与跨平台）5 条，已修**：
+   · **F1（P2 · 最该先修）**：`lib/voices.mjs` 把 Windows python 的 stdout 按 **UTF-8** 解码，而实际是 **GBK**
+     ⇒ `GET /api/voices` 的 `dirs.refDir` 带 **192 个 U+FFFD**。★★ **最关键的一点**：
+     **代理自己的 Bash 会话里有 `PYTHONUTF8=1`**（WorkBuddy 注入），而 **`start-console.bat` / cmd.exe 没有**
+     （实测持久环境变量为空、系统 ACP = **936**）⇒ ★★ **F1 在「代理的自我测试」里永远看不见，
+     但用户按文档双击启动时必然发生**。★ 修法：给 spawn 补 `env: { ...process.env, PYTHONUTF8: '1' }`
+     —— ★ `lemo-make.mjs` 早已承认过「Windows 工具 stdout 是 GBK」，只是没落成纪律。
+     ★★ **验证纪律**：★ 这类「**依赖环境变量才正确**」的行为**必须在「最小环境 spawn」里验证**
+     （`env -u PYTHONUTF8`），否则**永远假绿**。
+   · **F2（P2）**：5 处**按 pipe 分片各自解码**（`lib/voices.mjs` / `lib/dub-core.mjs` / `lib/jobs.mjs` / `lib/env.mjs` / `lib/dub.mjs`）
+     ⇒ 多字节字符被切在分片边界上（实测 600KB 中文 ⇒ **15 个 U+FFFD**）。★★ **修法分两类**（★ 2026-10-12 订正：
+     原文只写「收 Buffer、出结果时**一次性解码**」**不实** —— `lib/jobs.mjs` **用的是 `StringDecoder`**，理由见 `lib/jobs.mjs:298-303`）：
+     ① **有实时性需求的**（`lib/jobs.mjs` 的 SSE 日志）用 **`StringDecoder`**（`write()` 跨分片保留不完整的多字节序列 ⇒ 实时与正确兼得；
+     `finishJob` 收尾时 `flushBuf`（`lib/jobs.mjs:282`）调 `end()` 吐尾巴，否则末尾半个字符**静默丢掉**）；
+     ② **无实时性需求的**（`lib/voices.mjs` / `lib/dub-core.mjs` / `lib/env.mjs` / `lib/dub.mjs`）**收 Buffer、出结果时一次性解码**（`Buffer.concat(...).toString('utf8')`）
+     （★ 与 `lemo-make.mjs` 里「透传原始分片、不重新解码」**同源**，都是「**别在半截字节上解码**」）。
+   · **F3（P2）**：上传 **GBK 字幕**静默变问号 ⇒ 用户手写时间轴被「按各句字数比例分配」替换，**仍报 `alignMode='srt'` 成功**。
+     修法：新增 `readUserTextFile()`（★ **不是合法 UTF-8 ⇒ 先试 GBK，解得出才用**；★ 本机 `new TextDecoder('gbk')` **可用**，
+     Node v22.22.2 / ICU 78.2）+ `alignMode = hitRate > 0 ? 'srt' : 'srt(比例分配)'` + `alignNote` **如实上报**。
+   · **F4（P3）**：`winToWsl` **三份实现**、fallback 不一致。
+   · **F5（P3）**：`lib/dub.mjs` 的 `slice(0,180)` 会**切出孤立代理项**（实测 `'a'.repeat(179)+'🎬'` ⇒ 尾部 `U+D83C`）⇒
+     改成**按码点截断**。
+   ★★ **本批最重要的方法论收获**：**「环境差异会让自我测试永远看不见某类缺陷」** ——
+     代理的 shell 有 `PYTHONUTF8=1`、用户的 `.bat` 没有 ⇒ ★ **凡是「依赖环境变量才正确」的行为，
+     都必须用「最小环境 spawn」验证**（清掉注入变量），否则**永远假绿**。

@@ -1,11 +1,12 @@
-// test/store-trim.test.mjs —— 第八批审计 F1 / F4 / F5 的**仓内回归测试**（独立入口，零依赖）
+// test/store-trim.test.mjs —— 第八批审计 F1 / F4 / F5 / F6 的**仓内回归测试**（独立入口，零依赖）
 //
 // ★ 由来：2026-10-12 的第八批对抗性审计（`D:/lemo-tmp/align-audit/U1-第八批审计-数据完整性与持久化.md`）
-//   找到三条**数据完整性**缺陷，修复的实证只在 `D:/lemo-tmp/u1-fix/` 的探针里
-//   （`f1-probe.mjs` / `f1-normal.mjs` / `f1-fresh.mjs` / `prune-probe.mjs`）。
+//   找到三条**数据完整性**缺陷（F1/F4/F5；★ 同批的 F6 是**版本闸门**，见下「钉住的**四件事**」最后一条），
+//   修复的实证只在 `D:/lemo-tmp/u1-fix/` 的探针里
+//   （`f1-probe.mjs` / `f1-normal.mjs` / `f1-fresh.mjs` / `prune-probe.mjs`；F6 在 `D:/lemo-tmp/f6/probe.mjs`）。
 //   本文件把那些场景**转成仓内回归测试**（本项目纪律：改核心逻辑必补测试）。
 //
-// ★ 钉住的三件事：
+// ★ 钉住的**四件事**：
 //   · **F1（P1 · `lib/store.mjs` 的日志总量裁剪）**：旧实现用 `totalLogBytes()`（**整个 `LOG_DIR`**）
 //     判「超没超 64MB」，却只删**注册表列表里**的条目 ⇒ 盘上有、索引里没有的日志（孤儿）**永远删不掉**
 //     ⇒ 总量**永远超限** ⇒ 每一轮都把列表里剩下的条目继续删光（实测 `index 条目 = 0`，连续 3 轮都是 0）。
@@ -31,6 +32,17 @@
 //     在最需要它的时候**完全不可用**。现首次读也包在 try 内 ⇒ 读不到 / 形状不对 ⇒ **exit 2 拒绝执行**
 //     （一个字节都不动）。★ 为什么**不能**「当成空注册表」：那样 `_jobs/` 下**每一个**产物目录
 //     都会被判成孤儿 ⇒ `--apply` 会删光用户全部成片。
+//   · **F6（P3 · `lib/store.mjs` 的索引版本闸门）**：`INDEX_VERSION` 只在 `saveIndex` 里被**写**，
+//     **两个读者一个都不看 `obj.version`**（全仓没有 `migrat*`）⇒ ① 盘上是更新版写的
+//     `{version:99, jobs:[…]}` ⇒ `loadIndex` 报「1 条、error=null」**一个字都不说**，随后
+//     `saveIndex` 用 `version:1` 原子覆盖它 ⇒ 新版写的字段**静默消失**；② 盘上是**合法 JSON 但
+//     `jobs` 换了名字** ⇒ 旧文案说「索引**损坏**」（它其实是**完全合法的 JSON**）⇒ 降级为空历史
+//     ⇒ 下一次写入把那份**完好**的载荷原子覆盖掉、**不可恢复**。病根与 F1/F3/F5 同一个：
+//     **把「读不懂」当成「空表」，然后覆盖它**。现口径照同仓既有那一套（`lib/dub.mjs` 的
+//     `readIndexFromDisk` / `lib/llm-api.mjs` 的 `saveOverride`）：**读不出来 / 读不懂 ⇒ 告警 +
+//     拒绝覆盖写**；`version` **缺失**视为 **0** ⇒ **能读 + 迁移到 1 + 打日志**；正常路径
+//     （`version:1`）**零告警**。★ **边界**（有意区分）：文件**连 JSON 都不是**（硬杀截断）⇒
+//     仍走文件头「4.」写的「降级 + 重建」自愈路径（若这里也拒绝，一次硬杀就让控制台**永远无法再落盘**）。
 //
 // ★★ 隔离：全程只碰 `D:/lemo-tmp/store-trim-*` 临时树（非 C 盘），跑完递归删；
 //   **绝不碰真实 `D:/lemo-films/.console` 与 `D:/lemo-films/_jobs/`**。
@@ -53,6 +65,19 @@
 //     · W1-3（第 6 条）：logs 里 **['a1','b2']**（b1 被删）→ **['a1','b1','b2']**。
 //     · W1-2（第 7 条，稳定态连调 4 轮）：每轮 warn 数 **[1,0,0,0]** → **[1,1,1,1]**；
 //       （第 8 条，先灌满 30 条无关 warn）：破坏性动作的 warn **[0 条]** → **[1 条]**。
+//   ★ **F6（本轮新增，第 13–17 条）**（复跑法：`D:/lemo-tmp/f6/base-old` = HEAD 的 `lib/store.mjs`
+//     （md5 `bb7af19dd26769a9f44fcc365301c6d4`）拷进 `lib/` 的副本树 + 本文件 ⇒ `node test/store-trim.test.mjs`）：
+//     **4 红 1 绿** —— 红的正好是第 13/14/15/17 条（旧文件迁移日志 / version 更高 / version 非整数 /
+//     形状不认识），第 16 条（正常路径**零行为变更**）是**阴性对照**：改前改后**都绿**。
+//     ★ 对照探针 `D:/lemo-tmp/f6/probe.mjs`（**隔离闸**：写盘前先断言 `storeStatus().indexFile` 落在临时树里；
+//       每个场景 `?case=` 拿全新模块实例）的**实测**（改前 → 改后）：
+//       · `version:99`（更新版写的）⇒ warn **[] → 2 条**（「version 高于本模块」+「拒绝覆盖写」）、
+//         `saveIndex` **true → false**、原文件 **被覆盖成 `version:1` 且 `futureField` 消失 → 逐字节不变**；
+//       · `version` **缺失** ⇒ warn **[] → 1 条**（迁移日志；改前**一个字都不说**）；
+//       · `version:"1"`（字符串）⇒ warn **[] → 2 条**、`saveIndex` **true → false**、原文件**逐字节不变**；
+//       · 合法 JSON 但 `jobs` 换了名字 ⇒ 文案「**损坏**」→「**读不成任务注册表** + 合法 JSON + 拒绝覆盖写」、
+//         `saveIndex` **true → false**、`entries` 载荷 **被覆盖 → 逐字节不变**；
+//       · **不是**合法 JSON（硬杀截断）⇒ **两边都 true** —— 这是**有意**保留的自愈路径（文件头「4.」）。
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -366,7 +391,8 @@ test('★W1-3 索引**读不到**时，另一个实例正在写的日志**不许
     fs.utimesSync(f, past, past);
   }
   writeLog('a1.jsonl', 2, 0x61);
-  // index.json **截断** ⇒ `readIndexJobs()` → null ⇒ `disk === null`
+  // index.json **截断** ⇒ 闸门读到 `bad-json` ⇒ `disk === null`（★ F6 起该函数叫 `readIndexGate`；
+  //   截断 = **不是合法 JSON** ⇒ 仍按旧口径「跳过合并 + 降级重建」，见 F6 的**边界**）
   //   ⇒ `claimed` 只剩本进程的 list（`{a1}`）⇒ b1/b2 会被判成「孤儿」。
   //   ★ 改前的代码就在这里把 b1 删了，而 warn 还宣称「**没有任何任务记录引用它们**」——
   //     那句话在 `disk === null` 时**不成立**：有任务记录引用它们，只是**本进程读不到那个文件**。
@@ -597,3 +623,198 @@ function readIdsIn(indexFile) {
     return a.map((j) => j.id).join(',');
   } catch { return '(解析失败)'; }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// F6 —— `lib/store.mjs` 的**索引版本闸门**（读时校验 + 读不懂就拒绝覆盖写）
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// ★ 由来：第八批审计 **F6**（P3）。`INDEX_VERSION` 只在 `saveIndex` 里被**写**，**两个读者一个都不看
+//   `obj.version`**（全仓没有 `migrat*`）⇒ 实测 `u18-version.mjs`：
+//     · 盘上 `{version:99, jobs:[…]}`（更新版控制台写的）⇒ `loadIndex` 报「1 条、error=null」——
+//       **一个字都不说**，随后 `saveIndex` 用 `version:1` 原子覆盖它 ⇒ 新版写的字段**静默消失**；
+//     · 盘上是**合法 JSON 但 jobs 换了名字** ⇒ 旧文案说「历史索引**损坏**」（它其实是**完全合法的
+//       JSON**）⇒ 降级为空历史 ⇒ 下一次写入把那份**完好**的载荷原子覆盖掉，**不可恢复**。
+//   ⇒ 病根与 F1/F3/F5 同一个：**把「读不懂」当成「空表」，然后覆盖它**。
+//
+// ★★ 钉住的四条（照同仓既有口径，`lib/dub.mjs` 的 `readIndexFromDisk` / `lib/llm-api.mjs` 的
+//   `saveOverride`：**读不出来 / 读不懂 ⇒ 告警 + 拒绝覆盖写**）：
+//   ① `version` **缺失**（旧文件）⇒ 视为 **0** ⇒ **能读 + 迁移到 1 + 打日志**（绝不静默）；
+//   ② `version` **高于**当前 ⇒ 告警 + **拒绝覆盖写**（原文件**逐字节不变**）；
+//   ③ `version` **不是非负整数**（字符串 / 小数 / 负数）⇒ 告警 + **拒绝覆盖写**；
+//   ④ 正常路径（`version: 1`）⇒ **零告警 + 除 `savedAt` 外逐字节不变**（**阴性对照**）。
+//   ★ 另钉一条**边界**（有意区分、不许被将来改掉）：文件**连 JSON 都不是**（硬杀截断）⇒ **仍然重建**
+//     —— 那是文件头「4. 启动加载必须能降级」写的自愈路径，也是 F1 第 1 条用例的前提
+//     （若这里也拒绝，一次硬杀就让控制台**永远无法再落盘**）。
+//   ★ 以及审计 §3.4 的措辞：**不许**再把「形状不同」说成「损坏」。
+//
+// ★★ 「改前必红」（实测见报告）：② ③ 两条 + 形状那条在**改前**（`git show HEAD:lib/store.mjs`）是**红**的
+//   （改前：零告警 + `saveIndex` 返回 true + 原文件被覆盖）；① 也是红的（改前**一个字都不说**、没有迁移日志）；
+//   ④ 是**阴性对照** —— 改前改后**都绿**，它证明上面那些红不是靠「把正常路径也改坏」换来的。
+
+/** 造一条已结束的任务元数据（本段用例统一用它，避免各处字段不全）。 */
+const meta = (id, createdAt = 1) => ({ id, slug: `s-${id}`, status: 'done', endedAt: 1, createdAt });
+
+test('★F6 旧文件（`version` **缺失** ⇒ 视为 0）⇒ **能读 + 迁移到 1 + 打日志**（改前：一个字都不说）', async () => {
+  // 两种历史形状都验：① `{savedAt, jobs}`（有 jobs、没有 version）；② **顶层裸数组**（文件头「目录结构」写的「数组，旧 → 新」）。
+  const shapes = [
+    ['{savedAt, jobs}（缺 version）', (jobs) => JSON.stringify({ savedAt: 'seed', jobs })],
+    ['顶层裸数组', (jobs) => JSON.stringify(jobs)],
+  ];
+  for (const [name, raw] of shapes) {
+    const jobs = [meta('g1', 1), meta('g2', 2)];
+    wipeConsole();
+    for (const j of jobs) writeLog(`${j.id}.jsonl`, 1, 0x67);
+    fs.writeFileSync(INDEX, raw(jobs), 'utf8');
+
+    const store = await freshStore();
+    const w = captureWarns();
+    let loaded = null; let okWrite = null;
+    try {
+      loaded = store.loadIndex();
+      okWrite = store.saveIndex(jobs);          // = lib/jobs.mjs 的 persistNow() 那一句
+    } finally { w.restore(); }
+
+    assert.deepEqual(loaded.jobs.map((m) => m.id), ['g1', 'g2'],
+      `${name}：★ 必须**能读出来**（不许当成空表 —— 那正是 F6 的病根）`);
+    assert.equal(loaded.error, null, `${name}：已知形状的旧文件不该带 error（实测 ${loaded.error}）`);
+    assert.ok(w.out.some((m) => m.includes('迁移')),
+      `${name}：★ 必须**打日志**说明「按已知形状迁移到 1」（改前**一个字都不说**）：实际 ${JSON.stringify(w.out)}`);
+    assert.equal(okWrite, true, `${name}：旧文件是**已知形状** ⇒ 允许写入（写入即完成迁移）`);
+    const after = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
+    assert.equal(after.version, 1,
+      `${name}：★ 迁移后盘上必须是 version:1（实测 ${JSON.stringify(after.version)}）`);
+    assert.deepEqual(after.jobs.map((m) => m.id), ['g1', 'g2'], `${name}：迁移**不许丢条目**`);
+  }
+});
+
+test('★F6 `version` **高于**当前 ⇒ 告警 + **拒绝覆盖写**（原文件逐字节不变；改前：静默覆盖、新版字段消失）', async () => {
+  wipeConsole();
+  for (const j of [meta('j1', 1), meta('j2', 2)]) writeLog(`${j.id}.jsonl`, 1, 0x6a);
+  const disk = [meta('j1', 1), meta('j2', 2)];
+  // 模拟「更新版控制台写的」索引：version 更高 + 一个本模块不认识的字段。
+  fs.writeFileSync(INDEX, JSON.stringify({ version: 99, savedAt: 'seed', jobs: disk, futureField: '更新版写的' }), 'utf8');
+  const before = indexRaw();
+
+  const store = await freshStore();
+  const w = captureWarns();
+  let loaded = null; let okWrite = null;
+  try {
+    loaded = store.loadIndex();
+    okWrite = store.saveIndex([meta('new1', 3)]);
+  } finally { w.restore(); }
+
+  assert.deepEqual(loaded.jobs.map((m) => m.id), ['j1', 'j2'],
+    '★ version 更高**也不许**当成空表（条目仍要读出来）—— 这是「不静默降级」的另一半');
+  assert.ok(w.out.some((m) => m.includes('version=99') && m.includes('高于')),
+    `★ 必须明确告警说「version 高于本模块」（改前**一个字都不说**）：实际 ${JSON.stringify(w.out)}`);
+  assert.ok(w.out.some((m) => m.includes('拒绝覆盖写')),
+    `★ 必须告警说「拒绝覆盖写」：实际 ${JSON.stringify(w.out)}`);
+  assert.equal(okWrite, false, '★ 读不懂版本的索引 ⇒ `saveIndex` **必须拒绝覆盖写**（返回 false）');
+  assert.equal(indexRaw(), before,
+    '★ 原文件必须**逐字节不变**（改前实测：被 `version:1` 原子覆盖 ⇒ 新版写的字段静默消失、不可恢复）');
+});
+
+test('★F6 `version` **不是非负整数**（字符串 / 小数 / 负数）⇒ 告警 + **拒绝覆盖写**（改前：静默覆盖）', async () => {
+  for (const [name, bad] of [['字符串 "1"', '1'], ['小数 1.5', 1.5], ['负数 -1', -1]]) {
+    wipeConsole();
+    writeLog('k1.jsonl', 1, 0x6b);
+    fs.writeFileSync(INDEX, JSON.stringify({ version: bad, savedAt: 'seed', jobs: [meta('k1', 1)] }), 'utf8');
+    const before = indexRaw();
+
+    const store = await freshStore();
+    const w = captureWarns();
+    let okWrite = null;
+    try {
+      store.loadIndex();                        // 必须先读（`saveIndex` 在 ready=false 时直接返回 false，那样验不到东西）
+      okWrite = store.saveIndex([meta('k1', 1)]);
+    } finally { w.restore(); }
+
+    assert.equal(okWrite, false, `${name}：★ version 不是非负整数 ⇒ **拒绝覆盖写**（实际返回 ${okWrite}）`);
+    assert.equal(indexRaw(), before, `${name}：★ 原文件必须**逐字节不变**`);
+    assert.ok(w.out.some((m) => m.includes('拒绝覆盖写')),
+      `${name}：必须告警说「拒绝覆盖写」：实际 ${JSON.stringify(w.out)}`);
+    assert.ok(w.out.some((m) => m.includes('不是非负整数')),
+      `${name}：告警要点出**具体**原因（不是笼统的「坏了」）：实际 ${JSON.stringify(w.out)}`);
+  }
+});
+
+test('F6 正常路径（`version: 1`）**零行为变更**：**零告警** + 除 `savedAt` 外逐字节不变（阴性对照）', async () => {
+  wipeConsole();
+  const jobs = [];
+  for (let i = 1; i <= 3; i++) {
+    const id = `v${i}`;
+    writeLog(`${id}.jsonl`, 1, 0x76);
+    jobs.push(meta(id, i));
+  }
+  writeIndex(jobs);                            // = `{version:1, savedAt:'seed', jobs}`
+  const seed = indexRaw();
+  const logsBefore = fs.readdirSync(LOGS).sort().map((f) => `${f}:${fs.statSync(path.join(LOGS, f)).size}`);
+
+  const store = await freshStore();
+  const w = captureWarns();
+  let loaded = null; let okWrite = null;
+  try {
+    loaded = store.loadIndex();
+    okWrite = store.saveIndex(jobs);
+  } finally { w.restore(); }
+
+  assert.deepEqual(w.out, [],
+    `★ 正常路径（version:1）**一条告警都不许有** —— 版本校验若在正常路径误报，这条立刻红：实际 ${JSON.stringify(w.out)}`);
+  assert.deepEqual(loaded.jobs.map((m) => m.id), ['v1', 'v2', 'v3'], '正常路径必须原样读出全部条目');
+  assert.equal(loaded.error, null, '正常路径不该带 error');
+  assert.equal(okWrite, true, '★ version:1 的索引必须照常可写（拒绝覆盖写是**有条件**的，不是把所有写都拦掉）');
+  const norm = (s) => s.replace(/"savedAt":"[^"]*"/, '"savedAt":"<ISO>"');
+  assert.equal(norm(indexRaw()), norm(seed),
+    '★ 除 `savedAt`（每次写入必然不同）外，索引必须**逐字节相同** —— 这就是「正常路径零行为变更」的实测证据');
+  assert.deepEqual(fs.readdirSync(LOGS).sort().map((f) => `${f}:${fs.statSync(path.join(LOGS, f)).size}`), logsBefore,
+    '正常路径不许动任何日志文件');
+});
+
+test('★F6 合法 JSON 但**没有 jobs 数组**（形状不认识）⇒ 告警 + **拒绝覆盖写**，且**不许说「损坏」**（改前：载荷被覆盖）', async () => {
+  // ① 形状不认识（审计 F6 的 `renamed` 场景）：**合法 JSON**、条目**完好**，只是 `jobs` 换了名字。
+  wipeConsole();
+  for (const j of [meta('e1', 1), meta('e2', 2)]) writeLog(`${j.id}.jsonl`, 1, 0x65);
+  fs.writeFileSync(INDEX,
+    JSON.stringify({ version: 1, savedAt: 'seed', entries: [meta('e1', 1), meta('e2', 2)] }, null, 2), 'utf8');
+  const before = indexRaw();
+
+  const store = await freshStore();
+  const w = captureWarns();
+  let okWrite = null;
+  try {
+    store.loadIndex();
+    okWrite = store.saveIndex([meta('e3', 3)]);
+  } finally { w.restore(); }
+
+  assert.equal(okWrite, false,
+    '★ 形状不认识 ⇒ **拒绝覆盖写**（改前：降级为空历史后把它原子覆盖 ⇒ 那份**完好**的载荷不可恢复）');
+  assert.equal(indexRaw(), before, '★ 原文件必须**逐字节不变**（那是「可人工恢复」的唯一保证）');
+  assert.ok(w.out.some((m) => m.includes('拒绝覆盖写')),
+    `必须告警说「拒绝覆盖写」：实际 ${JSON.stringify(w.out)}`);
+  assert.ok(w.out.some((m) => m.includes('合法 JSON')),
+    `告警要点出**具体**原因（它是**合法 JSON**，只是形状不认识）：实际 ${JSON.stringify(w.out)}`);
+  assert.ok(!w.out.some((m) => m.includes('损坏')),
+    `★ 不许再把「形状不同」说成「损坏」（审计 §3.4：文件是完全合法 JSON，说「损坏」会带偏排查方向）：`
+    + `实际 ${JSON.stringify(w.out)}`);
+
+  // ② ★ 边界（**有意**区分，不许被将来改掉）：文件**连 JSON 都不是**（硬杀截断）⇒ **仍然重建**。
+  //    理由：文件头「4. 启动加载必须能降级」写的就是这条自愈路径；若这里也拒绝，一次硬杀会让
+  //    控制台**永远无法再落盘**（`saveIndex` 恒 false）—— 比「丢历史」更糟。这也是 F1 第 1 条用例的前提。
+  wipeConsole();
+  writeLog('e1.jsonl', 1, 0x65);
+  const full = JSON.stringify({ version: 1, savedAt: 'seed', jobs: [meta('e1', 1), meta('e2', 2)] });
+  fs.writeFileSync(INDEX, full.slice(0, Math.floor(full.length * 0.55)), 'utf8');
+
+  const store2 = await freshStore();
+  const w2 = captureWarns();
+  let okWrite2 = null;
+  try {
+    store2.loadIndex();
+    okWrite2 = store2.saveIndex([meta('e9', 1)]);
+  } finally { w2.restore(); }
+
+  assert.equal(okWrite2, true,
+    '★ **边界**：不是合法 JSON（硬杀截断）⇒ 必须保留「降级 + 重建」的自愈路径'
+    + '（改前的行为，也是文件头「4.」写明的口径）—— 这与上面「合法 JSON 就拒绝」是**有意**区分的');
+  assert.deepEqual(readIds(), ['e9'], '截断的索引应被重建为「本进程的列表」');
+});

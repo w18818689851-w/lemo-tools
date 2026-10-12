@@ -7,7 +7,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  *   本仓的质量防线是**两层**：
  *     ① `scripts/check-*.mjs`（52 个闸门）—— 一直有全跑，每次报「52/52 绿」；
- *     ② `test/*.test.mjs`（32 个测试入口）—— ★★ 此前**从未一次性全跑过**，
+ *     ② `test/*.test.mjs`（36 个测试入口）—— ★★ 此前**从未一次性全跑过**，
  *        每次都只跑「受影响的几个」+ `test/smoke.mjs`。
  *   **实测代价**：主控**第一次**把 32 个入口全跑 ⇒ **31 绿 / 1 红**：
  *   `test/gate-blindness.test.mjs` 报 **133 passed / 7 failed** —— 一处**潜伏了 3 批**的真回归
@@ -100,7 +100,7 @@ try {
   console.error(`✘ 读不到测试目录 ${TEST_DIR}：${e.message}`);
   process.exit(2);
 }
-// ★ `test/smoke.mjs` **不是** `*.test.mjs` ⇒ 默认不入列（任务定义：32 个入口 = `test/*.test.mjs`）。
+// ★ `test/smoke.mjs` **不是** `*.test.mjs` ⇒ 默认不入列（任务定义：36 个入口 = `test/*.test.mjs`）。
 //   它一直是「每次必跑」的冒烟入口，需要时用 `--with-smoke` 一并纳入。
 if (WITH_SMOKE && fs.existsSync(path.join(TEST_DIR, 'smoke.mjs'))) entries.push('smoke.mjs');
 if (FILTER) entries = entries.filter((f) => f.includes(FILTER));

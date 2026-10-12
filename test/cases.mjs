@@ -372,8 +372,39 @@ export function sourceFiles(root) {
 /**
  * 异步跑一个 node 子进程。
  * ★ 本环境 spawnSync 一律 EBUSY，只能用异步 spawn。
+ *
+ * ── ★★ 超时口径（2026-10-12 订正）：**「无进展」才算超时，不是「总时长超了」** ──────────
+ *
+ * 为什么改（**实测的假红**）：`⑤+` 要渲 1435 帧 @1080x1920、全程真实出片。机器被压满
+ *   （当日并发跑着 35 个测试入口 + 52 个闸门 + 多个智能体）时，**一条正常推进**的出片会超过
+ *   原来的 600s「总时长」上限 ⇒ 被判「子进程超时」⇒ **假红**。两次对照证明是负载而非代码缺陷：
+ *   那次 `--full` 总耗时 **1158.3s**；事后**单独复跑**同一条用例 ⇒ **53 passed / 0 failed（533.0s）**。
+ *
+ * 判据订正：**「超时」应定义为「无进展」而不是「总时长」**。所以：
+ *   · `idleMs > 0` ⇒ 启用**空闲看门狗**：每收到一段 stdout/stderr 就刷新「最近输出时刻」，
+ *     连续 `idleMs` **零输出**才判「卡住」并杀进程 —— 这才是「卡住」的定义。
+ *   · `timeoutMs` 仍是**总时长硬上限**，但降级为**兜底**：只防「一直刷输出却永不结束」的活锁。
+ *     真实场景：编排器在**整机渲染槽**上排队时 `core/render/slot.mjs` 每 60s 打一行、**永不超时**
+ *     ⇒ 只看「有没有输出」会永远等下去，必须有硬上限兜底。
+ *   · `idleMs` 默认 **0 = 不启用** ⇒ 本函数对既有调用方**行为逐字节不变**（非 `--full` 的
+ *     44 条用例一个字都不受影响）。真出片用例用 `RENDER_BUDGET` 显式打开，见该常量处。
+ *
+ * ★ 这**不是**「放宽判据」：断言（`exit 0` / `MUX_OK` / 帧数）一处没动 —— 本函数只决定
+ *   「什么时候认定子进程不会再给出结果」，**不参与任何断言**。
+ * ★ **代价如实写**（不粉饰）：`idleMs`（默认 900s）比原「总时长」上限 300s/600s **更长**
+ *   ⇒ 对「一声不响就卡死」的那类故障，发现时刻**会推后**（300s→900s、600s→900s）。
+ *   这是**有意的取舍**，两条理由都可核：
+ *     ① 实测的**合法**静默已达 **284.2s**（见 `RENDER_BUDGET` 的取值依据），且它随负载同比拉长
+ *        ⇒ 阈值低于它就会**继续假红** —— 那正是本次要根治的东西；
+ *     ② 「无输出」才是「卡住」的定义：只要子进程还在打进度行就**永远**不判超时
+ *        （旧口径做不到 —— 正常推进也会被总时长砍掉）。
+ *   ★ 900s 是**有界**的（不是「调到极大」）：静默判死窗口 = 实测静默的 ~3.2×；
+ *     另有硬上限 1800s 兜住「一直刷输出却永不结束」的活锁。
+ *
+ * ★ 两条超时文案都写明**「这是超时，不是失败」**：子进程没跑完 ⇒ 被测代码的判据**根本没跑到**，
+ *   把它读成「功能坏了」是错的。（原文案只写了「子进程超时」，没有点破这一层。）
  */
-export function runNode(args, { cwd, timeoutMs = 120000, env } = {}) {
+export function runNode(args, { cwd, timeoutMs = 120000, idleMs = 0, env } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, {
       cwd, windowsHide: true,
@@ -382,19 +413,47 @@ export function runNode(args, { cwd, timeoutMs = 120000, env } = {}) {
     let stdout = '';
     let stderr = '';
     let done = false;
-    const timer = setTimeout(() => {
+    let lastOutAt = Date.now();      // ★ 最近一次收到输出的时刻（进度感知的唯一输入）
+    let idleTimer = null;
+    const stop = () => { clearTimeout(timer); if (idleTimer) clearInterval(idleTimer); };
+    const die = (err) => {
       if (done) return;
       done = true;
+      stop();
       try { child.kill(); } catch { /* ignore */ }
-      reject(new Error(`子进程超时（${timeoutMs}ms）：node ${args.join(' ')}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`));
-    }, timeoutMs);
-    child.stdout?.on('data', (d) => { stdout += d.toString('utf8'); });
-    child.stderr?.on('data', (d) => { stderr += d.toString('utf8'); });
-    child.on('error', (e) => { if (done) return; done = true; clearTimeout(timer); reject(e); });
+      reject(err);
+    };
+    const dump = () => `--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`;
+    const head = `node ${args.join(' ')}`;
+    // ① 总时长硬上限（兜底）。idleMs === 0 时它就是唯一的计时器 —— 与旧实现同一条路径。
+    const timer = setTimeout(() => die(new Error(
+      `子进程超时（总时长硬上限 ${timeoutMs}ms）：${head}\n`
+      + '  ★ 这是**超时**（子进程没在预算内结束），**不是**断言失败 —— 被测代码的判据还没跑到。\n'
+      + `  ★ 本用例的主判据是「无进展」：连续 ${idleMs > 0 ? `${idleMs}ms` : '（未启用）'}零输出才判「卡住」；`
+      + '这一条是**兜底硬上限**（防「一直刷输出却永不结束」的活锁，如整机渲染槽排队）。\n'
+      + '  ★ 机器被压满时会变慢 ⇒ 可用 LEMO_TEST_RENDER_IDLE_MS / LEMO_TEST_RENDER_HARD_MS 覆盖预算。\n'
+      + dump())), timeoutMs);
+    // ② 空闲看门狗（主判据，仅在显式给了 idleMs 时启用）。
+    if (idleMs > 0) {
+      idleTimer = setInterval(() => {
+        if (done) return;
+        const quiet = Date.now() - lastOutAt;
+        if (quiet < idleMs) return;
+        die(new Error(
+          `子进程无进展超时（连续 ${quiet}ms 零输出，阈值 ${idleMs}ms）：${head}\n`
+          + '  ★ 这是**超时**（子进程卡住了），**不是**断言失败 —— 被测代码的判据还没跑到。\n'
+          + '  ★ 判据是「无进展」而不是「总时长」：只要还有 stdout/stderr 增量就**不算**超时。\n'
+          + '  ★ 机器被压满时会变慢 ⇒ 可用 LEMO_TEST_RENDER_IDLE_MS 覆盖这个阈值。\n'
+          + dump()));
+      }, 1000);
+    }
+    child.stdout?.on('data', (d) => { stdout += d.toString('utf8'); lastOutAt = Date.now(); });
+    child.stderr?.on('data', (d) => { stderr += d.toString('utf8'); lastOutAt = Date.now(); });
+    child.on('error', (e) => die(e));
     child.on('close', (code, signal) => {
       if (done) return;
       done = true;
-      clearTimeout(timer);
+      stop();
       resolve({ code, signal, stdout, stderr });
     });
   });
@@ -3056,9 +3115,49 @@ function fitModelSeparation(M, No) {
   return { 'loop|trim': d(mk('loop'), mk('trim')), 'loop|slow': d(mk('loop'), mk('slow')), 'trim|slow': d(mk('trim'), mk('slow')) };
 }
 
+// ── ★★ 真出片用例（--full）的超时预算：**「无进展」才算超时** ──────────────────
+//
+// 口径见 `runNode` 的「超时口径」注释。这里两个数字都是**预算**，不是判据本身：
+//
+// · `idleMs` —— **主判据**：连续这么久零输出 ⇒ 判「卡住」并杀进程。
+//   取值依据（★ 实测/实测记录，不是拍的）：
+//     · 本机实测（2026-10-12，`ascii-crt --skip-sync` 全链路、逐行记到达时刻）：最大**合法**静默
+//       **284.2s**（第一次探针；当时渲染器已崩、只剩 WSL 音频链在跑）、**264.2s**（第二次探针复测，
+//       渲染器 47.8s 就正常渲完 1435 帧、静默段全在音频链）。静默的来源是音频链的
+//       `voice_fx.py` / `mix.py` / `score.py` 中途**一个字都不打印**（编排器自己写明
+//       「有些脚本中途一个字都不打印，那段是纯计算时间，没有输出可流」）。
+//     · 编排器文件头另记一处实测：音频步骤曾**连续 352.2s** 零输出（`lemo-make.mjs:144`）。
+//     ⇒ 取 **900s ≈ 2.5×** 上面最大的那个数，给「重负载下静默期同比拉长」留余量。
+//     ★ 反过来说：**只要子进程还在打进度行就永远不判超时** —— 渲染器
+//       （`core/render/video.mjs`）每 60 帧一行，实测重负载下也远密于 900s。
+//
+// · `timeoutMs` —— **兜底**（不是判据）：只防「一直刷输出却永不结束」的活锁。真实场景：
+//   编排器在**整机渲染槽**上排队时 `core/render/slot.mjs` 每 60s 打一行、**永不超时**
+//   ⇒ 只看「有没有输出」会永远等下去。取 **1800s**（≈ 单独复跑整轮 `--full` 533s 的 3.4×）。
+//
+// ★ 两个都能用 env 覆盖，重负载时可临时放宽而**不必改代码**。
+// ★ 这**不是**「把超时调到极大来掩盖」：判据换成了「无进展」，且 900s 是**有界**的
+//   （= 实测合法静默 284.2s 的 ~3.2×）。★ 代价同样如实写：对「一声不响就卡死」，
+//   发现时刻比原上限**推后**（300s→900s、600s→900s）—— 因为原上限**低于实测静默**，
+//   本来就会把「慢」误判成「死」（这正是本次要根治的假红）。两者不可兼得，取「不再假红」优先；
+//   想让卡死更早暴露就把 `LEMO_TEST_RENDER_IDLE_MS` 调小重跑。
+const posInt = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.floor(n) : d; };
+export const RENDER_BUDGET = Object.freeze({
+  idleMs: posInt(process.env.LEMO_TEST_RENDER_IDLE_MS, 900000),
+  timeoutMs: posInt(process.env.LEMO_TEST_RENDER_HARD_MS, 1800000),
+});
+
 // ── --full 才跑的完整回归 ────────────────────────────────────
 // ⑤+ / ⑤++ 走真渲染 + **现场 GPU TTS**（分钟级）；⑤+++ / ⑤++++ / ⑤+++++ 走
 // `--keep-original`（明令不跑 TTS）⇒ 不占 GPU、几秒级。
+// ★ 2026-10-12：本表里**跑真活**（真渲染 / 真 TTS）的 8 处子进程调用，预算统一改成
+//   `...RENDER_BUDGET`（原先各写死 300000 / 600000 / 900000 的**总时长** —— 同一类假红隐患，
+//   一并处置）。判据一处未动：`exit 0` / `MUX_OK` / 帧数等断言逐条保留。
+//   ★ 边界（**刻意不动**）：⑤+++++ 的两处**纯 dry-run**（`dry()` 的 300000、`badKeep` 的 120000；
+//     ★ 用**符号锚**而不是行号 —— 本文件上面插一行这两处引用就失效，见 `scripts/check-ref-lines.mjs` 的由来）
+//     保持原样。理由：它们不渲染、不跑 TTS，实测十几秒即返 ⇒ 原上限已有 **>10×** 余量、
+//     在本次那种负载下也不可能触顶；而**更紧**的上限能更早发现真卡死。
+//     （真活那 8 处则是「时长本身随负载线性拉长」⇒ 必须换成「无进展」判据，否则必假红。）
 export const FULL_CASES = [
   {
     // ★★ 2026-10-03 修复一处**破坏性副作用**：本用例原来跑 `lemo-make.mjs ascii-crt --skip-sync`
@@ -3072,7 +3171,7 @@ export const FULL_CASES = [
       const outDir = path.join(CFG.exportDir, `${TEST_DIR_PREFIX}orch-${process.pid}-${Date.now().toString(36)}`);
       fs.mkdirSync(outDir, { recursive: true });
       ARTIFACTS.dirs.add(outDir);   // ★ 中途断言失败也要摘干净 —— 收尾由 smoke.mjs 的 finally 统一做
-      const r = await runNode(['lemo-make.mjs', 'ascii-crt', '--skip-sync', '--out', outDir], { cwd: ctx.root, timeoutMs: 600000 });
+      const r = await runNode(['lemo-make.mjs', 'ascii-crt', '--skip-sync', '--out', outDir], { cwd: ctx.root, ...RENDER_BUDGET });
       assert.strictEqual(r.code, 0, `完整回归退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
       assert.match(r.stdout, /MUX_OK/, `输出里没有 MUX_OK\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}`);
       assert.match(r.stdout, /src_frames=1435/, '输出里没有 src_frames=1435');
@@ -3144,7 +3243,7 @@ export const FULL_CASES = [
       try {
         r = await runNode(
           ['dub.mjs', '--script', scriptFile, '--style', TTS_SLUG, '--size', '270x480', '--out', outDir],
-          { cwd: ctx.root, timeoutMs: 600000 },
+          { cwd: ctx.root, ...RENDER_BUDGET },
         );
       } finally {
         clearInterval(poll);
@@ -3353,7 +3452,7 @@ export const FULL_CASES = [
       //     成片尺寸因此是**可证伪的**：它必须等于素材，而不是我们点名的那个。
       const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
         '--keep-original', '--srt', srtFile, '--size', '1080x1920', '--ratio', '16:9',
-        '--out', outDir], { cwd: ctx.root, timeoutMs: 300000 });
+        '--out', outDir], { cwd: ctx.root, ...RENDER_BUDGET });
       assert.strictEqual(r.code, 0,
         `--keep-original 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
 
@@ -3463,7 +3562,7 @@ export const FULL_CASES = [
 
       const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
         '--keep-original', '--keep-original-limit', '--srt', srtFile, '--out', outDir],
-      { cwd: ctx.root, timeoutMs: 300000 });
+      { cwd: ctx.root, ...RENDER_BUDGET });
       assert.strictEqual(r.code, 0,
         `--keep-original-limit 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
 
@@ -3642,7 +3741,7 @@ export const FULL_CASES = [
       // ── 跑：真 TTS + 真出片（形态 B；不传 --keep-original、不传 --fit ⇒ 默认 loop）──
       const r = await runNode(['dub.mjs', '--script', scriptFile, '--video', srcFile,
         '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', outDir],
-      { cwd: ctx.root, timeoutMs: 900000 });
+      { cwd: ctx.root, ...RENDER_BUDGET });
       assert.strictEqual(r.code, 0,
         `形态 B + 现场 TTS 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
 
@@ -3895,7 +3994,7 @@ export const FULL_CASES = [
         //   写死 `'dub.mjs'` 就不认仓里文档化的变异注入钩子（见本文件 `DUB_ENTRY` 处的注释与
         //   `LEMO_TEST_DUB=_mut-dub.mjs node test/smoke.mjs --full --filter …` 的既有用法），
         //   这条用例就**无法用仓内标准手法自证**（默认值不变 ⇒ 默认行为逐字节不变）。
-        const r = await runNode(dubArgs(fit, runDir), { cwd: ctx.root, timeoutMs: 900000 });
+        const r = await runNode(dubArgs(fit, runDir), { cwd: ctx.root, ...RENDER_BUDGET });
         // ── ★★ O1 的 F1：出片阶段的失败**先分辨「环境阻塞」还是「真失败」** ──
         //   ★ 只有命中环境签名（显存硬拦 / Index-TTS 预检硬拦 / `TTS_FAIL rc=`）才走环境文案；
         //     其它任何退出码 ≠ 0 一律照旧走下面那句**判据自己的**失败文案（★ 绝不掩盖真失败）。
@@ -4068,7 +4167,7 @@ export const FULL_CASES = [
         ARTIFACTS.dirs.add(path.join(CFG.exportDir, 'dub', '_verify', path.basename(runDir)));
         const r = await runNode([DUB_ENTRY, '--script', scriptFile, '--video', srcFile,
           '--fit', fit, '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', runDir],
-        { cwd: ctx.root, timeoutMs: 900000 });
+        { cwd: ctx.root, ...RENDER_BUDGET });
         assert.strictEqual(r.code, 0,
           `--fit ${fit} 出片退出码 ${r.code}（期望 0）\n--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
 
@@ -4197,7 +4296,7 @@ export const FULL_CASES = [
       const r = await runNode([DUB_ENTRY, '--script', scriptFile, '--video', srcFile,
         '--fit', 'slow', '--keep-original-audio', '--echo-cmd',
         '--ratio', FIT_RATIO, '--style', FIT_STYLE, '--out', runDir],
-      { cwd: ctx.root, timeoutMs: 900000 });
+      { cwd: ctx.root, ...RENDER_BUDGET });
       assert.strictEqual(r.code, 0,
         `--fit slow --keep-original-audio 出片退出码 ${r.code}（期望 0）\n`
         + `--- 末尾 stdout ---\n${r.stdout.slice(-3000)}\n--- stderr ---\n${r.stderr.slice(-2000)}`);
