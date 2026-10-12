@@ -39,6 +39,17 @@
  *      `lib/env.mjs` 有 import 环 / 常量求值时机）
  *      ⇒ 它们的差异与「为什么当前不可达」**登记在** `lib/dub-core.mjs` 末尾那段注释里，本文件只钉
  *      唯一来源的契约，**不去钉别人的实现**（免得别人一修，本文件就假红）。
+ *   ⑦ ★★ **两种「比例分配」必须分得清**（2026-10-12 新增；由来 = `smoke --full` 的 ⑤+++ 验收红）：
+ *      `srtAlignMode()` 只有两态，而 `'srt(比例分配)'` **同时**是「**占位符** SRT（正常，⑤+++ 夹具
+ *      就是这样）」与「**编码坏了**（异常，③ 那条）」的标签 ⇒ 区分信号**不在 `align` 上**，
+ *      而在**解码告警**（`note`）：① 空 / ② 非空。本节把这条「合起来才分得清」变成**机械可判**，
+ *      夹具**逐字取自 ⑤+++**（`KO_TEXT` / `KO_SRT`）。
+ *
+ * ★★ **判据的绑定方式（2026-10-12 修，本文件自己的一处假绿）**：③ 与 ⑦ 里的 `srtAlignMode`
+ *   **真的 `import`** 自 `lib/dub-core.mjs`（`dub.mjs:308` 也 import 它）。★ 本处**原先**是
+ *   **照抄一份**三元表达式（自注「与 dub.mjs 的取值口径逐字相同」）—— 那是**镜像不是绑定**：
+ *   实测（临时副本）把实现改回恒 `'srt'`（= F3 修**之前**的行为）时，本文件**照旧 13/13 绿**
+ *   ⇒ 回归钉**抓不到它本该抓的那一次回退**。改绑之后同一变异**必红**（实测：13→2 红）。
  *
  * ★★ 隔离：临时根 = `LEMO_TMP`（默认 `D:/lemo-tmp`），**解析到 C 盘直接炸**（本项目硬规则）；
  *   本次专属子树带 pid + 时间戳，跑完在 `exit` 钩子里递归删。★ 不 spawn 任何子进程（无 EBUSY 风险）。
@@ -51,7 +62,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { decodeUserText, readUserTextFile, parseSrt, splitSentences, alignCuesToSentences, winToWsl }
+import { decodeUserText, readUserTextFile, parseSrt, splitSentences, alignCuesToSentences, srtAlignMode, winToWsl }
   from '../lib/dub-core.mjs';
 
 // ── 临时根（非 C 盘，本项目硬规则）────────────────────────────────────────────
@@ -204,8 +215,11 @@ test('③ ★ 用 readUserTextFile 解对编码之后：匹配率 1，时间轴�
 });
 
 test('③ ★ 一句都没匹配上 ⇒ `alignMode` 不许报 `srt`（如实上报的判据）', () => {
-  // 与 `dub.mjs` 的取值口径**逐字相同**（那条三元表达式就是被测逻辑）
-  const modeOf = (hitRate) => (hitRate > 0 ? 'srt' : 'srt(比例分配)');
+  // ★★ 判据的**唯一来源**：`lib/dub-core.mjs` 的 `srtAlignMode(hitRate)` —— `dub.mjs` 也 import 它。
+  //   ★ 本处**原先**写的是**照抄一份**（自注「与 dub.mjs 的取值口径逐字相同」）⇒ 那是**镜像不是绑定**：
+  //     实测（2026-10-12，临时副本）把 `dub.mjs` 的实现改回恒 `'srt'`（= F3 修**之前**的行为），
+  //     本文件**照旧 13/13 绿** ⇒ 回归钉**抓不到它本该抓的那一次回退**。现改为**真的 import**。
+  const modeOf = srtAlignMode;
   const noMatch = parseSrt(UTF8_SRT.toString('utf8'));
   assert.equal(spansOf(noMatch).hitRate, 1);
   assert.equal(modeOf(spansOf(noMatch).hitRate), 'srt', '认得出 ⇒ 报 srt（正确路径不许被误伤）');
@@ -241,6 +255,68 @@ test('⑤ UTF-8 BOM 文件：utf8:true，且 parseSrt / splitSentences 与无 BO
     '★ BOM 版与无 BOM 版的 parseSrt 结果必须深等（否则说明 BOM 真的漏到了下游）');
   assert.deepEqual(splitSentences(r.text), splitSentences(fs.readFileSync(P.utf8, 'utf8')));
   assert.deepEqual(spansOf(parseSrt(r.text)), spansOf(parseSrt(fs.readFileSync(P.utf8, 'utf8'))));
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⑦ ★ 两种「比例分配」必须**分得清**（第九批 F3 的验收红：`smoke --full` 的 ⑤+++）
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ 由来：`srtAlignMode()` **只有两态**，而 `'srt(比例分配)'` **同时**出现在两种完全不同的情形：
+//     ① **正常**：SRT 读得好，只是文本是**占位符**（`test/cases.mjs` 的 ⑤+++ 夹具 `KO_SRT` 就是这样
+//        —— 它的注释明写「SRT 只提供时间轴」，文本与 `KO_TEXT` **本来就对不上**）；
+//     ② **异常**：SRT 的字节不是 UTF-8 且解不出（本文件 ③ 那条，F3 要抓的）。
+// ⇒ ★ 二者的区分信号**不在 `align` 上**，而在**解码告警**（`decodeUserText().note` ⇒ `warn()`）：
+//     ① `note` **为空**（无告警）/ ② `note` **非空**（「不是 UTF-8」告警）。
+//   ★ 本节把「**两个信号合起来才分得清**」变成**机械可判**：同一个 `'srt(比例分配)'` 标签下，
+//     `note` 一空一非空。谁哪天把两个信号并成一个（或让 `align` 去承载编码），这里必红。
+//
+// ★★ 夹具**逐字取自 ⑤+++**（`test/cases.mjs` 的 `KO_TEXT` / `KO_SRT`）—— 不另造一份，
+//    否则本节的结论对那条用例**不成立**（那正是本次验收红暴露的问题：夹具的性质没人钉）。
+const KO_TEXT_555 = '这是保留原声原画的测试。画面和声音都不改。';
+const KO_SRT_555 = '1\n00:00:00,000 --> 00:00:00,800\n占位文本甲（SRT 只提供时间轴）\n\n'
+  + '2\n00:00:00,800 --> 00:00:01,600\n占位文本乙\n';
+
+test('⑦ 占位符 SRT（⑤+++ 夹具原样）：标签 = srt(比例分配) 但 **note 为空**（无编码告警）', () => {
+  const dec = decodeUserText(Buffer.from(KO_SRT_555, 'utf8'), '字幕');
+  assert.equal(dec.utf8, true, '★ 夹具是**合法 UTF-8**（只是文本是占位符）');
+  assert.equal(dec.note, '', '★ 合法 UTF-8 ⇒ 无告警 —— 这就是「占位符」侧的区分信号');
+  const cues = parseSrt(dec.text);
+  assert.equal(cues.length, 2, '时间轴照样解得出来（2 条 cue）');
+  const a = alignCuesToSentences(cues, splitSentences(KO_TEXT_555));
+  assert.equal(a.hitRate, 0, '★ 占位文本与文案本来就对不上 ⇒ 匹配率 0（这是**夹具的设计**，不是错误）');
+  assert.equal(srtAlignMode(a.hitRate), 'srt(比例分配)', '⇒ 标签是「比例分配」那一态');
+});
+
+test('⑦ 编码解不出的 SRT：标签**同样**是 srt(比例分配)，但 **note 非空**（有告警）', () => {
+  const dec = decodeUserText(BADBYTES_SRT, '字幕');
+  assert.equal(dec.utf8, false);
+  assert.notEqual(dec.note, '', '★ 解不出 ⇒ 必须有告警 —— 这就是「编码坏了」侧的区分信号');
+  const a = alignCuesToSentences(parseSrt(dec.text), TEXTS);
+  assert.equal(a.hitRate, 0);
+  assert.equal(srtAlignMode(a.hitRate), 'srt(比例分配)');
+});
+
+test('⑦ ★ 合起来才分得清：两种情形**标签相同**，只有 note 能把它们分开', () => {
+  const ph = decodeUserText(Buffer.from(KO_SRT_555, 'utf8'), '字幕');
+  const bad = decodeUserText(BADBYTES_SRT, '字幕');
+  const modePh = srtAlignMode(alignCuesToSentences(parseSrt(ph.text), splitSentences(KO_TEXT_555)).hitRate);
+  const modeBad = srtAlignMode(alignCuesToSentences(parseSrt(bad.text), TEXTS).hitRate);
+  assert.equal(modePh, modeBad, '★ 两种情形的 `align` **本来就相同** ⇒ `align` 分不开它们（这是事实，不是缺陷）');
+  // ⇒ 区分信号只能是 note：空 / 非空
+  assert.equal(ph.note === '', true, '占位符侧：note 为空');
+  assert.equal(bad.note === '', false, '编码坏侧：note 非空');
+  assert.notEqual(ph.note === '', bad.note === '', '★ 判据：用 note 当判别器时两种情形必须落在**不同**一侧');
+});
+
+test('⑦ 零行为变更：`srtAlignMode` 与原先内联的三元表达式**逐值相同**', () => {
+  const old = (hitRate) => (hitRate > 0 ? 'srt' : 'srt(比例分配)');   // ★ 改前内联在 `dub.mjs:308`
+  for (const h of [0, 0.25, 0.5, 7 / 8, 1]) {
+    assert.equal(srtAlignMode(h), old(h), `hitRate=${h} 时取值变了`);
+  }
+  // ★ 顺带钉住「编码」与「标签」**正交**：GBK 解得出（hitRate=1、标签 srt）时 note **仍**非空
+  const gbk = readUserTextFile(P.gbk, '字幕');
+  assert.notEqual(gbk.note, '', 'GBK 解得出也必须告警（告警**不是** hitRate 的函数）');
+  assert.equal(srtAlignMode(alignCuesToSentences(parseSrt(gbk.text), TEXTS).hitRate), 'srt',
+    '★ 解对编码后 hitRate=1 ⇒ 标签是 srt —— 标签**不**承载编码信息');
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

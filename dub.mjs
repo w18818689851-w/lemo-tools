@@ -29,7 +29,7 @@ import {
   splitSentences, buildTimeline, buildSrt, buildAss, probe, measure, judgeTruePeak,
   TARGET_PEAK_PCM, TARGET_LUFS, HARD_PEAK_LIMIT,
   PLAIN_DARK, loadStyleRegistry, resolveStyle, listStyles, styleSpec, bgSource, bgFilters,
-  parseSrt, alignCuesToSentences, buildItemsFromSpans, distributeByProportion, detectSpeech, readUserTextFile,
+  parseSrt, alignCuesToSentences, buildItemsFromSpans, distributeByProportion, detectSpeech, readUserTextFile, srtAlignMode,
   alignByAsr, styleIdsFromRegistry, STYLES_FILE, loadSemantic, charsPerLine,
 } from './lib/dub-core.mjs';
 // ★ 风格特质档案（style-dna）—— 出片链路此前**零消费者**，这里把它接进来（可选增强）。
@@ -305,7 +305,7 @@ async function runKeepOriginal(ctx) {
     if (!cues.length) warn('SRT 解析出 0 条，退到下一路');
     else {
       const a = alignCuesToSentences(cues, texts);
-      spans = a.spans; alignMode = a.hitRate > 0 ? 'srt' : 'srt(比例分配)';
+      spans = a.spans; alignMode = srtAlignMode(a.hitRate);   // ★ 判据的**唯一来源**在 `lib/dub-core.mjs`（原先内联在此处，而 `test/dub-encoding.test.mjs` 又照抄一份 ⇒ 抄件是**镜像不是绑定**：实测把本行改回恒 `'srt'` 时抄件仍 13/13 绿，F3 的回归钉抓不到回退）
       alignNote = `SRT ${cues.length} 条 vs 文案 ${texts.length} 句 · 文本匹配率 ${(a.hitRate * 100).toFixed(1)}%${alignMode === 'srt' ? '' : '（★ 你的时间轴没被采用：按各句字数比例重排）'}`;
     }
   }

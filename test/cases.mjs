@@ -3421,7 +3421,9 @@ export const FULL_CASES = [
     //   在「出片前显存预检」**之前**就 return 了）⇒ 这条覆盖完全不依赖 Index-TTS。
     // ★ 为什么必须给 `--srt`：不给会依次退 ASR → VAD → 均匀分配。ASR 要 faster-whisper +
     //   模型加载（多一个依赖、多几秒、结果还不确定）；`--srt` 是**最快最确定**的那一路。
-    //   断言 `"align":"srt"` 就是钉「走的确实是 SRT 那一路、没有偷偷退到 ASR」。
+    //   断言 `align` **以 `srt` 开头**（= `'srt'` 或 `'srt(比例分配)'`）就是钉「走的确实是 SRT
+    //   那一路、没有偷偷退到 ASR/VAD/均匀分配」。★ 为什么**不能**写成 `=== 'srt'`：本夹具的 SRT
+    //   文本是**占位符** ⇒ 匹配率必然 0 ⇒ 标签必然是 `'srt(比例分配)'`（详见下面断言 1 的长注释）。
     //   ★ 夹具 SRT 的**文本故意与文案不同**（见 `KO_SRT`）⇒「字幕逐字等于文案」这条才是在验
     //     「字幕文本取自**文案**」；两边写成一样的话，它只是在验一句恒真的废话。
     name: '⑤+++ 形态 B（--keep-original）真出片：尺寸沿用素材 / 音轨逐字节相同 / 字幕逐字等于文案',
@@ -3461,8 +3463,34 @@ export const FULL_CASES = [
       assert.ok(lastJson, `stdout 末尾没有机器可读的结果 JSON 行\n--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
       const fin = JSON.parse(lastJson);
       assert.strictEqual(fin.keepOriginal, true, '结果 JSON 里 keepOriginal 不是 true');
-      assert.strictEqual(fin.align, 'srt',
-        `对齐方式不是 srt（读到 ${JSON.stringify(fin.align)}）—— --srt 没被采用？`);
+      // ★★ 为什么**不再**断言 `fin.align === 'srt'`（2026-10-12 修；本用例的验收红就是它）：
+      //   本用例的 SRT 夹具 `KO_SRT` 的文本是**占位符**（其注释明写「SRT 只提供时间轴」）
+      //   ⇒ 与 `KO_TEXT` **本来就对不上** ⇒ `alignCuesToSentences` 的 `hitRate === 0`
+      //   是这个夹具的**设计**，**不是**错误。实测（本机 Node v22.22.2，夹具原样，只跑纯函数）：
+      //   `hitRate = 0` ⇒ `alignMode = 'srt(比例分配)'` ⇒ 旧断言 `=== 'srt'` **过时**。
+      // ★★ 而 `'srt(比例分配)'` **同时**出现在两种**完全不同**的情形：
+      //     ① 正常：SRT 读得好，只是文本是占位符（**本用例**）；
+      //     ② 异常：SRT 是 GBK 被按 UTF-8 读坏（第九批 F3 要抓的）。
+      //   二者的**区分信号不在 `align` 上** —— 而在**解码告警**（`readUserTextFile` 的 `dec.note`，
+      //   由 `dub.mjs` 的 `warn(dec.note)` 打出）：① 无告警 / ② 有「不是 UTF-8」告警。
+      //   ⇒ 本用例的判据改为三条：**`--srt` 确实被采用**（`align` 以 `srt` 开头 ⇒ 没偷偷退到
+      //     ASR/VAD/均匀分配）+ **`alignNote` 如实写清匹配率与为什么走比例分配**
+      //     + ★ **占位符必须没有编码告警**（把「区分信号」本身钉住，见断言 1c）。
+      assert.ok(String(fin.align).startsWith('srt'),
+        `对齐方式不是 srt*（读到 ${JSON.stringify(fin.align)}）—— --srt 没被采用？`);
+      //   ★ 写死具体值（而不是只判前缀）：夹具是占位符 ⇒ 匹配率**必然** 0 ⇒ 标签**必然**是这一态
+      assert.strictEqual(fin.align, 'srt(比例分配)',
+        `本用例的 SRT 文本是**占位符**（KO_SRT 与 KO_TEXT 本来就不匹配）⇒ 匹配率必为 0`
+        + ` ⇒ 标签应是 'srt(比例分配)'，读到 ${JSON.stringify(fin.align)}`);
+      assert.ok(/文本匹配率 0\.0%/.test(String(fin.alignNote))
+        && /按各句字数比例重排/.test(String(fin.alignNote)),
+        '★ alignNote 必须如实写清「匹配率」与「为什么走比例分配」，'
+        + `读到 ${JSON.stringify(fin.alignNote)}`);
+      // ── 断言 1c：★ 区分信号本身 —— 「占位符」不许被报成「编码坏了」 ──
+      assert.ok(!/不是 UTF-8/.test(r.stdout),
+        '★ 本用例的 SRT 是**合法 UTF-8**（只是文本为占位符）⇒ stdout **不许**出现编码告警；'
+        + '出现就说明「编码坏了」与「文本对不上」被混成了同一个信号（那正是 F3 要修的静默）\n'
+        + `--- 末尾 stdout ---\n${r.stdout.slice(-2000)}`);
       assert.strictEqual(fin.audioIdentical, true,
         `工具自检报「音轨与素材不逐字节相同」（audioIdentical=${JSON.stringify(fin.audioIdentical)}）`);
 
